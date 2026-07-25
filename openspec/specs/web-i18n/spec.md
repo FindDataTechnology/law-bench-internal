@@ -7,10 +7,10 @@ Multi-locale zh/en presentation layer for the evaluation-rules web app.
 ## Requirements
 
 ### Requirement: Supported Locales
-The system SHALL support two locales: `zh` (Chinese) and `en` (English). `zh` SHALL be the default locale when no choice is expressed by the user or browser.
+The system SHALL support two locales: `zh` (Chinese) and `en` (English). `zh` SHALL be the default locale when no choice is expressed by the user. The browser's `Accept-Language` header SHALL NOT influence locale resolution; first-time visitors always land on `zh`.
 
 #### Scenario: Default locale with no signal
-- **WHEN** a request arrives with no `?lang` query param, no `lang` cookie, and no `Accept-Language` header
+- **WHEN** a request arrives with no `?lang` query param and no `lang` cookie (regardless of any `Accept-Language` header)
 - **THEN** the active locale is `zh`
 
 #### Scenario: Unknown locale falls back to default
@@ -18,7 +18,7 @@ The system SHALL support two locales: `zh` (Chinese) and `en` (English). `zh` SH
 - **THEN** the active locale falls back to `zh` (the default) and `fr` is not honored
 
 ### Requirement: Locale Resolution
-The system SHALL resolve the active locale per request in the order: `?lang` query param ▶ `lang` cookie ▶ `Accept-Language` header ▶ default (`zh`). The resolved locale SHALL be validated against the supported set; an unsupported value at any step SHALL fall through to the next step.
+The system SHALL resolve the active locale per request in the order: `?lang` query param ▶ `lang` cookie ▶ default (`zh`). The resolved locale SHALL be validated against the supported set; an unsupported value at any step SHALL fall through to the next step. The `Accept-Language` header SHALL be ignored at every step.
 
 #### Scenario: Explicit query param wins
 - **WHEN** a request carries `?lang=en` and the `lang` cookie is `zh`
@@ -28,9 +28,9 @@ The system SHALL resolve the active locale per request in the order: `?lang` que
 - **WHEN** a request carries no `?lang` and the `lang` cookie is `en`
 - **THEN** the active locale is `en`
 
-#### Scenario: Accept-Language used on first visit
+#### Scenario: Accept-Language ignored on first visit
 - **WHEN** a request carries no `?lang`, no `lang` cookie, and `Accept-Language: en-US,en;q=0.9`
-- **THEN** the active locale is `en` (first supported match)
+- **THEN** the active locale is `zh` (the `Accept-Language` header is not consulted)
 
 ### Requirement: Locale Persistence
 The system SHALL set a `lang` cookie to the resolved locale on every request, so the user's choice (or the first-visit resolution) persists across requests and the system converges to a stable locale.

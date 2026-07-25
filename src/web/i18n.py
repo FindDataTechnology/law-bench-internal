@@ -10,7 +10,10 @@ three places:
    and ``static/app.js`` reads the same nested object.
 
 ``resolve_locale`` picks the active locale per request as
-``?lang`` ▶ ``lang`` cookie ▶ ``Accept-Language`` ▶ ``DEFAULT`` (``zh``).
+``?lang`` ▶ ``lang`` cookie ▶ ``DEFAULT`` (``zh``). The browser's
+``Accept-Language`` is intentionally NOT consulted, so first-time visitors
+always land on Chinese; users switch locale via the switcher (which sets the
+cookie).
 """
 
 from __future__ import annotations
@@ -354,20 +357,15 @@ def _walk(catalog: dict[str, Any], dotted_key: str) -> str | None:
 def resolve_locale(request: Request) -> tuple[str, dict[str, Any]]:
     """Resolve the active locale for a request.
 
-    Order: ``?lang`` query param ▶ ``lang`` cookie ▶ first supported
-    ``Accept-Language`` match ▶ ``DEFAULT``. An unsupported value at any step
-    falls through to the next step.
+    Order: ``?lang`` query param ▶ ``lang`` cookie ▶ ``DEFAULT`` (``zh``).
+    An unsupported value at any step falls through to the next step. The
+    browser's ``Accept-Language`` header is deliberately ignored so the app
+    defaults to Chinese on first visit; users pick a locale via the switcher,
+    which persists it through the ``lang`` cookie.
     """
     lang = request.query_params.get("lang")
     if lang not in SUPPORTED:
         lang = request.cookies.get("lang")
-    if lang not in SUPPORTED:
-        accept = request.headers.get("accept-language", "")
-        for tag in accept.split(","):
-            code = tag.strip().split("-")[0].lower()
-            if code in SUPPORTED:
-                lang = code
-                break
     if lang not in SUPPORTED:
         lang = DEFAULT
     return lang, LOCALES[lang]
@@ -421,6 +419,29 @@ LABELS: dict[str, dict[str, dict[str, str]]] = {
             "brokerage": "行纪合同",
             "intermediation": "中介合同",
             "partnership": "合伙合同",
+            # 中国合同分类法 Part 2 (practical, non-overlapping) types.
+            "company_formation": "公司设立合同",
+            "equity_transfer": "股权转让合同",
+            "capital_increase": "增资扩股协议",
+            "merger_acquisition": "公司并购协议",
+            "equity_incentive": "股权激励协议",
+            "vam_agreement": "估值调整（对赌）协议",
+            "equity_holding_in_trust": "股权代持协议",
+            "real_estate_sale": "房产买卖合同",
+            "real_estate_lease": "房屋租赁合同",
+            "employment": "劳动合同",
+            "labor_dispatch": "劳务派遣合同",
+            "ip_license": "知识产权许可合同",
+            "franchise": "特许经营（加盟）合同",
+            "real_estate_development": "房地产开发合同",
+            "insurance": "保险合同",
+            "trust": "信托合同",
+            "private_equity_fund": "私募基金合同",
+            "software_development": "软件开发合同",
+            "film_production": "影视剧合作制作合同",
+            "talent_agency": "演艺经纪合同",
+            "ppp_project": "PPP项目合同",
+            "tourism_service": "旅游服务合同",
         },
         "purpose": {"drafting": "起草"},
         "prompt_type": {
@@ -455,6 +476,29 @@ LABELS: dict[str, dict[str, dict[str, str]]] = {
             "brokerage": "Brokerage",
             "intermediation": "Intermediation",
             "partnership": "Partnership",
+            # 中国合同分类法 Part 2 (practical, non-overlapping) types.
+            "company_formation": "Company Formation",
+            "equity_transfer": "Equity Transfer",
+            "capital_increase": "Capital Increase",
+            "merger_acquisition": "Merger & Acquisition",
+            "equity_incentive": "Equity Incentive",
+            "vam_agreement": "Valuation Adjustment (VAM)",
+            "equity_holding_in_trust": "Equity Holding in Trust",
+            "real_estate_sale": "Real Estate Sale",
+            "real_estate_lease": "Real Estate Lease",
+            "employment": "Employment",
+            "labor_dispatch": "Labor Dispatch",
+            "ip_license": "IP License",
+            "franchise": "Franchise",
+            "real_estate_development": "Real Estate Development",
+            "insurance": "Insurance",
+            "trust": "Trust",
+            "private_equity_fund": "Private Equity Fund",
+            "software_development": "Software Development",
+            "film_production": "Film Co-production",
+            "talent_agency": "Talent Agency",
+            "ppp_project": "PPP Project",
+            "tourism_service": "Tourism Service",
         },
         "purpose": {"drafting": "Drafting"},
         "prompt_type": {

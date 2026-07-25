@@ -1,10 +1,10 @@
 """Tests for the evaluation-rules web UI's multi-locale (zh/en) layer.
 
 Covers: catalog parity (zh/en expose identical key sets), per-request locale
-resolution (``?lang`` > cookie > ``Accept-Language`` > default ``zh``), the
-language switcher, localized table headers / ``<html lang>``, key-based flash
-messages with interpolation, and that every key referenced by ``app.js`` exists
-in both catalogs.
+resolution (``?lang`` > cookie > default ``zh``; ``Accept-Language`` is
+ignored), the language switcher, localized table headers / ``<html lang>``,
+key-based flash messages with interpolation, and that every key referenced by
+``app.js`` exists in both catalogs.
 """
 
 from __future__ import annotations
@@ -98,15 +98,33 @@ def test_label_catalog_parity_zh_en():
         assert set(LABELS["zh"][kind]) == set(LABELS["en"][kind]), kind
 
 
-def test_label_catalog_has_19_contract_types():
-    expected = {
-        "sale", "utilities_supply", "gift", "loan", "guarantee", "lease",
-        "financing_lease", "factoring", "work", "construction", "transport",
-        "technology", "bailment", "warehousing", "entrustment",
-        "property_service", "brokerage", "intermediation", "partnership",
-    }
+# 19 《民法典》 typical named contract types + 22 practical (中国合同分类法
+# Part 2, non-overlapping) types. The catalog MUST contain exactly the union of
+# these two sets, in both zh and en - asserting the seed scripts and the label
+# catalog stay in lockstep.
+CIVIL_CODE_TYPES = {
+    "sale", "utilities_supply", "gift", "loan", "guarantee", "lease",
+    "financing_lease", "factoring", "work", "construction", "transport",
+    "technology", "bailment", "warehousing", "entrustment",
+    "property_service", "brokerage", "intermediation", "partnership",
+}
+PRACTICAL_TYPES = {
+    "company_formation", "equity_transfer", "capital_increase",
+    "merger_acquisition", "equity_incentive", "vam_agreement",
+    "equity_holding_in_trust", "real_estate_sale", "real_estate_lease",
+    "employment", "labor_dispatch", "ip_license", "franchise",
+    "real_estate_development", "insurance", "trust", "private_equity_fund",
+    "software_development", "film_production", "talent_agency",
+    "ppp_project", "tourism_service",
+}
+
+
+def test_label_catalog_has_all_seeded_contract_types():
+    expected = CIVIL_CODE_TYPES | PRACTICAL_TYPES
     for locale in ("zh", "en"):
-        assert set(LABELS[locale]["contract_type"]) == expected
+        assert set(LABELS[locale]["contract_type"]) == expected, locale
+    # guard against a silent duplicate of a 民法典 type sneaking into practical
+    assert CIVIL_CODE_TYPES.isdisjoint(PRACTICAL_TYPES)
 
 
 def test_label_for_known_and_unknown():
@@ -173,12 +191,15 @@ def test_unknown_locale_falls_back_to_default(app_client: TestClient):
     assert "lang=zh" in r.headers.get("set-cookie", "")
 
 
-def test_accept_language_on_first_visit(app_client: TestClient):
+def test_accept_language_ignored_defaults_to_zh(app_client: TestClient):
+    # Accept-Language is deliberately not consulted; first visit is always zh,
+    # even when the browser advertises English.
     r = app_client.get("/rubrics", headers={"accept-language": "en-US,en;q=0.9"})
-    assert "lang=en" in r.headers.get("set-cookie", "")
+    assert "lang=zh" in r.headers.get("set-cookie", "")
 
 
-def test_accept_language_unsupported_falls_back(app_client: TestClient):
+def test_accept_language_unsupported_ignored(app_client: TestClient):
+    # an unsupported Accept-Language is also ignored -> zh default
     r = app_client.get("/rubrics", headers={"accept-language": "fr-FR"})
     assert "lang=zh" in r.headers.get("set-cookie", "")
 
@@ -264,6 +285,6 @@ def test_resolve_locale_unit():
 
     assert resolve_locale(req("lang=en"))[0] == "en"
     assert resolve_locale(req("", cookie="en"))[0] == "en"
-    assert resolve_locale(req("", accept="en-US,en;q=0.9"))[0] == "en"
+    assert resolve_locale(req("", accept="en-US,en;q=0.9"))[0] == "zh"  # ignored -> default
     assert resolve_locale(req("lang=fr"))[0] == "zh"          # unknown -> default
     assert resolve_locale(req(""))[0] == "zh"                 # nothing -> default

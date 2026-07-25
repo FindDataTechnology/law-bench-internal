@@ -39,10 +39,13 @@ COPY scripts ./scripts
 
 # Run the server as a non-root user.
 RUN useradd --create-home --uid 1001 appuser \
+    && chmod +x scripts/docker-entrypoint.sh \
     && chown -R appuser:appuser /app
 USER appuser
 
 ENV PATH="/app/.venv/bin:$PATH"
 EXPOSE 8010
 
-CMD [".venv/bin/uvicorn", "src.web.app:app", "--host", "0.0.0.0", "--port", "8010"]
+# Self-heal harbor rubrics from the bundled seed on every boot (harbor isn't
+# installed in the image), then serve. See scripts/docker-entrypoint.sh.
+CMD ["./scripts/docker-entrypoint.sh"]

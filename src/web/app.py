@@ -119,7 +119,7 @@ def create_app() -> FastAPI:
         request.state.t = t
         response = await call_next(request)
         # Refresh the cookie on every response so the resolved locale persists
-        # (covers both explicit switches and first-visit Accept-Language).
+        # (covers both explicit switches and first-visit defaulting to zh).
         response.set_cookie("lang", lang, samesite="lax", max_age=60 * 60 * 24 * 365)
         return response
 
