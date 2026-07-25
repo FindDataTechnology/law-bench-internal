@@ -1,0 +1,20 @@
+[project]
+name = "chinese-contract-drafter"
+version = "0.1.0"
+description = "Multi-agent system for drafting Chinese legal contracts using CrewAI and Volcengine Ark"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "crewai[litellm]>=1.15.5",
+    "deepeval>=3.9.6",
+    "python-dotenv>=1.2.2",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "jinja2>=3.1",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

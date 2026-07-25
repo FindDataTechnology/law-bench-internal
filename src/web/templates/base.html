@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ t.nav.brand }}{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('page_list_rubrics') }}">{{ t.nav.brand }}</a>
+    <nav>
+      <a href="{{ url_for('page_list_rubrics') }}">{{ t.nav.rubrics }}</a>
+      <a href="{{ url_for('page_list_prompts') }}">{{ t.nav.prompts }}</a>
+      <a href="{{ url_for('page_list_compares') }}">{{ t.nav.compare }}</a>
+      <a class="btn btn-sm" href="{{ url_for('page_new_rubric') }}">{{ t.nav.new_local_rubric }}</a>
+      <form method="post" action="{{ url_for('page_harbor_extract') }}" class="inline" data-confirm="{{ t.nav.re_extract_confirm }}">
+        <button type="submit" class="btn btn-sm btn-ghost">{{ t.nav.re_extract_harbor }}</button>
+      </form>
+      <span class="lang-switch">
+        <a href="{{ request.url.path }}?lang=en"{% if lang == 'en' %} aria-current="true"{% endif %}>{{ t.switch.en }}</a>
+        <span class="muted">|</span>
+        <a href="{{ request.url.path }}?lang=zh"{% if lang == 'zh' %} aria-current="true"{% endif %}>{{ t.switch.zh }}</a>
+      </span>
+    </nav>
+  </header>
+  <main class="container">
+    {% if request.query_params.get('msg') %}
+      <div class="flash {{ 'error' if request.query_params.get('err') else 'ok' }}">
+        {{ tr(request.query_params.get('msg'), name=request.query_params.get('name') or '', detail=request.query_params.get('detail') or '') }}
+      </div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+  <script>window.__LOCALE__ = {{ t_json|safe }}; window.__LABELS__ = {{ labels_json|safe }}; window.__LANG__ = "{{ lang }}";</script>
+  <script src="{{ url_for('static', path='app.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
