@@ -2,9 +2,13 @@ name: build-and-push
 
 # Build the web-app image and push it to the Harbor project `law-bench`.
 #
-# Required repository SECRETS (Settings → Secrets and variables → Actions):
-#   LAW_BENCH_HARBOR_REGISTRY  Harbor registry host, e.g. harbor.example.com
-#                              (a leading https:// and a trailing / are stripped)
+# Harbor is served over plain HTTP (insecure), so before login/build/push the
+# workflow registers the host in the docker daemon's insecure-registries (for
+# `docker login`) and in a buildkit config (for the buildx push).
+#
+# Required repository SECRETS (Settings -> Secrets and variables -> Actions):
+#   LAW_BENCH_HARBOR_REGISTRY  Harbor host, e.g. http://23.144.68.246:30880
+#                              (a leading http(s):// and a trailing / are stripped)
 #   LAW_BENCH_HARBOR_USER      Harbor robot username, e.g. robot$law-bench+law-bench
 #   LAW_BENCH_HARBOR_PASS      Harbor robot password / token
 #
@@ -27,9 +31,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Resolve Harbor registry + image name
         id: img
         run: |
@@ -39,12 +40,36 @@ jobs:
           reg="${reg#http://}"
           reg="${reg%/}"
           if [ -z "$reg" ]; then
-            echo "::error::Secret LAW_BENCH_HARBOR_REGISTRY is empty. Set it to your Harbor host (e.g. harbor.example.com)." >&2
+            echo "::error::Secret LAW_BENCH_HARBOR_REGISTRY is empty. Set it to your Harbor host (e.g. http://23.144.68.246:30880)." >&2
             exit 1
           fi
           project="${{ vars.LAW_BENCH_HARBOR_PROJECT || 'law-bench' }}"
           echo "registry=${reg}" >> "$GITHUB_OUTPUT"
           echo "name=${reg}/${project}/law-template" >> "$GITHUB_OUTPUT"
+
+      - name: Allow insecure (HTTP) Harbor registry in docker daemon
+        run: |
+          set -euo pipefail
+          reg="${{ steps.img.outputs.registry }}"
+          cfg=/etc/docker/daemon.json
+          if [ -f "$cfg" ] && jq empty "$cfg" 2>/dev/null; then
+            tmp="$(mktemp)"
+            jq --arg r "$reg" '. + {"insecure-registries": (((.insecure-registries // []) + [$r]) | unique)}' "$cfg" > "$tmp"
+            sudo mv "$tmp" "$cfg"
+          else
+            echo "{\"insecure-registries\":[\"${reg}\"]}" | sudo tee "$cfg" >/dev/null
+          fi
+          sudo systemctl restart docker
+          sleep 3
+          echo "insecure-registries: $(docker info --format '{{json .RegistryConfig.InsecureRegistryCIDRs}}')"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          config-inline: |
+            [registry."${{ steps.img.outputs.registry }}"]
+              http = true
+              insecure = true
 
       - name: Login to Harbor
         uses: docker/login-action@v3
