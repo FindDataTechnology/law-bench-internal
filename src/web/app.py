@@ -32,8 +32,10 @@ from .i18n import (
     DEFAULT,
     LABELS,
     LOCALES,
+    criterion_for,
     label_for,
     resolve_locale,
+    source_label,
     title_for_prompt,
     title_for_rubric,
     translate,
@@ -71,6 +73,11 @@ def _locale_context(request: Request) -> dict:
         "label_for": lambda kind, value: label_for(kind, value, lang),
         "title_for_prompt": lambda name: title_for_prompt(name, lang),
         "title_for_rubric": lambda name: title_for_rubric(name, lang),
+        # Seeded criterion-content + rubric-source localization (see specs
+        # web-i18n): bound to the active locale, falling back to the raw stored
+        # text / raw source for unmapped or user-authored values.
+        "criterion_for": lambda name, field, fallback="": criterion_for(name, field, lang, fallback),
+        "source_label": lambda source: source_label(source, lang),
     }
 
 
@@ -110,6 +117,11 @@ def create_app() -> FastAPI:
 
     app.include_router(api.router)
 
+    # Lazy import: search.py imports `templates` from this module, so it must
+    # load after app.py is fully initialized (mirrors the pages-router pattern).
+    from .routes import search as search_routes
+    app.include_router(search_routes.router)
+
     # Resolve the active locale once per request, stash it for the template
     # context processor, and persist the choice as a cookie so it sticks.
     @app.middleware("http")
@@ -137,6 +149,11 @@ def create_app() -> FastAPI:
     @app.exception_handler(ManageError)
     async def _fallback(request: Request, exc: Exception) -> JSONResponse:
         return JSONResponse(status_code=500, content={"error": str(exc)})
+
+    @app.get("/healthz", include_in_schema=False)
+    async def healthz() -> JSONResponse:
+        """Liveness/readiness probe target: always 200 when the process is up."""
+        return JSONResponse({"status": "ok"})
 
     return app
 
