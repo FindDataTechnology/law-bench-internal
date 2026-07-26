@@ -19,7 +19,7 @@ spec:
         - name: harbor-pull
       initContainers:
         - name: seed-db
-          image: harbor.local/law-bench/law-template:sha-4e7ad20
+          image: harbor.local/law-bench/law-template:sha-621cff6
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsUser: 0
@@ -41,19 +41,19 @@ spec:
               ls -la /data
       containers:
         - name: law-bench
-          image: harbor.local/law-bench/law-template:sha-4e7ad20
+          image: harbor.local/law-bench/law-template:sha-621cff6
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8010
           livenessProbe:
             httpGet:
-              path: /
+              path: /healthz
               port: 8010
             initialDelaySeconds: 15
             periodSeconds: 15
           readinessProbe:
             httpGet:
-              path: /
+              path: /healthz
               port: 8010
             initialDelaySeconds: 5
             periodSeconds: 10
