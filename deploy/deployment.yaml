@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: law-bench
+  namespace: law-bench
+  labels:
+    app: law-bench
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: law-bench
+  template:
+    metadata:
+      labels:
+        app: law-bench
+    spec:
+      imagePullSecrets:
+        - name: harbor-pull
+      initContainers:
+        - name: seed-db
+          image: harbor.local/law-bench/law-template:sha-4e7ad20
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - mountPath: /data
+              name: db
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              if [ -f /data/evaluation_rules.db ]; then
+                echo "evaluation_rules.db already present in PVC, skipping seed."
+              else
+                echo "seeding evaluation_rules.db from image into PVC..."
+                cp /app/db/evaluation_rules.db /data/evaluation_rules.db
+              fi
+              chown -R 1001:1001 /data
+              ls -la /data
+      containers:
+        - name: law-bench
+          image: harbor.local/law-bench/law-template:sha-4e7ad20
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8010
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8010
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8010
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - mountPath: /app/db
+              name: db
+      volumes:
+        - name: db
+          persistentVolumeClaim:
+            claimName: law-bench-db
