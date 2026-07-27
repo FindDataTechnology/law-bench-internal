@@ -38,21 +38,20 @@ from pathlib import Path
 from extract_harbor_rules import DEFAULT_DB, create_schema, print_summary, project_root
 
 
-def upsert_local_prompt(conn: sqlite3.Connection, prompt: dict, now_iso: str) -> int:
+def upsert_local_prompt(conn, prompt: dict, now_iso: str) -> int:
     """Upsert a local prompt by `name` (UNIQUE). Returns the prompt id.
 
     Single-row upsert (no child table): UPDATE the existing row if the name is
     taken, else INSERT. `source` is always 'local'.
     """
-    cur = conn.cursor()
-    row = cur.execute(
-        "SELECT id FROM prompts WHERE name = ?", (prompt["name"],)
+    row = conn.execute(
+        "SELECT id FROM prompts WHERE name = %s", (prompt["name"],)
     ).fetchone()
     if row:
-        pid = row[0]
-        cur.execute(
-            "UPDATE prompts SET contract_type = ?, purpose = ?, content = ?, "
-            "prompt_type = ?, description = ? WHERE id = ?",
+        pid = row["id"]
+        conn.execute(
+            "UPDATE prompts SET contract_type = %s, purpose = %s, content = %s, "
+            "prompt_type = %s, description = %s WHERE id = %s",
             (
                 prompt["contract_type"],
                 prompt["purpose"],
@@ -63,9 +62,9 @@ def upsert_local_prompt(conn: sqlite3.Connection, prompt: dict, now_iso: str) ->
             ),
         )
     else:
-        cur.execute(
+        cur = conn.execute(
             "INSERT INTO prompts (name, contract_type, purpose, content, source, "
-            "prompt_type, description, created_at) VALUES (?, ?, ?, ?, 'local', ?, ?, ?)",
+            "prompt_type, description, created_at) VALUES (%s, %s, %s, %s, 'local', %s, %s, %s) RETURNING id",
             (
                 prompt["name"],
                 prompt["contract_type"],
@@ -76,7 +75,7 @@ def upsert_local_prompt(conn: sqlite3.Connection, prompt: dict, now_iso: str) ->
                 now_iso,
             ),
         )
-        pid = cur.lastrowid
+        pid = cur.fetchone()["id"]
     return pid
 
 
@@ -88,6 +87,24 @@ def _p(type_key: str, description: str, content: str) -> dict:
         "description": description,
         "content": content.strip(),
         "prompt_type": "baseline",
+    }
+
+
+def _v2_prompt(v1: dict, citation: str) -> dict:
+    """Law-refined v2 variant of a baseline prompt.
+
+    Same baseline mandatory-clause body, prepended with an explicit 【法律依据】
+    clause naming the governing statutes/interpretations/article ranges drawn
+    from the law_info survey. ``prompt_type = law-refined``. The baseline v1
+    row is untouched (different ``name``).
+    """
+    return {
+        "name": f"{v1['name']}_v2",
+        "contract_type": v1["contract_type"],
+        "purpose": v1["purpose"],
+        "description": f"{v1['description']}（法律精修版）",
+        "content": f"【法律依据】依据{citation}。\n\n{v1['content']}",
+        "prompt_type": "law-refined",
     }
 
 
@@ -189,16 +206,30 @@ def main() -> None:
     ap.add_argument("--db", type=Path, default=project_root() / DEFAULT_DB)
     args = ap.parse_args()
 
-    conn = sqlite3.connect(args.db)
-    conn.execute("PRAGMA foreign_keys = ON")
+    from src.eval.db import connect
+    from src.eval.law_refined_citations import LAW_REFINED_CITATIONS
+
+    conn = connect()
     try:
         create_schema(conn)
         now_iso = datetime.now(timezone.utc).isoformat()
         for prompt in PROMPTS:
             pid = upsert_local_prompt(conn, prompt, now_iso)
             print(f"  upserted {prompt['name']:24} [{prompt['contract_type']:18}] (prompt_id={pid})")
+        # Law-refined v2 variants: baseline content + a 【法律依据】 citation
+        # clause grounded in the law_info survey. Baseline v1 is untouched
+        # (the v2 names differ from the v1 names).
+        n_v2 = 0
+        for prompt in PROMPTS:
+            citation = LAW_REFINED_CITATIONS.get(prompt["contract_type"])
+            if not citation:
+                continue
+            v2 = _v2_prompt(prompt, citation)
+            pid = upsert_local_prompt(conn, v2, now_iso)
+            print(f"  upserted {v2['name']:28} [{v2['contract_type']:18}] (prompt_id={pid})")
+            n_v2 += 1
         conn.commit()
-        print(f"\nSeeded {len(PROMPTS)} per-type drafting prompts into {args.db}")
+        print(f"\nSeeded {len(PROMPTS)} baseline + {n_v2} law-refined drafting prompts into {args.db}")
         print_summary(conn)
     finally:
         conn.close()

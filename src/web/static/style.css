@@ -196,3 +196,24 @@ table.matrix td.cell { text-align: center; font-weight: 600; white-space: nowrap
 table.matrix td.cell.pass { color: var(--ok); background: #ecfdf5; }
 table.matrix td.cell.fail { color: var(--danger); background: #fef2f2; }
 table.matrix td.cell.rate { color: var(--accent); background: #eff6ff; }
+
+/* law-info side-by-side detail + rendered markdown */
+.law-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+@media (max-width: 900px) { .law-info-grid { grid-template-columns: 1fr; } }
+.markdown-body { line-height: 1.6; word-break: break-word; }
+.markdown-body h1, .markdown-body h2, .markdown-body h3 { margin: 0.8rem 0 0.4rem; }
+.markdown-body h1 { font-size: 1.2rem; }
+.markdown-body h2 { font-size: 1.05rem; }
+.markdown-body ul, .markdown-body ol { margin: 0.4rem 0; padding-left: 1.4rem; }
+.markdown-body li { margin: 0.2rem 0; }
+.markdown-body p { margin: 0.5rem 0; }
+.markdown-body code { background: #f3f4f6; padding: 0.05rem 0.3rem; border-radius: 3px; }
+.markdown-body blockquote {
+  border-left: 3px solid var(--border); margin: 0.5rem 0; padding: 0.2rem 0.8rem;
+  color: #555; background: #fafbfc;
+}

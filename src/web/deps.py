@@ -2,20 +2,23 @@
 
 ``get_db`` is the seam that lets tests point the web layer at a throwaway
 database via ``app.dependency_overrides[get_db] = ...`` instead of mutating the
-development database.
+development database. It returns a PostgreSQL connection resolved from the
+``database_url`` environment variable (no longer a filesystem ``Path``); CRUD
+functions borrow it without closing it (see ``src/eval/db._BorrowedConn``).
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from src.settings import DEFAULT_DB
+from typing import Any
 
 
-def get_db() -> Path:
-    """Return the database path the web layer should read/write.
+def get_db() -> Any:
+    """Return a PostgreSQL connection for the web layer to read/write.
 
-    Defaults to the project's evaluation-rules DB; tests override it through
-    ``app.dependency_overrides[get_db]``.
+    Opens a connection from ``database_url``. Tests override this through
+    ``app.dependency_overrides[get_db]`` to inject a connection to a throwaway
+    test database.
     """
-    return DEFAULT_DB
+    from src.eval.db import connect  # local import avoids a circular import at load
+
+    return connect()

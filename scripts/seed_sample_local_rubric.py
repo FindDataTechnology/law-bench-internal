@@ -5,6 +5,9 @@ Demonstrates that a local rubric (source = local, context = contract) coexists
 with harbor's reference rubrics in the same tables. Re-running is idempotent,
 and harbor re-extraction never touches local rows.
 
+The target is the PostgreSQL database addressed by ``database_url``; the legacy
+``--db`` flag is accepted but ignored (no longer a file path).
+
 Run:
     uv run python scripts/seed_sample_local_rubric.py
 """
@@ -12,7 +15,6 @@ Run:
 from __future__ import annotations
 
 import argparse
-import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -51,30 +53,34 @@ SAMPLE_RUBRIC = {
 }
 
 
-def upsert_local_rubric(conn: sqlite3.Connection, rubric: dict, now_iso: str) -> int:
-    cur = conn.cursor()
-    row = cur.execute(
-        "SELECT id FROM rubrics WHERE name = ? AND source = 'local'",
+def upsert_local_rubric(conn, rubric: dict, now_iso: str) -> int:
+    """Upsert a local rubric by ``name`` (source = 'local'). Returns the rubric id.
+
+    Replaces the rubric's criteria wholesale so re-seeding mirrors the seed data
+    exactly (handles added/removed/renamed criteria).
+    """
+    row = conn.execute(
+        "SELECT id FROM rubrics WHERE name = %s AND source = 'local'",
         (rubric["name"],),
     ).fetchone()
     if row:
-        rubric_id = row[0]
-        cur.execute(
-            "UPDATE rubrics SET context = ?, description = ? WHERE id = ?",
+        rubric_id = row["id"]
+        conn.execute(
+            "UPDATE rubrics SET context = %s, description = %s WHERE id = %s",
             (rubric["context"], rubric["description"], rubric_id),
         )
     else:
-        cur.execute(
+        cur = conn.execute(
             "INSERT INTO rubrics (name, context, source, source_path, description, created_at) "
-            "VALUES (?, ?, 'local', NULL, ?, ?)",
+            "VALUES (%s, %s, 'local', NULL, %s, %s) RETURNING id",
             (rubric["name"], rubric["context"], rubric["description"], now_iso),
         )
-        rubric_id = cur.lastrowid
-    cur.execute("DELETE FROM criteria WHERE rubric_id = ?", (rubric_id,))
+        rubric_id = cur.fetchone()["id"]
+    conn.execute("DELETE FROM criteria WHERE rubric_id = %s", (rubric_id,))
     for i, c in enumerate(rubric["criteria"]):
-        cur.execute(
+        conn.execute(
             "INSERT INTO criteria (rubric_id, name, description, guidance, ordinal) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s)",
             (rubric_id, c["name"], c["description"], c["guidance"], i),
         )
     return rubric_id
@@ -84,11 +90,15 @@ def main() -> None:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument("--db", type=Path, default=project_root() / DEFAULT_DB)
+    ap.add_argument(
+        "--db", type=Path, default=project_root() / DEFAULT_DB,
+        help="(legacy, ignored) target is the PostgreSQL database addressed by database_url.",
+    )
     args = ap.parse_args()
 
-    conn = sqlite3.connect(args.db)
-    conn.execute("PRAGMA foreign_keys = ON")
+    from src.eval.db import connect
+
+    conn = connect()
     try:
         create_schema(conn)
         now_iso = datetime.now(timezone.utc).isoformat()

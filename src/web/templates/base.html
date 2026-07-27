@@ -13,6 +13,9 @@
       <a href="{{ url_for('page_list_rubrics') }}">{{ t.nav.rubrics }}</a>
       <a href="{{ url_for('page_list_prompts') }}">{{ t.nav.prompts }}</a>
       <a href="{{ url_for('page_list_compares') }}">{{ t.nav.compare }}</a>
+      <a href="{{ url_for('page_law_info') }}">{{ t.nav.law_info }}</a>
+      <a href="{{ url_for('page_law_references') }}">{{ t.nav.law_references }}</a>
+      <a href="{{ url_for('page_search') }}">搜索</a>
       <a class="btn btn-sm" href="{{ url_for('page_new_rubric') }}">{{ t.nav.new_local_rubric }}</a>
       <form method="post" action="{{ url_for('page_harbor_extract') }}" class="inline" data-confirm="{{ t.nav.re_extract_confirm }}">
         <button type="submit" class="btn btn-sm btn-ghost">{{ t.nav.re_extract_harbor }}</button>

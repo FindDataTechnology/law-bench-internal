@@ -1,9 +1,8 @@
-"""Unit tests for ``src/eval/store.py`` against a throwaway DB."""
+"""Unit tests for ``src/eval/store.py`` against a throwaway Postgres DB."""
 
 from __future__ import annotations
 
-import sqlite3
-from pathlib import Path
+import pytest
 
 from src.eval.store import (
     ensure_schema,
@@ -34,16 +33,20 @@ def _result(rubric: str = "r", all_pass: bool = False, n: int = 2, n_passed: int
     }
 
 
-def test_ensure_schema_idempotent(seeded_db: Path):
+def test_ensure_schema_idempotent(seeded_db):
     ensure_schema(seeded_db)
     ensure_schema(seeded_db)  # second call must not error
-    conn = sqlite3.connect(seeded_db)
-    names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    conn.close()
+    names = {
+        r["table_name"]
+        for r in seeded_db.execute(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = 'public'"
+        ).fetchall()
+    }
     assert {"eval_runs", "eval_criteria_results"} <= names
 
 
-def test_store_result_round_trip(seeded_db: Path):
+def test_store_result_round_trip(seeded_db):
     rid = store_result(_result(), contract_path="out.md", task_desc="起草", db_path=seeded_db)
     assert isinstance(rid, int)
     runs = list_runs(db_path=seeded_db)
@@ -58,7 +61,7 @@ def test_store_result_round_trip(seeded_db: Path):
     assert run["contract_path"] == "out.md"
 
 
-def test_list_runs_newest_first(seeded_db: Path):
+def test_list_runs_newest_first(seeded_db):
     id1 = store_result(_result(rubric="r1"), db_path=seeded_db)
     id2 = store_result(_result(rubric="r2"), db_path=seeded_db)
     id3 = store_result(_result(rubric="r3"), db_path=seeded_db)
@@ -66,15 +69,13 @@ def test_list_runs_newest_first(seeded_db: Path):
     assert [r["id"] for r in runs] == [id3, id2, id1]
 
 
-def test_store_result_persists_criteria_verdicts(seeded_db: Path):
+def test_store_result_persists_criteria_verdicts(seeded_db):
     rid = store_result(_result(), db_path=seeded_db)
-    conn = sqlite3.connect(seeded_db)
-    conn.row_factory = sqlite3.Row
-    rows = conn.execute(
-        "SELECT criterion_id, verdict FROM eval_criteria_results WHERE run_id = ? ORDER BY ordinal",
+    rows = seeded_db.execute(
+        "SELECT criterion_id, verdict FROM eval_criteria_results "
+        "WHERE run_id = %s ORDER BY ordinal",
         (rid,),
     ).fetchall()
-    conn.close()
     assert [(r["criterion_id"], r["verdict"]) for r in rows] == [
         ("c1", "pass"),
         ("c2", "fail"),
@@ -102,23 +103,20 @@ def _result_with_criteria(rubric="r", verdicts=(("c1", "pass"), ("c2", "fail")))
     }
 
 
-def test_store_result_standalone_keeps_compare_cols_null(seeded_db: Path):
+def test_store_result_standalone_keeps_compare_cols_null(seeded_db):
     """Standalone (non-compare) runs store with all compare columns null."""
     rid = store_result(_result_with_criteria(), db_path=seeded_db)
-    conn = sqlite3.connect(seeded_db)
-    conn.row_factory = sqlite3.Row
-    row = conn.execute(
+    row = seeded_db.execute(
         "SELECT compare_run_id, prompt_name, prompt_type, variant_label, draft_text "
-        "FROM eval_runs WHERE id = ?",
+        "FROM eval_runs WHERE id = %s",
         (rid,),
     ).fetchone()
-    conn.close()
     assert row["compare_run_id"] is None
     assert row["prompt_name"] is None
     assert row["draft_text"] is None
 
 
-def test_store_compare_round_trip(seeded_db: Path):
+def test_store_compare_round_trip(seeded_db):
     cid = store_compare("sale test", "sale", "contract_sale_v1", "task", "drafter-only", 1, db_path=seeded_db)
     rid = store_result(
         _result_with_criteria(),
@@ -145,7 +143,7 @@ def test_store_compare_round_trip(seeded_db: Path):
     assert d["draft_text"] == "DRAFT"
 
 
-def test_get_compare_survives_prompt_deletion(seeded_db: Path):
+def test_get_compare_survives_prompt_deletion(seeded_db):
     """Snapshotted prompt metadata survives deletion of the prompt row (no FK)."""
     cid = store_compare("lbl", "sale", "contract_sale_v1", "task", "drafter-only", 1, db_path=seeded_db)
     store_result(
@@ -163,48 +161,49 @@ def test_get_compare_survives_prompt_deletion(seeded_db: Path):
     assert got["runs"][0]["prompt_type"] == "baseline"
 
 
-def test_get_run_draft_rejects_wrong_compare(seeded_db: Path):
+def test_get_run_draft_rejects_wrong_compare(seeded_db):
     cid = store_compare("lbl", "sale", "contract_sale_v1", "task", "drafter-only", 1, db_path=seeded_db)
     rid = store_result(
         _result_with_criteria(), db_path=seeded_db, compare_run_id=cid, prompt_name="p",
     )
-    import pytest
-
     with pytest.raises(KeyError):
         get_run_draft(cid + 999, rid, db_path=seeded_db)  # run belongs to a different compare
 
 
-def test_migration_adds_columns_to_old_eval_runs(tmp_path: Path):
+def test_migration_adds_columns_to_old_eval_runs(empty_db):
     """An eval_runs table created pre-change (no compare cols) is migrated in place."""
-    db = tmp_path / "old.db"
-    conn = sqlite3.connect(db)
-    # Old shape: eval_runs without the compare-driven columns.
-    conn.execute(
+    # Old shape: eval_runs without the compare-driven columns. (PostgreSQL
+    # INTEGER PRIMARY KEY does not auto-generate, so insert an explicit id.)
+    empty_db.execute(
         "CREATE TABLE eval_runs (id INTEGER PRIMARY KEY, rubric_name TEXT, score REAL)"
     )
-    conn.execute("INSERT INTO eval_runs (rubric_name, score) VALUES ('r', 0.0)")
-    conn.commit()
-    conn.close()
+    empty_db.execute("INSERT INTO eval_runs (id, rubric_name, score) VALUES (1, 'r', 0.0)")
+    empty_db.commit()
 
-    ensure_schema(db)  # should ALTER the existing table
-    conn = sqlite3.connect(db)
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(eval_runs)")}
-    conn.close()
+    ensure_schema(empty_db)  # should ALTER the existing table
+    cols = {
+        r["column_name"]
+        for r in empty_db.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'eval_runs'"
+        ).fetchall()
+    }
     assert {"compare_run_id", "prompt_name", "prompt_type", "variant_label", "draft_text"} <= cols
     # existing row's new columns are null
-    conn = sqlite3.connect(db)
-    conn.row_factory = sqlite3.Row
-    row = conn.execute("SELECT compare_run_id, draft_text FROM eval_runs WHERE id = 1").fetchone()
-    conn.close()
+    row = empty_db.execute(
+        "SELECT compare_run_id, draft_text FROM eval_runs WHERE id = 1"
+    ).fetchone()
     assert row["compare_run_id"] is None and row["draft_text"] is None
 
-    ensure_schema(db)  # idempotent: no error on second run
+    ensure_schema(empty_db)  # idempotent: no error on second run
     assert {"compare_run_id", "draft_text"} <= cols
 
 
-def test_migration_creates_compare_runs_table(seeded_db: Path):
+def test_migration_creates_compare_runs_table(seeded_db):
     ensure_schema(seeded_db)
-    conn = sqlite3.connect(seeded_db)
-    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    conn.close()
+    tables = {
+        r["table_name"]
+        for r in seeded_db.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
+        ).fetchall()
+    }
     assert "compare_runs" in tables

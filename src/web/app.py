@@ -32,8 +32,10 @@ from .i18n import (
     DEFAULT,
     LABELS,
     LOCALES,
+    criterion_for,
     label_for,
     resolve_locale,
+    source_label,
     title_for_prompt,
     title_for_rubric,
     translate,
@@ -71,6 +73,8 @@ def _locale_context(request: Request) -> dict:
         "label_for": lambda kind, value: label_for(kind, value, lang),
         "title_for_prompt": lambda name: title_for_prompt(name, lang),
         "title_for_rubric": lambda name: title_for_rubric(name, lang),
+        "source_label": lambda source: source_label(source, lang),
+        "criterion_for": lambda name, field, fallback="": criterion_for(name, field, lang, fallback),
     }
 
 
@@ -127,6 +131,10 @@ def create_app() -> FastAPI:
     try:
         from .routes import pages  # noqa: WPS433 (intentional lazy import)
         app.include_router(pages.router)
+        from .routes import law_info  # noqa: WPS433 (intentional lazy import)
+        app.include_router(law_info.router)
+        from .routes import search  # noqa: WPS433 (intentional lazy import)
+        app.include_router(search.router)
     except ImportError:
         pass
 

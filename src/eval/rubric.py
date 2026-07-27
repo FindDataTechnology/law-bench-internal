@@ -1,4 +1,4 @@
-"""Load a rubric + its criteria from the SQLite DB and map to the
+"""Load a rubric + its criteria from the PostgreSQL DB and map to the
 harvey-labs criterion shape the evaluator consumes.
 
 The shared schema (created by scripts/extract_harbor_rules.py) stores criteria
@@ -13,42 +13,43 @@ id / title / match_criteria. We map here (no schema change):
 
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
+from typing import Any
 
-from src.settings import DEFAULT_DB  # single source of truth for the db path
+from src.settings import DEFAULT_DB  # retained as the legacy default param value
+
+from .db import connect
 
 
-def list_rubrics(db_path: Path = DEFAULT_DB) -> list[dict]:
+def list_rubrics(db_path: Any = DEFAULT_DB) -> list[dict]:
     """List all rubrics (name, context, source) - handy for `--list-rubrics`."""
-    conn = sqlite3.connect(db_path)
+    conn = connect(db_path)
     try:
         rows = conn.execute(
             "SELECT name, context, source FROM rubrics ORDER BY id"
         ).fetchall()
     finally:
         conn.close()
-    return [{"name": n, "context": c, "source": s} for n, c, s in rows]
+    return [{"name": r["name"], "context": r["context"], "source": r["source"]} for r in rows]
 
 
-def load_criteria(rubric_name: str, db_path: Path = DEFAULT_DB) -> list[dict]:
+def load_criteria(rubric_name: str, db_path: Any = DEFAULT_DB) -> list[dict]:
     """Load a rubric's criteria, mapped to {id, title, match_criteria}.
 
     Raises KeyError if the rubric name is unknown, ValueError if it has no
     criteria.
     """
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    conn = connect(db_path)
     try:
         rubric = conn.execute(
-            "SELECT id, name, context FROM rubrics WHERE name = ?",
+            "SELECT id, name, context FROM rubrics WHERE name = %s",
             (rubric_name,),
         ).fetchone()
         if rubric is None:
             raise KeyError(f"Rubric not found: {rubric_name!r}")
         rows = conn.execute(
             "SELECT name, description, guidance FROM criteria "
-            "WHERE rubric_id = ? ORDER BY ordinal",
+            "WHERE rubric_id = %s ORDER BY ordinal",
             (rubric["id"],),
         ).fetchall()
     finally:

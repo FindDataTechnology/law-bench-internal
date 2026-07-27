@@ -1,4 +1,4 @@
-"""Persist evaluation runs to db/evaluation_rules.db.
+"""Persist evaluation runs to the PostgreSQL database (``database_url``).
 
 Adds two tables alongside the existing rubric-definition tables (rubrics /
 criteria, which are never touched here):
@@ -14,17 +14,16 @@ queried and compared over time. The schema is created idempotently.
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime, timezone
 from typing import Optional
 
-from src.settings import DEFAULT_DB  # single source of truth for the db path
+from src.settings import DEFAULT_DB  # retained as the legacy default param value
 
 from .db import connect
 
 RESULTS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS eval_runs (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    id             BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     rubric_name    TEXT NOT NULL,
     contract_path  TEXT,
     task_desc      TEXT,
@@ -45,8 +44,8 @@ CREATE TABLE IF NOT EXISTS eval_runs (
 );
 
 CREATE TABLE IF NOT EXISTS eval_criteria_results (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id       INTEGER NOT NULL REFERENCES eval_runs(id) ON DELETE CASCADE,
+    id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    run_id       BIGINT NOT NULL REFERENCES eval_runs(id) ON DELETE CASCADE,
     criterion_id TEXT NOT NULL,
     title        TEXT,
     verdict      TEXT NOT NULL,
@@ -56,7 +55,7 @@ CREATE TABLE IF NOT EXISTS eval_criteria_results (
 );
 
 CREATE TABLE IF NOT EXISTS compare_runs (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     label         TEXT,
     contract_type TEXT,
     rubric_name   TEXT,
@@ -67,50 +66,59 @@ CREATE TABLE IF NOT EXISTS compare_runs (
 );
 """
 
-
-def _add_column_if_missing(conn: sqlite3.Connection, table: str, col: str, col_ddl: str) -> None:
-    """Add ``col`` to ``table`` if the table exists and lacks the column.
-
-    Idempotent additive-column migration. Skips silently when the table does
-    not yet exist (e.g. the ``prompts`` table before any seeder has run) so it
-    is safe to call from ``ensure_schema`` on every startup regardless of which
-    seeders have run.
-    """
-    exists = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name = ?", (table,)
-    ).fetchone()
-    if not exists:
-        return
-    cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
-    if col not in cols:
-        conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_ddl}")
+# law_info table (per-contract-type 法律法规 survey answers, one row per
+# (contract_type, source)). Created here too so the runtime path establishes it
+# even if the seeder's create_schema has not run on this database.
+LAW_INFO_SCHEMA = """
+CREATE TABLE IF NOT EXISTS law_info (
+    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    contract_type TEXT NOT NULL,
+    source        TEXT NOT NULL,
+    zh_name       TEXT,
+    content       TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    UNIQUE(contract_type, source)
+);
+"""
 
 
-# Additive columns added by the prompt-compare change, migrated on every
-# ``ensure_schema`` call so existing databases converge without a separate step.
-_MIGRATIONS = (
-    ("prompts", "prompt_type", "TEXT"),
-    ("eval_runs", "compare_run_id", "INTEGER"),
-    ("eval_runs", "prompt_name", "TEXT"),
-    ("eval_runs", "prompt_type", "TEXT"),
-    ("eval_runs", "variant_label", "TEXT"),
-    ("eval_runs", "draft_text", "TEXT"),
+# Additive columns added after the tables' first release, applied idempotically
+# in a single round trip via ``ALTER TABLE IF EXISTS ... ADD COLUMN IF NOT
+# EXISTS`` (a no-op once the columns exist; safe when the table is absent).
+_ADDITIVE_COLUMNS = (
+    "ALTER TABLE IF EXISTS prompts ADD COLUMN IF NOT EXISTS prompt_type TEXT; "
+    "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS compare_run_id INTEGER; "
+    "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS prompt_name TEXT; "
+    "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS prompt_type TEXT; "
+    "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS variant_label TEXT; "
+    "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS draft_text TEXT;"
 )
+
+# The DDL is fully idempotent, so ensure_schema is memoized per database (keyed
+# by dbname): the first call on a given DB creates/migrates; subsequent calls
+# (every store/list/compare) are a cheap no-op. This matters because the store
+# functions call ensure_schema defensively on every invocation.
+_ensured_dbs: set[str] = set()
 
 
 def ensure_schema(db_path=DEFAULT_DB) -> None:
     """Create the results/compare tables if missing and migrate additive columns.
 
-    Idempotent: ``CREATE TABLE IF NOT EXISTS`` for fresh tables, plus guarded
-    ``ALTER TABLE ... ADD COLUMN`` for columns added after the tables' first
-    release (a no-op once the columns exist).
+    Idempotent: ``CREATE TABLE IF NOT EXISTS`` for fresh tables, plus
+    ``ALTER TABLE IF EXISTS ... ADD COLUMN IF NOT EXISTS`` for columns added
+    after the tables' first release (a no-op once the columns exist). Memoized
+    per database so repeated calls are cheap.
     """
     conn = connect(db_path)
     try:
-        conn.executescript(RESULTS_SCHEMA)
-        for table, col, ddl in _MIGRATIONS:
-            _add_column_if_missing(conn, table, col, ddl)
+        key = getattr(getattr(conn, "info", None), "dbname", None) or str(db_path)
+        if key in _ensured_dbs:
+            return
+        conn.execute(RESULTS_SCHEMA)
+        conn.execute(LAW_INFO_SCHEMA)
+        conn.execute(_ADDITIVE_COLUMNS)
         conn.commit()
+        _ensured_dbs.add(key)
     finally:
         conn.close()
 
@@ -140,13 +148,12 @@ def store_result(
     now = datetime.now(timezone.utc).isoformat()
     conn = connect(db_path)
     try:
-        cur = conn.cursor()
-        cur.execute(
+        cur = conn.execute(
             "INSERT INTO eval_runs "
             "(rubric_name, contract_path, task_desc, score, max_score, all_pass, "
             " n_criteria, n_passed, summary, judge_model, scored_at, created_at, "
             " compare_run_id, prompt_name, prompt_type, variant_label, draft_text) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
             (
                 result["rubric"],
                 contract_path,
@@ -167,13 +174,13 @@ def store_result(
                 draft_text,
             ),
         )
-        run_id = cur.lastrowid
+        run_id = cur.fetchone()["id"]
 
         for i, c in enumerate(result.get("criteria_results", [])):
-            cur.execute(
+            conn.execute(
                 "INSERT INTO eval_criteria_results "
                 "(run_id, criterion_id, title, verdict, reasoning, ordinal) "
-                "VALUES (?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s)",
                 (run_id, c["id"], c.get("title"), c["verdict"], c.get("reasoning", ""), i),
             )
         conn.commit()
@@ -190,7 +197,7 @@ def list_runs(limit: int = 20, db_path=DEFAULT_DB) -> list[dict]:
         rows = conn.execute(
             "SELECT id, rubric_name, contract_path, score, all_pass, "
             "       n_passed, n_criteria, judge_model, scored_at "
-            "FROM eval_runs ORDER BY id DESC LIMIT ?",
+            "FROM eval_runs ORDER BY id DESC LIMIT %s",
             (limit,),
         ).fetchall()
     finally:
@@ -222,11 +229,11 @@ def store_compare(
         cur = conn.execute(
             "INSERT INTO compare_runs "
             "(label, contract_type, rubric_name, task_desc, gen_mode, n_drafts, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
             (label, contract_type, rubric_name, task_desc, gen_mode, n_drafts, now),
         )
         conn.commit()
-        return cur.lastrowid
+        return cur.fetchone()["id"]
     finally:
         conn.close()
 
@@ -239,7 +246,7 @@ def list_compares(limit: int = 20, db_path=DEFAULT_DB) -> list[dict]:
         rows = conn.execute(
             "SELECT id, label, contract_type, rubric_name, task_desc, gen_mode, "
             "       n_drafts, created_at "
-            "FROM compare_runs ORDER BY id DESC LIMIT ?",
+            "FROM compare_runs ORDER BY id DESC LIMIT %s",
             (limit,),
         ).fetchall()
     finally:
@@ -259,7 +266,7 @@ def get_compare(compare_id: int, db_path=DEFAULT_DB) -> dict:
     try:
         cr = conn.execute(
             "SELECT id, label, contract_type, rubric_name, task_desc, gen_mode, "
-            "       n_drafts, created_at FROM compare_runs WHERE id = ?",
+            "       n_drafts, created_at FROM compare_runs WHERE id = %s",
             (compare_id,),
         ).fetchone()
         if cr is None:
@@ -268,14 +275,14 @@ def get_compare(compare_id: int, db_path=DEFAULT_DB) -> dict:
             "SELECT id, rubric_name, contract_path, task_desc, score, max_score, "
             "       all_pass, n_criteria, n_passed, summary, judge_model, scored_at, "
             "       compare_run_id, prompt_name, prompt_type, variant_label "
-            "FROM eval_runs WHERE compare_run_id = ? ORDER BY id",
+            "FROM eval_runs WHERE compare_run_id = %s ORDER BY id",
             (compare_id,),
         ).fetchall()
         runs_out = []
         for r in runs:
             crits = conn.execute(
                 "SELECT criterion_id, title, verdict, reasoning, ordinal "
-                "FROM eval_criteria_results WHERE run_id = ? ORDER BY ordinal",
+                "FROM eval_criteria_results WHERE run_id = %s ORDER BY ordinal",
                 (r["id"],),
             ).fetchall()
             runs_out.append({**dict(r), "criteria_results": [dict(c) for c in crits]})
@@ -300,7 +307,7 @@ def get_run_draft(compare_id: int, run_id: int, db_path=DEFAULT_DB) -> dict:
     conn = connect(db_path)
     try:
         row = conn.execute(
-            "SELECT id, compare_run_id, prompt_name, draft_text FROM eval_runs WHERE id = ?",
+            "SELECT id, compare_run_id, prompt_name, draft_text FROM eval_runs WHERE id = %s",
             (run_id,),
         ).fetchone()
     finally:

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}语义搜索 · {{ t.nav.brand }}{% endblock %}
+{% block content %}
+<h1>语义搜索 / Semantic Search</h1>
+<p class="muted">检索合同模板与已生成草案中的相关条款。 / Search clauses across contract templates and drafts.</p>
+<form method="get" action="{{ url_for('page_search') }}" class="search-form">
+  <input type="text" name="q" value="{{ q }}" placeholder="搜索合同条款… (e.g. 保密义务 / confidentiality)" autofocus
+         style="min-width:60%">
+  <button type="submit" class="btn">搜索 / Search</button>
+</form>
+
+{% if error %}
+  <div class="flash error">搜索后端不可用 / search backend unavailable: {{ error }}</div>
+{% elif q %}
+  <p class="muted">找到 {{ results|length }} 条结果 · {{ results|length }} result(s)</p>
+  <ol class="search-results">
+  {% for r in results %}
+    <li>
+      <div class="src">
+        <code>{{ r.source_path }}</code>
+        {% if r.score is not none %}<span class="muted">(score {{ '%.3f'|format(r.score) }})</span>{% endif %}
+      </div>
+      <pre>{{ r.text }}</pre>
+    </li>
+  {% endfor %}
+  </ol>
+{% endif %}
+{% endblock %}

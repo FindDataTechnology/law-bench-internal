@@ -1,9 +1,9 @@
 """CRUD for evaluation rubrics and their criteria (local-authored).
 
-Reads/writes the SQLite schema created by scripts/extract_harbor_rules.py
-(`rubrics` / `criteria` tables in db/evaluation_rules.db). The read side reuses
-`src/eval/rubric.py`; this module adds the write side for locally-authored
-rubrics (``source = 'local'``).
+Reads/writes the schema created by scripts/extract_harbor_rules.py
+(`rubrics` / `criteria` tables in the PostgreSQL database addressed by
+``database_url``). The read side reuses `src/eval/rubric.py`; this module adds
+the write side for locally-authored rubrics (``source = 'local'``).
 
 Invariants enforced here (mirroring the ``evaluation-rules`` spec):
 
@@ -18,11 +18,10 @@ Invariants enforced here (mirroring the ``evaluation-rules`` spec):
 
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
-from src.settings import DEFAULT_DB  # single source of truth for the db path
+from src.settings import DEFAULT_DB  # retained as the legacy default param value
 
 from .db import connect, is_harbor, now_iso, renumber_criteria
 from .errors import (
@@ -38,10 +37,10 @@ from .errors import (
 # --------------------------------------------------------------------------- #
 
 
-def _get_rubric(conn: sqlite3.Connection, rubric_id: int) -> sqlite3.Row:
+def _get_rubric(conn, rubric_id: int) -> dict:
     row = conn.execute(
         "SELECT id, name, context, source, source_path, description, created_at "
-        "FROM rubrics WHERE id = ?",
+        "FROM rubrics WHERE id = %s",
         (rubric_id,),
     ).fetchone()
     if row is None:
@@ -49,15 +48,15 @@ def _get_rubric(conn: sqlite3.Connection, rubric_id: int) -> sqlite3.Row:
     return row
 
 
-def _get_rubric_by_name(conn: sqlite3.Connection, name: str) -> Optional[sqlite3.Row]:
+def _get_rubric_by_name(conn, name: str) -> Optional[dict]:
     return conn.execute(
         "SELECT id, name, context, source, source_path, description, created_at "
-        "FROM rubrics WHERE name = ?",
+        "FROM rubrics WHERE name = %s",
         (name,),
     ).fetchone()
 
 
-def _assert_local(conn: sqlite3.Connection, rubric_id: int) -> sqlite3.Row:
+def _assert_local(conn, rubric_id: int) -> dict:
     """Return the rubric row, raising if it is a read-only harbor rubric."""
     row = _get_rubric(conn, rubric_id)
     if is_harbor(row["source"]):
@@ -69,13 +68,11 @@ def _assert_local(conn: sqlite3.Connection, rubric_id: int) -> sqlite3.Row:
     return row
 
 
-def _assert_criterion_local(
-    conn: sqlite3.Connection, criterion_id: int
-) -> tuple[sqlite3.Row, sqlite3.Row]:
+def _assert_criterion_local(conn, criterion_id: int) -> tuple[dict, dict]:
     """Return (criterion row, rubric row), raising if the rubric is harbor."""
     crow = conn.execute(
         "SELECT id, rubric_id, name, description, guidance, ordinal "
-        "FROM criteria WHERE id = ?",
+        "FROM criteria WHERE id = %s",
         (criterion_id,),
     ).fetchone()
     if crow is None:
@@ -109,10 +106,10 @@ def _require_criteria_fields(
 
 
 def _check_duplicate_local_name(
-    conn: sqlite3.Connection, name: str, exclude_rubric_id: Optional[int] = None
+    conn, name: str, exclude_rubric_id: Optional[int] = None
 ) -> None:
     row = conn.execute(
-        "SELECT id FROM rubrics WHERE name = ? AND source = 'local'",
+        "SELECT id FROM rubrics WHERE name = %s AND source = 'local'",
         (name,),
     ).fetchone()
     if row is not None and row["id"] != exclude_rubric_id:
@@ -120,10 +117,10 @@ def _check_duplicate_local_name(
 
 
 def _check_duplicate_criterion_name(
-    conn: sqlite3.Connection, rubric_id: int, name: str, exclude_id: Optional[int] = None
+    conn, rubric_id: int, name: str, exclude_id: Optional[int] = None
 ) -> None:
     row = conn.execute(
-        "SELECT id FROM criteria WHERE rubric_id = ? AND name = ?",
+        "SELECT id FROM criteria WHERE rubric_id = %s AND name = %s",
         (rubric_id, name),
     ).fetchone()
     if row is not None and row["id"] != exclude_id:
@@ -132,11 +129,11 @@ def _check_duplicate_criterion_name(
         )
 
 
-def _detail(conn: sqlite3.Connection, rubric_id: int) -> dict:
+def _detail(conn, rubric_id: int) -> dict:
     row = _get_rubric(conn, rubric_id)
     crits = conn.execute(
         "SELECT id, name, description, guidance, ordinal FROM criteria "
-        "WHERE rubric_id = ? ORDER BY ordinal, id",
+        "WHERE rubric_id = %s ORDER BY ordinal, id",
         (rubric_id,),
     ).fetchall()
     return {
@@ -158,7 +155,7 @@ def _detail(conn: sqlite3.Connection, rubric_id: int) -> dict:
 # --------------------------------------------------------------------------- #
 
 
-def list_rubrics_with_counts(db_path: Path = DEFAULT_DB) -> list[dict]:
+def list_rubrics_with_counts(db_path: Any = DEFAULT_DB) -> list[dict]:
     """All rubrics with a derived criterion count, for the listing view."""
     conn = connect(db_path)
     try:
@@ -187,7 +184,7 @@ def list_rubrics_with_counts(db_path: Path = DEFAULT_DB) -> list[dict]:
         conn.close()
 
 
-def get_rubric_detail(name: str, db_path: Path = DEFAULT_DB) -> dict:
+def get_rubric_detail(name: str, db_path: Any = DEFAULT_DB) -> dict:
     """A rubric's metadata and ordered criteria, looked up by name."""
     conn = connect(db_path)
     try:
@@ -199,7 +196,7 @@ def get_rubric_detail(name: str, db_path: Path = DEFAULT_DB) -> dict:
         conn.close()
 
 
-def get_rubric_by_id(rubric_id: int, db_path: Path = DEFAULT_DB) -> dict:
+def get_rubric_by_id(rubric_id: int, db_path: Any = DEFAULT_DB) -> dict:
     """A rubric's metadata and ordered criteria, looked up by id."""
     conn = connect(db_path)
     try:
@@ -218,7 +215,7 @@ def create_rubric(
     context: str,
     description: Optional[str] = None,
     criteria: Optional[list[dict[str, str]]] = None,
-    db_path: Path = DEFAULT_DB,
+    db_path: Any = DEFAULT_DB,
 ) -> dict:
     """Create a local rubric (``source = 'local'``) with zero or more criteria.
 
@@ -242,15 +239,15 @@ def create_rubric(
         _check_duplicate_local_name(conn, name)
         cur = conn.execute(
             "INSERT INTO rubrics (name, context, source, source_path, description, "
-            "created_at) VALUES (?, ?, 'local', NULL, ?, ?)",
+            "created_at) VALUES (%s, %s, 'local', NULL, %s, %s) RETURNING id",
             (name, context, description, now_iso()),
         )
-        rubric_id = cur.lastrowid
+        rubric_id = cur.fetchone()["id"]
         for i, (cname, cdesc, cguid) in enumerate(validated):
             _check_duplicate_criterion_name(conn, rubric_id, cname)
             conn.execute(
                 "INSERT INTO criteria (rubric_id, name, description, guidance, "
-                "ordinal) VALUES (?, ?, ?, ?, ?)",
+                "ordinal) VALUES (%s, %s, %s, %s, %s)",
                 (rubric_id, cname, cdesc, cguid, i),
             )
         conn.commit()
@@ -264,7 +261,7 @@ def update_rubric(
     name: str,
     context: str,
     description: Optional[str] = None,
-    db_path: Path = DEFAULT_DB,
+    db_path: Any = DEFAULT_DB,
 ) -> dict:
     """Update a local rubric's name, context, and description (criteria untouched)."""
     name = require_name(name, "Rubric name")
@@ -276,7 +273,7 @@ def update_rubric(
         _assert_local(conn, rubric_id)
         _check_duplicate_local_name(conn, name, exclude_rubric_id=rubric_id)
         conn.execute(
-            "UPDATE rubrics SET name = ?, context = ?, description = ? WHERE id = ?",
+            "UPDATE rubrics SET name = %s, context = %s, description = %s WHERE id = %s",
             (name, context, description, rubric_id),
         )
         conn.commit()
@@ -285,12 +282,12 @@ def update_rubric(
     return get_rubric_by_id(rubric_id, db_path=db_path)
 
 
-def delete_rubric(rubric_id: int, db_path: Path = DEFAULT_DB) -> None:
+def delete_rubric(rubric_id: int, db_path: Any = DEFAULT_DB) -> None:
     """Delete a local rubric; its criteria cascade via FK ON DELETE CASCADE."""
     conn = connect(db_path)
     try:
         _assert_local(conn, rubric_id)
-        conn.execute("DELETE FROM rubrics WHERE id = ?", (rubric_id,))
+        conn.execute("DELETE FROM rubrics WHERE id = %s", (rubric_id,))
         conn.commit()
     finally:
         conn.close()
@@ -306,7 +303,7 @@ def add_criterion(
     name: str,
     description: str,
     guidance: str,
-    db_path: Path = DEFAULT_DB,
+    db_path: Any = DEFAULT_DB,
 ) -> dict:
     """Append a criterion to a local rubric at the next ordinal."""
     name, description, guidance = _require_criteria_fields(name, description, guidance)
@@ -315,15 +312,15 @@ def add_criterion(
         _assert_local(conn, rubric_id)
         _check_duplicate_criterion_name(conn, rubric_id, name)
         next_ordinal = conn.execute(
-            "SELECT COALESCE(MAX(ordinal), -1) + 1 FROM criteria WHERE rubric_id = ?",
+            "SELECT COALESCE(MAX(ordinal), -1) + 1 AS n FROM criteria WHERE rubric_id = %s",
             (rubric_id,),
-        ).fetchone()[0]
+        ).fetchone()["n"]
         cur = conn.execute(
             "INSERT INTO criteria (rubric_id, name, description, guidance, ordinal) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s) RETURNING id",
             (rubric_id, name, description, guidance, next_ordinal),
         )
-        cid = cur.lastrowid
+        cid = cur.fetchone()["id"]
         conn.commit()
     finally:
         conn.close()
@@ -342,7 +339,7 @@ def update_criterion(
     name: str,
     description: str,
     guidance: str,
-    db_path: Path = DEFAULT_DB,
+    db_path: Any = DEFAULT_DB,
 ) -> dict:
     """Update a criterion's name/description/guidance (ordinal untouched)."""
     name, description, guidance = _require_criteria_fields(name, description, guidance)
@@ -351,7 +348,7 @@ def update_criterion(
         crow, rubric = _assert_criterion_local(conn, criterion_id)
         _check_duplicate_criterion_name(conn, rubric["id"], name, exclude_id=criterion_id)
         conn.execute(
-            "UPDATE criteria SET name = ?, description = ?, guidance = ? WHERE id = ?",
+            "UPDATE criteria SET name = %s, description = %s, guidance = %s WHERE id = %s",
             (name, description, guidance, criterion_id),
         )
         conn.commit()
@@ -367,12 +364,12 @@ def update_criterion(
     }
 
 
-def delete_criterion(criterion_id: int, db_path: Path = DEFAULT_DB) -> None:
+def delete_criterion(criterion_id: int, db_path: Any = DEFAULT_DB) -> None:
     """Delete a criterion from a local rubric and renumber the survivors."""
     conn = connect(db_path)
     try:
         _, rubric = _assert_criterion_local(conn, criterion_id)
-        conn.execute("DELETE FROM criteria WHERE id = ?", (criterion_id,))
+        conn.execute("DELETE FROM criteria WHERE id = %s", (criterion_id,))
         renumber_criteria(conn, rubric["id"])
         conn.commit()
     finally:
@@ -380,7 +377,7 @@ def delete_criterion(criterion_id: int, db_path: Path = DEFAULT_DB) -> None:
 
 
 def reorder_criteria(
-    rubric_id: int, ordered_criterion_ids: list[int], db_path: Path = DEFAULT_DB
+    rubric_id: int, ordered_criterion_ids: list[int], db_path: Any = DEFAULT_DB
 ) -> list[int]:
     """Reassign ``ordinal`` to match the given order.
 
@@ -392,7 +389,7 @@ def reorder_criteria(
         existing = {
             r["id"]
             for r in conn.execute(
-                "SELECT id FROM criteria WHERE rubric_id = ?", (rubric_id,)
+                "SELECT id FROM criteria WHERE rubric_id = %s", (rubric_id,)
             ).fetchall()
         }
         ids = list(ordered_criterion_ids)
@@ -403,7 +400,7 @@ def reorder_criteria(
             )
         for i, cid in enumerate(ids):
             conn.execute(
-                "UPDATE criteria SET ordinal = ? WHERE id = ? AND rubric_id = ?",
+                "UPDATE criteria SET ordinal = %s WHERE id = %s AND rubric_id = %s",
                 (i, cid, rubric_id),
             )
         conn.commit()

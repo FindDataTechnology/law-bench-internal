@@ -4,7 +4,7 @@
 Storage and management of per-contract-type generation/drafting prompts.
 ## Requirements
 ### Requirement: Generation Prompt Storage
-The system SHALL store generation prompts in a `prompts` table within `db/evaluation_rules.db`. Each prompt SHALL have a unique `name`, a `contract_type` (e.g. `sale`), a `purpose` (e.g. `drafting`), a `content` body (the prompt text), a `source`, an optional `description`, and a `created_at` timestamp. The `prompts` table SHALL be created by the same schema source of truth that creates `rubrics` and `criteria` (`scripts/extract_harbor_rules.py`'s `SCHEMA`), so any seeder that calls `create_schema()` establishes it.
+The system SHALL store generation prompts in a `prompts` table within the PostgreSQL database addressed by the `database_url` environment variable. Each prompt SHALL have a unique `name`, a `contract_type` (e.g. `sale`), a `purpose` (e.g. `drafting`), a `content` body (the prompt text), a `source`, an optional `description`, and a `created_at` timestamp. The `prompts` table SHALL be created by the same schema source of truth that creates `rubrics` and `criteria` (`scripts/extract_harbor_rules.py`'s `SCHEMA`), so any seeder that calls `create_schema()` establishes it.
 
 #### Scenario: A prompt is stored with its fields
 - **WHEN** a generation prompt is inserted with name `draft_sale`, contract_type `sale`, purpose `drafting`, content body, and `source = local`
@@ -91,3 +91,34 @@ The system SHALL seed a matching set of 22 per-type drafting prompts for the pra
 - **WHEN** the practical prompt `contract_type` values and the practical rubric `<type>` segments are compared
 - **THEN** the two sets of type keys are identical
 - **AND** each `draft_<type>` prompt corresponds to exactly one `contract_<type>_v1` rubric
+
+### Requirement: Law-Refined Variant Drafting Prompts
+The system SHALL seed a second set of per-contract-type drafting prompts - the **law-refined** variants - one per contract type key (the same 41 keys covered by the baseline: 19 民法典 types + 22 practical types). Each SHALL be named `draft_<type>_v2`, with `contract_type` set to the type key (loose coupling, no foreign key), `purpose = drafting`, `source = local`, and `prompt_type = law-refined`. Each prompt's `content` SHALL be a Chinese drafting instruction whose mandatory-clause list is grounded in that type's law_info survey - explicitly naming the governing statutes, judicial interpretations, and (where relevant) article ranges (e.g. for `sale`: 《民法典》合同编第八章买卖合同第595–647条、法释〔2020〕17号、法释〔2023〕13号). The seeding script (`scripts/seed_contract_prompts.py`) SHALL seed the baseline `draft_<type>` prompts AND these `draft_<type>_v2` prompts in one idempotent pass, SHALL NOT modify any baseline `draft_<type>` row (upsert matches by name; the names differ), and SHALL NOT modify any row in `rubrics` or `criteria`.
+
+#### Scenario: Seed the 41 law-refined variant prompts
+- **WHEN** `seed_contract_prompts.py` runs against a database that already has the 41 baseline `draft_<type>` prompts
+- **THEN** 41 new `draft_<type>_v2` prompt rows are inserted with `contract_type` = the type key, `purpose = drafting`, `source = local`, and `prompt_type = law-refined`
+- **AND** each prompt's `content` names the governing statutes/interpretations drawn from that type's law_info survey
+- **AND** the 41 baseline `draft_<type>` prompts are unchanged
+
+#### Scenario: Re-seeding law-refined prompts is idempotent
+- **WHEN** `seed_contract_prompts.py` is run a second time
+- **THEN** the `prompts` row count is unchanged
+- **AND** no duplicate prompt rows are created
+- **AND** the `rubrics` and `criteria` row counts are unchanged
+
+#### Scenario: Baseline prompts are not modified by the v2 seed
+- **WHEN** `seed_contract_prompts.py` runs after the v2 variants already exist
+- **THEN** every baseline `draft_<type>` row retains its original `content` and `prompt_type = baseline`
+- **AND** no baseline row is overwritten by the seeder
+
+#### Scenario: Law-refined prompts are tagged and loosely coupled
+- **WHEN** the 41 `draft_<type>_v2` prompts are fetched
+- **THEN** each has `prompt_type = law-refined` and `contract_type` equal to its type key
+- **AND** no foreign key binds the prompt's `contract_type` to a rubric, so deleting or renaming a rubric does not invalidate the prompt
+
+#### Scenario: Law-refined prompts are usable in compare runs
+- **WHEN** a compare run is created using a `draft_<type>_v2` prompt
+- **THEN** the run's `prompt_name` and `prompt_type` snapshot columns record `draft_<type>_v2` and `law-refined` respectively
+- **AND** the baseline `draft_<type>` prompt can be compared against the v2 variant in the same compare run
+

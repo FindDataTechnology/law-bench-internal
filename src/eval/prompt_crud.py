@@ -1,18 +1,17 @@
 """CRUD for generation prompts (local-only; always editable, no harbor analog).
 
-Prompts live in the same SQLite DB as rubrics (``prompts`` table, created by
-scripts/extract_harbor_rules.py) but are always locally authored
+Prompts live in the same PostgreSQL database as rubrics (``prompts`` table,
+created by scripts/extract_harbor_rules.py) but are always locally authored
 (``source = 'local'``) and freely editable - there is no harbor analog and no
 read-only guard.
 """
 
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
-from src.settings import DEFAULT_DB  # single source of truth for the db path
+from src.settings import DEFAULT_DB  # retained as the legacy default param value
 
 from .db import connect, now_iso
 from .errors import ConflictError, NotFoundError, ValidationError
@@ -39,17 +38,17 @@ def _require_prompt_fields(
 
 
 def _check_duplicate_prompt_name(
-    conn: sqlite3.Connection, name: str, exclude_id: Optional[int] = None
+    conn, name: str, exclude_id: Optional[int] = None
 ) -> None:
-    row = conn.execute("SELECT id FROM prompts WHERE name = ?", (name,)).fetchone()
+    row = conn.execute("SELECT id FROM prompts WHERE name = %s", (name,)).fetchone()
     if row is not None and row["id"] != exclude_id:
         raise ConflictError(f"A prompt named {name!r} already exists.")
 
 
-def _get_prompt(conn: sqlite3.Connection, prompt_id: int) -> sqlite3.Row:
+def _get_prompt(conn, prompt_id: int) -> dict:
     row = conn.execute(
         "SELECT id, name, contract_type, purpose, content, source, prompt_type, "
-        "description, created_at FROM prompts WHERE id = ?",
+        "description, created_at FROM prompts WHERE id = %s",
         (prompt_id,),
     ).fetchone()
     if row is None:
@@ -57,15 +56,15 @@ def _get_prompt(conn: sqlite3.Connection, prompt_id: int) -> sqlite3.Row:
     return row
 
 
-def _get_prompt_by_name(conn: sqlite3.Connection, name: str) -> Optional[sqlite3.Row]:
+def _get_prompt_by_name(conn, name: str) -> Optional[dict]:
     return conn.execute(
         "SELECT id, name, contract_type, purpose, content, source, prompt_type, "
-        "description, created_at FROM prompts WHERE name = ?",
+        "description, created_at FROM prompts WHERE name = %s",
         (name,),
     ).fetchone()
 
 
-def _prompt_detail(row: sqlite3.Row) -> dict:
+def _prompt_detail(row: dict) -> dict:
     return {
         "id": row["id"],
         "name": row["name"],
@@ -79,7 +78,7 @@ def _prompt_detail(row: sqlite3.Row) -> dict:
     }
 
 
-def list_prompts(db_path: Path = DEFAULT_DB) -> list[dict]:
+def list_prompts(db_path: Any = DEFAULT_DB) -> list[dict]:
     """All prompts (without the content body), for the listing view."""
     conn = connect(db_path)
     try:
@@ -92,7 +91,7 @@ def list_prompts(db_path: Path = DEFAULT_DB) -> list[dict]:
         conn.close()
 
 
-def get_prompt(name: str, db_path: Path = DEFAULT_DB) -> dict:
+def get_prompt(name: str, db_path: Any = DEFAULT_DB) -> dict:
     """A prompt's full record (incl. content), looked up by name."""
     conn = connect(db_path)
     try:
@@ -104,7 +103,7 @@ def get_prompt(name: str, db_path: Path = DEFAULT_DB) -> dict:
         conn.close()
 
 
-def get_prompt_by_id(prompt_id: int, db_path: Path = DEFAULT_DB) -> dict:
+def get_prompt_by_id(prompt_id: int, db_path: Any = DEFAULT_DB) -> dict:
     """A prompt's full record (incl. content), looked up by id."""
     conn = connect(db_path)
     try:
@@ -120,7 +119,7 @@ def create_prompt(
     content: str,
     description: Optional[str] = None,
     prompt_type: Optional[str] = None,
-    db_path: Path = DEFAULT_DB,
+    db_path: Any = DEFAULT_DB,
 ) -> dict:
     """Create a local prompt (``source = 'local'``). Returns the new record."""
     name, contract_type, purpose, content = _require_prompt_fields(
@@ -132,10 +131,11 @@ def create_prompt(
         _check_duplicate_prompt_name(conn, name)
         cur = conn.execute(
             "INSERT INTO prompts (name, contract_type, purpose, content, source, "
-            "prompt_type, description, created_at) VALUES (?, ?, ?, ?, 'local', ?, ?, ?)",
+            "prompt_type, description, created_at) "
+            "VALUES (%s, %s, %s, %s, 'local', %s, %s, %s) RETURNING id",
             (name, contract_type, purpose, content, prompt_type, description, now_iso()),
         )
-        pid = cur.lastrowid
+        pid = cur.fetchone()["id"]
         conn.commit()
     finally:
         conn.close()
@@ -150,7 +150,7 @@ def update_prompt(
     content: str,
     description: Optional[str] = None,
     prompt_type: Optional[str] = None,
-    db_path: Path = DEFAULT_DB,
+    db_path: Any = DEFAULT_DB,
 ) -> dict:
     """Update a prompt's name, contract_type, purpose, content, prompt_type, and description."""
     name, contract_type, purpose, content = _require_prompt_fields(
@@ -162,8 +162,8 @@ def update_prompt(
         _get_prompt(conn, prompt_id)  # raises NotFoundError if missing
         _check_duplicate_prompt_name(conn, name, exclude_id=prompt_id)
         conn.execute(
-            "UPDATE prompts SET name = ?, contract_type = ?, purpose = ?, "
-            "content = ?, prompt_type = ?, description = ? WHERE id = ?",
+            "UPDATE prompts SET name = %s, contract_type = %s, purpose = %s, "
+            "content = %s, prompt_type = %s, description = %s WHERE id = %s",
             (name, contract_type, purpose, content, prompt_type, description, prompt_id),
         )
         conn.commit()
@@ -172,12 +172,12 @@ def update_prompt(
     return get_prompt_by_id(prompt_id, db_path=db_path)
 
 
-def delete_prompt(prompt_id: int, db_path: Path = DEFAULT_DB) -> None:
+def delete_prompt(prompt_id: int, db_path: Any = DEFAULT_DB) -> None:
     """Delete a prompt. No child table, so nothing cascades."""
     conn = connect(db_path)
     try:
         _get_prompt(conn, prompt_id)  # raises NotFoundError if missing
-        conn.execute("DELETE FROM prompts WHERE id = ?", (prompt_id,))
+        conn.execute("DELETE FROM prompts WHERE id = %s", (prompt_id,))
         conn.commit()
     finally:
         conn.close()

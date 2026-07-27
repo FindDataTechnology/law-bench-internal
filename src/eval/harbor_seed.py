@@ -14,20 +14,24 @@ Run as a module to (re)seed a database::
 
     python -m src.eval.harbor_seed --db /app/db/evaluation_rules.db
     python -m src.eval.harbor_seed --db /path/to/other.db
+
+The ``--db`` flag is retained for CLI compatibility but is no longer a file
+path: the target is the PostgreSQL database addressed by ``database_url``.
 """
 
 from __future__ import annotations
 
 import argparse
 import re
-import sqlite3
 import subprocess
 import sys
 import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
 
-from src.settings import DEFAULT_DB  # single source of truth for the db path
+from src.settings import DEFAULT_DB  # retained as the legacy default param value
+
+from .db import column_exists, connect
 
 # --------------------------------------------------------------------------- #
 # Bundled seed (fallback when harbor is not installed)
@@ -77,7 +81,7 @@ HARBOR_RUBRICS: list[dict[str, str]] = [
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS rubrics (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name        TEXT NOT NULL,
     context     TEXT NOT NULL,
     source      TEXT NOT NULL,
@@ -87,8 +91,8 @@ CREATE TABLE IF NOT EXISTS rubrics (
 );
 
 CREATE TABLE IF NOT EXISTS criteria (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    rubric_id   INTEGER NOT NULL REFERENCES rubrics(id) ON DELETE CASCADE,
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    rubric_id   BIGINT NOT NULL REFERENCES rubrics(id) ON DELETE CASCADE,
     name        TEXT NOT NULL,
     description TEXT NOT NULL,
     guidance    TEXT NOT NULL,
@@ -97,7 +101,7 @@ CREATE TABLE IF NOT EXISTS criteria (
 );
 
 CREATE TABLE IF NOT EXISTS prompts (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name          TEXT NOT NULL UNIQUE,
     contract_type TEXT NOT NULL,
     purpose       TEXT NOT NULL,
@@ -107,6 +111,16 @@ CREATE TABLE IF NOT EXISTS prompts (
     description   TEXT,
     created_at    TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS law_info (
+    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    contract_type TEXT NOT NULL,
+    source        TEXT NOT NULL,
+    zh_name       TEXT,
+    content       TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    UNIQUE(contract_type, source)
+);
 """
 
 
@@ -115,22 +129,21 @@ def project_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _ensure_column(conn: sqlite3.Connection, table: str, col: str, ddl: str) -> None:
+def _ensure_column(conn, table: str, col: str, ddl: str) -> None:
     """Add ``col`` to ``table`` if it is missing (idempotent additive migration).
 
     ``CREATE TABLE IF NOT EXISTS`` will not add columns to a table that already
     exists, so additive columns added after a table's first release need a
     guarded ``ALTER TABLE``. This keeps ``create_schema`` self-healing for
-    databases created before the column existed (e.g. the dev DB predating
+    databases created before the column existed (e.g. predating
     ``prompts.prompt_type``).
     """
-    cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
-    if col not in cols:
+    if not column_exists(conn, table, col):
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
 
 
-def create_schema(conn: sqlite3.Connection) -> None:
-    conn.executescript(SCHEMA)
+def create_schema(conn) -> None:
+    conn.execute(SCHEMA)
     # Converge additive columns on pre-existing tables (no-op on fresh DBs).
     _ensure_column(conn, "prompts", "prompt_type", "TEXT")
     conn.commit()
@@ -209,7 +222,7 @@ def load_criteria(toml_path: Path) -> list[dict[str, object]]:
 
 
 def upsert_harbor_rubric(
-    conn: sqlite3.Connection,
+    conn,
     rubric: dict[str, str],
     criteria: list[dict[str, object]],
     source: str,
@@ -221,35 +234,34 @@ def upsert_harbor_rubric(
     rubric that happens to share a name is never touched. Local/runtime rows
     are preserved.
     """
-    cur = conn.cursor()
-    row = cur.execute(
-        "SELECT id FROM rubrics WHERE name = ? AND source LIKE 'harbor:%'",
+    row = conn.execute(
+        "SELECT id FROM rubrics WHERE name = %s AND source LIKE 'harbor:%%'",
         (rubric["name"],),
     ).fetchone()
     if row:
-        rubric_id = row[0]
-        cur.execute(
-            "UPDATE rubrics SET context = ?, source = ?, source_path = ?, "
-            "description = ? WHERE id = ?",
+        rubric_id = row["id"]
+        conn.execute(
+            "UPDATE rubrics SET context = %s, source = %s, source_path = %s, "
+            "description = %s WHERE id = %s",
             (rubric["context"], source, rubric["source_path"],
              rubric["description"], rubric_id),
         )
     else:
-        cur.execute(
+        cur = conn.execute(
             "INSERT INTO rubrics (name, context, source, source_path, "
-            "description, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            "description, created_at) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
             (rubric["name"], rubric["context"], source, rubric["source_path"],
              rubric["description"], now_iso),
         )
-        rubric_id = cur.lastrowid
+        rubric_id = cur.fetchone()["id"]
 
     # Replace this harbor rubric's criteria wholesale so they always mirror the
     # TOML exactly (handles added/removed/renamed criteria on re-extraction).
-    cur.execute("DELETE FROM criteria WHERE rubric_id = ?", (rubric_id,))
+    conn.execute("DELETE FROM criteria WHERE rubric_id = %s", (rubric_id,))
     for c in criteria:
-        cur.execute(
+        conn.execute(
             "INSERT INTO criteria (rubric_id, name, description, guidance, "
-            "ordinal) VALUES (?, ?, ?, ?, ?)",
+            "ordinal) VALUES (%s, %s, %s, %s, %s)",
             (rubric_id, c["name"], c["description"], c["guidance"], c["ordinal"]),
         )
     return rubric_id
@@ -293,20 +305,20 @@ def load_harbor_rubrics() -> tuple[list[tuple[dict[str, str], list[dict[str, obj
     return loaded, "bundled"
 
 
-def ensure_harbor_rubrics(db_path: Path = DEFAULT_DB) -> dict:
-    """Idempotently ensure harbor's rubrics are present in ``db_path``.
+def ensure_harbor_rubrics(db_path=DEFAULT_DB) -> dict:
+    """Idempotently ensure harbor's rubrics are present in the target database.
 
-    Creates the schema if absent, then upserts every harbor rubric (from the
-    installed harbor package when available, else the bundled seed). The heal is
-    scoped to ``source LIKE 'harbor:%'`` rows; local rubrics, prompts, and
-    evaluation-run data are never modified or deleted.
+    The target is the PostgreSQL database addressed by ``database_url``;
+    ``db_path`` is accepted for signature compatibility (an optional live
+    connection may be passed) but is no longer a file path. Creates the schema
+    if absent, then upserts every harbor rubric (from the installed harbor
+    package when available, else the bundled seed). The heal is scoped to
+    ``source LIKE 'harbor:%'`` rows; local rubrics, prompts, and evaluation-run
+    data are never modified or deleted.
 
     Returns a summary: ``{"rubrics": int, "criteria": int, "source_origin": str}``.
     """
-    db_path = Path(db_path)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA foreign_keys = ON")
+    conn = connect(db_path)
     try:
         create_schema(conn)
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -325,19 +337,19 @@ def ensure_harbor_rubrics(db_path: Path = DEFAULT_DB) -> dict:
 # Reporting + CLI
 # --------------------------------------------------------------------------- #
 
-def print_summary(conn: sqlite3.Connection) -> None:
-    cur = conn.cursor()
-    rows = cur.execute(
+def print_summary(conn) -> None:
+    rows = conn.execute(
         "SELECT r.name, r.context, r.source, r.source_path, "
         "(SELECT COUNT(*) FROM criteria c WHERE c.rubric_id = r.id) AS n "
         "FROM rubrics r ORDER BY r.id"
     ).fetchall()
     print(f"\nRubrics ({len(rows)}):")
-    for name, context, source, source_path, n in rows:
-        print(f"  - {name:18} [{context:8}] {source:18} ({n} criteria)  <- {source_path}")
-    total = cur.execute("SELECT COUNT(*) FROM criteria").fetchone()[0]
+    for r in rows:
+        print(f"  - {r['name']:18} [{r['context']:8}] {r['source']:18} "
+              f"({r['n']} criteria)  <- {r['source_path']}")
+    total = conn.execute("SELECT COUNT(*) AS n FROM criteria").fetchone()["n"]
     print(f"\nTotal criteria: {total}")
-    n_prompts = cur.execute("SELECT COUNT(*) FROM prompts").fetchone()[0]
+    n_prompts = conn.execute("SELECT COUNT(*) AS n FROM prompts").fetchone()["n"]
     print(f"Total prompts: {n_prompts}")
 
 
@@ -349,7 +361,8 @@ def main() -> int:
         "--db",
         type=Path,
         default=DEFAULT_DB,
-        help=f"SQLite DB path (default: {DEFAULT_DB})",
+        help="(legacy, ignored) formerly the SQLite DB path; the target is now "
+             "the PostgreSQL database addressed by database_url.",
     )
     args = ap.parse_args()
 
@@ -363,14 +376,14 @@ def main() -> int:
             f"seed (pinned to harbor:{BUNDLED_HARBOR_VERSION})."
         )
 
-    conn = sqlite3.connect(args.db)
+    conn = connect(args.db)
     try:
         print_summary(conn)
     finally:
         conn.close()
     print(
         f"\nEnsured {summary['rubrics']} harbor rubrics / {summary['criteria']} criteria "
-        f"(origin={origin}) in {args.db}"
+        f"(origin={origin})"
     )
     return 0
 

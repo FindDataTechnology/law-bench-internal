@@ -82,6 +82,27 @@ def _rubric(type_key: str, description: str, extra: list[dict[str, str]]) -> dic
     }
 
 
+def _v2_rubric(v1: dict, citation: str) -> dict:
+    """Law-refined v2 variant of a baseline (v1) rubric.
+
+    Same v1 criteria (4 shared base + type-specific) plus one
+    ``legal_basis_citation`` criterion whose guidance cites the governing
+    statutes/interpretations from the law_info survey. Named
+    ``contract_<type>_v2`` so the v1 rubric is untouched.
+    """
+    legal_basis = _c(
+        "legal_basis_citation",
+        "是否引用该合同类型现行有效的核心法律法规与司法解释？",
+        f"PASS if 引用现行有效的核心法律法规与司法解释（{citation}）；FAIL if 未引用、引用已废止法规或法释文号错误。",
+    )
+    return {
+        "name": v1["name"].replace("_v1", "_v2"),
+        "context": v1["context"],
+        "description": f"{v1['description']}（法律精修版）",
+        "criteria": v1["criteria"] + [legal_basis],
+    }
+
+
 # Per-class rubrics. Two sets: 19 民法典 typical types + 22 practical (中国合同
 # 分类法 Part 2, non-overlapping) types. Type-specific criteria from each type's
 # governing statute (民法典 for set 1; 公司法/劳动合同法/保险法/… for set 2).
@@ -638,16 +659,31 @@ def main() -> None:
     ap.add_argument("--db", type=Path, default=project_root() / DEFAULT_DB)
     args = ap.parse_args()
 
-    conn = sqlite3.connect(args.db)
-    conn.execute("PRAGMA foreign_keys = ON")
+    from src.eval.db import connect
+    from src.eval.law_refined_citations import LAW_REFINED_CITATIONS
+
+    conn = connect()
     try:
         create_schema(conn)
         now_iso = datetime.now(timezone.utc).isoformat()
         for rubric in RUBRICS:
             rid = upsert_local_rubric(conn, rubric, now_iso)
             print(f"  upserted {rubric['name']:34} -> {len(rubric['criteria'])} criteria (rubric_id={rid})")
+        # Law-refined v2 variants: v1 criteria + a legal_basis_citation
+        # criterion citing the governing statutes from the law_info survey.
+        # v1 rubrics are untouched (the v2 names differ from the v1 names).
+        n_v2 = 0
+        for rubric in RUBRICS:
+            type_key = rubric["name"][len("contract_"):-len("_v1")]
+            citation = LAW_REFINED_CITATIONS.get(type_key)
+            if not citation:
+                continue
+            v2 = _v2_rubric(rubric, citation)
+            rid = upsert_local_rubric(conn, v2, now_iso)
+            print(f"  upserted {v2['name']:34} -> {len(v2['criteria'])} criteria (rubric_id={rid})")
+            n_v2 += 1
         conn.commit()
-        print(f"\nSeeded {len(RUBRICS)} per-class contract rubrics into {args.db}")
+        print(f"\nSeeded {len(RUBRICS)} baseline (v1) + {n_v2} law-refined (v2) contract rubrics into {args.db}")
         print_summary(conn)
     finally:
         conn.close()

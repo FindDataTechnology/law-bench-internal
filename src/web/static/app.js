@@ -33,25 +33,30 @@ function labelFor(kind, value) {
 }
 
 // Localized display title for a seeded prompt name draft_<type_key> (zh:
-// "<type>起草", en: "<type> Drafting"). Falls back to the raw name otherwise.
+// "<type>起草", en: "<type> Drafting"). A versioned variant draft_<type>_v<N>
+// appends " v<N>" to disambiguate the law-refined variant from baseline.
+// Falls back to the raw name otherwise.
 function titleForPrompt(name) {
   name = name || '';
-  const m = /^draft_([a-z_]+?)(?:_v\d+)?$/.exec(name);
+  const m = /^draft_([a-z_]+?)(?:_v(\d+))?$/.exec(name);
   if (!m) return name;
   const ct = LABELS['contract_type'] || {};
   if (!Object.prototype.hasOwnProperty.call(ct, m[1])) return name;
-  return (window.__LANG__ === 'zh') ? ct[m[1]] + '起草' : ct[m[1]] + ' Drafting';
+  const base = (window.__LANG__ === 'zh') ? ct[m[1]] + '起草' : ct[m[1]] + ' Drafting';
+  return m[2] ? base + ' v' + m[2] : base;
 }
 
 // Localized display title for a seeded rubric name contract_<type_key>_vN (zh:
-// "<type>评价规则", en: "<type> Rubric"). Falls back to the raw name otherwise.
+// "<type>评价规则 vN", en: "<type> Rubric vN"). The " vN" suffix always appears
+// so v1 and v2 variants are distinguishable. Falls back to the raw name otherwise.
 function titleForRubric(name) {
   name = name || '';
-  const m = /^contract_([a-z_]+?)_v\d+$/.exec(name);
+  const m = /^contract_([a-z_]+?)_v(\d+)$/.exec(name);
   if (!m) return name;
   const ct = LABELS['contract_type'] || {};
   if (!Object.prototype.hasOwnProperty.call(ct, m[1])) return name;
-  return (window.__LANG__ === 'zh') ? ct[m[1]] + '评价规则' : ct[m[1]] + ' Rubric';
+  const base = (window.__LANG__ === 'zh') ? ct[m[1]] + '评价规则' : ct[m[1]] + ' Rubric';
+  return base + ' v' + m[2];
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -87,7 +92,7 @@ function makeCriterionRow() {
     '<strong>' + tr('crit_row.new', 'New criterion') + '</strong>' +
     '<button type="button" class="btn btn-sm btn-danger" data-remove-row>' + tr('crit_row.remove', 'Remove') + '</button>' +
     '</div>' +
-    '<div class="row"><label>' + tr('crit_row.name', 'Name') + '</label><input type="text" name="criteria_name" required placeholder="e.g. party_identification"></div>' +
+    '<div class="row"><label>' + tr('crit_row.name', 'Name') + '</label><input type="text" name="criteria_name" required placeholder="' + tr('crit_row.name_placeholder', 'e.g. party_identification') + '"></div>' +
     '<div class="grid2">' +
     '<div class="row"><label>' + tr('crit_row.description', 'Description') + '</label><textarea name="criteria_description" required></textarea></div>' +
     '<div class="row"><label>' + tr('crit_row.guidance', 'Guidance') + '</label><textarea name="criteria_guidance" required></textarea></div>' +

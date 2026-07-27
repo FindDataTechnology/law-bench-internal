@@ -9,7 +9,6 @@ user-authored values. Also asserts the JSON API still returns raw machine keys
 
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -19,40 +18,34 @@ from src.eval.store import ensure_schema as ensure_store_schema
 _NOW = "2026-01-01T00:00:00+00:00"
 
 
-def _prompt(db: Path, name, contract_type="sale", purpose="drafting",
+def _prompt(db, name, contract_type="sale", purpose="drafting",
             prompt_type="baseline", description="d"):
-    conn = sqlite3.connect(db)
-    conn.execute(
+    db.execute(
         "INSERT INTO prompts (name, contract_type, purpose, content, source, "
-        "prompt_type, description, created_at) VALUES (?, ?, ?, 'c', 'local', ?, ?, ?)",
+        "prompt_type, description, created_at) VALUES (%s, %s, %s, 'c', 'local', %s, %s, %s)",
         (name, contract_type, purpose, prompt_type, description, _NOW),
     )
-    conn.commit()
-    conn.close()
+    db.commit()
 
 
-def _rubric(db: Path, name, context="contract", source="local"):
-    conn = sqlite3.connect(db)
-    conn.execute(
+def _rubric(db, name, context="contract", source="local"):
+    db.execute(
         "INSERT INTO rubrics (name, context, source, source_path, description, "
-        "created_at) VALUES (?, ?, ?, NULL, 'd', ?)",
+        "created_at) VALUES (%s, %s, %s, NULL, 'd', %s)",
         (name, context, source, _NOW),
     )
-    conn.commit()
-    conn.close()
+    db.commit()
 
 
-def _compare(db: Path, contract_type="sale", rubric_name="contract_sale_v1",
+def _compare(db, contract_type="sale", rubric_name="contract_sale_v1",
              gen_mode="drafter-only"):
-    ensure_store_schema(db)  # creates compare_runs table (not in the fixture schema)
-    conn = sqlite3.connect(db)
-    conn.execute(
+    ensure_store_schema(db)  # creates compare_runs table (idempotent)
+    db.execute(
         "INSERT INTO compare_runs (label, contract_type, rubric_name, task_desc, "
-        "gen_mode, n_drafts, created_at) VALUES ('test', ?, ?, 't', ?, 1, ?)",
+        "gen_mode, n_drafts, created_at) VALUES ('test', %s, %s, 't', %s, 1, %s)",
         (contract_type, rubric_name, gen_mode, _NOW),
     )
-    conn.commit()
-    conn.close()
+    db.commit()
 
 
 # --- prompts list / detail -------------------------------------------------- #
@@ -100,7 +93,7 @@ def test_prompt_detail_localized_zh(app_client: TestClient, seeded_db: Path):
 def test_rubrics_list_localized_zh(app_client: TestClient, seeded_db: Path):
     _rubric(seeded_db, "contract_sale_v1")
     html = app_client.get("/rubrics?lang=zh").text
-    assert "<strong>买卖合同评价规则</strong>" in html
+    assert "<strong>买卖合同评价规则 v1</strong>" in html
     assert "/rubrics/contract_sale_v1" in html
     assert "<code>合同</code>" in html          # context label
 
@@ -108,7 +101,7 @@ def test_rubrics_list_localized_zh(app_client: TestClient, seeded_db: Path):
 def test_rubrics_list_localized_en(app_client: TestClient, seeded_db: Path):
     _rubric(seeded_db, "contract_sale_v1")
     html = app_client.get("/rubrics?lang=en").text
-    assert "<strong>Sale Rubric</strong>" in html
+    assert "<strong>Sale Rubric v1</strong>" in html
     assert "<code>Contract</code>" in html
 
 
@@ -136,7 +129,7 @@ def test_compare_list_localized_zh(app_client: TestClient, seeded_db: Path):
     _compare(seeded_db)
     html = app_client.get("/compare?lang=zh").text
     assert "<code>买卖合同</code>" in html                # contract_type
-    assert "<code>买卖合同评价规则</code>" in html         # rubric_name title
+    assert "<code>买卖合同评价规则 v1</code>" in html         # rubric_name title
     assert "<code>仅起草</code>" in html                   # gen_mode
 
 
@@ -144,7 +137,7 @@ def test_compare_list_localized_en(app_client: TestClient, seeded_db: Path):
     _compare(seeded_db)
     html = app_client.get("/compare?lang=en").text
     assert "<code>Sale</code>" in html
-    assert "<code>Sale Rubric</code>" in html
+    assert "<code>Sale Rubric v1</code>" in html
     assert "<code>Drafter-only</code>" in html
 
 

@@ -1,15 +1,10 @@
-"""Unit tests for src/eval/manage.py against a throwaway SQLite DB.
+"""Unit tests for src/eval/manage.py against a throwaway Postgres DB.
 
-Loads the real schema from scripts/extract_harbor_rules.py (single source of
-truth), seeds one harbor and one local rubric, then exercises the CRUD + guard
-behavior.
+The shared ``seeded_db`` fixture (conftest.py) builds the real schema and seeds
+one harbor and one local rubric; this module exercises the CRUD + guard behavior.
 """
 
 from __future__ import annotations
-
-import importlib.util
-import sqlite3
-from pathlib import Path
 
 import pytest
 
@@ -21,73 +16,25 @@ from src.eval.manage import (
     ValidationError,
 )
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-
-
-def _load_extract_module():
-    spec = importlib.util.spec_from_file_location(
-        "extract_harbor_rules", REPO_ROOT / "scripts" / "extract_harbor_rules.py"
-    )
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
 
 @pytest.fixture
-def db(tmp_path: Path) -> Path:
-    """A temp DB with the real schema + one harbor and one local rubric."""
-    extract = _load_extract_module()
-    db_path = tmp_path / "test_rules.db"
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA foreign_keys = ON")
-    extract.create_schema(conn)
-    now = "2026-01-01T00:00:00+00:00"
-
-    conn.execute(
-        "INSERT INTO rubrics (name, context, source, source_path, description, created_at) "
-        "VALUES ('h_rubric', 'check', 'harbor:v0.20.0', 'p.toml', 'harbor test', ?)",
-        (now,),
-    )
-    h_id = conn.execute(
-        "SELECT id FROM rubrics WHERE name = 'h_rubric'"
-    ).fetchone()[0]
-    conn.execute(
-        "INSERT INTO criteria (rubric_id, name, description, guidance, ordinal) "
-        "VALUES (?, 'h_c1', 'hd', 'hg', 0)",
-        (h_id,),
-    )
-
-    conn.execute(
-        "INSERT INTO rubrics (name, context, source, source_path, description, created_at) "
-        "VALUES ('l_rubric', 'contract', 'local', NULL, 'local test', ?)",
-        (now,),
-    )
-    l_id = conn.execute(
-        "SELECT id FROM rubrics WHERE name = 'l_rubric'"
-    ).fetchone()[0]
-    for i, name in enumerate(["c1", "c2"]):
-        conn.execute(
-            "INSERT INTO criteria (rubric_id, name, description, guidance, ordinal) "
-            "VALUES (?, ?, 'd', 'g', ?)",
-            (l_id, name, i),
-        )
-    conn.commit()
-    conn.close()
-    return db_path
+def db(seeded_db):
+    """The shared seeded throwaway DB connection (alias for readability)."""
+    return seeded_db
 
 
-def _local_id(db: Path) -> int:
+def _local_id(db) -> int:
     return M.get_rubric_detail("l_rubric", db_path=db)["id"]
 
 
-def _harbor_id(db: Path) -> int:
+def _harbor_id(db) -> int:
     return M.get_rubric_detail("h_rubric", db_path=db)["id"]
 
 
 # --- create ---------------------------------------------------------------- #
 
 
-def test_create_local_rubric_with_criteria(db: Path):
+def test_create_local_rubric_with_criteria(db):
     created = M.create_rubric(
         "new_rubric",
         "contract",
@@ -104,17 +51,17 @@ def test_create_local_rubric_with_criteria(db: Path):
     assert [c["ordinal"] for c in created["criteria"]] == [0, 1]
 
 
-def test_create_rejects_duplicate_local_name(db: Path):
+def test_create_rejects_duplicate_local_name(db):
     with pytest.raises(ConflictError):
         M.create_rubric("l_rubric", "contract", "dup", [], db_path=db)
 
 
-def test_create_rejects_empty_name(db: Path):
+def test_create_rejects_empty_name(db):
     with pytest.raises(ValidationError):
         M.create_rubric("  ", "contract", "x", [], db_path=db)
 
 
-def test_create_rejects_criterion_missing_fields(db: Path):
+def test_create_rejects_criterion_missing_fields(db):
     with pytest.raises(ValidationError):
         M.create_rubric("ok", "contract", "x", [{"name": "a", "description": "", "guidance": "g"}], db_path=db)
 
@@ -122,18 +69,18 @@ def test_create_rejects_criterion_missing_fields(db: Path):
 # --- update ---------------------------------------------------------------- #
 
 
-def test_update_local_rubric_keeps_criteria(db: Path):
+def test_update_local_rubric_keeps_criteria(db):
     updated = M.update_rubric(_local_id(db), "l_renamed", "contract2", "desc2", db_path=db)
     assert updated["name"] == "l_renamed"
     assert [c["name"] for c in updated["criteria"]] == ["c1", "c2"]
 
 
-def test_update_rejects_harbor(db: Path):
+def test_update_rejects_harbor(db):
     with pytest.raises(HarborReadOnlyError):
         M.update_rubric(_harbor_id(db), "x", "check", "x", db_path=db)
 
 
-def test_update_rejects_duplicate_name(db: Path):
+def test_update_rejects_duplicate_name(db):
     # renaming l_rubric to h_rubric is allowed (different source), but renaming
     # to another LOCAL rubric's name is a conflict - create a second local one.
     M.create_rubric("other_local", "contract", "o", [], db_path=db)
@@ -144,21 +91,19 @@ def test_update_rejects_duplicate_name(db: Path):
 # --- delete ---------------------------------------------------------------- #
 
 
-def test_delete_local_rubric_cascades(db: Path):
+def test_delete_local_rubric_cascades(db):
     lid = _local_id(db)
     M.delete_rubric(lid, db_path=db)
     with pytest.raises(NotFoundError):
         M.get_rubric_by_id(lid, db_path=db)
-    # criteria are gone too
-    conn = sqlite3.connect(db)
-    n = conn.execute(
-        "SELECT COUNT(*) FROM criteria WHERE rubric_id = ?", (lid,)
-    ).fetchone()[0]
-    conn.close()
+    # criteria are gone too (cascade)
+    n = db.execute(
+        "SELECT COUNT(*) AS n FROM criteria WHERE rubric_id = %s", (lid,)
+    ).fetchone()["n"]
     assert n == 0
 
 
-def test_delete_rejects_harbor(db: Path):
+def test_delete_rejects_harbor(db):
     with pytest.raises(HarborReadOnlyError):
         M.delete_rubric(_harbor_id(db), db_path=db)
 
@@ -166,30 +111,30 @@ def test_delete_rejects_harbor(db: Path):
 # --- criteria -------------------------------------------------------------- #
 
 
-def test_add_criterion_appends_at_next_ordinal(db: Path):
+def test_add_criterion_appends_at_next_ordinal(db):
     c = M.add_criterion(_local_id(db), "c3", "d3", "g3", db_path=db)
     assert c["ordinal"] == 2
     assert M.get_rubric_detail("l_rubric", db_path=db)["criterion_count"] == 3
 
 
-def test_add_criterion_rejects_harbor(db: Path):
+def test_add_criterion_rejects_harbor(db):
     with pytest.raises(HarborReadOnlyError):
         M.add_criterion(_harbor_id(db), "x", "d", "g", db_path=db)
 
 
-def test_add_criterion_rejects_duplicate_name(db: Path):
+def test_add_criterion_rejects_duplicate_name(db):
     with pytest.raises(ConflictError):
         M.add_criterion(_local_id(db), "c1", "d", "g", db_path=db)
 
 
-def test_update_criterion(db: Path):
+def test_update_criterion(db):
     cid = M.get_rubric_detail("l_rubric", db_path=db)["criteria"][0]["id"]
     out = M.update_criterion(cid, "c1_renamed", "newd", "newg", db_path=db)
     assert out["name"] == "c1_renamed"
     assert out["ordinal"] == 0  # unchanged
 
 
-def test_delete_criterion_renumbers_survivors(db: Path):
+def test_delete_criterion_renumbers_survivors(db):
     detail = M.get_rubric_detail("l_rubric", db_path=db)
     first, second = detail["criteria"][0], detail["criteria"][1]
     M.delete_criterion(second["id"], db_path=db)
@@ -198,7 +143,7 @@ def test_delete_criterion_renumbers_survivors(db: Path):
     assert after[0]["ordinal"] == 0  # renumbered to be contiguous
 
 
-def test_delete_criterion_rejects_harbor(db: Path):
+def test_delete_criterion_rejects_harbor(db):
     hcid = M.get_rubric_detail("h_rubric", db_path=db)["criteria"][0]["id"]
     with pytest.raises(HarborReadOnlyError):
         M.delete_criterion(hcid, db_path=db)
@@ -207,7 +152,7 @@ def test_delete_criterion_rejects_harbor(db: Path):
 # --- reorder --------------------------------------------------------------- #
 
 
-def test_reorder_criteria(db: Path):
+def test_reorder_criteria(db):
     detail = M.get_rubric_detail("l_rubric", db_path=db)
     c1, c2 = detail["criteria"][0], detail["criteria"][1]
     M.reorder_criteria(_local_id(db), [c2["id"], c1["id"]], db_path=db)
@@ -216,13 +161,13 @@ def test_reorder_criteria(db: Path):
     assert [c["ordinal"] for c in after] == [0, 1]
 
 
-def test_reorder_rejects_harbor(db: Path):
+def test_reorder_rejects_harbor(db):
     hcid = M.get_rubric_detail("h_rubric", db_path=db)["criteria"][0]["id"]
     with pytest.raises(HarborReadOnlyError):
         M.reorder_criteria(_harbor_id(db), [hcid], db_path=db)
 
 
-def test_reorder_rejects_wrong_id_set(db: Path):
+def test_reorder_rejects_wrong_id_set(db):
     detail = M.get_rubric_detail("l_rubric", db_path=db)
     c1 = detail["criteria"][0]
     # pass only one of the two ids -> not the full set
@@ -233,7 +178,7 @@ def test_reorder_rejects_wrong_id_set(db: Path):
 # --- reads ----------------------------------------------------------------- #
 
 
-def test_list_rubrics_with_counts(db: Path):
+def test_list_rubrics_with_counts(db):
     rubrics = {r["name"]: r for r in M.list_rubrics_with_counts(db_path=db)}
     assert rubrics["h_rubric"]["is_harbor"] is True
     assert rubrics["l_rubric"]["is_harbor"] is False
@@ -241,7 +186,7 @@ def test_list_rubrics_with_counts(db: Path):
     assert rubrics["l_rubric"]["criterion_count"] == 2
 
 
-def test_get_rubric_detail_missing(db: Path):
+def test_get_rubric_detail_missing(db):
     with pytest.raises(NotFoundError):
         M.get_rubric_detail("nope", db_path=db)
 
@@ -249,7 +194,7 @@ def test_get_rubric_detail_missing(db: Path):
 # --- prompts: CRUD --------------------------------------------------------- #
 
 
-def test_create_prompt(db: Path):
+def test_create_prompt(db):
     p = M.create_prompt("p1", "sale", "drafting", "起草买卖合同…", "d", db_path=db)
     assert p["source"] == "local"
     assert p["name"] == "p1"
@@ -259,13 +204,13 @@ def test_create_prompt(db: Path):
     assert p["description"] == "d"
 
 
-def test_create_prompt_rejects_duplicate_name(db: Path):
+def test_create_prompt_rejects_duplicate_name(db):
     M.create_prompt("p1", "sale", "drafting", "x", db_path=db)
     with pytest.raises(ConflictError):
         M.create_prompt("p1", "loan", "drafting", "y", db_path=db)
 
 
-def test_create_prompt_rejects_empty_fields(db: Path):
+def test_create_prompt_rejects_empty_fields(db):
     with pytest.raises(ValidationError):
         M.create_prompt("  ", "sale", "drafting", "x", db_path=db)
     with pytest.raises(ValidationError):
@@ -276,12 +221,12 @@ def test_create_prompt_rejects_empty_fields(db: Path):
         M.create_prompt("p4", "sale", "", "x", db_path=db)
 
 
-def test_get_prompt_not_found(db: Path):
+def test_get_prompt_not_found(db):
     with pytest.raises(NotFoundError):
         M.get_prompt("nope", db_path=db)
 
 
-def test_update_prompt(db: Path):
+def test_update_prompt(db):
     p = M.create_prompt("p1", "sale", "drafting", "old", db_path=db)
     updated = M.update_prompt(p["id"], "p1", "loan", "drafting", "new", "d2", db_path=db)
     assert updated["content"] == "new"
@@ -289,31 +234,31 @@ def test_update_prompt(db: Path):
     assert updated["description"] == "d2"
 
 
-def test_update_prompt_rejects_duplicate_name(db: Path):
+def test_update_prompt_rejects_duplicate_name(db):
     M.create_prompt("p1", "sale", "drafting", "x", db_path=db)
     p2 = M.create_prompt("p2", "loan", "drafting", "y", db_path=db)
     with pytest.raises(ConflictError):
         M.update_prompt(p2["id"], "p1", "loan", "drafting", "z", db_path=db)
 
 
-def test_update_prompt_not_found(db: Path):
+def test_update_prompt_not_found(db):
     with pytest.raises(NotFoundError):
         M.update_prompt(9999, "x", "sale", "drafting", "y", db_path=db)
 
 
-def test_delete_prompt(db: Path):
+def test_delete_prompt(db):
     p = M.create_prompt("p1", "sale", "drafting", "x", db_path=db)
     M.delete_prompt(p["id"], db_path=db)
     with pytest.raises(NotFoundError):
         M.get_prompt("p1", db_path=db)
 
 
-def test_delete_prompt_not_found(db: Path):
+def test_delete_prompt_not_found(db):
     with pytest.raises(NotFoundError):
         M.delete_prompt(9999, db_path=db)
 
 
-def test_list_prompts_omits_content(db: Path):
+def test_list_prompts_omits_content(db):
     M.create_prompt("p1", "sale", "drafting", "secret", db_path=db)
     M.create_prompt("p2", "loan", "drafting", "secret2", db_path=db)
     rows = M.list_prompts(db_path=db)
@@ -325,24 +270,21 @@ def test_list_prompts_omits_content(db: Path):
 # --- prompts: schema re-run / harbor writes leave prompts untouched -------- #
 
 
-def test_create_schema_rerun_leaves_prompts_untouched(db: Path):
-    extract = _load_extract_module()
+def test_create_schema_rerun_leaves_prompts_untouched(db):
+    from src.eval.harbor_seed import create_schema
+
     M.create_prompt("p1", "sale", "drafting", "keep-me", db_path=db)
-    conn = sqlite3.connect(db)
-    conn.execute("PRAGMA foreign_keys = ON")
-    extract.create_schema(conn)  # idempotent + additive
-    conn.close()
+    create_schema(db)  # idempotent + additive
     assert M.get_prompt("p1", db_path=db)["content"] == "keep-me"
 
 
-def test_harbor_upsert_leaves_prompts_untouched(db: Path):
-    extract = _load_extract_module()
+def test_harbor_upsert_leaves_prompts_untouched(db):
+    from src.eval.harbor_seed import upsert_harbor_rubric
+
     M.create_prompt("p1", "sale", "drafting", "keep-me", db_path=db)
-    conn = sqlite3.connect(db)
-    conn.execute("PRAGMA foreign_keys = ON")
     # Simulate harbor re-extraction writing a harbor rubric + criteria.
-    extract.upsert_harbor_rubric(
-        conn,
+    upsert_harbor_rubric(
+        db,
         {
             "name": "task_quality",
             "context": "check",
@@ -353,8 +295,7 @@ def test_harbor_upsert_leaves_prompts_untouched(db: Path):
         "harbor:v9.9.9",
         "2026-01-01T00:00:00+00:00",
     )
-    conn.commit()
-    conn.close()
+    db.commit()
     prompts = M.list_prompts(db_path=db)
     assert len(prompts) == 1
     assert M.get_prompt("p1", db_path=db)["content"] == "keep-me"

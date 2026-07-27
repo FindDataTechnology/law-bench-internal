@@ -42,3 +42,6 @@ output/
 .pytest_cache/
 .DS_Store
 **/.DS_Store
+
+# local MCP config (contains SSH creds)
+.mcp.json

@@ -43,9 +43,21 @@ class ContractDraftingCrew:
 
     @agent
     def drafter(self) -> Agent:
+        tools = []
+        try:
+            from src.search.rag_tool import get_rag_tool
+
+            rag_tool = get_rag_tool()
+            if rag_tool is not None:
+                tools.append(rag_tool)
+        except Exception:
+            # Search deps unavailable or RAG disabled -> drafter proceeds
+            # without retrieval (graceful degradation).
+            pass
         return Agent(
             config=self.agents_config["drafter"],
             llm=get_llm("DRAFTER"),
+            tools=tools or None,
             verbose=True,
             max_iter=10,
             allow_delegation=False,

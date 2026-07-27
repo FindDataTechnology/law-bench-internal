@@ -4,20 +4,46 @@
 TBD - created by syncing change evaluation-rules-manager. Update Purpose after archive.
 ## Requirements
 ### Requirement: Browse Evaluation Rubrics
-The system SHALL present a list of all rubrics, each showing its name, context, source, and criterion count. Harbor rubrics (`source` starting with `harbor:`) and local rubrics (`source = local`) SHALL be shown together.
+The system SHALL present a list of all rubrics, each showing its name (rendered as a localized display title per `data-label-i18n`, with the machine `name` retained as the link target), its `context` rendered as a localized label in the active locale (falling back to the raw key when unmapped), its `source` rendered as a localized source label (per the web-i18n Localized Rubric Source Display requirement) rather than the raw source string, and its criterion count. Harbor rubrics (`source` starting with `harbor:`) and local rubrics (`source = local`) SHALL be shown together.
 
 #### Scenario: List all rubrics
 - **WHEN** a user opens the rubrics listing
-- **THEN** every rubric stored in the database is shown with its name, context, source, and the number of criteria it contains
+- **THEN** every rubric stored in the database is shown with its localized display title, context, source, and the number of criteria it contains
 - **AND** harbor rubrics and local rubrics are listed together
 
+#### Scenario: Localized title and context in Chinese
+- **WHEN** a user opens the rubrics listing with locale `zh` and a rubric has `name = contract_sale_v1`, `context = contract`
+- **THEN** the row shows the display title `买卖合同评价规则` and the context label `合同`
+- **AND** the link target remains `/rubrics/contract_sale_v1`
+
+#### Scenario: Unknown values fall back to the raw key
+- **WHEN** a rubric has a user-authored `name` `my_rubric` and an unmapped `context` `custom_ctx`
+- **THEN** the listing shows `my_rubric` and `custom_ctx` unchanged
+
+#### Scenario: Source column localized
+- **WHEN** a user opens the rubrics listing with locale `zh`
+- **THEN** the source column renders localized labels (e.g. `本地` for local, `Harbor v0.4.2` for harbor) rather than the raw `local` / `harbor:v0.4.2`
+
 ### Requirement: Rubric Detail View
-The system SHALL show a single rubric's name, context, source, source_path, and description, followed by its criteria ordered by `ordinal`, each showing its name, description, and guidance.
+The system SHALL show a single rubric's name (as a localized display title per `data-label-i18n`), its `context` rendered as a localized label in the active locale (raw-key fallback), its `source` rendered as a localized source label, `source_path`, and `description`, followed by its criteria ordered by `ordinal`, each showing its name, description, and guidance. The machine `name` SHALL remain the URL path. Each criterion's name, description, and guidance SHALL render in the active locale where a translation exists, falling back to the stored text otherwise (per the web-i18n Localized Data-Value Labels requirement).
 
 #### Scenario: View a rubric and its criteria
 - **WHEN** a user opens a rubric
-- **THEN** its name, context, source, source_path, and description are displayed
+- **THEN** its localized display title, context, source, source_path, and description are displayed
 - **AND** its criteria are listed in `ordinal` order, each showing name, description, and guidance
+
+#### Scenario: Detail title and context localize in Chinese
+- **WHEN** a user opens rubric `contract_lease_v1` with locale `zh` and its `context` is `contract`
+- **THEN** the heading shows `租赁合同评价规则` and the context field shows `合同`
+
+#### Scenario: Criterion content localized when zh
+- **WHEN** a user opens a harbor rubric detail page with locale `zh`
+- **THEN** each seeded criterion's title, description, and guidance render in Chinese where a translation exists
+- **AND** user-authored or untranslated criteria render their stored text unchanged
+
+#### Scenario: Source row localized
+- **WHEN** a user opens a rubric detail page with locale `zh`
+- **THEN** the source row renders a localized label (e.g. `本地` / `Harbor v0.4.2`) rather than the raw source string
 
 ### Requirement: Create Local Rubric
 The system SHALL allow creating a new locally-authored rubric with `source = local`, a name, a context, a description, and zero or more initial criteria.
