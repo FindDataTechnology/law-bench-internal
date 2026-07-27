@@ -43,6 +43,9 @@ spec:
         - name: law-bench
           image: harbor.local/law-bench/law-template:sha-5d0b681
           imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: law-bench-db
           ports:
             - containerPort: 8010
           livenessProbe:
