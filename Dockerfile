@@ -25,6 +25,12 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     PYTHONPATH=/app
 
+# Headless LibreOffice for DOCX -> PDF conversion (src.docs.converter). Only
+# the writer module is needed; it pulls in `soffice` via libreoffice-core.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libreoffice-writer \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies first (cacheable layer). --no-install-project avoids
 # needing a [build-system]: only the locked third-party deps are installed.
 COPY pyproject.toml uv.lock ./
