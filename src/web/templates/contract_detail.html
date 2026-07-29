@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}{% if template %}{{ template.zh_name }}{% else %}{{ contract_type }}{% endif %} · 合同模板{% endblock %}
+{% block content %}
+<div class="toolbar between">
+  <div>
+    <h1>{% if template %}{{ template.zh_name }}{% else %}{{ contract_type }}{% endif %}</h1>
+    <a href="{{ url_for('page_contracts') }}">返回合同列表</a>
+  </div>
+  <div>
+    {% if template %}
+    <a class="btn btn-sm" href="{{ url_for('page_contract_download', contract_type=contract_type, format='docx') }}">下载 DOCX</a>
+    <a class="btn btn-sm" href="{{ url_for('page_contract_download', contract_type=contract_type, format='pdf') }}">下载 PDF</a>
+    {% endif %}
+  </div>
+</div>
+
+{% if not_found %}
+  <div class="flash error">未找到合同类型：<code>{{ contract_type }}</code></div>
+{% else %}
+<div class="law-info-grid">
+  <section class="panel">
+    <h2>合同模板</h2>
+    <div class="muted"><code>{{ template.type }}</code> · 共 {{ instructions|length }} 个字段</div>
+    <article class="markdown-body">
+      {{ body_html|safe }}
+    </article>
+  </section>
+
+  <section class="panel">
+    <h2>字段说明（Slot Instructions）</h2>
+    <table>
+      <thead>
+        <tr><th>字段</th><th>说明</th><th>示例</th><th>必填</th></tr>
+      </thead>
+      <tbody>
+        {% for si in instructions %}
+        <tr>
+          <td><strong>{{ si.label }}</strong><div class="muted"><code>{{ si.name }}</code></div></td>
+          <td>{{ si.description }}</td>
+          <td class="muted">{{ si.example }}</td>
+          <td>{{ "是" if si.required else "否" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="panel">
+    <h2>相关法律法规</h2>
+    {% for g in grouped %}
+    <h3>{{ g.category_zh }}</h3>
+    <ul>
+      {% for r in g.refs %}
+      <li>{{ r.name }} <span class="muted">（{{ r.sources|join("、") }}）</span></li>
+      {% endfor %}
+    </ul>
+    {% endfor %}
+    {% if not grouped %}
+    <p class="muted">暂无相关法律法规</p>
+    {% endif %}
+  </section>
+</div>
+
+<section class="panel">
+  <h2>生成原理</h2>
+  <ol>
+    <li><strong>数据来源</strong>：相关法律法规取自 Doubao 与 DeepSeek 的回答（每类合同一份，存放于 <code>src/eval/seed/law_info/</code>）。</li>
+    <li><strong>起草方式</strong>：由 doubao 大模型（<code>DRAFTER_MODEL</code>）依据上述法律法规，为该合同类型单独起草正文，条款结合该类合同特点，非通用模板。</li>
+    <li><strong>Slot 机制</strong>：正文中的 <code>{% raw %}{{slot}}{% endraw %}</code> 为可填写占位符，共 12 个；下载的 DOCX 中以高亮显示，按上方“字段说明”填写，也可用 <code>fill_slots</code> 程序化填充。</li>
+    <li><strong>文档生成</strong>：DOCX 由 <code>python-docx</code> 渲染，PDF 由 headless LibreOffice 转换，下载时按需生成。</li>
+    <li><strong>一致性保证</strong>：<code>normalize_body</code> 确保占位符与字段说明一一对应，<code>check_slot_consistency</code> 校验。</li>
+  </ol>
+</section>
+{% endif %}
+{% endblock %}

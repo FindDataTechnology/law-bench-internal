@@ -36,6 +36,9 @@ ENV/
 *.log
 output/
 
+# contract template LLM-draft cache (regenerable; contracts.json is committed)
+src/contracts/data/_llm_bodies/
+
 # Local tooling / caches (not project source)
 .deepeval/
 .claude/
