@@ -137,6 +137,8 @@ def create_app() -> FastAPI:
         app.include_router(search.router)
         from .routes import contracts  # noqa: WPS433 (intentional lazy import)
         app.include_router(contracts.router)
+        from .routes import clauses  # noqa: WPS433 (intentional lazy import)
+        app.include_router(clauses.router)
     except ImportError:
         pass
 

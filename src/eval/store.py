@@ -81,6 +81,32 @@ CREATE TABLE IF NOT EXISTS law_info (
 );
 """
 
+# clauses table (reusable contract clauses extracted from the 示范文本 corpus;
+# three categories via the `category` column). Owned by src/clauses, but the DDL
+# lives here so ensure_schema establishes it on any database the app touches.
+CLAUSES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS clauses (
+    id               BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    contract_type    TEXT NOT NULL,
+    category         TEXT NOT NULL CHECK (category IN ('base','tagged','custom')),
+    section          TEXT NOT NULL,
+    body             TEXT NOT NULL,
+    slot_instructions JSONB NOT NULL DEFAULT '[]'::jsonb,
+    law_refs         JSONB NOT NULL DEFAULT '[]'::jsonb,
+    province         TEXT,
+    level            TEXT CHECK (level IN ('national','local')),
+    source_path      TEXT,
+    source_doc_title TEXT,
+    body_hash        TEXT NOT NULL,
+    manual           BOOLEAN NOT NULL DEFAULT false,
+    created_at       TEXT NOT NULL,
+    updated_at       TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS clauses_upsert_uk
+    ON clauses (source_path, section, body_hash)
+    WHERE source_path IS NOT NULL;
+"""
+
 
 # Additive columns added after the tables' first release, applied idempotically
 # in a single round trip via ``ALTER TABLE IF EXISTS ... ADD COLUMN IF NOT
@@ -91,7 +117,8 @@ _ADDITIVE_COLUMNS = (
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS prompt_name TEXT; "
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS prompt_type TEXT; "
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS variant_label TEXT; "
-    "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS draft_text TEXT;"
+    "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS draft_text TEXT; "
+    "ALTER TABLE IF EXISTS clauses ADD COLUMN IF NOT EXISTS manual BOOLEAN NOT NULL DEFAULT false;"
 )
 
 # The DDL is fully idempotent, so ensure_schema is memoized per database (keyed
@@ -116,6 +143,7 @@ def ensure_schema(db_path=DEFAULT_DB) -> None:
             return
         conn.execute(RESULTS_SCHEMA)
         conn.execute(LAW_INFO_SCHEMA)
+        conn.execute(CLAUSES_SCHEMA)
         conn.execute(_ADDITIVE_COLUMNS)
         conn.commit()
         _ensured_dbs.add(key)

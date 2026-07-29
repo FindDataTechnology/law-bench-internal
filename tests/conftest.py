@@ -53,6 +53,7 @@ _ALL_TABLES = (
     "rubrics",
     "prompts",
     "law_info",
+    "clauses",
 )
 
 

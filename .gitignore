@@ -39,6 +39,9 @@ output/
 # contract template LLM-draft cache (regenerable; contracts.json is committed)
 src/contracts/data/_llm_bodies/
 
+# clause extraction LLM cache (regenerable; re-run `python -m src.clauses extract`)
+src/clauses/data/_extracted/
+
 # Local tooling / caches (not project source)
 .deepeval/
 .claude/

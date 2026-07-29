@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ zh }} 条款 · {{ t.nav.brand }}{% endblock %}
+{% block content %}
+{% if not_found %}
+<div class="toolbar between"><h1>未找到</h1></div>
+<p class="muted">未知合同类型 <code>{{ contract_type }}</code>。</p>
+{% else %}
+<div class="toolbar between">
+  <h1>{{ zh }} 条款</h1>
+  <div class="inline">
+    <a class="btn btn-sm" href="{{ url_for('page_clauses_new', contract_type=contract_type) }}">新建自定义条款</a>
+    <a class="btn btn-sm btn-ghost" href="{{ url_for('page_clauses') }}">返回条款库</a>
+  </div>
+</div>
+<p class="muted"><code>{{ contract_type }}</code> · 共 {{ grouped | length }} 个章节。生成时以基本条款为基座，叠加所选省份的标签条款，插槽保持可填写。</p>
+
+{% if flash %}
+<div class="panel" style="background:#f6f8ff">{{ flash }}</div>
+{% endif %}
+
+<form method="get" class="inline" style="margin:0 0 1em">
+  <label class="muted">筛选</label>
+  <input type="text" name="q" value="{{ q }}" placeholder="搜索正文…" style="width:14em">
+  <select name="province">
+    <option value="">全部省份</option>
+    {% for p in provinces %}
+    <option value="{{ p }}" {% if p == province_filter %}selected{% endif %}>{{ p }}</option>
+    {% endfor %}
+  </select>
+  <select name="category">
+    <option value="">全部类别</option>
+    {% for c in ['base','tagged','custom'] %}
+    <option value="{{ c }}" {% if c == category_filter %}selected{% endif %}>{{ c }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn btn-sm btn-ghost">筛选</button>
+  <a class="btn btn-sm btn-ghost" href="{{ url_for('page_clauses_detail', contract_type=contract_type) }}">重置</a>
+</form>
+
+{% for g in grouped %}
+<div class="panel">
+  <h2 style="margin-top:0">{{ g.section }}</h2>
+  {% for c in g.clauses %}
+  <details {% if loop.first %}open{% endif %}>
+    <summary>
+      {{ c.category }}{% if c.province %} · {{ c.province }}{% endif %}
+      · {{ c.law_refs | length }} 法规 · {{ c.slot_instructions | length }} 插槽
+      {% if c.manual %} <span class="badge local">manual</span>{% endif %}
+      <span class="inline" style="margin-left:1em">
+        <a href="{{ url_for('page_clauses_edit', contract_type=contract_type, clause_id=c.id) }}">编辑</a>
+      </span>
+    </summary>
+    <div class="muted small">来源：{{ c.source_doc_title or c.source_path or '自定义' }} · #{{ c.id }}</div>
+    <div>{{ c.body_html }}</div>
+    <form method="post" action="{{ url_for('page_clauses_delete', contract_type=contract_type, clause_id=c.id) }}" class="inline" data-confirm="确定删除该条款？">
+      <button type="submit" class="btn btn-sm btn-ghost">删除</button>
+    </form>
+    {% if c.slot_instructions %}
+    <div class="muted small">插槽：
+      {% for s in c.slot_instructions %}<code>{{ s.name }}</code>{% if not loop.last %}、{% endif %}{% endfor %}
+    </div>
+    {% endif %}
+  </details>
+  {% endfor %}
+</div>
+{% else %}
+<div class="panel muted">该类型暂无条款。运行 <code>python -m src.clauses extract</code> 从语料抽取，或点击“新建自定义条款”。</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

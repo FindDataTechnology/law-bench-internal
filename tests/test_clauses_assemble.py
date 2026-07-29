@@ -1,0 +1,121 @@
+"""Tests for clause-assembled contract generation (src/clauses/assemble.py)."""
+
+from __future__ import annotations
+
+import shutil
+from pathlib import Path
+
+import pytest
+from docx import Document
+
+from src.clauses import generate_contract_assembled
+from src.clauses.store import upsert_clause
+from src.eval.errors import NotFoundError
+
+
+def _soffice_available() -> bool:
+    return shutil.which("soffice") is not None or shutil.which("libreoffice") is not None
+
+
+def _seed(seeded_db) -> None:
+    upsert_clause(
+        {
+            "contract_type": "sale", "category": "base", "section": "当事人",
+            "body": "甲方：{{party_a}}（base-marker）",
+            "slot_instructions": [{"name": "party_a", "label": "甲方", "description": "d", "example": "x", "required": True}],
+            "law_refs": [{"name": "中华人民共和国民法典", "category": "core_law", "category_zh": "核心法律"}],
+            "province": None, "level": "national", "source_path": "t/base.docx",
+            "source_doc_title": "T", "body_hash": "b1",
+        },
+        db=seeded_db,
+    )
+    upsert_clause(
+        {
+            "contract_type": "sale", "category": "tagged", "section": "违约责任",
+            "body": "违约金{{penalty}}（jinlin-marker），另有 {{property_name}}",
+            "slot_instructions": [
+                {"name": "penalty", "label": "违约金", "description": "d", "example": "10%", "required": False},
+                {"name": "property_name", "label": "标的名称", "description": "d", "example": "x", "required": True},
+            ],
+            "law_refs": [], "province": "吉林", "level": "local", "source_path": "t/jl.docx",
+            "source_doc_title": "T", "body_hash": "t1",
+        },
+        db=seeded_db,
+    )
+
+
+def _docx_text(path: str) -> str:
+    d = Document(path)
+    return "\n".join(p.text for p in d.paragraphs)
+
+
+def test_assemble_base_only(seeded_db):
+    _seed(seeded_db)
+    r = generate_contract_assembled("sale", format="docx", db=seeded_db)
+    assert Path(r["docx_path"]).exists()
+    txt = _docx_text(r["docx_path"])
+    assert "base-marker" in txt
+    # slot kept fillable
+    assert "{{party_a}}" in txt or "party_a" in txt
+    # canonical slot instructions present + clause-declared slot absent (no tagged selected)
+    names = {i["name"] for i in r["instructions"]}
+    assert "party_a" in names  # canonical
+
+
+def test_assemble_with_province_includes_tagged(seeded_db):
+    _seed(seeded_db)
+    r = generate_contract_assembled("sale", province="吉林", format="docx", db=seeded_db)
+    txt = _docx_text(r["docx_path"])
+    assert "base-marker" in txt
+    assert "jinlin-marker" in txt
+    # clause-declared non-canonical slot surfaced in instructions
+    names = {i["name"] for i in r["instructions"]}
+    assert "property_name" in names
+    assert "penalty" in names
+    # law_refs deduped union
+    assert any(ref["name"] == "中华人民共和国民法典" for ref in r["law_refs"])
+
+
+def test_assemble_with_custom(seeded_db):
+    _seed(seeded_db)
+    cid = upsert_clause(
+        {
+            "contract_type": "sale", "category": "custom", "section": "附则",
+            "body": "custom-marker {{sign_location}}",
+            "slot_instructions": [{"name": "sign_location", "label": "签署地点", "description": "d", "example": "北京", "required": False}],
+            "law_refs": [], "province": None, "level": None, "source_path": None,
+            "source_doc_title": None, "body_hash": "c1",
+        },
+        db=seeded_db,
+    )
+    r = generate_contract_assembled(
+        "sale", custom_clause_ids=[cid], format="docx", db=seeded_db
+    )
+    txt = _docx_text(r["docx_path"])
+    assert "custom-marker" in txt
+
+
+def test_assemble_section_ordering(seeded_db):
+    _seed(seeded_db)
+    r = generate_contract_assembled("sale", province="吉林", format="docx", db=seeded_db)
+    txt = _docx_text(r["docx_path"])
+    # 当事人 (base) before 违约责任 (tagged)
+    assert txt.index("当事人") < txt.index("违约责任")
+
+
+def test_assemble_unknown_type_raises(seeded_db):
+    with pytest.raises(NotFoundError):
+        generate_contract_assembled("does_not_exist", format="docx", db=seeded_db)
+
+
+def test_assemble_bad_format(seeded_db):
+    with pytest.raises(ValueError):
+        generate_contract_assembled("sale", format="rtf", db=seeded_db)
+
+
+@pytest.mark.skipif(not _soffice_available(), reason="soffice/PDF backend unavailable")
+def test_assemble_pdf(seeded_db):
+    _seed(seeded_db)
+    r = generate_contract_assembled("sale", province="吉林", format="pdf", db=seeded_db)
+    assert r["pdf_path"] and Path(r["pdf_path"]).exists()
+    assert r["docx_path"] is None
