@@ -93,7 +93,6 @@ CREATE TABLE IF NOT EXISTS clauses (
     body             TEXT NOT NULL,
     slot_instructions JSONB NOT NULL DEFAULT '[]'::jsonb,
     law_refs         JSONB NOT NULL DEFAULT '[]'::jsonb,
-    province         TEXT,
     level            TEXT CHECK (level IN ('national','local')),
     source_path      TEXT,
     source_doc_title TEXT,
@@ -132,7 +131,8 @@ _ADDITIVE_COLUMNS = (
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS variant_label TEXT; "
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS draft_text TEXT; "
     "ALTER TABLE IF EXISTS clauses ADD COLUMN IF NOT EXISTS manual BOOLEAN NOT NULL DEFAULT false; "
-    "ALTER TABLE IF EXISTS clauses ADD COLUMN IF NOT EXISTS tags JSONB NOT NULL DEFAULT '{}'::jsonb;"
+    "ALTER TABLE IF EXISTS clauses ADD COLUMN IF NOT EXISTS tags JSONB NOT NULL DEFAULT '{}'::jsonb; "
+    "ALTER TABLE IF EXISTS clauses DROP COLUMN IF EXISTS province;"
 )
 
 # The DDL is fully idempotent, so ensure_schema is memoized per database (keyed

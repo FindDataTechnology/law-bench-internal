@@ -141,7 +141,7 @@ def upsert_clauses(clauses: list[dict], db: Any = None) -> int:
                     "DO UPDATE SET contract_type=EXCLUDED.contract_type, category=EXCLUDED.category, "
                     "section=EXCLUDED.section, body=EXCLUDED.body, "
                     "slot_instructions=EXCLUDED.slot_instructions, law_refs=EXCLUDED.law_refs, "
-                    "province=EXCLUDED.province, level=EXCLUDED.level, "
+                    "level=EXCLUDED.level, "
                     "source_doc_title=EXCLUDED.source_doc_title, body_hash=EXCLUDED.body_hash, "
                     "updated_at=EXCLUDED.updated_at",
                     values,
