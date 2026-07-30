@@ -220,12 +220,12 @@ def _post_process(raw: dict, source_path: str) -> dict:
                 "body": body,
                 "slot_instructions": instructions,
                 "law_refs": _law_refs_from_body(body),
-                "province": province,
                 "level": level,
                 "source_path": source_path,
                 "source_doc_title": (raw.get("source_doc_title") or "").strip() or None,
                 "body_hash": hashlib.md5(body.encode("utf-8")).hexdigest(),
                 "category": "tagged" if level == "local" else "base",
+                "tags": {"region": province} if province else {},
             }
         )
     return {

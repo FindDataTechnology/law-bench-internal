@@ -22,11 +22,11 @@ from src.eval.errors import NotFoundError
 from src.eval.store import ensure_schema
 
 from .extract import _law_refs_from_body, _normalize_slot_instructions, section_rank
-from .tags import TAG_VOCAB, validate_tags
+from .tags import FREE_FORM_TAGS, TAG_VOCAB, validate_tags
 
 _INSERT_COLS = (
     "contract_type, category, section, body, slot_instructions, law_refs, "
-    "province, level, source_path, source_doc_title, body_hash, created_at, updated_at, manual, tags"
+    "level, source_path, source_doc_title, body_hash, created_at, updated_at, manual, tags"
 )
 
 
@@ -38,19 +38,21 @@ def _now() -> str:
 
 def _row(clause: dict, *, now: str) -> tuple:
     # Enforce category semantics defensively (the extractor already sets these):
-    # custom -> no source_path; base -> national + no province; tagged -> local.
+    # custom -> no source_path; base -> national; tagged -> local. Region is a
+    # tag (tags.region), not a column.
     category = clause["category"]
     source_path = clause.get("source_path")
-    province = clause.get("province")
     level = clause.get("level")
     if category == "custom":
         source_path = None
         level = None
     elif category == "base":
-        province = None
         level = "national"
     elif category == "tagged":
         level = "local"
+    tags = clause.get("tags") or {}
+    if category == "base":
+        tags = {k: v for k, v in tags.items() if k != "region"}  # national: no region
     return (
         clause["contract_type"],
         category,
@@ -58,7 +60,6 @@ def _row(clause: dict, *, now: str) -> tuple:
         clause["body"],
         Jsonb(clause.get("slot_instructions") or []),
         Jsonb(clause.get("law_refs") or []),
-        province,
         level,
         source_path,
         clause.get("source_doc_title"),
@@ -66,7 +67,7 @@ def _row(clause: dict, *, now: str) -> tuple:
         now,
         now,
         bool(clause.get("manual", False)),
-        Jsonb(validate_tags(clause.get("tags") or {})),
+        Jsonb(validate_tags(tags)),
     )
 
 
@@ -100,12 +101,12 @@ def upsert_clause(clause: dict, db: Any = None) -> int:
         if clause.get("source_path") is not None:
             cur = conn.execute(
                 "INSERT INTO clauses (" + _INSERT_COLS + ") VALUES "
-                "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
                 "ON CONFLICT (source_path, section, body_hash) WHERE source_path IS NOT NULL "
                 "DO UPDATE SET contract_type=EXCLUDED.contract_type, category=EXCLUDED.category, "
                 "section=EXCLUDED.section, body=EXCLUDED.body, "
                 "slot_instructions=EXCLUDED.slot_instructions, law_refs=EXCLUDED.law_refs, "
-                "province=EXCLUDED.province, level=EXCLUDED.level, "
+                "level=EXCLUDED.level, "
                 "source_doc_title=EXCLUDED.source_doc_title, body_hash=EXCLUDED.body_hash, "
                 "updated_at=EXCLUDED.updated_at RETURNING id",
                 values,
@@ -113,7 +114,7 @@ def upsert_clause(clause: dict, db: Any = None) -> int:
         else:
             cur = conn.execute(
                 "INSERT INTO clauses (" + _INSERT_COLS + ") VALUES "
-                "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+                "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
                 values,
             )
         conn.commit()
@@ -135,7 +136,7 @@ def upsert_clauses(clauses: list[dict], db: Any = None) -> int:
             if clause.get("source_path") is not None:
                 conn.execute(
                     "INSERT INTO clauses (" + _INSERT_COLS + ") VALUES "
-                    "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                    "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
                     "ON CONFLICT (source_path, section, body_hash) WHERE source_path IS NOT NULL "
                     "DO UPDATE SET contract_type=EXCLUDED.contract_type, category=EXCLUDED.category, "
                     "section=EXCLUDED.section, body=EXCLUDED.body, "
@@ -148,7 +149,7 @@ def upsert_clauses(clauses: list[dict], db: Any = None) -> int:
             else:
                 conn.execute(
                     "INSERT INTO clauses (" + _INSERT_COLS + ") VALUES "
-                    "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     values,
                 )
         conn.commit()
@@ -171,7 +172,7 @@ def create_clause(clause: dict, db: Any = None) -> int:
     try:
         cur = conn.execute(
             "INSERT INTO clauses (" + _INSERT_COLS + ") VALUES "
-            "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+            "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
             _row(rec, now=now),
         )
         conn.commit()
@@ -183,10 +184,10 @@ def create_clause(clause: dict, db: Any = None) -> int:
 def update_clause(clause_id: int, fields: dict, db: Any = None) -> dict:
     """Update a clause by id; re-derive body-dependent fields; set ``manual=true``.
 
-    ``fields`` may carry ``body``, ``section``, ``category``, ``province``.
-    Unspecified fields keep their existing value. Raises :class:`NotFoundError`
-    for an unknown id. ``slot_instructions``/``law_refs``/``body_hash`` are
-    re-derived from the (possibly edited) body.
+    ``fields`` may carry ``body``, ``section``, ``category``, ``tags`` (region
+    is a tag, ``tags.region``). Unspecified fields keep their existing value.
+    Raises :class:`NotFoundError` for an unknown id. ``slot_instructions``/
+    ``law_refs``/``body_hash`` are re-derived from the (possibly edited) body.
     """
     ensure_schema(db)
     conn = connect(db)
@@ -198,7 +199,6 @@ def update_clause(clause_id: int, fields: dict, db: Any = None) -> dict:
         body = (fields.get("body") if fields.get("body") is not None else existing["body"]).strip()
         category = fields.get("category") or existing["category"]
         section = fields.get("section") or existing["section"]
-        province = fields.get("province") if "province" in fields else existing["province"]
         slot_instructions = _normalize_slot_instructions(body, existing.get("slot_instructions") or [])
         law_refs = _law_refs_from_body(body)
         body_hash = hashlib.md5(body.encode("utf-8")).hexdigest()
@@ -209,19 +209,18 @@ def update_clause(clause_id: int, fields: dict, db: Any = None) -> dict:
             source_path = None
             level = None
         elif category == "base":
-            province = None
             level = "national"
         elif category == "tagged":
             level = "local"
-        # tags: curatorial, not body-derived - set only when supplied, else preserve.
+        # tags: curatorial, not body-derived - replace when supplied, else preserve.
         tags = validate_tags(fields["tags"]) if "tags" in fields else (existing.get("tags") or {})
         now = _now()
         conn.execute(
             "UPDATE clauses SET section=%s, body=%s, slot_instructions=%s, law_refs=%s, "
-            "body_hash=%s, category=%s, province=%s, level=%s, source_path=%s, tags=%s, "
+            "body_hash=%s, category=%s, level=%s, source_path=%s, tags=%s, "
             "manual=true, updated_at=%s WHERE id=%s",
             (section, body, Jsonb(slot_instructions), Jsonb(law_refs), body_hash, category,
-             province, level, source_path, Jsonb(tags), now, clause_id),
+             level, source_path, Jsonb(tags), now, clause_id),
         )
         conn.commit()
         r2 = conn.execute("SELECT * FROM clauses WHERE id = %s", (clause_id,)).fetchone()
@@ -286,7 +285,6 @@ def _row_to_dict(r) -> dict:
         "body": r["body"],
         "slot_instructions": r["slot_instructions"] or [],
         "law_refs": r["law_refs"] or [],
-        "province": r["province"],
         "level": r["level"],
         "source_path": r["source_path"],
         "source_doc_title": r["source_doc_title"],
@@ -300,16 +298,16 @@ def list_clauses(
     contract_type: Optional[str] = None,
     *,
     category: Optional[str] = None,
-    province: Optional[str] = None,
     q: Optional[str] = None,
     tags: Optional[dict] = None,
     db: Any = None,
 ) -> list[dict]:
-    """Return clauses filtered by type/category/province/body-text, in section order.
+    """Return clauses filtered by type/category/tags/body-text, in section order.
 
     ``contract_type`` null returns all types. ``q`` does a case-insensitive
-    ``ILIKE`` over ``body`` and ``source_doc_title``. Ordered by ``section_rank``
-    then id.
+    ``ILIKE`` over ``body`` and ``source_doc_title``. ``tags`` filters by
+    ``tags->>'<dim>' = '<val>'`` for each dim (region is a free-form tag).
+    Ordered by ``section_rank`` then id.
     """
     ensure_schema(db)
     where = []
@@ -320,16 +318,13 @@ def list_clauses(
     if category is not None:
         where.append("category = %s")
         params.append(category)
-    if province is not None:
-        where.append("province = %s")
-        params.append(province)
     if q:
         where.append("(body ILIKE %s OR source_doc_title ILIKE %s)")
         params.append(f"%{q}%")
         params.append(f"%{q}%")
     if tags:
         for dim, val in tags.items():
-            if dim in TAG_VOCAB and str(val) in TAG_VOCAB[dim]:
+            if dim in FREE_FORM_TAGS or (dim in TAG_VOCAB and str(val) in TAG_VOCAB[dim]):
                 where.append("tags->>%s = %s")
                 params.append(dim)
                 params.append(str(val))
@@ -352,12 +347,11 @@ def search_clauses(
     *,
     contract_type: Optional[str] = None,
     category: Optional[str] = None,
-    province: Optional[str] = None,
     tags: Optional[dict] = None,
     db: Any = None,
 ) -> list[dict]:
     """Free-text search across clause bodies/titles, composed with the filters."""
-    return list_clauses(contract_type, category=category, province=province, q=q, tags=tags, db=db)
+    return list_clauses(contract_type, category=category, q=q, tags=tags, db=db)
 
 
 def get_custom_clause(clause_id: int, db: Any = None) -> Optional[dict]:
@@ -404,17 +398,18 @@ def count_clauses(db: Any = None) -> dict:
 
 
 def counts_by_type(db: Any = None) -> list[dict]:
-    """Per ``contract_type`` counts broken down by category + distinct provinces.
+    """Per ``contract_type`` counts broken down by category + distinct regions.
 
     Returns ``[{contract_type, base, tagged, custom, provinces:[...]}]`` ordered
-    by contract_type. Used by the ``/clauses`` browse page.
+    by contract_type (``provinces`` are the distinct ``tags.region`` values for
+    tagged clauses). Used by the ``/clauses`` browse page.
     """
     ensure_schema(db)
     conn = connect(db)
     try:
         rows = conn.execute(
-            "SELECT contract_type, category, province, COUNT(*) AS n "
-            "FROM clauses GROUP BY contract_type, category, province "
+            "SELECT contract_type, category, tags->>'region' AS region, COUNT(*) AS n "
+            "FROM clauses GROUP BY contract_type, category, tags->>'region' "
             "ORDER BY contract_type"
         ).fetchall()
     finally:
@@ -425,8 +420,8 @@ def counts_by_type(db: Any = None) -> list[dict]:
             r["contract_type"], {"contract_type": r["contract_type"], "base": 0, "tagged": 0, "custom": 0, "provinces": set()}
         )
         entry[r["category"]] = entry.get(r["category"], 0) + r["n"]
-        if r["category"] == "tagged" and r["province"]:
-            entry["provinces"].add(r["province"])
+        if r["category"] == "tagged" and r["region"]:
+            entry["provinces"].add(r["region"])
     return [
         {**e, "provinces": sorted(e["provinces"])} for e in by_type.values()
     ]

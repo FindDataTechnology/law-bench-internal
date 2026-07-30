@@ -43,7 +43,7 @@ def test_post_process_national_is_base():
     c = rec["clauses"][0]
     assert c["category"] == "base"
     assert c["level"] == "national"
-    assert c["province"] is None
+    assert c["tags"].get("region") is None  # national: no region
     assert c["contract_type"] == "property_service"
 
 
@@ -52,7 +52,7 @@ def test_post_process_local_is_tagged():
     c = rec["clauses"][0]
     assert c["category"] == "tagged"
     assert c["level"] == "local"
-    assert c["province"] == "吉林"
+    assert c["tags"]["region"] == "吉林"
 
 
 def test_post_process_unknown_type_normalized():

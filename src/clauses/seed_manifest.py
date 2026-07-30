@@ -92,7 +92,6 @@ def clause_to_record(clause: dict, contract_type: str, source_doc_title: str) ->
         "category": "custom",
         "section": clause["section"],
         "body": clause["body"],
-        "province": None,
         "source_doc_title": source_doc_title,
         "slot_instructions": clause.get("slot_instructions") or [],
     }

@@ -25,6 +25,12 @@ TAG_VOCAB: dict[str, list[str]] = {
     "mandatory": ["mandatory", "default", "recommended"],
 }
 
+# Tag dims that accept any non-empty string (NOT a controlled vocabulary).
+# `region` (province/地域) is free-form because province names are an open set
+# (and the extractor infers short names like 吉林/京/京津冀 that we don't want to
+# reject). They are still tags - just not value-validated against TAG_VOCAB.
+FREE_FORM_TAGS: set[str] = {"region"}
+
 
 def register_tag_dim(name: str, values: list[str]) -> None:
     """Register a tag dimension, or extend it if it already exists.
@@ -73,8 +79,13 @@ def load_vocab_from_db(db=None) -> dict:
 def validate_tags(tags: dict | None) -> dict:
     """Return a clean tag dict: unknown keys dropped; bad values raise.
 
+    Free-form dims (``FREE_FORM_TAGS``, e.g. ``region``) accept any non-empty
+    string. Controlled dims (``TAG_VOCAB``) reject out-of-vocabulary values.
+
     >>> validate_tags({"stance": "pro_a", "mood": "happy"})
     {'stance': 'pro_a'}
+    >>> validate_tags({"region": "吉林"})
+    {'region': '吉林'}
     >>> validate_tags({"stance": "pro_A"})
     Traceback (most recent call last):
         ...
@@ -84,14 +95,18 @@ def validate_tags(tags: dict | None) -> dict:
         return {}
     out: dict[str, str] = {}
     for k, v in tags.items():
-        if k not in TAG_VOCAB:
-            continue  # drop unknown keys
         vs = str(v)
-        if vs not in TAG_VOCAB[k]:
-            raise ValueError(
-                f"invalid tag value: {k}={v!r}; allowed: {TAG_VOCAB[k]}"
-            )
-        out[k] = vs
+        if not vs:
+            continue  # drop empty values
+        if k in FREE_FORM_TAGS:
+            out[k] = vs
+        elif k in TAG_VOCAB:
+            if vs not in TAG_VOCAB[k]:
+                raise ValueError(
+                    f"invalid tag value: {k}={v!r}; allowed: {TAG_VOCAB[k]}"
+                )
+            out[k] = vs
+        # else: drop unknown keys
     return out
 
 
@@ -102,6 +117,10 @@ def normalize_tags(tags: dict | None) -> dict:
     out: dict[str, str] = {}
     for k, v in tags.items():
         vs = str(v)
-        if k in TAG_VOCAB and vs in TAG_VOCAB[k]:
+        if not vs:
+            continue
+        if k in FREE_FORM_TAGS:
+            out[k] = vs
+        elif k in TAG_VOCAB and vs in TAG_VOCAB[k]:
             out[k] = vs
     return out

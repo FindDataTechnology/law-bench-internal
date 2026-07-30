@@ -46,7 +46,7 @@ def _select_clauses(
 ) -> list[dict]:
     clauses = list_clauses(contract_type, category="base", db=db)
     if province:
-        clauses += list_clauses(contract_type, category="tagged", province=province, db=db)
+        clauses += list_clauses(contract_type, category="tagged", tags={"region": province}, db=db)
     if custom_clause_ids:
         for cid in custom_clause_ids:
             c = get_custom_clause(cid, db=db)

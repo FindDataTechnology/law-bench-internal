@@ -49,12 +49,19 @@ def _tags_from_query(request: Request) -> dict:
 
 
 def _tags_from_form(form) -> dict:
-    """Collect tag dims posted from a form (empty values omitted)."""
+    """Collect tag dims posted from a form (empty values omitted).
+
+    Controlled dims come from their dropdowns; ``region`` (free-form) comes
+    from the legacy ``province`` text field.
+    """
     out: dict[str, str] = {}
     for dim in TAG_VOCAB:
         v = (form.get(dim) or "").strip()
         if v:
             out[dim] = v
+    prov = (form.get("province") or "").strip()
+    if prov:
+        out["region"] = prov
     return out
 
 
@@ -207,7 +214,6 @@ async def clauses_create(request: Request, contract_type: str, db=Depends(get_db
             "category": category,
             "section": (form.get("section") or "附则").strip(),
             "body": form.get("body") or "",
-            "province": (form.get("province") or "").strip() or None,
             "tags": _tags_from_form(form),
         },
         db=db,
@@ -258,7 +264,6 @@ async def clauses_update(request: Request, contract_type: str, clause_id: int, d
                 "section": (form.get("section") or "附则").strip(),
                 "body": form.get("body") or "",
                 "category": category,
-                "province": (form.get("province") or "").strip() or None,
                 "tags": _tags_from_form(form),
             },
             db=db,
@@ -308,16 +313,18 @@ def clauses_detail(
              "q": "", "flash": None},
             status_code=404,
         )
+    detail_tags = _tags_from_query(request)
+    if province:
+        detail_tags["region"] = province
     clauses = list_clauses(
         contract_type,
         category=category or None,
-        province=province or None,
         q=q or None,
-        tags=_tags_from_query(request) or None,
+        tags=detail_tags or None,
         db=db,
     )
     all_for_type = list_clauses(contract_type, db=db)
-    provinces = sorted({c["province"] for c in all_for_type if c["province"]})
+    provinces = sorted({c.get("tags", {}).get("region") for c in all_for_type if c.get("tags", {}).get("region")})
     from ...clauses.extract import SECTION_ORDER, section_rank
 
     sections: list[tuple[str, list]] = []

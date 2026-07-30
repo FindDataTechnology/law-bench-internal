@@ -67,7 +67,7 @@ def test_update_clause_via_post(app_client, seeded_db):
     c = [x for x in rows if x["id"] == cid][0]
     assert c["section"] == "违约责任"
     assert c["category"] == "tagged"
-    assert c["province"] == "吉林"
+    assert c["tags"]["region"] == "吉林"
     assert c["manual"] is True
     assert {s["name"] for s in c["slot_instructions"]} == {"penalty"}
     assert any(l["name"] == "民法典" for l in c["law_refs"])

@@ -47,7 +47,7 @@
   {% for c in g.clauses %}
   <details {% if loop.first %}open{% endif %}>
     <summary>
-      {{ c.category }}{% if c.province %} · {{ c.province }}{% endif %}
+      {{ c.category }}{% if c.tags.region %} · {{ c.tags.region }}{% endif %}
       · {{ c.law_refs | length }} 法规 · {{ c.slot_instructions | length }} 插槽
       {% for d, v in c.tags.items() %} <code>{{ d }}={{ v }}</code>{% endfor %}
       {% if c.manual %} <span class="badge local">manual</span>{% endif %}

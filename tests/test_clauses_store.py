@@ -24,12 +24,16 @@ def _clause(**kw) -> dict:
             {"name": "party_a", "label": "甲方", "description": "d", "example": "x", "required": True}
         ],
         "law_refs": [],
-        "province": None,
+        "tags": {},
         "level": "national",
         "source_path": "test/doc.docx",
         "source_doc_title": "T",
         "body_hash": "h1",
     }
+    # legacy `province` kwarg -> tags.region (region is a tag now)
+    prov = kw.pop("province", None)
+    if prov:
+        base["tags"] = {"region": prov}
     base.update(kw)
     return base
 
@@ -54,20 +58,20 @@ def test_category_semantics(seeded_db):
     custom = [c for c in list_clauses("sale", category="custom", db=seeded_db) if c["id"] == cid][0]
     assert custom["source_path"] is None
     assert custom["level"] is None
-    # base -> province null, level national
+    # base -> level national, no region (region cleared for national)
     upsert_clause(_clause(category="base", province="吉林", body_hash="b1"), db=seeded_db)
     base = list_clauses("sale", category="base", db=seeded_db)[0]
-    assert base["province"] is None
+    assert base["tags"].get("region") is None
     assert base["level"] == "national"
-    # tagged -> level local, province kept
+    # tagged -> level local, region kept
     upsert_clause(
         _clause(category="tagged", province="吉林", level="local", body_hash="t1"),
         db=seeded_db,
     )
-    tagged = list_clauses("sale", category="tagged", province="吉林", db=seeded_db)
+    tagged = list_clauses("sale", category="tagged", tags={"region": "吉林"}, db=seeded_db)
     assert len(tagged) == 1
     assert tagged[0]["level"] == "local"
-    assert tagged[0]["province"] == "吉林"
+    assert tagged[0]["tags"]["region"] == "吉林"
 
 
 def test_list_filters_and_ordering(seeded_db):
@@ -83,9 +87,9 @@ def test_list_filters_and_ordering(seeded_db):
     # section ordering: 当事人 before 违约责任
     sections = [r["section"] for r in list_clauses("sale", db=seeded_db)]
     assert sections.index("当事人") < sections.index("违约责任")
-    # province filter
-    jx = list_clauses("sale", category="tagged", province="吉林", db=seeded_db)
-    assert len(jx) == 1 and jx[0]["province"] == "吉林"
+    # region filter (region is a tag)
+    jx = list_clauses("sale", category="tagged", tags={"region": "吉林"}, db=seeded_db)
+    assert len(jx) == 1 and jx[0]["tags"]["region"] == "吉林"
 
 
 def test_delete_clauses(seeded_db):

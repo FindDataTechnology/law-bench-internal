@@ -52,7 +52,7 @@ def test_update_rederives_and_marks_manual(seeded_db):
     assert upd["manual"] is True
     assert upd["section"] == "当事人"
     assert upd["category"] == "base"
-    assert upd["province"] is None  # base semantics
+    assert upd["tags"].get("region") is None  # base semantics (national: no region)
     assert upd["body_hash"] != old["body_hash"]
     assert {s["name"] for s in upd["slot_instructions"]} == {"party_a"}
     assert any(r["name"] == "民法典" for r in upd["law_refs"])
