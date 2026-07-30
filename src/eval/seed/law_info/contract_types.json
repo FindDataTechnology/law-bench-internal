@@ -39,5 +39,7 @@
   {"key": "film_production", "zh": "影视剧合作制作合同"},
   {"key": "talent_agency", "zh": "演艺经纪合同"},
   {"key": "ppp_project", "zh": "PPP项目合同"},
-  {"key": "tourism_service", "zh": "旅游服务合同"}
+  {"key": "tourism_service", "zh": "旅游服务合同"},
+  {"key": "service", "zh": "服务合同"},
+  {"key": "land_transfer", "zh": "土地流转合同"}
 ]
