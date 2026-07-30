@@ -11,7 +11,7 @@ def _seed_base(seeded_db) -> int:
             "contract_type": "sale", "category": "base", "section": "当事人",
             "body": "甲方：{{party_a}}", "slot_instructions": [
                 {"name": "party_a", "label": "甲方", "description": "d", "example": "x", "required": True}],
-            "law_refs": [], "province": None, "level": "national", "source_path": "t/base.docx",
+            "law_refs": [], "region": None, "level": "national", "source_path": "t/base.docx",
             "source_doc_title": "T", "body_hash": "b1",
         },
         db=seeded_db,
@@ -31,7 +31,7 @@ def test_new_form_unknown_type_404(app_client):
 def test_create_custom_clause_via_post(app_client, seeded_db):
     r = app_client.post(
         "/clauses/sale/new",
-        data={"section": "附则", "body": "网页创建条款 {{n}}", "category": "custom", "province": ""},
+        data={"section": "附则", "body": "网页创建条款 {{n}}", "category": "custom", "region": ""},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -59,7 +59,7 @@ def test_update_clause_via_post(app_client, seeded_db):
     cid = _seed_base(seeded_db)
     r = app_client.post(
         f"/clauses/sale/clauses/{cid}",
-        data={"section": "违约责任", "body": "违约金{{penalty}} 依据《民法典》", "category": "tagged", "province": "吉林"},
+        data={"section": "违约责任", "body": "违约金{{penalty}} 依据《民法典》", "category": "tagged", "region": "吉林"},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -111,7 +111,7 @@ def test_new_form_has_tag_dropdowns(app_client):
 def test_create_with_tags_via_post(app_client, seeded_db):
     r = app_client.post(
         "/clauses/sale/new",
-        data={"section": "违约责任", "body": "偏甲 {{a}}", "category": "custom", "province": "",
+        data={"section": "违约责任", "body": "偏甲 {{a}}", "category": "custom", "region": "",
               "stance": "pro_a", "strength": "strong"},
         follow_redirects=False,
     )
@@ -125,7 +125,7 @@ def test_update_with_tags_via_post(app_client, seeded_db):
     cid = _seed_base(seeded_db)
     r = app_client.post(
         f"/clauses/sale/clauses/{cid}",
-        data={"section": "当事人", "body": "甲方 {{party_a}}", "category": "base", "province": "",
+        data={"section": "当事人", "body": "甲方 {{party_a}}", "category": "base", "region": "",
               "stance": "pro_b"},
         follow_redirects=False,
     )

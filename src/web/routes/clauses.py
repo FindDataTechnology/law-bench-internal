@@ -34,7 +34,7 @@ router = APIRouter(tags=["clauses"])
 
 _EXTRACT_MAX_LIMIT = 50
 _CATEGORIES = ("base", "tagged", "custom")
-_CATEGORY_ZH = {"base": "基本（全国）", "tagged": "标签（省份）", "custom": "自定义"}
+_CATEGORY_ZH = {"base": "基本（全国）", "tagged": "标签（地域）", "custom": "自定义"}
 _TAG_FILTERS = ("stance", "strength", "risk", "mandatory")
 
 
@@ -52,16 +52,16 @@ def _tags_from_form(form) -> dict:
     """Collect tag dims posted from a form (empty values omitted).
 
     Controlled dims come from their dropdowns; ``region`` (free-form) comes
-    from the legacy ``province`` text field.
+    from the ``region`` text field.
     """
     out: dict[str, str] = {}
     for dim in TAG_VOCAB:
         v = (form.get(dim) or "").strip()
         if v:
             out[dim] = v
-    prov = (form.get("province") or "").strip()
-    if prov:
-        out["region"] = prov
+    reg = (form.get("region") or "").strip()
+    if reg:
+        out["region"] = reg
     return out
 
 
@@ -298,7 +298,7 @@ async def clauses_delete_route(contract_type: str, clause_id: int, db=Depends(ge
 def clauses_detail(
     request: Request,
     contract_type: str,
-    province: str = "",
+    region: str = "",
     category: str = "",
     q: str = "",
     db=Depends(get_db),
@@ -309,13 +309,13 @@ def clauses_detail(
             request,
             "clauses_detail.html",
             {"not_found": True, "contract_type": contract_type, "zh": contract_type,
-             "grouped": [], "provinces": [], "province_filter": "", "category_filter": "",
+             "grouped": [], "provinces": [], "region_filter": "", "category_filter": "",
              "q": "", "flash": None},
             status_code=404,
         )
     detail_tags = _tags_from_query(request)
-    if province:
-        detail_tags["region"] = province
+    if region:
+        detail_tags["region"] = region
     clauses = list_clauses(
         contract_type,
         category=category or None,
@@ -351,7 +351,7 @@ def clauses_detail(
             "zh": zh[contract_type],
             "grouped": grouped,
             "provinces": provinces,
-            "province_filter": province,
+            "region_filter": region,
             "category_filter": category,
             "q": q,
             "flash": request.query_params.get("flash"),

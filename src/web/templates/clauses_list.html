@@ -19,7 +19,7 @@
     </form>
   </div>
 </div>
-<p class="muted">从 MinIO 的 823 份合同示范文本抽取的结构化条款，按 基本条款（全国）/ 标签条款（省份特色）/ 自定义条款 三类管理，据此拼装生成合同。完整语料抽取请用 CLI：<code>python -m src.clauses extract</code>。</p>
+<p class="muted">从 MinIO 的 823 份合同示范文本抽取的结构化条款，按 基本条款（全国）/ 标签条款（地域特色）/ 自定义条款 三类管理，据此拼装生成合同。完整语料抽取请用 CLI：<code>python -m src.clauses extract</code>。</p>
 
 {% if flash %}
 <div class="panel" style="background:#f6f8ff">{{ flash }}</div>
@@ -53,7 +53,7 @@
         <th>基本</th>
         <th>标签</th>
         <th>自定义</th>
-        <th>省份</th>
+        <th>地域</th>
         <th>操作</th>
       </tr>
     </thead>
