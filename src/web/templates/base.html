@@ -18,10 +18,6 @@
       <a href="{{ url_for('page_contracts') }}">合同模板</a>
       <a href="{{ url_for('page_clauses') }}">条款库</a>
       <a href="{{ url_for('page_search') }}">搜索</a>
-      <a class="btn btn-sm" href="{{ url_for('page_new_rubric') }}">{{ t.nav.new_local_rubric }}</a>
-      <form method="post" action="{{ url_for('page_harbor_extract') }}" class="inline" data-confirm="{{ t.nav.re_extract_confirm }}">
-        <button type="submit" class="btn btn-sm btn-ghost">{{ t.nav.re_extract_harbor }}</button>
-      </form>
       <span class="lang-switch">
         <a href="{{ request.url.path }}?lang=en"{% if lang == 'en' %} aria-current="true"{% endif %}>{{ t.switch.en }}</a>
         <span class="muted">|</span>

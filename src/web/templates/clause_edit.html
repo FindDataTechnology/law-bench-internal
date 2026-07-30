@@ -33,6 +33,18 @@
     <label>正文</label>
     <textarea name="body" rows="14" style="width:100%" required>{{ clause.body }}</textarea>
   </p>
+  <p>
+    <label>标签</label>
+    <span class="inline">
+      {% for dim in tag_dims %}
+      <select name="{{ dim }}" style="width:9em">
+        <option value="">{{ dim }}（未标注）</option>
+        {% for v in tag_vocab[dim] %}<option value="{{ v }}" {% if clause.tags.get(dim) == v %}selected{% endif %}>{{ v }}</option>{% endfor %}
+      </select>
+      {% endfor %}
+    </span>
+    <span class="muted small">编辑正文不会自动改标签（标签是人工判断，不随正文派生）。</span>
+  </p>
   <div class="inline">
     <button type="submit" class="btn">保存</button>
     <form method="post" action="{{ url_for('page_clauses_delete', contract_type=contract_type, clause_id=clause.id) }}" class="inline" data-confirm="确定删除该条款？">

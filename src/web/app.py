@@ -155,6 +155,18 @@ def create_app() -> FastAPI:
         """Liveness/readiness probe target: always 200 when the process is up."""
         return JSONResponse({"status": "ok"})
 
+    @app.on_event("startup")
+    def _load_tag_vocab() -> None:
+        """Populate the in-memory tag vocabulary from the ``tag_dims`` table so
+        the dashboard facets / ``validate_tags`` see the full controlled
+        vocabulary without reading seed files from the image. Best-effort: a DB
+        hiccup must not block startup (the starter set still works)."""
+        try:
+            from ..clauses.tags import load_vocab_from_db
+            load_vocab_from_db()
+        except Exception:  # noqa: BLE001
+            pass
+
     return app
 
 

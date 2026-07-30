@@ -38,7 +38,11 @@ def _zh_name(contract_type: str) -> str:
 
 
 def _select_clauses(
-    contract_type: str, province: str | None, custom_clause_ids: list[int] | None, db: Any = None
+    contract_type: str,
+    province: str | None,
+    custom_clause_ids: list[int] | None,
+    stance: str | None = None,
+    db: Any = None,
 ) -> list[dict]:
     clauses = list_clauses(contract_type, category="base", db=db)
     if province:
@@ -46,8 +50,12 @@ def _select_clauses(
     if custom_clause_ids:
         for cid in custom_clause_ids:
             c = get_custom_clause(cid, db=db)
-            if c is not None:
+            if c is not None and (stance is None or (c.get("tags") or {}).get("stance") == stance):
                 clauses.append(c)
+    elif stance:
+        clauses += list_clauses(
+            contract_type, category="custom", tags={"stance": stance}, db=db
+        )
     return clauses
 
 
@@ -133,6 +141,7 @@ def generate_contract_assembled(
     *,
     province: str | None = None,
     custom_clause_ids: list[int] | None = None,
+    stance: str | None = None,
     format: str = "pdf",
     out_dir: str | Path | None = None,
     db: Any = None,
@@ -154,7 +163,7 @@ def generate_contract_assembled(
         raise NotFoundError(f"unknown contract type: {contract_type!r}")
 
     zh = _zh_name(contract_type)
-    clauses = _select_clauses(contract_type, province, custom_clause_ids, db=db)
+    clauses = _select_clauses(contract_type, province, custom_clause_ids, stance, db=db)
     body = _assemble_body(clauses)
     instructions = _build_instructions(clauses, zh)
     law_refs = _build_law_refs(clauses)

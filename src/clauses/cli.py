@@ -2,7 +2,7 @@
 
 ``python -m src.clauses extract [--limit N] [--force]`` runs resumable corpus
 extraction (MinIO -> parse -> LLM extract -> Postgres). ``python -m src.clauses
-generate <type> [--province <省>] [--custom <id,...>] [--format pdf|docx|both]``
+generate <type> [--province <省>] [--custom <id,...>] [--stance pro_a|pro_b|balanced] [--format pdf|docx|both]``
 assembles a contract from base + tagged + custom clauses. ``stats`` prints the
 clause counts.
 """
@@ -86,6 +86,12 @@ def main(argv: list[str] | None = None) -> int:
     p_gen.add_argument("contract_type", help="contract type key (e.g. property_service)")
     p_gen.add_argument("--province", default=None, help="province tag for 特色法条 (e.g. 吉林)")
     p_gen.add_argument("--custom", default=None, help="comma-separated custom clause ids")
+    p_gen.add_argument(
+        "--stance",
+        default=None,
+        choices=("pro_a", "pro_b", "balanced"),
+        help="filter custom clauses to this stance (利益倾向)",
+    )
     p_gen.add_argument("--format", default="pdf", choices=("pdf", "docx", "both"))
     p_gen.add_argument("--out", default=None, help="output directory (default: output/contracts)")
 
@@ -105,6 +111,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.contract_type,
                 province=args.province,
                 custom_clause_ids=_parse_ids(args.custom),
+                stance=args.stance,
                 format=args.format,
                 out_dir=args.out,
             )

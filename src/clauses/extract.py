@@ -169,9 +169,11 @@ def _normalize_slot_instructions(body: str, instructions: list[dict]) -> list[di
         if name and name not in by_name:
             by_name[name] = {
                 "name": name,
-                "label": ins.get("label") or name,
-                "description": ins.get("description") or "",
-                "example": ins.get("example") or "",
+                "label": str(ins.get("label") or name),
+                "description": str(ins.get("description") or ""),
+                # YAML parses unquoted numbers/dates as int/date; coerce to str
+                # so Jsonb serialization never chokes on a slot example.
+                "example": "" if ins.get("example") is None else str(ins.get("example")),
                 "required": bool(ins.get("required", False)),
             }
     out = []

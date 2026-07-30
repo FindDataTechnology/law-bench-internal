@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from ..app import templates as _templates
 from ..deps import get_db
 from ..markdown_render import render_markdown
-from ...clauses import generate_contract_assembled, list_clauses
+from ...clauses import TAG_VOCAB, generate_contract_assembled, list_clauses
 from ...clauses.store import (
     count_clauses,
     counts_by_type,
@@ -35,6 +35,34 @@ router = APIRouter(tags=["clauses"])
 _EXTRACT_MAX_LIMIT = 50
 _CATEGORIES = ("base", "tagged", "custom")
 _CATEGORY_ZH = {"base": "基本（全国）", "tagged": "标签（省份）", "custom": "自定义"}
+_TAG_FILTERS = ("stance", "strength", "risk", "mandatory")
+
+
+def _tags_from_query(request: Request) -> dict:
+    """Collect tag dims present in the query string into a {dim: value} dict."""
+    out: dict[str, str] = {}
+    for dim in TAG_VOCAB:
+        v = request.query_params.get(dim)
+        if v:
+            out[dim] = v
+    return out
+
+
+def _tags_from_form(form) -> dict:
+    """Collect tag dims posted from a form (empty values omitted)."""
+    out: dict[str, str] = {}
+    for dim in TAG_VOCAB:
+        v = (form.get(dim) or "").strip()
+        if v:
+            out[dim] = v
+    return out
+
+
+def _edit_tag_dims(clause: dict | None) -> list[str]:
+    """Tag dims to render as dropdowns on the edit form: the universal 4 plus any
+    type-specific dim the clause already carries (so it stays editable/clearable)."""
+    present = list((clause or {}).get("tags") or {})
+    return list(dict.fromkeys(list(_TAG_FILTERS) + [d for d in present if d not in _TAG_FILTERS]))
 
 
 def _zh_map() -> dict:
@@ -59,7 +87,8 @@ def _type_rows(db) -> list[dict]:
 @router.get("/clauses", include_in_schema=False, name="page_clauses")
 def clauses_list(request: Request, q: str = "", db=Depends(get_db)):
     counts = count_clauses(db)
-    results = search_clauses(q, db=db) if q else None
+    tags = _tags_from_query(request)
+    results = search_clauses(q, tags=tags or None, db=db) if (q or tags) else None
     return _templates.TemplateResponse(
         request,
         "clauses_list.html",
@@ -70,6 +99,9 @@ def clauses_list(request: Request, q: str = "", db=Depends(get_db)):
             "q": q,
             "results": results,
             "zh": _zh_map(),
+            "tag_filters": _TAG_FILTERS,
+            "tag_vocab": TAG_VOCAB,
+            "active_tags": tags,
         },
     )
 
@@ -110,13 +142,17 @@ def clauses_extract(request: Request, limit: int = 5):
     name="page_clauses_generate",
 )
 def clauses_generate(
-    contract_type: str, format: str = "pdf", province: str | None = None, db=Depends(get_db)
+    contract_type: str,
+    format: str = "pdf",
+    province: str | None = None,
+    stance: str | None = None,
+    db=Depends(get_db),
 ):
     if format not in ("docx", "pdf"):
         raise HTTPException(status_code=400, detail="unsupported format; use docx or pdf")
     try:
         result = generate_contract_assembled(
-            contract_type, province=province or None, format=format, db=db
+            contract_type, province=province or None, stance=stance or None, format=format, db=db
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail=f"unknown contract type: {contract_type}")
@@ -153,6 +189,8 @@ def clauses_new(request: Request, contract_type: str):
             "zh": zh[contract_type],
             "categories": _CATEGORIES,
             "category_zh": _CATEGORY_ZH,
+            "tag_filters": _TAG_FILTERS,
+            "tag_vocab": TAG_VOCAB,
         },
     )
 
@@ -170,6 +208,7 @@ async def clauses_create(request: Request, contract_type: str, db=Depends(get_db
             "section": (form.get("section") or "附则").strip(),
             "body": form.get("body") or "",
             "province": (form.get("province") or "").strip() or None,
+            "tags": _tags_from_form(form),
         },
         db=db,
     )
@@ -200,6 +239,8 @@ def clauses_edit(request: Request, contract_type: str, clause_id: int, db=Depend
             "body_html": render_markdown(clause["body"]),
             "categories": _CATEGORIES,
             "category_zh": _CATEGORY_ZH,
+            "tag_dims": _edit_tag_dims(clause),
+            "tag_vocab": TAG_VOCAB,
         },
     )
 
@@ -218,6 +259,7 @@ async def clauses_update(request: Request, contract_type: str, clause_id: int, d
                 "body": form.get("body") or "",
                 "category": category,
                 "province": (form.get("province") or "").strip() or None,
+                "tags": _tags_from_form(form),
             },
             db=db,
         )
@@ -271,6 +313,7 @@ def clauses_detail(
         category=category or None,
         province=province or None,
         q=q or None,
+        tags=_tags_from_query(request) or None,
         db=db,
     )
     all_for_type = list_clauses(contract_type, db=db)
@@ -306,5 +349,8 @@ def clauses_detail(
             "q": q,
             "flash": request.query_params.get("flash"),
             "section_order": SECTION_ORDER,
+            "tag_filters": _TAG_FILTERS,
+            "tag_vocab": TAG_VOCAB,
+            "active_tags": _tags_from_query(request),
         },
     )

@@ -30,6 +30,18 @@
     <label>正文</label>
     <textarea name="body" rows="12" style="width:100%" placeholder="甲方：{{ '{{' }}party_a{{ '}}' }}；依据《民法典》……" required></textarea>
   </p>
+  <p>
+    <label>标签</label>
+    <span class="inline">
+      {% for dim in tag_filters %}
+      <select name="{{ dim }}" style="width:9em">
+        <option value="">{{ dim }}（未标注）</option>
+        {% for v in tag_vocab[dim] %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+      </select>
+      {% endfor %}
+    </span>
+    <span class="muted small">stance=利益倾向 · strength=强度 · risk=风险 · mandatory=法律性质</span>
+  </p>
   <button type="submit" class="btn">创建条款</button>
 </form>
 {% endblock %}

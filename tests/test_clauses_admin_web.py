@@ -99,3 +99,49 @@ def test_list_search_returns_results(app_client, seeded_db):
     r = app_client.get("/clauses", params={"q": "甲方"})
     assert r.status_code == 200
     assert "搜索结果" in r.text
+
+
+def test_new_form_has_tag_dropdowns(app_client):
+    r = app_client.get("/clauses/sale/new")
+    assert r.status_code == 200
+    assert 'name="stance"' in r.text
+    assert 'name="strength"' in r.text
+
+
+def test_create_with_tags_via_post(app_client, seeded_db):
+    r = app_client.post(
+        "/clauses/sale/new",
+        data={"section": "违约责任", "body": "偏甲 {{a}}", "category": "custom", "province": "",
+              "stance": "pro_a", "strength": "strong"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    rows = list_clauses("sale", category="custom", tags={"stance": "pro_a"}, db=seeded_db)
+    assert len(rows) == 1
+    assert rows[0]["tags"] == {"stance": "pro_a", "strength": "strong"}
+
+
+def test_update_with_tags_via_post(app_client, seeded_db):
+    cid = _seed_base(seeded_db)
+    r = app_client.post(
+        f"/clauses/sale/clauses/{cid}",
+        data={"section": "当事人", "body": "甲方 {{party_a}}", "category": "base", "province": "",
+              "stance": "pro_b"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    c = [x for x in list_clauses("sale", db=seeded_db) if x["id"] == cid][0]
+    assert c["tags"] == {"stance": "pro_b"}
+
+
+def test_detail_filter_by_stance(app_client, seeded_db):
+    from src.clauses.store import create_clause
+
+    create_clause({"contract_type": "sale", "category": "custom", "section": "违约责任",
+                   "body": "偏甲违约金 {{a}}", "tags": {"stance": "pro_a"}}, db=seeded_db)
+    create_clause({"contract_type": "sale", "category": "custom", "section": "违约责任",
+                   "body": "偏乙违约金 {{b}}", "tags": {"stance": "pro_b"}}, db=seeded_db)
+    r = app_client.get("/clauses/sale", params={"stance": "pro_a"})
+    assert r.status_code == 200
+    assert "偏甲" in r.text
+    assert "偏乙" not in r.text

@@ -99,12 +99,25 @@ CREATE TABLE IF NOT EXISTS clauses (
     source_doc_title TEXT,
     body_hash        TEXT NOT NULL,
     manual           BOOLEAN NOT NULL DEFAULT false,
+    tags             JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at       TEXT NOT NULL,
     updated_at       TEXT NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS clauses_upsert_uk
     ON clauses (source_path, section, body_hash)
     WHERE source_path IS NOT NULL;
+"""
+
+# tag_dims table: the controlled-vocabulary tag dimensions (name -> allowed
+# values). Populated once per DB by seed_tag_dims (from the per-type manifests)
+# and read into the in-memory TAG_VOCAB at app startup, so the running image
+# need not ship the seed files. Owned by src/clauses; DDL lives here so
+# ensure_schema establishes it on any database the app touches.
+TAG_DIMS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS tag_dims (
+    name   TEXT PRIMARY KEY,
+    values JSONB NOT NULL
+);
 """
 
 
@@ -118,7 +131,8 @@ _ADDITIVE_COLUMNS = (
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS prompt_type TEXT; "
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS variant_label TEXT; "
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS draft_text TEXT; "
-    "ALTER TABLE IF EXISTS clauses ADD COLUMN IF NOT EXISTS manual BOOLEAN NOT NULL DEFAULT false;"
+    "ALTER TABLE IF EXISTS clauses ADD COLUMN IF NOT EXISTS manual BOOLEAN NOT NULL DEFAULT false; "
+    "ALTER TABLE IF EXISTS clauses ADD COLUMN IF NOT EXISTS tags JSONB NOT NULL DEFAULT '{}'::jsonb;"
 )
 
 # The DDL is fully idempotent, so ensure_schema is memoized per database (keyed
@@ -144,6 +158,7 @@ def ensure_schema(db_path=DEFAULT_DB) -> None:
         conn.execute(RESULTS_SCHEMA)
         conn.execute(LAW_INFO_SCHEMA)
         conn.execute(CLAUSES_SCHEMA)
+        conn.execute(TAG_DIMS_SCHEMA)
         conn.execute(_ADDITIVE_COLUMNS)
         conn.commit()
         _ensured_dbs.add(key)

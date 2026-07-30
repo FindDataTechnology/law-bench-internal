@@ -146,6 +146,15 @@ def _session_db_name() -> str:
     finally:
         conn.close()
     ensure_schema()  # eval_runs / eval_criteria_results / compare_runs (opens from env)
+    # Seed the tag_dims vocabulary (from the manifests) into the session DB and
+    # load it into the in-memory TAG_VOCAB, so tag tests see the full vocab.
+    # tag_dims is intentionally NOT in _ALL_TABLES - it is read-only reference
+    # data, seeded once per session and preserved across per-test truncations.
+    from src.clauses.seed_manifest import seed_tag_dims
+    from src.clauses.tags import load_vocab_from_db
+
+    seed_tag_dims()
+    load_vocab_from_db()
     yield name
     _drop_db(name)
 

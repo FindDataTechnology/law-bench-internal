@@ -24,9 +24,11 @@ from .store import (
     upsert_clause,
     upsert_clauses,
 )
+from .tags import TAG_VOCAB, load_vocab_from_db, register_tag_dim, validate_tags
 
 __all__ = [
     "SECTION_ORDER",
+    "TAG_VOCAB",
     "count_clauses",
     "counts_by_type",
     "create_clause",
@@ -41,10 +43,13 @@ __all__ = [
     "list_clauses",
     "list_corpus_documents",
     "list_extracted_source_paths",
+    "load_vocab_from_db",
     "read_document",
+    "register_tag_dim",
     "search_clauses",
     "section_rank",
     "update_clause",
     "upsert_clause",
     "upsert_clauses",
+    "validate_tags",
 ]
