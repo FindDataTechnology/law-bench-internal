@@ -25,8 +25,8 @@ from .extract import _law_refs_from_body, _normalize_slot_instructions, section_
 from .tags import FREE_FORM_TAGS, TAG_VOCAB, validate_tags
 
 _INSERT_COLS = (
-    "contract_type, category, section, body, slot_instructions, law_refs, "
-    "level, source_path, source_doc_title, body_hash, created_at, updated_at, manual, tags"
+    "contract_type, section, body, slot_instructions, law_refs, "
+    "source_path, source_doc_title, body_hash, created_at, updated_at, manual, tags"
 )
 
 
@@ -37,30 +37,23 @@ def _now() -> str:
 
 
 def _row(clause: dict, *, now: str) -> tuple:
-    # Enforce category semantics defensively (the extractor already sets these):
-    # custom -> no source_path; base -> national; tagged -> local. Region is a
-    # tag (tags.region), not a column.
-    category = clause["category"]
+    # source lives in tags.source (base/tagged/custom). Bridge from legacy
+    # `category` field if tags has no source. level is derived (not stored).
     source_path = clause.get("source_path")
-    level = clause.get("level")
-    if category == "custom":
+    tags = dict(clause.get("tags") or {})
+    if "source" not in tags and "category" in clause:
+        tags["source"] = clause["category"]
+    source = tags.get("source")
+    if source == "custom":
         source_path = None
-        level = None
-    elif category == "base":
-        level = "national"
-    elif category == "tagged":
-        level = "local"
-    tags = clause.get("tags") or {}
-    if category == "base":
+    elif source == "base":
         tags = {k: v for k, v in tags.items() if k != "region"}  # national: no region
     return (
         clause["contract_type"],
-        category,
         clause["section"],
         clause["body"],
         Jsonb(clause.get("slot_instructions") or []),
         Jsonb(clause.get("law_refs") or []),
-        level,
         source_path,
         clause.get("source_doc_title"),
         clause["body_hash"],
@@ -101,12 +94,11 @@ def upsert_clause(clause: dict, db: Any = None) -> int:
         if clause.get("source_path") is not None:
             cur = conn.execute(
                 "INSERT INTO clauses (" + _INSERT_COLS + ") VALUES "
-                "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
                 "ON CONFLICT (source_path, section, body_hash) WHERE source_path IS NOT NULL "
-                "DO UPDATE SET contract_type=EXCLUDED.contract_type, category=EXCLUDED.category, "
+                "DO UPDATE SET contract_type=EXCLUDED.contract_type, "
                 "section=EXCLUDED.section, body=EXCLUDED.body, "
                 "slot_instructions=EXCLUDED.slot_instructions, law_refs=EXCLUDED.law_refs, "
-                "level=EXCLUDED.level, "
                 "source_doc_title=EXCLUDED.source_doc_title, body_hash=EXCLUDED.body_hash, "
                 "updated_at=EXCLUDED.updated_at RETURNING id",
                 values,
@@ -114,7 +106,7 @@ def upsert_clause(clause: dict, db: Any = None) -> int:
         else:
             cur = conn.execute(
                 "INSERT INTO clauses (" + _INSERT_COLS + ") VALUES "
-                "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+                "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
                 values,
             )
         conn.commit()
@@ -136,12 +128,11 @@ def upsert_clauses(clauses: list[dict], db: Any = None) -> int:
             if clause.get("source_path") is not None:
                 conn.execute(
                     "INSERT INTO clauses (" + _INSERT_COLS + ") VALUES "
-                    "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                    "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
                     "ON CONFLICT (source_path, section, body_hash) WHERE source_path IS NOT NULL "
-                    "DO UPDATE SET contract_type=EXCLUDED.contract_type, category=EXCLUDED.category, "
+                    "DO UPDATE SET contract_type=EXCLUDED.contract_type, "
                     "section=EXCLUDED.section, body=EXCLUDED.body, "
                     "slot_instructions=EXCLUDED.slot_instructions, law_refs=EXCLUDED.law_refs, "
-                    "level=EXCLUDED.level, "
                     "source_doc_title=EXCLUDED.source_doc_title, body_hash=EXCLUDED.body_hash, "
                     "updated_at=EXCLUDED.updated_at",
                     values,
@@ -149,7 +140,7 @@ def upsert_clauses(clauses: list[dict], db: Any = None) -> int:
             else:
                 conn.execute(
                     "INSERT INTO clauses (" + _INSERT_COLS + ") VALUES "
-                    "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     values,
                 )
         conn.commit()
@@ -172,7 +163,7 @@ def create_clause(clause: dict, db: Any = None) -> int:
     try:
         cur = conn.execute(
             "INSERT INTO clauses (" + _INSERT_COLS + ") VALUES "
-            "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+            "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
             _row(rec, now=now),
         )
         conn.commit()
@@ -214,6 +205,13 @@ def update_clause(clause_id: int, fields: dict, db: Any = None) -> dict:
             level = "local"
         # tags: curatorial, not body-derived - replace when supplied, else preserve.
         tags = validate_tags(fields["tags"], existing["contract_type"]) if "tags" in fields else (existing.get("tags") or {})
+        # bridge: derive tags.source from the legacy category field
+        if "category" in fields:
+            tags["source"] = fields["category"]
+        elif "source" not in tags:
+            cat = existing.get("category")
+            if cat:
+                tags["source"] = cat
         now = _now()
         conn.execute(
             "UPDATE clauses SET section=%s, body=%s, slot_instructions=%s, law_refs=%s, "
@@ -280,12 +278,12 @@ def _row_to_dict(r) -> dict:
     return {
         "id": r["id"],
         "contract_type": r["contract_type"],
-        "category": r["category"],
+        "category": (r["tags"] or {}).get("source"),
+        "level": {"base": "national", "tagged": "local"}.get((r["tags"] or {}).get("source")),
         "section": r["section"],
         "body": r["body"],
         "slot_instructions": r["slot_instructions"] or [],
         "law_refs": r["law_refs"] or [],
-        "level": r["level"],
         "source_path": r["source_path"],
         "source_doc_title": r["source_doc_title"],
         "body_hash": r["body_hash"],
@@ -316,7 +314,7 @@ def list_clauses(
         where.append("contract_type = %s")
         params.append(contract_type)
     if category is not None:
-        where.append("category = %s")
+        where.append("tags->>'source' = %s")
         params.append(category)
     if q:
         where.append("(body ILIKE %s OR source_doc_title ILIKE %s)")
@@ -386,7 +384,7 @@ def count_clauses(db: Any = None) -> dict:
     conn = connect(db)
     try:
         rows = conn.execute(
-            "SELECT category, COUNT(*) AS n FROM clauses GROUP BY category"
+            "SELECT tags->>'source' AS category, COUNT(*) AS n FROM clauses GROUP BY tags->>'source'"
         ).fetchall()
     finally:
         conn.close()
@@ -410,8 +408,8 @@ def counts_by_type(db: Any = None) -> list[dict]:
     conn = connect(db)
     try:
         rows = conn.execute(
-            "SELECT contract_type, category, tags->>'region' AS region, COUNT(*) AS n "
-            "FROM clauses GROUP BY contract_type, category, tags->>'region' "
+            "SELECT contract_type, tags->>'source' AS source, tags->>'region' AS region, COUNT(*) AS n "
+            "FROM clauses GROUP BY contract_type, tags->>'source', tags->>'region' "
             "ORDER BY contract_type"
         ).fetchall()
     finally:
@@ -421,8 +419,8 @@ def counts_by_type(db: Any = None) -> list[dict]:
         entry = by_type.setdefault(
             r["contract_type"], {"contract_type": r["contract_type"], "base": 0, "tagged": 0, "custom": 0, "provinces": set()}
         )
-        entry[r["category"]] = entry.get(r["category"], 0) + r["n"]
-        if r["category"] == "tagged" and r["region"]:
+        entry[r["source"]] = entry.get(r["source"], 0) + r["n"]
+        if r["source"] == "tagged" and r["region"]:
             entry["provinces"].add(r["region"])
     return [
         {**e, "provinces": sorted(e["provinces"])} for e in by_type.values()

@@ -118,7 +118,7 @@ def test_create_with_tags_via_post(app_client, seeded_db):
     assert r.status_code == 303
     rows = list_clauses("sale", category="custom", tags={"stance": "pro_a"}, db=seeded_db)
     assert len(rows) == 1
-    assert rows[0]["tags"] == {"stance": "pro_a", "strength": "strong"}
+    assert rows[0]["tags"] == {"stance": "pro_a", "strength": "strong", "source": "custom"}
 
 
 def test_update_with_tags_via_post(app_client, seeded_db):
@@ -131,7 +131,7 @@ def test_update_with_tags_via_post(app_client, seeded_db):
     )
     assert r.status_code == 303
     c = [x for x in list_clauses("sale", db=seeded_db) if x["id"] == cid][0]
-    assert c["tags"] == {"stance": "pro_b"}
+    assert c["tags"] == {"stance": "pro_b", "source": "base"}
 
 
 def test_detail_filter_by_stance(app_client, seeded_db):

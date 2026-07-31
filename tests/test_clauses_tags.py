@@ -46,7 +46,7 @@ def test_create_clause_persists_tags(seeded_db):
         db=seeded_db,
     )
     c = [r for r in list_clauses("sale", db=seeded_db) if r["id"] == cid][0]
-    assert c["tags"] == {"stance": "pro_a", "strength": "strong"}
+    assert c["tags"] == {"stance": "pro_a", "strength": "strong", "source": "custom"}
 
 
 def test_body_edit_preserves_tags(seeded_db):
@@ -66,7 +66,7 @@ def test_body_edit_preserves_tags(seeded_db):
         db=seeded_db,
     )
     # body-derived fields re-derived, tags untouched (curatorial, not body-derived)
-    assert upd["tags"] == {"stance": "pro_a"}
+    assert upd["tags"] == {"stance": "pro_a", "source": "custom"}
     assert upd["body_hash"]
 
 
@@ -78,7 +78,7 @@ def test_update_clause_replaces_tags_when_supplied(seeded_db):
     )
     upd = update_clause(cid, {"body": "x {{a}}", "section": "附则", "category": "custom",
                               "tags": {"stance": "pro_b"}}, db=seeded_db)
-    assert upd["tags"] == {"stance": "pro_b"}
+    assert upd["tags"] == {"stance": "pro_b", "source": "custom"}
 
 
 def test_list_filter_by_tags(seeded_db):
