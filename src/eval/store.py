@@ -114,8 +114,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS clauses_upsert_uk
 # ensure_schema establishes it on any database the app touches.
 TAG_DIMS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS tag_dims (
-    name   TEXT PRIMARY KEY,
-    values JSONB NOT NULL
+    name           TEXT NOT NULL,
+    contract_type  TEXT,          -- NULL = universal (shared across all types); <key> = type-specific
+    category       TEXT,          -- 来源/利益倾向/风险合规/地域/类型专属
+    values         JSONB NOT NULL DEFAULT '[]'::jsonb,
+    free_form      BOOLEAN NOT NULL DEFAULT false,
+    zh_label       TEXT,
+    description    TEXT
 );
 """
 
@@ -132,7 +137,15 @@ _ADDITIVE_COLUMNS = (
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS draft_text TEXT; "
     "ALTER TABLE IF EXISTS clauses ADD COLUMN IF NOT EXISTS manual BOOLEAN NOT NULL DEFAULT false; "
     "ALTER TABLE IF EXISTS clauses ADD COLUMN IF NOT EXISTS tags JSONB NOT NULL DEFAULT '{}'::jsonb; "
-    "ALTER TABLE IF EXISTS clauses DROP COLUMN IF EXISTS province;"
+    "ALTER TABLE IF EXISTS clauses DROP COLUMN IF EXISTS province; "
+    "ALTER TABLE IF EXISTS clauses ADD COLUMN IF NOT EXISTS tag_review JSONB NOT NULL DEFAULT '{}'::jsonb; "
+    "ALTER TABLE IF EXISTS tag_dims ADD COLUMN IF NOT EXISTS contract_type TEXT; "
+    "ALTER TABLE IF EXISTS tag_dims ADD COLUMN IF NOT EXISTS category TEXT; "
+    "ALTER TABLE IF EXISTS tag_dims ADD COLUMN IF NOT EXISTS free_form BOOLEAN NOT NULL DEFAULT false; "
+    "ALTER TABLE IF EXISTS tag_dims ADD COLUMN IF NOT EXISTS zh_label TEXT; "
+    "ALTER TABLE IF EXISTS tag_dims ADD COLUMN IF NOT EXISTS description TEXT; "
+    "CREATE UNIQUE INDEX IF NOT EXISTS tag_dims_name_uk ON tag_dims (name) WHERE contract_type IS NULL; "
+    "CREATE UNIQUE INDEX IF NOT EXISTS tag_dims_type_name_uk ON tag_dims (contract_type, name) WHERE contract_type IS NOT NULL;"
 )
 
 # The DDL is fully idempotent, so ensure_schema is memoized per database (keyed
