@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}标签审核 · {{ t.nav.brand }}{% endblock %}
+{% block content %}
+<div class="toolbar between">
+  <h1>标签审核</h1>
+  <a class="btn btn-sm btn-ghost" href="{{ url_for('page_clauses') }}">返回条款库</a>
+</div>
+<p class="muted">待审核条款（抽取时 LLM 自动打标的 stance/strength/risk/mandatory 等，需人工 approve 后才能用于组装生成合同）。</p>
+
+{% for c in pending %}
+<div class="panel">
+  <h3 style="margin-top:0">{{ zh.get(c.contract_type, c.contract_type) }} · {{ c.section }} · #{{ c.id }}</h3>
+  <div class="muted small">{{ c.body[:150] }}…</div>
+  <p>标签：
+    {% for dim, val in c.tags.items() %}
+      <code>{{ dim }}={{ val }}</code>
+      {% set st = c.tag_review.get(dim, '—') %}
+      <span class="muted small">({{ st }})</span>
+    {% endfor %}
+  </p>
+  <div class="inline">
+    <form method="post" action="{{ url_for('page_clauses_review_tag_route', contract_type=c.contract_type, clause_id=c.id) }}" class="inline">
+      <select name="dim" style="width:10em">
+        {% for dim in c.tags %}<option value="{{ dim }}">{{ dim }}</option>{% endfor %}
+      </select>
+      <select name="status" style="width:7em">
+        <option value="approved">通过</option>
+        <option value="rejected">驳回</option>
+        <option value="pending">重置</option>
+      </select>
+      <button type="submit" class="btn btn-sm">审核</button>
+    </form>
+    <form method="post" action="{{ url_for('page_clauses_review_all_route', contract_type=c.contract_type, clause_id=c.id) }}" class="inline">
+      <button type="submit" name="status" value="approved" class="btn btn-sm">全部通过</button>
+    </form>
+    <a href="{{ url_for('page_clauses_edit', contract_type=c.contract_type, clause_id=c.id) }}">编辑</a>
+  </div>
+</div>
+{% else %}
+<p class="muted">暂无待审核条款。</p>
+{% endfor %}
+{% endblock %}

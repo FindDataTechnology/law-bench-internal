@@ -26,6 +26,7 @@ from ...clauses.store import (
     search_clauses,
     update_clause,
 )
+from ...clauses.tag_review import bulk_review, list_pending, review_tag
 from ...contracts import list_contract_types
 from ...docs import ConverterNotAvailableError
 from ...eval.errors import NotFoundError
@@ -284,6 +285,59 @@ async def clauses_delete_route(contract_type: str, clause_id: int, db=Depends(ge
         raise HTTPException(status_code=404, detail=f"clause not found: {clause_id}")
     return RedirectResponse(
         f"/clauses/{contract_type}?flash={quote('已删除条款')}", status_code=303
+    )
+
+
+# --- tag review ----------------------------------------------------------- #
+
+
+@router.get("/clauses/review", include_in_schema=False, name="page_clauses_review")
+def clauses_review(request: Request, db=Depends(get_db)):
+    pending = list_pending(db=db)
+    return _templates.TemplateResponse(
+        request,
+        "clauses_review.html",
+        {"pending": pending, "zh": _zh_map()},
+    )
+
+
+@router.post(
+    "/clauses/{contract_type}/clauses/{clause_id}/review",
+    include_in_schema=False,
+)
+async def clauses_review_tag_route(
+    request: Request, contract_type: str, clause_id: int, db=Depends(get_db)
+):
+    form = await request.form()
+    dim = (form.get("dim") or "").strip()
+    status = (form.get("status") or "").strip()
+    if dim and status:
+        try:
+            review_tag(clause_id, dim, status, db=db)
+        except NotFoundError:
+            raise HTTPException(status_code=404, detail=f"clause not found: {clause_id}")
+    return RedirectResponse(
+        f"/clauses/{contract_type}/clauses/{clause_id}?flash={quote('已审核标签')}",
+        status_code=303,
+    )
+
+
+@router.post(
+    "/clauses/{contract_type}/clauses/{clause_id}/review-all",
+    include_in_schema=False,
+)
+async def clauses_review_all_route(
+    request: Request, contract_type: str, clause_id: int, db=Depends(get_db)
+):
+    form = await request.form()
+    status = (form.get("status") or "approved").strip()
+    try:
+        bulk_review(clause_id, status, db=db)
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail=f"clause not found: {clause_id}")
+    return RedirectResponse(
+        f"/clauses/{contract_type}/clauses/{clause_id}?flash={quote('已批量审核')}",
+        status_code=303,
     )
 
 
