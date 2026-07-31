@@ -24,10 +24,14 @@ def _base(d: dict) -> dict:
 
 
 def test_stance_filter_selects_only_matching_custom(seeded_db):
-    create_clause({"contract_type": "sale", "category": "custom", "section": "违约责任",
+    from src.clauses.tag_review import bulk_review
+
+    cid1 = create_clause({"contract_type": "sale", "category": "custom", "section": "违约责任",
                    "body": "偏甲违约金 {{a}}", "tags": {"stance": "pro_a"}}, db=seeded_db)
-    create_clause({"contract_type": "sale", "category": "custom", "section": "违约责任",
+    cid2 = create_clause({"contract_type": "sale", "category": "custom", "section": "违约责任",
                    "body": "偏乙违约金 {{b}}", "tags": {"stance": "pro_b"}}, db=seeded_db)
+    bulk_review(cid1, "approved", db=seeded_db)
+    bulk_review(cid2, "approved", db=seeded_db)
     selected = _select_clauses("sale", None, None, stance="pro_a", db=seeded_db)
     bodies = [c["body"] for c in selected]
     assert any("偏甲" in b for b in bodies)

@@ -83,11 +83,13 @@ def test_assemble_with_custom(seeded_db):
             "contract_type": "sale", "category": "custom", "section": "附则",
             "body": "custom-marker {{sign_location}}",
             "slot_instructions": [{"name": "sign_location", "label": "签署地点", "description": "d", "example": "北京", "required": False}],
-            "law_refs": [], "province": None, "level": None, "source_path": None,
+            "law_refs": [], "level": None, "source_path": None,
             "source_doc_title": None, "body_hash": "c1",
         },
         db=seeded_db,
     )
+    from src.clauses.tag_review import bulk_review
+    bulk_review(cid, "approved", db=seeded_db)
     r = generate_contract_assembled(
         "sale", custom_clause_ids=[cid], format="docx", db=seeded_db
     )

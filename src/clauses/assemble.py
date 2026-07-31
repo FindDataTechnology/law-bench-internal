@@ -23,6 +23,7 @@ from src.eval.legal_refs import CATEGORY_ORDER
 
 from .extract import SECTION_ORDER, section_rank
 from .store import get_custom_clause, list_clauses
+from .tag_review import is_assembly_ready
 
 _FORMATS = ("docx", "pdf", "both")
 # src/clauses/assemble.py -> src/clauses -> src -> repo root
@@ -50,12 +51,13 @@ def _select_clauses(
     if custom_clause_ids:
         for cid in custom_clause_ids:
             c = get_custom_clause(cid, db=db)
-            if c is not None and (stance is None or (c.get("tags") or {}).get("stance") == stance):
+            if c is not None and is_assembly_ready(c) and (stance is None or (c.get("tags") or {}).get("stance") == stance):
                 clauses.append(c)
     elif stance:
-        clauses += list_clauses(
+        candidates = list_clauses(
             contract_type, category="custom", tags={"stance": stance}, db=db
         )
+        clauses += [c for c in candidates if is_assembly_ready(c)]
     return clauses
 
 

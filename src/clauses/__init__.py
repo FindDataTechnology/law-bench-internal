@@ -33,6 +33,7 @@ from .tags import (
     tag_vocab_for_type,
     validate_tags,
 )
+from .tag_review import bulk_review, is_assembly_ready, list_pending, review_tag
 
 __all__ = [
     "SECTION_ORDER",
