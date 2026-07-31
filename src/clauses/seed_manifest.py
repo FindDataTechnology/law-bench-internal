@@ -59,7 +59,7 @@ def validate_manifest(d: dict, expected_type: str | None = None) -> None:
             raise ValueError(f"clause {family!r} unknown section: {c['section']!r}")
         for dim in ("stance", "strength"):
             v = c.get(dim)
-            if v is not None and v not in TAG_VOCAB.get(dim, []):
+            if v is not None and v not in TAG_VOCAB.get(None, {}).get(dim, []):
                 raise ValueError(f"clause {family!r} bad {dim}: {v!r}")
         body_slots = {s.strip() for s in _SLOT_RE.findall(c["body"])}
         instr_names = {ins.get("name") for ins in (c.get("slot_instructions") or [])}
@@ -154,43 +154,49 @@ def load_all(db: Any = None, seeds_dir: Path | None = None) -> dict[str, int]:
 
 
 def seed_tag_dims(db: Any = None, seeds_dir: Path | None = None) -> int:
-    """Upsert every tag dim declared in the seed manifests into ``tag_dims``.
-
-    Returns the distinct dimension count. Idempotent (upsert on ``name``). Run
-    once per DB (re-run when a manifest adds a dimension) so the app can load
-    the vocabulary from the DB at startup without shipping the seed files.
-    """
+    """Seed tag_dims: universal dims (contract_type=NULL) + per-type dims from manifests."""
     import yaml
     from psycopg.types.json import Jsonb
 
     from src.eval.db import connect
 
     base = seeds_dir or _SEEDS_DIR
-    dims: dict[str, list[str]] = {}
-    for p in sorted(base.glob("*.yaml")):
-        try:
-            d = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-        except Exception:  # noqa: BLE001 - skip a corrupt manifest, keep going
-            continue
-        for t in d.get("tags") or []:
-            name = t.get("name")
-            vals = t.get("values") or []
-            if not name or not vals:
-                continue
-            bucket = dims.setdefault(name, [])
-            for v in vals:
-                if str(v) not in bucket:
-                    bucket.append(str(v))
+    universal = [
+        ("source", "来源", ["base", "tagged", "custom"], False, "来源"),
+        ("stance", "利益倾向", ["pro_a", "pro_b", "balanced"], False, "利益倾向"),
+        ("strength", "利益倾向", ["strong", "standard", "mild"], False, "强度"),
+        ("risk", "风险合规", ["high", "medium", "low"], False, "风险"),
+        ("mandatory", "风险合规", ["mandatory", "default", "recommended"], False, "法律性质"),
+        ("region", "地域", [], True, "地域"),
+    ]
     conn = connect(db)
     try:
-        for name, vals in dims.items():
+        for name, cat, vals, ff, zh in universal:
             conn.execute(
-                "INSERT INTO tag_dims (name, values) VALUES (%s, %s) "
-                "ON CONFLICT (name) DO UPDATE SET values = EXCLUDED.values",
-                (name, Jsonb(vals)),
+                "INSERT INTO tag_dims (name, contract_type, category, values, free_form, zh_label) "
+                "VALUES (%s, NULL, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
+                (name, cat, Jsonb(vals), ff, zh),
             )
+        n = 0
+        for p in sorted(base.glob("*.yaml")):
+            ct = p.stem
+            try:
+                d = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+            except Exception:  # noqa: BLE001
+                continue
+            for t in d.get("tags") or []:
+                name = t.get("name")
+                vals = [str(v) for v in (t.get("values") or [])]
+                if not name or not vals:
+                    continue
+                conn.execute(
+                    "INSERT INTO tag_dims (name, contract_type, category, values, free_form, zh_label) "
+                    "VALUES (%s, %s, '类型专属', %s, false, %s) ON CONFLICT DO NOTHING",
+                    (name, ct, Jsonb(vals), name),
+                )
+                n += 1
         conn.commit()
     finally:
         if db is None:
             conn.close()
-    return len(dims)
+    return n

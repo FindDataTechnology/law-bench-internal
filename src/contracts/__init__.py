@@ -7,10 +7,13 @@ Public API:
 - :func:`get_slot_instructions` / :func:`check_slot_consistency` - slot docs.
 - :func:`extract_laws_for_type` - per-class 法律法规 extraction.
 - :func:`generate_contract` - DOCX/PDF generation via ``src.docs``.
+- :func:`audit_template` / :func:`audit_body` / :func:`audit_all` - slot
+  completeness evaluator for contract 母版 (deterministic, no LLM/DB).
 """
 
 from __future__ import annotations
 
+from .audit import AuditReport, TemplateAudit, audit_all, audit_body, audit_template
 from .generator import generate_contract
 from .legal import extract_laws_for_type
 from .slots import SlotInstruction, check_slot_consistency, get_slot_instructions
@@ -24,4 +27,9 @@ __all__ = [
     "check_slot_consistency",
     "extract_laws_for_type",
     "generate_contract",
+    "audit_template",
+    "audit_body",
+    "audit_all",
+    "TemplateAudit",
+    "AuditReport",
 ]

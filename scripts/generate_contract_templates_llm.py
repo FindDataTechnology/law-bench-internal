@@ -39,6 +39,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from src.contracts.slots import REQUIRED_SLOTS, default_slot_instructions  # noqa: E402
 from src.contracts.templates import normalize_body  # noqa: E402
+from src.contracts.audit import BODY_PROPER_SLOTS, audit_body  # noqa: E402
 
 LAW_INFO_DIR = REPO_ROOT / "src" / "eval" / "seed" / "law_info"
 TYPES_PATH = LAW_INFO_DIR / "contract_types.json"
@@ -123,6 +124,17 @@ def main() -> int:
             if key in existing:
                 bodies[key] = existing[key]["body"]
             continue
+        # Audit the raw draft BEFORE normalization so omissions the drafter made
+        # are visible instead of being silently papered over by normalize_body
+        # (which appends missing slots to the 签署信息 tail). Non-blocking: the
+        # normalized body is still written exactly as before.
+        raw_audit = audit_body(raw, default_slot_instructions(zh), key=key, zh=zh)
+        omitted = [
+            s for s in BODY_PROPER_SLOTS
+            if s in raw_audit.missing or s in raw_audit.tail_only
+        ]
+        if omitted:
+            print(f"[audit] {key}: draft omitted body-proper slots {omitted}")
         body = normalize_body(raw, list(REQUIRED_SLOTS))
         cache.write_text(body, encoding="utf-8")
         bodies[key] = body

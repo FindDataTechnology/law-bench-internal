@@ -12,15 +12,16 @@ def test_vocab_has_starter_and_manifest_dims(seeded_db):
     # DB-backed vocab: the session fixture seeds tag_dims + load_vocab_from_db,
     # so the manifest-declared type-specific dims are present alongside the
     # starter set. (seeded_db is requested to trigger that session fixture.)
-    for k in ("stance", "strength", "risk", "mandatory"):
-        assert k in TAG_VOCAB
-    assert "special_restriction_period" in TAG_VOCAB  # employment
-    assert "tech_achievement_ownership" in TAG_VOCAB  # technology
+    universal = TAG_VOCAB.get(None, {})
+    for k in ("source", "stance", "strength", "risk", "mandatory"):
+        assert k in universal
+    assert "special_restriction_period" in TAG_VOCAB.get("employment", {})  # employment
+    assert "tech_achievement_ownership" in TAG_VOCAB.get("technology", {})  # technology
 
 
 def test_register_tag_dim_grows_vocab():
-    register_tag_dim("test_dim_xyz", ["a", "b"])
-    assert "test_dim_xyz" in TAG_VOCAB
+    register_tag_dim(None, "test_dim_xyz", values=["a", "b"])
+    assert "test_dim_xyz" in TAG_VOCAB.get(None, {})
     assert validate_tags({"test_dim_xyz": "a"}) == {"test_dim_xyz": "a"}
 
 

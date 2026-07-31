@@ -67,7 +67,7 @@ def _row(clause: dict, *, now: str) -> tuple:
         now,
         now,
         bool(clause.get("manual", False)),
-        Jsonb(validate_tags(tags)),
+        Jsonb(validate_tags(tags, clause.get("contract_type"))),
     )
 
 
@@ -213,7 +213,7 @@ def update_clause(clause_id: int, fields: dict, db: Any = None) -> dict:
         elif category == "tagged":
             level = "local"
         # tags: curatorial, not body-derived - replace when supplied, else preserve.
-        tags = validate_tags(fields["tags"]) if "tags" in fields else (existing.get("tags") or {})
+        tags = validate_tags(fields["tags"], existing["contract_type"]) if "tags" in fields else (existing.get("tags") or {})
         now = _now()
         conn.execute(
             "UPDATE clauses SET section=%s, body=%s, slot_instructions=%s, law_refs=%s, "
@@ -323,8 +323,10 @@ def list_clauses(
         params.append(f"%{q}%")
         params.append(f"%{q}%")
     if tags:
+        universal = TAG_VOCAB.get(None, {})
+        type_specific = TAG_VOCAB.get(contract_type, {}) if contract_type else {}
         for dim, val in tags.items():
-            if dim in FREE_FORM_TAGS or (dim in TAG_VOCAB and str(val) in TAG_VOCAB[dim]):
+            if dim in FREE_FORM_TAGS or dim in universal or dim in type_specific:
                 where.append("tags->>%s = %s")
                 params.append(dim)
                 params.append(str(val))
