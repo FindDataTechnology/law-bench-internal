@@ -97,7 +97,8 @@ def _build_prompt(text: str) -> str:
         '      "slot_instructions": [\n'
         '        {"name": "<slot名，不含花括号>", "label": "<中文标签>", "description": "<说明>", '
         '"example": "<示例值>", "required": true}\n'
-        "      ]\n"
+        "      ],\n"
+        '      "tags": {"stance": "<pro_a偏甲方/pro_b偏乙方/balanced中立>", "strength": "<strong强/standard标准/mild弱>", "risk": "<high高/medium中/low低>", "mandatory": "<mandatory强制/default任意/recommended示范>"}\n'
         "    }\n"
         "  ]\n"
         "}\n\n"
@@ -107,7 +108,9 @@ def _build_prompt(text: str) -> str:
         "跳过使用说明、目录、附件清单、填表说明等非条款内容。\n"
         "2. 每个 {{slot}} 必须在 slot_instructions 里有且仅有一条对应说明。\n"
         "3. body 里的法条名保留原样《...》，不要改成占位符。\n"
-        "4. province 取省份简称（去掉省/市字）；全国级合同 province=null 且 level=national。\n\n"
+        "4. province 取省份简称（去掉省/市字）；全国级合同 province=null 且 level=national。\n"
+        "5. tags：判断每条条款的利益倾向（pro_a偏甲方/pro_b偏乙方/balanced中立）、保护强度（strong/standard/mild）、"
+        "风险等级（high/medium/low）、法律性质（mandatory强制/default任意/recommended示范）。不确定的填 null。\n\n"
         f"合同示范文本：\n\n{text}"
     )
 
@@ -207,12 +210,23 @@ def _post_process(raw: dict, source_path: str) -> dict:
         province = None
 
     clauses: list[dict] = []
+    source = "tagged" if level == "local" else "base"
     for c in raw.get("clauses") or []:
         body = (c.get("body") or "").strip()
         if not body:
             continue
         section = (c.get("section") or "附则").strip() or "附则"
         instructions = _normalize_slot_instructions(body, c.get("slot_instructions") or [])
+        # build tags: source + region + LLM-suggested universal dims
+        clause_tags: dict = {"source": source}
+        if province:
+            clause_tags["region"] = province
+        for k in ("stance", "strength", "risk", "mandatory"):
+            v = (c.get("tags") or {}).get(k)
+            if v and v != "null":
+                clause_tags[k] = v
+        # all auto-set tags enter review as pending
+        tag_review = {k: "pending" for k in clause_tags}
         clauses.append(
             {
                 "contract_type": contract_type,
@@ -224,8 +238,9 @@ def _post_process(raw: dict, source_path: str) -> dict:
                 "source_path": source_path,
                 "source_doc_title": (raw.get("source_doc_title") or "").strip() or None,
                 "body_hash": hashlib.md5(body.encode("utf-8")).hexdigest(),
-                "category": "tagged" if level == "local" else "base",
-                "tags": {"region": province} if province else {},
+                "category": source,
+                "tags": clause_tags,
+                "tag_review": tag_review,
             }
         )
     return {
