@@ -194,16 +194,10 @@ def update_clause(clause_id: int, fields: dict, db: Any = None) -> dict:
         slot_instructions = _normalize_slot_instructions(body, existing.get("slot_instructions") or [])
         law_refs = _law_refs_from_body(body)
         body_hash = hashlib.md5(body.encode("utf-8")).hexdigest()
-        # enforce category semantics
+        # enforce source semantics (custom -> no source_path)
         source_path = existing["source_path"]
-        level = existing["level"]
         if category == "custom":
             source_path = None
-            level = None
-        elif category == "base":
-            level = "national"
-        elif category == "tagged":
-            level = "local"
         # tags: curatorial, not body-derived - replace when supplied, else preserve.
         tags = validate_tags(fields["tags"], existing["contract_type"]) if "tags" in fields else (existing.get("tags") or {})
         # bridge: derive tags.source from the legacy category field
@@ -216,10 +210,10 @@ def update_clause(clause_id: int, fields: dict, db: Any = None) -> dict:
         now = _now()
         conn.execute(
             "UPDATE clauses SET section=%s, body=%s, slot_instructions=%s, law_refs=%s, "
-            "body_hash=%s, category=%s, level=%s, source_path=%s, tags=%s, "
+            "body_hash=%s, source_path=%s, tags=%s, "
             "manual=true, updated_at=%s WHERE id=%s",
-            (section, body, Jsonb(slot_instructions), Jsonb(law_refs), body_hash, category,
-             level, source_path, Jsonb(tags), now, clause_id),
+            (section, body, Jsonb(slot_instructions), Jsonb(law_refs), body_hash,
+             source_path, Jsonb(tags), now, clause_id),
         )
         conn.commit()
         r2 = conn.execute("SELECT * FROM clauses WHERE id = %s", (clause_id,)).fetchone()
