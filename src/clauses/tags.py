@@ -1,11 +1,19 @@
 """Controlled-vocabulary tag dimensions for clauses, per contract type.
 
-Universal dims (source/region/stance/strength/risk/mandatory) are shared across
+Universal dims (source/stance/strength/risk/mandatory) are shared across
 all contract types (``contract_type=NULL`` in ``tag_dims``). Type-specific dims
 belong to one contract type (``contract_type=<key>``), decoupled per type.
 :func:`validate_tags` accepts universal + the given type's dims; free-form dims
-(``region``) accept any non-empty string. Tags are curatorial, NOT derived from
-the clause body.
+accept any non-empty string. Tags are curatorial, NOT derived from the clause
+body.
+
+``scenario`` (业务场景) is a per-type controlled dim that captures the
+transaction sub-type (e.g. ``sale`` -> 农产品买卖/消费品零售/工业品建材/...).
+It replaces the former province ``region`` dimension: corpus analysis showed
+clauses vary by sub-type, not geography, so province (provenance) was the wrong
+axis. ``scenario`` is auto-tagged at extraction (body-judgeable, unlike
+province) and drives tagged-clause assembly selection. Its vocab is seeded from
+:mod:`src.clauses.scenario_vocab`.
 
 The vocabulary is loaded from the ``tag_dims`` table at app startup via
 :func:`load_vocab_from_db`, building ``TAG_VOCAB[contract_type][dim] = values``.
@@ -16,7 +24,7 @@ entry all route through it so dims don't proliferate.
 
 from __future__ import annotations
 
-TAG_CATEGORIES = ("来源", "利益倾向", "风险合规", "地域", "类型专属")
+TAG_CATEGORIES = ("来源", "利益倾向", "风险合规", "地域", "类型专属", "业务场景")
 
 # TAG_VOCAB[contract_type][dim] = [allowed values].
 # contract_type=None => universal (shared by all types).
@@ -32,8 +40,9 @@ TAG_VOCAB: dict[str | None, dict[str, list[str]]] = {
 }
 
 # Dims that accept any non-empty string (not a controlled vocabulary).
-# Populated from tag_dims.free_form at load; "region" is the starter.
-FREE_FORM_TAGS: set[str] = {"region"}
+# Populated from tag_dims.free_form at load. None by default since ``region``
+# (province) was removed in favor of the controlled ``scenario`` dim.
+FREE_FORM_TAGS: set[str] = set()
 
 
 def register_tag_dim(
@@ -97,11 +106,16 @@ def validate_tags(tags: dict | None, contract_type: str | None = None) -> dict:
 
     Checks universal dims (``TAG_VOCAB[None]``) + type-specific dims
     (``TAG_VOCAB[contract_type]``). Free-form dims accept any non-empty string.
+    ``scenario`` is lenient (any non-empty value kept) because it is
+    LLM-suggested and governance-extended; its seeded vocab is advisory (UI
+    dropdown) rather than a hard whitelist.
 
     >>> validate_tags({"stance": "pro_a", "mood": "happy"})
     {'stance': 'pro_a'}
     >>> validate_tags({"region": "吉林"})
-    {'region': '吉林'}
+    {}
+    >>> validate_tags({"scenario": "农产品买卖"}, contract_type="sale")
+    {'scenario': '农产品买卖'}
     >>> validate_tags({"stance": "pro_A"})
     Traceback (most recent call last):
         ...
@@ -116,7 +130,9 @@ def validate_tags(tags: dict | None, contract_type: str | None = None) -> dict:
         vs = str(v)
         if not vs:
             continue
-        if k in FREE_FORM_TAGS:
+        if k == "scenario":
+            out[k] = vs  # lenient: LLM-suggested/governed, keep any non-empty
+        elif k in FREE_FORM_TAGS:
             out[k] = vs
         elif k in universal:
             if vs not in universal[k]:
@@ -145,7 +161,9 @@ def normalize_tags(tags: dict | None, contract_type: str | None = None) -> dict:
         vs = str(v)
         if not vs:
             continue
-        if k in FREE_FORM_TAGS:
+        if k == "scenario":
+            out[k] = vs  # lenient
+        elif k in FREE_FORM_TAGS:
             out[k] = vs
         elif k in universal and vs in universal[k]:
             out[k] = vs
@@ -158,7 +176,7 @@ def tag_vocab_for_type(contract_type: str | None = None) -> dict[str, list[str]]
     """Merged flat vocab for a contract type: universal + type-specific.
 
     Returns ``{dim: [allowed values]}`` for all dims valid for this type.
-    Free-form dims (e.g. ``region``) have an empty list.
+    Free-form dims (none by default) have an empty list.
     """
     merged: dict[str, list[str]] = {}
     merged.update(TAG_VOCAB.get(None, {}))

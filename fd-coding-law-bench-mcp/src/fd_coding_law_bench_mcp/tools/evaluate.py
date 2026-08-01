@@ -1,6 +1,6 @@
-"""``evaluate_contract`` / ``list_rubrics`` / ``list_runs`` tools.
+"""``contract_evaluate`` / ``rubric_list`` / ``run_list`` / ``run_get`` tools.
 
-Wraps the LLM-judge rubric evaluator in :mod:`src.eval`. ``evaluate_contract``
+Wraps the LLM-judge rubric evaluator in :mod:`src.eval`. ``contract_evaluate``
 accepts either a file path or inline contract text, and persists the run to the
 eval DB unless ``no_store`` is set.
 """
@@ -12,8 +12,8 @@ from pathlib import Path
 from ..server import mcp
 
 
-@mcp.tool
-def evaluate_contract(
+@mcp.tool(tags={"contracts"})
+def contract_evaluate(
     contract: str,
     rubric: str,
     task: str | None = None,
@@ -60,17 +60,51 @@ def evaluate_contract(
     return result
 
 
-@mcp.tool
-def list_rubrics() -> list[dict]:
-    """List available evaluation rubrics as ``{name, context, source}``."""
+@mcp.tool(tags={"rubrics"})
+def rubric_list(include_counts: bool = False) -> list[dict]:
+    """List available evaluation rubrics.
+
+    Parameters:
+        include_counts: when True, each row also carries ``id``,
+            ``criterion_count``, and ``is_harbor`` (delegates to
+            ``src.eval.rubric_crud.list_rubrics_with_counts``); when False
+            (default), rows are ``{name, context, source}``.
+
+    Returns the rubric rows.
+    """
+    if include_counts:
+        from src.eval.rubric_crud import list_rubrics_with_counts
+
+        return list_rubrics_with_counts()
     from src.eval.rubric import list_rubrics as _list_rubrics
 
     return _list_rubrics()
 
 
-@mcp.tool
-def list_runs(limit: int = 20) -> list[dict]:
+@mcp.tool(tags={"eval"})
+def run_list(limit: int = 20) -> list[dict]:
     """List recent evaluation runs (most recent first)."""
     from src.eval.store import list_runs as _list_runs
 
     return _list_runs(limit=limit)
+
+
+@mcp.tool(tags={"eval"})
+def run_get(run_id: int) -> dict:
+    """Fetch a single evaluation run's run-level fields and its per-criterion verdicts.
+
+    The counterpart to ``run_list`` (which returns run-level fields only).
+
+    Parameters:
+        run_id: id of the run.
+
+    Returns the run row (``id``, ``rubric_name``, ``contract_path``,
+        ``task_desc``, ``score``, ``max_score``, ``all_pass``, ``n_criteria``,
+        ``n_passed``, ``summary``, ``judge_model``, ``scored_at``,
+        ``compare_run_id``, ``prompt_name``, ``prompt_type``, ``variant_label``)
+        plus an ordered ``criteria_results`` list. An unknown run id raises a
+        tool error.
+    """
+    from src.eval.store import get_run
+
+    return get_run(run_id)

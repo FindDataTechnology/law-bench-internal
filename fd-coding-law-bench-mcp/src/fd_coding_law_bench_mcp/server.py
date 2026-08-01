@@ -14,9 +14,14 @@ mcp: FastMCP = FastMCP("law-bench")
 
 # Importing the tool modules registers their @mcp.tool decorators. Order does
 # not matter; the names are re-exported for callers / tests that want them.
+from .tools import compare as _compare  # noqa: E402,F401
 from .tools import evaluate as _evaluate  # noqa: E402,F401
 from .tools import generate as _generate  # noqa: E402,F401
+from .tools import law_info as _law_info  # noqa: E402,F401
+from .tools import prompts as _prompts  # noqa: E402,F401
 from .tools import rag as _rag  # noqa: E402,F401
+from .tools import rubrics as _rubrics  # noqa: E402,F401
+from .tools import tags as _tags  # noqa: E402,F401
 
 
 def main() -> None:

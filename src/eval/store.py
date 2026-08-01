@@ -138,7 +138,6 @@ _ADDITIVE_COLUMNS = (
     "ALTER TABLE IF EXISTS clauses ADD COLUMN IF NOT EXISTS manual BOOLEAN NOT NULL DEFAULT false; "
     "ALTER TABLE IF EXISTS clauses ADD COLUMN IF NOT EXISTS tags JSONB NOT NULL DEFAULT '{}'::jsonb; "
     "ALTER TABLE IF EXISTS clauses DROP COLUMN IF EXISTS province; "
-    "ALTER TABLE IF EXISTS clauses ALTER COLUMN category DROP NOT NULL; "
     "ALTER TABLE IF EXISTS clauses DROP COLUMN IF EXISTS category; "
     "ALTER TABLE IF EXISTS clauses DROP COLUMN IF EXISTS level; "
     "ALTER TABLE IF EXISTS clauses ADD COLUMN IF NOT EXISTS tag_review JSONB NOT NULL DEFAULT '{}'::jsonb; "
@@ -148,7 +147,11 @@ _ADDITIVE_COLUMNS = (
     "ALTER TABLE IF EXISTS tag_dims ADD COLUMN IF NOT EXISTS zh_label TEXT; "
     "ALTER TABLE IF EXISTS tag_dims ADD COLUMN IF NOT EXISTS description TEXT; "
     "CREATE UNIQUE INDEX IF NOT EXISTS tag_dims_name_uk ON tag_dims (name) WHERE contract_type IS NULL; "
-    "CREATE UNIQUE INDEX IF NOT EXISTS tag_dims_type_name_uk ON tag_dims (contract_type, name) WHERE contract_type IS NOT NULL;"
+    "CREATE UNIQUE INDEX IF NOT EXISTS tag_dims_type_name_uk ON tag_dims (contract_type, name) WHERE contract_type IS NOT NULL; "
+    # region (province) tag retired in favor of scenario (业务场景): drop the
+    # JSONB keys from existing rows. Idempotent (no-op once the keys are gone).
+    "UPDATE clauses SET tags = tags - 'region' WHERE tags ? 'region'; "
+    "UPDATE clauses SET tag_review = tag_review - 'region' WHERE tag_review ? 'region';"
 )
 
 # The DDL is fully idempotent, so ensure_schema is memoized per database (keyed
@@ -262,6 +265,35 @@ def list_runs(limit: int = 20, db_path=DEFAULT_DB) -> list[dict]:
     finally:
         conn.close()
     return [dict(r) for r in rows]
+
+
+def get_run(run_id: int, db_path=DEFAULT_DB) -> dict:
+    """A single run's run-level fields plus its ordered per-criterion verdicts.
+
+    The counterpart to :func:`list_runs` (which returns run-level fields only):
+    use this to fetch one run's full ``criteria_results``. Raises ``KeyError`` if
+    no run has ``id == run_id``.
+    """
+    ensure_schema(db_path)
+    conn = connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT id, rubric_name, contract_path, task_desc, score, max_score, "
+            "       all_pass, n_criteria, n_passed, summary, judge_model, "
+            "       scored_at, compare_run_id, prompt_name, prompt_type, variant_label "
+            "FROM eval_runs WHERE id = %s",
+            (run_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"Run not found: {run_id}")
+        crits = conn.execute(
+            "SELECT criterion_id, title, verdict, reasoning, ordinal "
+            "FROM eval_criteria_results WHERE run_id = %s ORDER BY ordinal",
+            (run_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return {**dict(row), "criteria_results": [dict(c) for c in crits]}
 
 
 # --- compare runs ---------------------------------------------------------- #

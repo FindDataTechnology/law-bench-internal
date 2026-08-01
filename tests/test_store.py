@@ -7,6 +7,7 @@ import pytest
 from src.eval.store import (
     ensure_schema,
     get_compare,
+    get_run,
     get_run_draft,
     list_compares,
     list_runs,
@@ -80,6 +81,23 @@ def test_store_result_persists_criteria_verdicts(seeded_db):
         ("c1", "pass"),
         ("c2", "fail"),
     ]
+
+
+def test_get_run_returns_fields_and_criteria(seeded_db):
+    rid = store_result(_result(), contract_path="out.md", task_desc="起草", db_path=seeded_db)
+    run = get_run(rid, db_path=seeded_db)
+    assert run["id"] == rid
+    assert run["rubric_name"] == "r"
+    assert run["contract_path"] == "out.md"
+    assert run["task_desc"] == "起草"
+    assert run["n_passed"] == 1 and run["n_criteria"] == 2
+    assert [c["criterion_id"] for c in run["criteria_results"]] == ["c1", "c2"]
+    assert run["criteria_results"][0]["verdict"] == "pass"
+
+
+def test_get_run_unknown_id_raises(seeded_db):
+    with pytest.raises(KeyError):
+        get_run(999999, db_path=seeded_db)
 
 
 # --- compare persistence + migration --------------------------------------- #
@@ -207,3 +225,49 @@ def test_migration_creates_compare_runs_table(seeded_db):
         ).fetchall()
     }
     assert "compare_runs" in tables
+
+
+def test_ensure_schema_survives_clauses_already_migrated(empty_db):
+    """Regression: ensure_schema must be idempotent when clauses.category/level/
+    province were already dropped (the post-unify-clause-tags production state).
+
+    The additive migration used to run ``ALTER COLUMN category DROP NOT NULL``
+    before ``DROP COLUMN IF EXISTS category``; the ALTER has no column-level
+    ``IF EXISTS`` guard, so it errored on any DB where the column was already
+    gone - breaking every eval-store call (list_runs / list_compares /
+    store_result / ...) on every MCP restart after the first migration run.
+    """
+    # Reproduce the post-migration clauses shape: every production column EXCEPT
+    # the legacy category / level / province (already dropped by unify-clause-tags).
+    empty_db.execute(
+        "CREATE TABLE clauses ("
+        "  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, "
+        "  contract_type TEXT NOT NULL, "
+        "  section TEXT NOT NULL, "
+        "  body TEXT NOT NULL, "
+        "  slot_instructions JSONB NOT NULL DEFAULT '[]'::jsonb, "
+        "  law_refs JSONB NOT NULL DEFAULT '[]'::jsonb, "
+        "  source_path TEXT, "
+        "  source_doc_title TEXT, "
+        "  body_hash TEXT NOT NULL, "
+        "  manual BOOLEAN NOT NULL DEFAULT false, "
+        "  tags JSONB NOT NULL DEFAULT '{}'::jsonb, "
+        "  tag_review JSONB NOT NULL DEFAULT '{}'::jsonb, "
+        "  created_at TEXT NOT NULL, "
+        "  updated_at TEXT NOT NULL"
+        ")"
+    )
+    empty_db.commit()
+
+    ensure_schema(empty_db)  # must not raise
+
+    cols = {
+        r["column_name"]
+        for r in empty_db.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'clauses'"
+        ).fetchall()
+    }
+    assert "category" not in cols  # legacy column stays dropped
+    assert "level" not in cols
+    assert "province" not in cols
+    assert {"manual", "tags", "tag_review"} <= cols  # additive columns present

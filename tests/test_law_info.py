@@ -81,7 +81,7 @@ def _load_contract_types():
 
 def test_bundled_markdown_files_present():
     types = _load_contract_types()
-    assert len(types) == 41
+    assert len(types) == 43
     for ct in types:
         key = ct["key"]
         assert (SEED_DIR / "doubao" / f"{key}.md").is_file(), key

@@ -30,10 +30,10 @@ def _clause(**kw) -> dict:
         "source_doc_title": "T",
         "body_hash": "h1",
     }
-    # legacy `province` kwarg -> tags.region (region is a tag now)
-    prov = kw.pop("province", None)
-    if prov:
-        base["tags"] = {"region": prov}
+    # `scenario` kwarg -> tags.scenario (scenario replaces the former region dim)
+    sc = kw.pop("scenario", None)
+    if sc:
+        base["tags"] = {"scenario": sc}
     base.update(kw)
     return base
 
@@ -58,20 +58,20 @@ def test_category_semantics(seeded_db):
     custom = [c for c in list_clauses("sale", category="custom", db=seeded_db) if c["id"] == cid][0]
     assert custom["source_path"] is None
     assert custom["level"] is None
-    # base -> level national, no region (region cleared for national)
-    upsert_clause(_clause(category="base", province="吉林", body_hash="b1"), db=seeded_db)
+    # base -> level national (no region stripping anymore; region is gone)
+    upsert_clause(_clause(category="base", body_hash="b1"), db=seeded_db)
     base = list_clauses("sale", category="base", db=seeded_db)[0]
-    assert base["tags"].get("region") is None
     assert base["level"] == "national"
-    # tagged -> level local, region kept
+    assert "region" not in base["tags"]
+    # tagged -> level local, scenario kept + filterable
     upsert_clause(
-        _clause(category="tagged", province="吉林", level="local", body_hash="t1"),
+        _clause(category="tagged", scenario="农产品买卖", level="local", body_hash="t1"),
         db=seeded_db,
     )
-    tagged = list_clauses("sale", category="tagged", tags={"region": "吉林"}, db=seeded_db)
+    tagged = list_clauses("sale", category="tagged", tags={"scenario": "农产品买卖"}, db=seeded_db)
     assert len(tagged) == 1
     assert tagged[0]["level"] == "local"
-    assert tagged[0]["tags"]["region"] == "吉林"
+    assert tagged[0]["tags"]["scenario"] == "农产品买卖"
 
 
 def test_list_filters_and_ordering(seeded_db):
@@ -79,17 +79,17 @@ def test_list_filters_and_ordering(seeded_db):
         [
             _clause(section="违约责任", category="base", body_hash="a"),
             _clause(section="当事人", category="base", body_hash="b"),
-            _clause(section="当事人", category="tagged", province="吉林", level="local", body_hash="c"),
-            _clause(section="当事人", category="tagged", province="云南", level="local", body_hash="d"),
+            _clause(section="当事人", category="tagged", scenario="农产品买卖", level="local", body_hash="c"),
+            _clause(section="当事人", category="tagged", scenario="消费品零售", level="local", body_hash="d"),
         ],
         db=seeded_db,
     )
     # section ordering: 当事人 before 违约责任
     sections = [r["section"] for r in list_clauses("sale", db=seeded_db)]
     assert sections.index("当事人") < sections.index("违约责任")
-    # region filter (region is a tag)
-    jx = list_clauses("sale", category="tagged", tags={"region": "吉林"}, db=seeded_db)
-    assert len(jx) == 1 and jx[0]["tags"]["region"] == "吉林"
+    # scenario filter (scenario is a tag)
+    jx = list_clauses("sale", category="tagged", tags={"scenario": "农产品买卖"}, db=seeded_db)
+    assert len(jx) == 1 and jx[0]["tags"]["scenario"] == "农产品买卖"
 
 
 def test_delete_clauses(seeded_db):
@@ -103,8 +103,8 @@ def test_counts_by_type(seeded_db):
     upsert_clauses(
         [
             _clause(contract_type="sale", category="base", body_hash="1"),
-            _clause(contract_type="sale", category="tagged", province="吉林", level="local", body_hash="2"),
-            _clause(contract_type="sale", category="tagged", province="吉林", level="local", body_hash="3"),
+            _clause(contract_type="sale", category="tagged", scenario="农产品买卖", level="local", body_hash="2"),
+            _clause(contract_type="sale", category="tagged", scenario="农产品买卖", level="local", body_hash="3"),
             _clause(contract_type="loan", category="base", body_hash="4"),
         ],
         db=seeded_db,
@@ -112,7 +112,7 @@ def test_counts_by_type(seeded_db):
     rows = {r["contract_type"]: r for r in counts_by_type(db=seeded_db)}
     assert rows["sale"]["base"] == 1
     assert rows["sale"]["tagged"] == 2
-    assert rows["sale"]["provinces"] == ["吉林"]
+    assert rows["sale"]["scenarios"] == ["农产品买卖"]
     assert rows["loan"]["base"] == 1
     cnt = count_clauses(db=seeded_db)
     assert cnt["total"] == 4 and cnt["base"] == 2 and cnt["tagged"] == 2

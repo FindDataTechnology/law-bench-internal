@@ -13,7 +13,7 @@ def _seed(seeded_db) -> None:
             "contract_type": "sale", "category": "base", "section": "当事人",
             "body": "甲方：{{party_a}}",
             "slot_instructions": [{"name": "party_a", "label": "甲方", "description": "d", "example": "x", "required": True}],
-            "law_refs": [], "province": None, "level": "national", "source_path": "t/base.docx",
+            "law_refs": [], "level": "national", "source_path": "t/base.docx",
             "source_doc_title": "T", "body_hash": "b1",
         },
         db=seeded_db,

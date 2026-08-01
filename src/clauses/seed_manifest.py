@@ -21,6 +21,7 @@ from typing import Any
 import yaml
 
 from .extract import SECTION_ORDER
+from .scenario_vocab import SCENARIO_VOCAB
 from .tags import TAG_VOCAB
 
 _SLOT_RE = re.compile(r"\{\{([^}]+)\}\}")
@@ -167,7 +168,6 @@ def seed_tag_dims(db: Any = None, seeds_dir: Path | None = None) -> int:
         ("strength", "利益倾向", ["strong", "standard", "mild"], False, "强度"),
         ("risk", "风险合规", ["high", "medium", "low"], False, "风险"),
         ("mandatory", "风险合规", ["mandatory", "default", "recommended"], False, "法律性质"),
-        ("region", "地域", [], True, "地域"),
     ]
     conn = connect(db)
     try:
@@ -176,6 +176,13 @@ def seed_tag_dims(db: Any = None, seeds_dir: Path | None = None) -> int:
                 "INSERT INTO tag_dims (name, contract_type, category, values, free_form, zh_label) "
                 "VALUES (%s, NULL, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
                 (name, cat, Jsonb(vals), ff, zh),
+            )
+        # scenario (业务场景): per-type controlled vocab, replaces province region.
+        for ct, vals in SCENARIO_VOCAB.items():
+            conn.execute(
+                "INSERT INTO tag_dims (name, contract_type, category, values, free_form, zh_label) "
+                "VALUES (%s, %s, %s, %s, false, %s) ON CONFLICT DO NOTHING",
+                ("scenario", ct, "业务场景", Jsonb(vals), "业务场景"),
             )
         n = 0
         for p in sorted(base.glob("*.yaml")):
@@ -186,8 +193,11 @@ def seed_tag_dims(db: Any = None, seeds_dir: Path | None = None) -> int:
                 continue
             for t in d.get("tags") or []:
                 name = t.get("name")
+                # scenario is owned by SCENARIO_VOCAB (业务场景), not manifests.
+                if not name or name == "scenario":
+                    continue
                 vals = [str(v) for v in (t.get("values") or [])]
-                if not name or not vals:
+                if not vals:
                     continue
                 conn.execute(
                     "INSERT INTO tag_dims (name, contract_type, category, values, free_form, zh_label) "

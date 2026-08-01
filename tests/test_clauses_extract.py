@@ -43,7 +43,7 @@ def test_post_process_national_is_base():
     c = rec["clauses"][0]
     assert c["category"] == "base"
     assert c["level"] == "national"
-    assert c["tags"].get("region") is None  # national: no region
+    assert c["tags"] == {"source": "base"}  # no region (dropped); no scenario in raw
     assert c["contract_type"] == "property_service"
 
 
@@ -52,7 +52,20 @@ def test_post_process_local_is_tagged():
     c = rec["clauses"][0]
     assert c["category"] == "tagged"
     assert c["level"] == "local"
-    assert c["tags"]["region"] == "吉林"
+    assert c["tags"] == {"source": "tagged"}  # region no longer set; province is record-level
+    assert rec["province"] == "吉林"
+
+
+def test_post_process_scenario_from_tags():
+    raw = _raw(province="吉林", level="local")
+    raw["clauses"][0]["tags"] = {"scenario": "农产品买卖", "stance": "pro_a"}
+    rec = extract._post_process(raw, "test/doc.docx")
+    c = rec["clauses"][0]
+    assert c["tags"]["scenario"] == "农产品买卖"
+    assert c["tags"]["stance"] == "pro_a"
+    # auto-tagged dims (incl. scenario) enter tag_review as pending
+    assert c["tag_review"]["scenario"] == "pending"
+    assert c["tag_review"]["stance"] == "pending"
 
 
 def test_post_process_unknown_type_normalized():

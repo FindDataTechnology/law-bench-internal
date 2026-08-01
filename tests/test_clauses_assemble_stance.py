@@ -32,7 +32,7 @@ def test_stance_filter_selects_only_matching_custom(seeded_db):
                    "body": "偏乙违约金 {{b}}", "tags": {"stance": "pro_b"}}, db=seeded_db)
     bulk_review(cid1, "approved", db=seeded_db)
     bulk_review(cid2, "approved", db=seeded_db)
-    selected = _select_clauses("sale", None, None, stance="pro_a", db=seeded_db)
+    selected, _, _ = _select_clauses("sale", None, None, stance="pro_a", db=seeded_db)
     bodies = [c["body"] for c in selected]
     assert any("偏甲" in b for b in bodies)
     assert not any("偏乙" in b for b in bodies)
@@ -42,7 +42,7 @@ def test_stance_none_with_no_custom_returns_empty_custom(seeded_db):
     create_clause({"contract_type": "sale", "category": "custom", "section": "违约责任",
                    "body": "偏甲 {{a}}", "tags": {"stance": "pro_a"}}, db=seeded_db)
     # no stance, no custom ids -> custom selection empty (base/tagged only)
-    selected = _select_clauses("sale", None, None, stance=None, db=seeded_db)
+    selected, _, _ = _select_clauses("sale", None, None, stance=None, db=seeded_db)
     assert all(c["category"] != "custom" for c in selected)
 
 
@@ -53,7 +53,7 @@ def test_stance_does_not_affect_base(seeded_db):
     }), db=seeded_db)
     create_clause({"contract_type": "sale", "category": "custom", "section": "违约责任",
                    "body": "偏乙 {{b}}", "tags": {"stance": "pro_b"}}, db=seeded_db)
-    selected = _select_clauses("sale", None, None, stance="pro_a", db=seeded_db)
+    selected, _, _ = _select_clauses("sale", None, None, stance="pro_a", db=seeded_db)
     # base clause is present regardless of stance
     assert any(c["category"] == "base" for c in selected)
     # pro_b custom excluded by the pro_a stance filter

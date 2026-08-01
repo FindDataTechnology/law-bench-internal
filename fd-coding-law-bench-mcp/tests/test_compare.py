@@ -1,0 +1,135 @@
+"""Tests for the compare orchestration + read tools.
+
+Hermetic: ``src.eval.compare`` and ``src.eval.store`` are monkeypatched (no LLM,
+no DB). Verifies name-resolution + delegation, the <2-prompt guard, and the read
+helpers.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from src.eval.errors import ValidationError
+
+
+def _prompt(name, ptype="baseline"):
+    return {"id": 1, "name": name, "content": "draft...", "prompt_type": ptype}
+
+
+def _compare(**over):
+    base = {
+        "id": 7,
+        "label": "sale test",
+        "contract_type": "sale",
+        "rubric_name": "contract_sale_v1",
+        "task_desc": "task",
+        "gen_mode": "drafter-only",
+        "n_drafts": 1,
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "runs": [],
+    }
+    base.update(over)
+    return base
+
+
+def test_run_compare_resolves_names_and_delegates(monkeypatch):
+    import src.eval.compare as cmp
+
+    seen = {}
+
+    def fake_load(names):
+        seen["names"] = names
+        return [_prompt("draft_sale"), _prompt("draft_sale_v2")]
+
+    def fake_run(contract_type, rubric_name, task_desc, prompts, mode="drafter-only",
+                 n_drafts=1, label=None):
+        seen.update(contract_type=contract_type, rubric=rubric_name, task=task_desc,
+                    prompts=prompts, mode=mode, n_drafts=n_drafts, label=label)
+        return _compare()
+
+    monkeypatch.setattr(cmp, "load_prompts", fake_load)
+    monkeypatch.setattr(cmp, "run_compare", fake_run)
+
+    from fd_coding_law_bench_mcp.tools.compare import compare_run
+
+    out = compare_run("sale", "contract_sale_v1", "task",
+                      ["draft_sale", "draft_sale_v2"], n_drafts=2, label="lbl")
+    assert seen["names"] == ["draft_sale", "draft_sale_v2"]
+    assert seen["mode"] == "drafter-only"
+    assert seen["n_drafts"] == 2
+    assert seen["label"] == "lbl"
+    assert [p["name"] for p in seen["prompts"]] == ["draft_sale", "draft_sale_v2"]
+    assert out["id"] == 7
+
+
+def test_run_compare_fewer_than_two_prompts_raises(monkeypatch):
+    """The wrapped run_compare raises ValidationError before any LLM/DB call."""
+    import src.eval.compare as cmp
+
+    monkeypatch.setattr(cmp, "load_prompts", lambda names: [_prompt("only_one")])
+
+    from fd_coding_law_bench_mcp.tools.compare import compare_run
+
+    with pytest.raises(ValidationError):
+        compare_run("sale", "contract_sale_v1", "task", ["only_one"])
+
+
+def test_list_compares_delegates(monkeypatch):
+    import src.eval.store as store
+
+    monkeypatch.setattr(store, "list_compares", lambda limit=20: [_compare()])
+
+    from fd_coding_law_bench_mcp.tools.compare import compare_list
+
+    out = compare_list(limit=5)
+    assert len(out) == 1 and out[0]["id"] == 7
+
+
+def test_get_compare_unknown_raises(monkeypatch):
+    import src.eval.store as store
+
+    def boom(compare_id):
+        raise KeyError(f"Compare not found: {compare_id}")
+
+    monkeypatch.setattr(store, "get_compare", boom)
+
+    from fd_coding_law_bench_mcp.tools.compare import compare_get
+
+    with pytest.raises(KeyError):
+        compare_get(999)
+
+
+def test_get_compare_matrix_builds_from_compare(monkeypatch):
+    import src.eval.compare as cmp
+    import src.eval.store as store
+
+    received = {}
+    matrix = {"criteria": [{"id": "c1"}], "columns": [], "cells": {}, "n_drafts": 1}
+
+    monkeypatch.setattr(store, "get_compare", lambda cid: _compare(id=cid))
+
+    def fake_build(compare):
+        received["compare_id"] = compare["id"]
+        return matrix
+
+    monkeypatch.setattr(cmp, "build_matrix", fake_build)
+
+    from fd_coding_law_bench_mcp.tools.compare import compare_matrix
+
+    out = compare_matrix(7)
+    assert out == matrix
+    assert received["compare_id"] == 7
+
+
+def test_get_run_draft_delegates(monkeypatch):
+    import src.eval.store as store
+
+    monkeypatch.setattr(
+        store, "get_run_draft",
+        lambda compare_id, run_id: {"run_id": run_id, "prompt_name": "p", "draft_text": "DRAFT"},
+    )
+
+    from fd_coding_law_bench_mcp.tools.compare import run_draft
+
+    out = run_draft(7, 42)
+    assert out == {"run_id": 42, "prompt_name": "p", "draft_text": "DRAFT"}

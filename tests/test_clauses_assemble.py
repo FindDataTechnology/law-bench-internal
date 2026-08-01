@@ -37,7 +37,7 @@ def _seed(seeded_db) -> None:
                 {"name": "penalty", "label": "违约金", "description": "d", "example": "10%", "required": False},
                 {"name": "property_name", "label": "标的名称", "description": "d", "example": "x", "required": True},
             ],
-            "law_refs": [], "tags": {"region": "吉林"}, "level": "local", "source_path": "t/jl.docx",
+            "law_refs": [], "tags": {"scenario": "农产品买卖"}, "level": "local", "source_path": "t/jl.docx",
             "source_doc_title": "T", "body_hash": "t1",
         },
         db=seeded_db,
@@ -62,9 +62,9 @@ def test_assemble_base_only(seeded_db):
     assert "party_a" in names  # canonical
 
 
-def test_assemble_with_province_includes_tagged(seeded_db):
+def test_assemble_with_scenario_includes_tagged(seeded_db):
     _seed(seeded_db)
-    r = generate_contract_assembled("sale", province="吉林", format="docx", db=seeded_db)
+    r = generate_contract_assembled("sale", scenario="农产品买卖", format="docx", db=seeded_db)
     txt = _docx_text(r["docx_path"])
     assert "base-marker" in txt
     assert "jinlin-marker" in txt
@@ -99,7 +99,7 @@ def test_assemble_with_custom(seeded_db):
 
 def test_assemble_section_ordering(seeded_db):
     _seed(seeded_db)
-    r = generate_contract_assembled("sale", province="吉林", format="docx", db=seeded_db)
+    r = generate_contract_assembled("sale", scenario="农产品买卖", format="docx", db=seeded_db)
     txt = _docx_text(r["docx_path"])
     # 当事人 (base) before 违约责任 (tagged)
     assert txt.index("当事人") < txt.index("违约责任")
@@ -118,6 +118,70 @@ def test_assemble_bad_format(seeded_db):
 @pytest.mark.skipif(not _soffice_available(), reason="soffice/PDF backend unavailable")
 def test_assemble_pdf(seeded_db):
     _seed(seeded_db)
-    r = generate_contract_assembled("sale", province="吉林", format="pdf", db=seeded_db)
+    r = generate_contract_assembled("sale", scenario="农产品买卖", format="pdf", db=seeded_db)
     assert r["pdf_path"] and Path(r["pdf_path"]).exists()
     assert r["docx_path"] is None
+
+
+# --- override semantics (redesign-tag-driven-assembly) ---
+
+def _up(seeded_db, **kw):
+    kw.setdefault("contract_type", "sale")
+    kw.setdefault("slot_instructions", [])
+    kw.setdefault("law_refs", [])
+    kw.setdefault("source_doc_title", "T")
+    kw.setdefault("source_path", "t/x.docx")
+    return upsert_clause(kw, db=seeded_db)
+
+
+def test_override_tagged_replaces_base_same_section(seeded_db):
+    _up(seeded_db, category="base", section="当事人", body="base-party {{party_a}}", body_hash="b1")
+    _up(seeded_db, category="tagged", section="当事人", body="tagged-party {{party_a}}",
+        tags={"scenario": "家具买卖"}, body_hash="t1")
+    r = generate_contract_assembled("sale", scenario="家具买卖", format="docx", db=seeded_db)
+    txt = _docx_text(r["docx_path"])
+    assert "tagged-party" in txt
+    assert "base-party" not in txt  # override, not concat
+    assert txt.count("当事人") == 1
+
+
+def test_custom_overrides_tagged_and_base(seeded_db):
+    _up(seeded_db, category="base", section="违约责任", body="base-pen {{penalty}}", body_hash="b1")
+    _up(seeded_db, category="tagged", section="违约责任", body="tagged-pen {{penalty}}",
+        tags={"scenario": "家具买卖"}, body_hash="t1")
+    cid = _up(seeded_db, category="custom", section="违约责任", body="custom-pen {{penalty}}",
+               tags={"stance": "pro_a"}, source_path=None, body_hash="c1")
+    from src.clauses.tag_review import bulk_review
+    bulk_review(cid, "approved", db=seeded_db)
+    r = generate_contract_assembled("sale", scenario="家具买卖", stance="pro_a", format="docx", db=seeded_db)
+    txt = _docx_text(r["docx_path"])
+    assert "custom-pen" in txt
+    assert "base-pen" not in txt and "tagged-pen" not in txt
+
+
+def test_base_fallback_when_no_override(seeded_db):
+    _up(seeded_db, category="base", section="争议解决", body="base-juris {{jurisdiction}}", body_hash="b1")
+    r = generate_contract_assembled("sale", format="docx", db=seeded_db)
+    assert "base-juris" in _docx_text(r["docx_path"])
+
+
+def test_section_extension_placed_before_fujie(seeded_db):
+    _up(seeded_db, category="base", section="当事人", body="base {{party_a}}", body_hash="b1")
+    _up(seeded_db, category="base", section="附则", body="fujie-clause", body_hash="b2")
+    _up(seeded_db, category="tagged", section="质量检验", body="qc-clause {{subject}}",
+        tags={"scenario": "农产品买卖"}, body_hash="t1")
+    r = generate_contract_assembled("sale", scenario="农产品买卖", format="docx", db=seeded_db)
+    txt = _docx_text(r["docx_path"])
+    assert "质量检验" in txt and "qc-clause" in txt
+    assert txt.index("质量检验") < txt.index("附则")
+
+
+def test_within_source_tiebreak_prefers_manual(seeded_db):
+    _up(seeded_db, category="tagged", section="合同标的", body="auto-marker {{subject}}",
+        tags={"scenario": "家具买卖"}, body_hash="t1", manual=False)
+    _up(seeded_db, category="tagged", section="合同标的", body="manual-marker {{subject}}",
+        tags={"scenario": "家具买卖"}, body_hash="t2", manual=True)
+    r = generate_contract_assembled("sale", scenario="家具买卖", format="docx", db=seeded_db)
+    txt = _docx_text(r["docx_path"])
+    assert "manual-marker" in txt and "auto-marker" not in txt
+    assert "合同标的" in r["diagnostics"]["heuristic_sections"]

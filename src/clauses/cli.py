@@ -2,7 +2,7 @@
 
 ``python -m src.clauses extract [--limit N] [--force]`` runs resumable corpus
 extraction (MinIO -> parse -> LLM extract -> Postgres). ``python -m src.clauses
-generate <type> [--province <省>] [--custom <id,...>] [--stance pro_a|pro_b|balanced] [--format pdf|docx|both]``
+generate <type> [--scenario <业务场景>] [--custom <id,...>] [--stance pro_a|pro_b|balanced] [--format pdf|docx|both]``
 assembles a contract from base + tagged + custom clauses. ``stats`` prints the
 clause counts.
 """
@@ -84,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
 
     p_gen = sub.add_parser("generate", help="assemble a contract from clauses")
     p_gen.add_argument("contract_type", help="contract type key (e.g. property_service)")
-    p_gen.add_argument("--province", default=None, help="province tag for 特色法条 (e.g. 吉林)")
+    p_gen.add_argument("--scenario", default=None, help="scenario tag (业务场景) for tagged-clause selection (e.g. 农产品买卖)")
     p_gen.add_argument("--custom", default=None, help="comma-separated custom clause ids")
     p_gen.add_argument(
         "--stance",
@@ -97,6 +97,12 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("stats", help="print clause counts by category")
 
+    p_retag = sub.add_parser(
+        "retag-scenario", help="assign tags.scenario to existing tagged clauses via LLM (one-time)"
+    )
+    p_retag.add_argument("--contract-type", default=None, help="limit to one contract type")
+    p_retag.add_argument("--limit", type=int, default=None, help="only classify N clauses (smoke)")
+
     args = parser.parse_args(argv)
 
     if args.cmd == "extract":
@@ -105,11 +111,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "stats":
         print(count_clauses())
         return 0
+    if args.cmd == "retag-scenario":
+        from .retag_scenario import retag_scenarios
+
+        print(retag_scenarios(args.contract_type, limit=args.limit))
+        return 0
     if args.cmd == "generate":
         try:
             result = generate_contract_assembled(
                 args.contract_type,
-                province=args.province,
+                scenario=args.scenario,
                 custom_clause_ids=_parse_ids(args.custom),
                 stance=args.stance,
                 format=args.format,

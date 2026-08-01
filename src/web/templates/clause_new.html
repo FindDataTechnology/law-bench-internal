@@ -20,11 +20,7 @@
       <option value="{{ c }}" {% if c == 'custom' %}selected{% endif %}>{{ category_zh[c] }}（{{ c }}）</option>
       {% endfor %}
     </select>
-    <span class="muted small">自定义=custom；标签需填地域；基本=全国</span>
-  </p>
-  <p>
-    <label>地域</label>
-    <input type="text" name="region" value="" placeholder="如 吉林（标签条款填地域）" style="width:12em">
+    <span class="muted small">自定义=custom；标签需填业务场景；基本=全国</span>
   </p>
   <p>
     <label>正文</label>
@@ -40,7 +36,7 @@
       </select>
       {% endfor %}
     </span>
-    <span class="muted small">stance=利益倾向 · strength=强度 · risk=风险 · mandatory=法律性质</span>
+    <span class="muted small">stance=利益倾向 · strength=强度 · risk=风险 · mandatory=法律性质 · scenario=业务场景</span>
   </p>
   <button type="submit" class="btn">创建条款</button>
 </form>

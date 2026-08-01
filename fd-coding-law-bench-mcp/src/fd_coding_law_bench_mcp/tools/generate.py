@@ -1,4 +1,4 @@
-"""``generate_contract_from_tags`` tool.
+"""``contract_generate`` tool.
 
 Wraps :func:`src.contracts.generate_contract` (skeleton 母版 template) and
 :func:`src.clauses.assemble.generate_contract_assembled` (base + tagged + custom
@@ -11,8 +11,8 @@ from __future__ import annotations
 from ..server import mcp
 
 
-@mcp.tool
-def generate_contract_from_tags(
+@mcp.tool(tags={"contracts"})
+def contract_generate(
     contract_type: str,
     format: str = "pdf",
     tags: dict | None = None,
@@ -23,16 +23,18 @@ def generate_contract_from_tags(
     """Generate a contract deliverable (DOCX/PDF) for a contract class.
 
     By default renders the registered 母版 template (skeleton). When ``stance``
-    and/or a ``tags`` dict carrying ``stance`` / ``region`` is supplied, assembles
-    base + provincial-tagged + custom clauses and filters the custom-clause
+    and/or a ``tags`` dict carrying ``stance`` / ``scenario`` is supplied,
+    assembles base + tagged + custom clauses and filters the custom-clause
     selection by the given stance (``pro_a`` / ``pro_b`` / ``balanced``) and the
-    tagged selection by region/province.
+    tagged selection by scenario (业务场景, e.g. 农产品买卖 / 驾校培训 /
+    住宅租赁). ``region`` / ``province`` keys are not recognized (province was
+    retired in favor of ``scenario``).
 
     Parameters:
         contract_type: contract class key, e.g. ``"sale"`` or ``"employment"``.
         format: ``"docx"`` / ``"pdf"`` / ``"both"`` (default ``"pdf"``).
-        tags: optional dict; recognized keys are ``stance`` and ``region``
-            (or ``province``). Other keys are ignored.
+        tags: optional dict; recognized keys are ``stance`` and ``scenario``.
+            Other keys (including ``region``/``province``) are ignored.
         stance: convenience for ``tags["stance"]``.
         out_dir: output directory (default ``output/contracts``).
         include_current_tags: when True, attach ``current_tags`` - the live
@@ -48,19 +50,19 @@ def generate_contract_from_tags(
     from src.clauses.assemble import generate_contract_assembled
     from src.contracts import generate_contract
 
-    # Derive the effective stance + province (region). The underlying assembler
-    # only filters custom clauses by `stance` and tagged clauses by `province`,
-    # so we surface exactly those two dimensions from `tags`.
+    # Derive the effective stance + scenario. The underlying assembler only
+    # filters custom clauses by `stance` and tagged clauses by `scenario`, so we
+    # surface exactly those two dimensions from `tags`.
     if tags:
         stance = stance or tags.get("stance")
-        province = tags.get("region") or tags.get("province")
+        scenario = tags.get("scenario")
     else:
-        province = None
+        scenario = None
 
-    if stance or province:
+    if stance or scenario:
         result = generate_contract_assembled(
             contract_type,
-            province=province,
+            scenario=scenario,
             stance=stance,
             format=format,
             out_dir=out_dir,
@@ -69,12 +71,15 @@ def generate_contract_from_tags(
         result = generate_contract(contract_type, format=format, out_dir=out_dir)
 
     if include_current_tags:
-        from src.clauses.tags import TAG_VOCAB, load_vocab_from_db
+        from src.clauses.tags import load_vocab_from_db, tag_vocab_for_type
 
         # Merge tag_dims into the live TAG_VOCAB (idempotent, best-effort:
-        # degrades to the starter set if the DB is unreachable). A shallow copy
-        # so the caller cannot mutate the server's process vocabulary.
+        # degrades to the starter set if the DB is unreachable), then expose the
+        # flat per-type vocabulary - universal dims + this contract_type's dims,
+        # including any runtime-registered temporary dim - as a simple
+        # dim -> [allowed values] mapping. ``tag_vocab_for_type`` returns a fresh
+        # dict, so the caller cannot mutate the server's process vocabulary.
         load_vocab_from_db()
-        result["current_tags"] = dict(TAG_VOCAB)
+        result["current_tags"] = tag_vocab_for_type(contract_type)
 
     return result

@@ -1,4 +1,4 @@
-"""``rag_search`` tool.
+"""``search_clauses`` tool.
 
 Wraps :func:`src.search.query.search` over the Elasticsearch vector store.
 Degrades to ``[]`` on any backend failure (mirrors the existing
@@ -11,8 +11,8 @@ from __future__ import annotations
 from ..server import mcp
 
 
-@mcp.tool
-def rag_search(query: str, top_k: int = 5) -> list[dict]:
+@mcp.tool(tags={"search"})
+def search_clauses(query: str, top_k: int = 5) -> list[dict]:
     """Retrieve ranked clause chunks for a natural-language query.
 
     Parameters:

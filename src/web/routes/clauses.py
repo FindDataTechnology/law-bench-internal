@@ -49,17 +49,14 @@ def _tags_from_query(request: Request, contract_type: str | None = None) -> dict
 def _tags_from_form(form, contract_type: str | None = None) -> dict:
     """Collect tag dims posted from a form (empty values omitted).
 
-    Controlled dims come from their dropdowns; ``region`` (free-form) comes
-    from the ``region`` text field.
+    Controlled dims (including ``scenario``) come from their dropdowns, which
+    are rendered from ``tag_vocab_for_type``.
     """
     out: dict[str, str] = {}
     for dim in tag_vocab_for_type(contract_type):
         v = (form.get(dim) or "").strip()
         if v:
             out[dim] = v
-    reg = (form.get("region") or "").strip()
-    if reg:
-        out["region"] = reg
     return out
 
 
@@ -83,7 +80,7 @@ def _type_rows(db) -> list[dict]:
             "base": r["base"],
             "tagged": r["tagged"],
             "custom": r["custom"],
-            "provinces": r["provinces"],
+            "scenarios": r["scenarios"],
         }
         for r in counts_by_type(db)
     ]
@@ -149,7 +146,7 @@ def clauses_extract(request: Request, limit: int = 5):
 def clauses_generate(
     contract_type: str,
     format: str = "pdf",
-    province: str | None = None,
+    scenario: str | None = None,
     stance: str | None = None,
     db=Depends(get_db),
 ):
@@ -157,7 +154,7 @@ def clauses_generate(
         raise HTTPException(status_code=400, detail="unsupported format; use docx or pdf")
     try:
         result = generate_contract_assembled(
-            contract_type, province=province or None, stance=stance or None, format=format, db=db
+            contract_type, scenario=scenario or None, stance=stance or None, format=format, db=db
         )
     except NotFoundError:
         raise HTTPException(status_code=404, detail=f"unknown contract type: {contract_type}")
@@ -349,7 +346,7 @@ async def clauses_review_all_route(
 def clauses_detail(
     request: Request,
     contract_type: str,
-    region: str = "",
+    scenario: str = "",
     category: str = "",
     q: str = "",
     db=Depends(get_db),
@@ -360,13 +357,13 @@ def clauses_detail(
             request,
             "clauses_detail.html",
             {"not_found": True, "contract_type": contract_type, "zh": contract_type,
-             "grouped": [], "provinces": [], "region_filter": "", "category_filter": "",
+             "grouped": [], "scenarios": [], "scenario_filter": "", "category_filter": "",
              "q": "", "flash": None},
             status_code=404,
         )
     detail_tags = _tags_from_query(request, contract_type)
-    if region:
-        detail_tags["region"] = region
+    if scenario:
+        detail_tags["scenario"] = scenario
     clauses = list_clauses(
         contract_type,
         category=category or None,
@@ -375,7 +372,7 @@ def clauses_detail(
         db=db,
     )
     all_for_type = list_clauses(contract_type, db=db)
-    provinces = sorted({c.get("tags", {}).get("region") for c in all_for_type if c.get("tags", {}).get("region")})
+    scenarios = sorted({c.get("tags", {}).get("scenario") for c in all_for_type if c.get("tags", {}).get("scenario")})
     from ...clauses.extract import SECTION_ORDER, section_rank
 
     sections: list[tuple[str, list]] = []
@@ -401,8 +398,8 @@ def clauses_detail(
             "contract_type": contract_type,
             "zh": zh[contract_type],
             "grouped": grouped,
-            "provinces": provinces,
-            "region_filter": region,
+            "scenarios": scenarios,
+            "scenario_filter": scenario,
             "category_filter": category,
             "q": q,
             "flash": request.query_params.get("flash"),

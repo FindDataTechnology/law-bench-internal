@@ -1,4 +1,4 @@
-"""Tests for ``rag_search``.
+"""Tests for ``search_clauses``.
 
 Hermetic: ``src.search.query.search`` is monkeypatched. Verifies chunk mapping
 and graceful degradation to ``[]`` on backend failure.
@@ -16,9 +16,9 @@ def test_rag_returns_chunks(monkeypatch):
         lambda query, top_k=5: [{"text": "c1", "source_path": "a.md", "score": 0.9}],
     )
 
-    from fd_coding_law_bench_mcp.tools.rag import rag_search
+    from fd_coding_law_bench_mcp.tools.rag import search_clauses
 
-    out = rag_search("试用期期限", top_k=3)
+    out = search_clauses("试用期期限", top_k=3)
     assert out == [{"text": "c1", "source_path": "a.md", "score": 0.9}]
 
 
@@ -30,6 +30,6 @@ def test_rag_degrades_to_empty_on_failure(monkeypatch):
 
     monkeypatch.setattr(query_mod, "search", boom)
 
-    from fd_coding_law_bench_mcp.tools.rag import rag_search
+    from fd_coding_law_bench_mcp.tools.rag import search_clauses
 
-    assert rag_search("anything") == []
+    assert search_clauses("anything") == []

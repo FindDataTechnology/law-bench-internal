@@ -98,7 +98,7 @@ def _build_prompt(text: str) -> str:
         '        {"name": "<slot名，不含花括号>", "label": "<中文标签>", "description": "<说明>", '
         '"example": "<示例值>", "required": true}\n'
         "      ],\n"
-        '      "tags": {"stance": "<pro_a偏甲方/pro_b偏乙方/balanced中立>", "strength": "<strong强/standard标准/mild弱>", "risk": "<high高/medium中/low低>", "mandatory": "<mandatory强制/default任意/recommended示范>"}\n'
+        '      "tags": {"scenario": "<业务场景/交易子类型，如 农产品买卖/消费品零售/驾校培训/养老服务/住宅租赁/建设工程 等；用简短中文标签，无法判断填 null>", "stance": "<pro_a偏甲方/pro_b偏乙方/balanced中立>", "strength": "<strong强/standard标准/mild弱>", "risk": "<high高/medium中/low低>", "mandatory": "<mandatory强制/default任意/recommended示范>"}\n'
         "    }\n"
         "  ]\n"
         "}\n\n"
@@ -109,7 +109,8 @@ def _build_prompt(text: str) -> str:
         "2. 每个 {{slot}} 必须在 slot_instructions 里有且仅有一条对应说明。\n"
         "3. body 里的法条名保留原样《...》，不要改成占位符。\n"
         "4. province 取省份简称（去掉省/市字）；全国级合同 province=null 且 level=national。\n"
-        "5. tags：判断每条条款的利益倾向（pro_a偏甲方/pro_b偏乙方/balanced中立）、保护强度（strong/standard/mild）、"
+        "5. tags：scenario 判断该条款所属的业务场景/交易子类型（如 农产品买卖、消费品零售、驾校培训、养老服务、住宅租赁、建设工程、快递 等，用简短中文标签；同一示范文本的多条条款通常属于同一场景）；"
+        "再判断利益倾向（pro_a偏甲方/pro_b偏乙方/balanced中立）、保护强度（strong/standard/mild）、"
         "风险等级（high/medium/low）、法律性质（mandatory强制/default任意/recommended示范）。不确定的填 null。\n\n"
         f"合同示范文本：\n\n{text}"
     )
@@ -217,10 +218,11 @@ def _post_process(raw: dict, source_path: str) -> dict:
             continue
         section = (c.get("section") or "附则").strip() or "附则"
         instructions = _normalize_slot_instructions(body, c.get("slot_instructions") or [])
-        # build tags: source + region + LLM-suggested universal dims
+        # build tags: source + scenario + LLM-suggested universal dims
         clause_tags: dict = {"source": source}
-        if province:
-            clause_tags["region"] = province
+        scenario = (c.get("tags") or {}).get("scenario")
+        if scenario and scenario != "null":
+            clause_tags["scenario"] = scenario
         for k in ("stance", "strength", "risk", "mandatory"):
             v = (c.get("tags") or {}).get(k)
             if v and v != "null":

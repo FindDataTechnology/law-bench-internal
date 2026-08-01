@@ -39,6 +39,21 @@ def _now() -> str:
 def _row(clause: dict, *, now: str) -> tuple:
     # source lives in tags.source (base/tagged/custom). Bridge from legacy
     # `category` field if tags has no source. level is derived (not stored).
+    # Body + slot_instruction names are normalized to canonical slots, and
+    # body_hash is re-derived from the normalized body (keeps dedup consistent).
+    from src.contracts.slot_ontology import normalize_body_slots, normalize_instruction_names
+
+    ct = clause.get("contract_type")
+    body = normalize_body_slots(clause["body"], ct)
+    # Re-derive body_hash only when normalization changed the body; otherwise
+    # honor a caller-provided hash (extraction sets md5(body); tests may set a
+    # sentinel). This keeps dedup consistent for normalized bodies without
+    # breaking callers that distinguish same-body rows via an explicit hash.
+    if body != clause["body"]:
+        body_hash = hashlib.md5(body.encode("utf-8")).hexdigest()
+    else:
+        body_hash = clause.get("body_hash") or hashlib.md5(body.encode("utf-8")).hexdigest()
+    slot_instructions = normalize_instruction_names(clause.get("slot_instructions") or [], ct)
     source_path = clause.get("source_path")
     tags = dict(clause.get("tags") or {})
     if "source" not in tags and "category" in clause:
@@ -46,17 +61,15 @@ def _row(clause: dict, *, now: str) -> tuple:
     source = tags.get("source")
     if source == "custom":
         source_path = None
-    elif source == "base":
-        tags = {k: v for k, v in tags.items() if k != "region"}  # national: no region
     return (
         clause["contract_type"],
         clause["section"],
-        clause["body"],
-        Jsonb(clause.get("slot_instructions") or []),
+        body,
+        Jsonb(slot_instructions),
         Jsonb(clause.get("law_refs") or []),
         source_path,
         clause.get("source_doc_title"),
-        clause["body_hash"],
+        body_hash,
         now,
         now,
         bool(clause.get("manual", False)),
@@ -68,15 +81,22 @@ def _row(clause: dict, *, now: str) -> tuple:
 def _finalize(clause: dict, body: str) -> dict:
     """Re-derive ``body_hash``/``slot_instructions``/``law_refs`` from ``body``.
 
+    ``body`` and ``slot_instructions`` are normalized to canonical slot names
+    via :mod:`src.contracts.slot_ontology` (so the corpus stays name-consistent).
     ``slot_instructions`` keeps existing labels/descriptions for surviving slots
     and stubs any new ``{{slot}}``; ``law_refs`` is the ``《...》`` provisions.
     """
-    body = (body or "").strip()
+    from src.contracts.slot_ontology import normalize_body_slots, normalize_instruction_names
+
+    ct = clause.get("contract_type")
+    body = normalize_body_slots((body or "").strip(), ct)
     return {
         **clause,
         "body": body,
         "body_hash": hashlib.md5(body.encode("utf-8")).hexdigest(),
-        "slot_instructions": _normalize_slot_instructions(body, clause.get("slot_instructions") or []),
+        "slot_instructions": _normalize_slot_instructions(
+            body, normalize_instruction_names(clause.get("slot_instructions") or [], ct)
+        ),
         "law_refs": _law_refs_from_body(body),
     }
 
@@ -176,8 +196,8 @@ def create_clause(clause: dict, db: Any = None) -> int:
 def update_clause(clause_id: int, fields: dict, db: Any = None) -> dict:
     """Update a clause by id; re-derive body-dependent fields; set ``manual=true``.
 
-    ``fields`` may carry ``body``, ``section``, ``category``, ``tags`` (region
-    is a tag, ``tags.region``). Unspecified fields keep their existing value.
+    ``fields`` may carry ``body``, ``section``, ``category``, ``tags``.
+    Unspecified fields keep their existing value.
     Raises :class:`NotFoundError` for an unknown id. ``slot_instructions``/
     ``law_refs``/``body_hash`` are re-derived from the (possibly edited) body.
     """
@@ -300,7 +320,7 @@ def list_clauses(
 
     ``contract_type`` null returns all types. ``q`` does a case-insensitive
     ``ILIKE`` over ``body`` and ``source_doc_title``. ``tags`` filters by
-    ``tags->>'<dim>' = '<val>'`` for each dim (region is a free-form tag).
+    ``tags->>'<dim>' = '<val>'`` for each dim (free-form dims accept any value).
     Ordered by ``section_rank`` then id.
     """
     ensure_schema(db)
@@ -320,7 +340,9 @@ def list_clauses(
         universal = TAG_VOCAB.get(None, {})
         type_specific = TAG_VOCAB.get(contract_type, {}) if contract_type else {}
         for dim, val in tags.items():
-            if dim in FREE_FORM_TAGS or dim in universal or dim in type_specific:
+            # `scenario` is always filterable (core scenario axis) even before
+            # load_vocab_from_db() registers it as a per-type dim.
+            if dim == "scenario" or dim in FREE_FORM_TAGS or dim in universal or dim in type_specific:
                 where.append("tags->>%s = %s")
                 params.append(dim)
                 params.append(str(val))
@@ -394,18 +416,18 @@ def count_clauses(db: Any = None) -> dict:
 
 
 def counts_by_type(db: Any = None) -> list[dict]:
-    """Per ``contract_type`` counts broken down by category + distinct regions.
+    """Per ``contract_type`` counts broken down by category + distinct scenarios.
 
-    Returns ``[{contract_type, base, tagged, custom, provinces:[...]}]`` ordered
-    by contract_type (``provinces`` are the distinct ``tags.region`` values for
+    Returns ``[{contract_type, base, tagged, custom, scenarios:[...]}]`` ordered
+    by contract_type (``scenarios`` are the distinct ``tags.scenario`` values for
     tagged clauses). Used by the ``/clauses`` browse page.
     """
     ensure_schema(db)
     conn = connect(db)
     try:
         rows = conn.execute(
-            "SELECT contract_type, tags->>'source' AS source, tags->>'region' AS region, COUNT(*) AS n "
-            "FROM clauses GROUP BY contract_type, tags->>'source', tags->>'region' "
+            "SELECT contract_type, tags->>'source' AS source, tags->>'scenario' AS scenario, COUNT(*) AS n "
+            "FROM clauses GROUP BY contract_type, tags->>'source', tags->>'scenario' "
             "ORDER BY contract_type"
         ).fetchall()
     finally:
@@ -413,11 +435,11 @@ def counts_by_type(db: Any = None) -> list[dict]:
     by_type: dict[str, dict] = {}
     for r in rows:
         entry = by_type.setdefault(
-            r["contract_type"], {"contract_type": r["contract_type"], "base": 0, "tagged": 0, "custom": 0, "provinces": set()}
+            r["contract_type"], {"contract_type": r["contract_type"], "base": 0, "tagged": 0, "custom": 0, "scenarios": set()}
         )
         entry[r["source"]] = entry.get(r["source"], 0) + r["n"]
-        if r["source"] == "tagged" and r["region"]:
-            entry["provinces"].add(r["region"])
+        if r["source"] == "tagged" and r["scenario"]:
+            entry["scenarios"].add(r["scenario"])
     return [
-        {**e, "provinces": sorted(e["provinces"])} for e in by_type.values()
+        {**e, "scenarios": sorted(e["scenarios"])} for e in by_type.values()
     ]

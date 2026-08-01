@@ -30,9 +30,9 @@ SOFFICE_AVAILABLE = shutil.which("soffice") is not None
 # --- registry --------------------------------------------------------------- #
 
 
-def test_list_contract_types_has_41_in_order():
+def test_list_contract_types_has_43_in_order():
     types = list_contract_types()
-    assert len(types) == 41
+    assert len(types) == 43
     assert types[0] == {"key": "sale", "zh": "买卖合同"}
     # every entry has the expected shape
     assert all({"key", "zh"} <= set(t) for t in types)
@@ -50,6 +50,20 @@ def test_get_template_fields_and_slots():
         "party_a_duty", "party_b_duty", "penalty", "jurisdiction",
         "sign_date", "sign_location",
     }
+
+
+def test_get_template_for_newly_added_types():
+    """land_transfer / service were added to contract_types without a 母版; both
+    now ship a skeleton body covering all 12 required slots."""
+    required = {
+        "party_a", "party_b", "subject", "amount", "term_start", "term_end",
+        "party_a_duty", "party_b_duty", "penalty", "jurisdiction",
+        "sign_date", "sign_location",
+    }
+    for key in ("land_transfer", "service"):
+        t = get_template(key)
+        assert t["type"] == key
+        assert set(t["slots"]) == required
 
 
 def test_get_template_unknown_raises():
@@ -184,7 +198,7 @@ def test_cli_all_docx(tmp_path):
     res = _run_cli("--all", "--format", "docx", "--out", str(out))
     assert res.returncode == 0, res.stderr
     paths = [ln for ln in res.stdout.splitlines() if ln.strip()]
-    assert len(paths) == 41
+    assert len(paths) == 43
     assert all(Path(p).exists() for p in paths)
 
 

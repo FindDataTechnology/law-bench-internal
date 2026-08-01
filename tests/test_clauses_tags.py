@@ -29,6 +29,23 @@ def test_validate_drops_unknown_key():
     assert validate_tags({"stance": "pro_a", "mood": "happy"}) == {"stance": "pro_a"}
 
 
+def test_validate_region_dropped():
+    # region (province) was retired; it is no longer a recognized dim
+    assert validate_tags({"region": "吉林"}) == {}
+
+
+def test_validate_scenario_lenient():
+    # scenario is LLM-suggested/governed: any non-empty value is kept (the seeded
+    # vocab is advisory, not a hard whitelist)
+    assert validate_tags({"scenario": "全新业务场景"}, contract_type="sale") == {"scenario": "全新业务场景"}
+
+
+def test_scenario_seeded_per_type(seeded_db):
+    # seed_tag_dims (session fixture) seeds scenario from SCENARIO_VOCAB
+    assert "农产品买卖" in TAG_VOCAB.get("sale", {}).get("scenario", [])
+    assert "驾校培训" in TAG_VOCAB.get("service", {}).get("scenario", [])
+
+
 def test_validate_rejects_bad_value():
     with pytest.raises(ValueError):
         validate_tags({"stance": "pro_A"})
