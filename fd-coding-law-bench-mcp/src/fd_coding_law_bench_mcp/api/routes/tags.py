@@ -2,17 +2,19 @@
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from ..deps import get_db
 from ..schemas import (
     TagCombinationInfo,
     TagCombinationsResponse,
     TagValidateRequest,
     TagValidateResponse,
 )
+# Module-level imports so the tools are patchable in tests.
+# The MCP tools manage their own DB connections internally.
+from ...tools.tags import tag_combinations_list, tag_validate
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
@@ -29,7 +31,6 @@ async def list_tag_combinations(
         default=False,
         description="Filter combinations to only those with clause coverage"
     ),
-    db: Any = Depends(get_db),
 ):
     """List all valid tag combinations for a contract type.
 
@@ -39,13 +40,10 @@ async def list_tag_combinations(
     Warning: If the number of combinations exceeds 1000, a
     combinatorial_warning flag will be set in the response.
     """
-    from ...tools.tags import tag_combinations_list
-
     try:
         result = await tag_combinations_list(
             contract_type=contract_type,
             filter_by_clause_coverage=filter_by_clause_coverage,
-            db=db,
         )
         return result
     except Exception as e:
@@ -71,23 +69,17 @@ async def list_tag_combinations(
 # ============================================================================
 
 @router.post("/validate", response_model=TagValidateResponse)
-async def validate_tags(
-    request: TagValidateRequest,
-    db: Any = Depends(get_db),
-):
+async def validate_tags(request: TagValidateRequest):
     """Validate tags against the controlled vocabulary.
 
     Checks if the provided tags are valid for the given contract type
     according to the tag vocabulary rules. Returns cleaned tags and
     any validation errors.
     """
-    from ...tools.tags import tag_validate
-
     try:
         cleaned_tags = await tag_validate(
             tags=request.tags,
             contract_type=request.contract_type,
-            db=db,
         )
         return {
             "valid": True,

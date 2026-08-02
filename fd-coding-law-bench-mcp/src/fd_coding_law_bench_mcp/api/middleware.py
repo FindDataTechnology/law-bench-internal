@@ -3,6 +3,7 @@
 from typing import List
 
 from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -10,11 +11,48 @@ from .config import get_settings
 
 
 # ============================================================================
-# API Key Authentication
+# API Key Authentication (HTTP middleware)
 # ============================================================================
 
+async def auth_middleware(request: Request, call_next):
+    """HTTP middleware enforcing optional API key authentication.
+
+    Reads the current settings on every request so toggling
+    ``API_KEY_ENABLED`` takes effect without a restart (useful for tests).
+    Public endpoints (``/health``, ``/docs``, ``/redoc``, ``/openapi.json``)
+    always bypass authentication. When auth is disabled (the default), all
+    requests pass through unchanged.
+    """
+    settings = get_settings()
+
+    # Skip auth when disabled or for public endpoints
+    if not settings.api_key_enabled or request.url.path in settings.public_endpoints:
+        return await call_next(request)
+
+    api_key = request.headers.get("X-API-Key")
+    if not api_key:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "error": "Unauthorized",
+                "message": "API key required. Provide X-API-Key header.",
+            },
+        )
+
+    if not settings.api_keys or api_key not in settings.api_keys:
+        return JSONResponse(
+            status_code=403,
+            content={
+                "error": "Forbidden",
+                "message": "Invalid API key.",
+            },
+        )
+
+    return await call_next(request)
+
+
 async def verify_api_key(request: Request) -> None:
-    """Verify API key from request header.
+    """Verify API key from request header (dependency form).
 
     Raises HTTPException if authentication is enabled but no valid key provided.
 

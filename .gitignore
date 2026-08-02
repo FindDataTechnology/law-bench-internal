@@ -51,3 +51,4 @@ src/clauses/data/_extracted/
 
 # local MCP config (contains SSH creds)
 .mcp.json
+fd-coding-law-bench-mcp/site/

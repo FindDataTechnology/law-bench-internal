@@ -65,6 +65,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add API key authentication middleware (no-op when API_KEY_ENABLED=false).
+# Reads X-API-Key header against the configured key set; public endpoints
+# (/health, /docs, /redoc, /openapi.json) always bypass auth.
+from .middleware import auth_middleware  # noqa: E402
+
+app.middleware("http")(auth_middleware)
+
 # Import and include routers (import after CORS middleware registration)
 from .routes import contracts, tags  # noqa: E402
 

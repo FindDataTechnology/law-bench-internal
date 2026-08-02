@@ -2,6 +2,11 @@
 
 FastAPI-based REST API for async contract generation via tag-driven assembly.
 
+> **Documentation:** This is the **setup/configuration guide**. For the full
+> endpoint + schema + error reference, see [API Reference](api-reference.md).
+> For valid tag values and contract types, see
+> [Tag Vocabulary Reference](tag-vocabulary.md).
+
 ## Quick Start
 
 ### Starting the server

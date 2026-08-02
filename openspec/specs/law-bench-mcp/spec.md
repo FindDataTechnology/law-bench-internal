@@ -4,11 +4,11 @@
 A FastMCP server exposing law-bench's tag/stance-filtered contract generation, contract rubric evaluation, and clause RAG search as MCP tools, wrapping existing `src` modules in place.
 ## Requirements
 ### Requirement: MCP Server Process
-The system SHALL provide a FastMCP server project at `fd-coding-law-bench-mcp/` (importable as `fd_coding_law_bench_mcp`) that exposes law-bench's contract generation, contract evaluation, and clause RAG search as MCP tools. The server SHALL be runnable via `python -m fd_coding_law_bench_mcp` and via `fastmcp run`, SHALL communicate over stdio by default, and SHALL import the existing `src.*` modules in place without relocating or copying them. Each advertised tool SHALL be registered with a FastMCP `tags={"<concept>"}` kwarg assigning it to exactly one concept group (see the Concept Grouping requirement).
+The system SHALL provide a FastMCP server project at `fd-coding-law-bench-mcp/` (importable as `fd_coding_law_bench_mcp`) that exposes law-bench's contract generation, contract evaluation (including rubric/criterion/prompt management, compare orchestration, run inspection, and law-info/legal-refs reads), and clause RAG search as MCP tools. The server SHALL be runnable via `python -m fd_coding_law_bench_mcp` and via `fastmcp run`, SHALL communicate over stdio by default, and SHALL import the existing `src.*` modules in place without relocating or copying them. Each advertised tool SHALL be registered with a FastMCP `tags={"<concept>"}` kwarg assigning it to exactly one concept group (see the Concept Grouping requirement).
 
 #### Scenario: Server starts and registers its tools
 - **WHEN** the server is launched with `python -m fd_coding_law_bench_mcp`
-- **THEN** a FastMCP stdio server starts and advertises the tools `contract_generate`, `contract_evaluate`, `rubric_list`, `run_list`, and `search_clauses`
+- **THEN** a FastMCP stdio server starts and advertises the tools `contract_generate`, `contract_evaluate`, `rubric_list`, `run_list`, `search_clauses`, `rubric_get`, `rubric_create`, `rubric_update`, `rubric_delete`, `criterion_add`, `criterion_update`, `criterion_delete`, `criterion_reorder`, `prompt_list`, `prompt_get`, `prompt_create`, `prompt_update`, `prompt_delete`, `compare_run`, `compare_list`, `compare_get`, `compare_matrix`, `run_draft`, `run_get`, `law_types`, `law_info`, and `law_references`
 
 #### Scenario: Server is wired into a client config
 - **WHEN** an `.mcp.json` entry points a client at `python -m fd_coding_law_bench_mcp`
@@ -61,7 +61,7 @@ The `contract_generate` tool SHALL accept an `include_current_tags: bool` parame
 - **THEN** the result has no `current_tags` field
 
 ### Requirement: Evaluate Contract Tool
-The `contract_evaluate` tool SHALL evaluate a contract - supplied as either a file path or inline text - against a named rubric by delegating to `src.eval.scoring.evaluate_contract`. It SHALL return `{rubric, judge_model, score, max_score, all_pass, n_passed, n_criteria, criteria_results}`. It SHALL persist the run to the eval database unless `no_store=True`. A missing rubric or unreadable contract SHALL surface to the client as a tool error. The `rubric_list` tool SHALL wrap `src.eval.rubric.list_rubrics` and the `run_list` tool SHALL wrap `src.eval.store.list_runs`. `contract_evaluate` SHALL be tagged `contracts`; `rubric_list` SHALL be tagged `rubrics`; `run_list` SHALL be tagged `eval`.
+The `contract_evaluate` tool SHALL evaluate a contract - supplied as either a file path or inline text - against a named rubric by delegating to `src.eval.scoring.evaluate_contract`. It SHALL return `{rubric, judge_model, score, max_score, all_pass, n_passed, n_criteria, criteria_results}`. It SHALL persist the run to the eval database unless `no_store=True`. A missing rubric or unreadable contract SHALL surface to the client as a tool error. The `rubric_list` tool SHALL wrap `src.eval.rubric.list_rubrics` and the `run_list` tool SHALL wrap `src.eval.store.list_runs`. The `rubric_list` tool SHALL accept an optional `include_counts: bool` (default `False`): when `True` it SHALL delegate to `src.eval.rubric_crud.list_rubrics_with_counts` and each row SHALL carry `id`, `criterion_count`, and `is_harbor` in addition to `name`/`context`/`source`; when `False` (or unset) it SHALL return `{name, context, source}` rows unchanged. The `run_get(run_id)` tool SHALL delegate to `src.eval.store.get_run` and SHALL return a single run's run-level fields plus its ordered `criteria_results`; an unknown `run_id` SHALL surface to the client as a tool error. `contract_evaluate` SHALL be tagged `contracts`; `rubric_list` SHALL be tagged `rubrics`; `run_list` SHALL be tagged `eval`; `run_get` SHALL be tagged `eval`.
 
 #### Scenario: Evaluate inline contract text without persisting
 - **WHEN** `contract_evaluate` is called with `contract="# 服务协议\n..."` (inline text), `rubric="contract_drafting_v1"`, `no_store=True`
@@ -72,8 +72,20 @@ The `contract_evaluate` tool SHALL evaluate a contract - supplied as either a fi
 - **THEN** the tool returns an error to the client and no run is persisted
 
 #### Scenario: rubric_list returns available rubrics
-- **WHEN** `rubric_list` is called
+- **WHEN** `rubric_list` is called with no arguments (or `include_counts=False`)
 - **THEN** it returns the rubric rows with `name`, `context`, and `source`
+
+#### Scenario: rubric_list with include_counts enriches each row
+- **WHEN** `rubric_list` is called with `include_counts=True`
+- **THEN** each row carries `id`, `name`, `context`, `source`, `criterion_count`, and `is_harbor`
+
+#### Scenario: run_get returns a run and its verdicts
+- **WHEN** `run_get` is called with a `run_id` that exists
+- **THEN** the result contains the run-level fields (`id`, `rubric_name`, `score`, `all_pass`, `n_passed`, `n_criteria`, `scored_at`) and an ordered `criteria_results` list
+
+#### Scenario: run_get on an unknown run surfaces an error
+- **WHEN** `run_get` is called with a `run_id` that does not exist
+- **THEN** the tool returns an error to the client
 
 ### Requirement: RAG Search Tool
 The `search_clauses` tool SHALL return ranked chunks for a natural-language query by delegating to `src.search.query.search(query, top_k)` (default `top_k=5`), returning a list of `{text, source_path, score}`. On any backend failure (Elasticsearch / embedding endpoint / MinIO unreachable), it SHALL return an empty list and SHALL NOT raise to the client. It SHALL be tagged `search`.
@@ -184,3 +196,86 @@ The `contract_evaluate` tool SHALL additionally return `run_id` - the id of the 
 #### Scenario: contract_evaluate with no_store has null run_id
 - **WHEN** `contract_evaluate` is called with `no_store=True`
 - **THEN** `run_id` is `null` and no `eval_runs` row is written
+
+### Requirement: Rubric and Criterion Management Tools
+The MCP server SHALL expose the rubric and criterion management surface by wrapping `src.eval.rubric_crud`: `rubric_get(name)` (delegates to `get_rubric_detail`), `rubric_create(name, context, description?, criteria?)`, `rubric_update(rubric_id, name, context, description?)`, `rubric_delete(rubric_id)`, `criterion_add(rubric_id, name, description, guidance)`, `criterion_update(criterion_id, name, description, guidance)`, `criterion_delete(criterion_id)`, and `criterion_reorder(rubric_id, ordered_criterion_ids)`. Each tool SHALL import its `src.eval.rubric_crud` dependency at call time. `ManageError` (`NotFoundError`, `ConflictError`, `ValidationError`, `HarborReadOnlyError`) raised by the wrapped module SHALL propagate to the MCP client as a tool error rather than being swallowed. Harbor rubrics (`source LIKE 'harbor:%'`) SHALL remain read-only: every write tool SHALL surface a tool error when invoked on a harbor rubric, delegating that guard to `src.eval.rubric_crud` unchanged (no second guard in the MCP). The `rubric_*` and `criterion_*` tools SHALL be tagged `rubrics`.
+
+#### Scenario: rubric_get returns a rubric and its ordered criteria
+- **WHEN** `rubric_get` is called with a known rubric `name`
+- **THEN** the result contains the rubric's `id`, `name`, `context`, `source`, `is_harbor`, `criterion_count`, and an ordered `criteria` list
+
+#### Scenario: rubric_create with criteria returns the new rubric
+- **WHEN** `rubric_create` is called with `name`, `context`, and a `criteria` list of `{name, description, guidance}` dicts
+- **THEN** a local rubric is created and the result is the new rubric detail with its criteria
+
+#### Scenario: Writing to a harbor rubric surfaces an error
+- **WHEN** `rubric_update` (or any write tool) is called with the id of a harbor rubric
+- **THEN** the tool returns an error to the client and no write occurs
+
+#### Scenario: criterion_reorder with a mismatched id set surfaces an error
+- **WHEN** `criterion_reorder` is called with an id list that is not exactly the rubric's current criterion ids
+- **THEN** the tool returns a validation error to the client
+
+### Requirement: Prompt Management Tools
+The MCP server SHALL expose the generation-prompt management surface by wrapping `src.eval.prompt_crud`: `prompt_list()`, `prompt_get(name)`, `prompt_create(name, contract_type, purpose, content, description?, prompt_type?)`, `prompt_update(prompt_id, name, contract_type, purpose, content, description?, prompt_type?)`, and `prompt_delete(prompt_id)`. Each tool SHALL import its `src.eval.prompt_crud` dependency at call time. `NotFoundError`, `ConflictError`, and `ValidationError` raised by the wrapped module SHALL propagate to the MCP client as a tool error. Prompts are always locally authored and always editable (no harbor analog, no read-only guard). The `prompt_*` tools SHALL be tagged `prompts`.
+
+#### Scenario: prompt_list returns prompts without the content body
+- **WHEN** `prompt_list` is called
+- **THEN** it returns rows with `id`, `name`, `contract_type`, `purpose`, `source`, `prompt_type`, `description`, and `created_at` (no `content`)
+
+#### Scenario: prompt_get returns the full record including content
+- **WHEN** `prompt_get` is called with a known prompt `name`
+- **THEN** the result includes the prompt `content`
+
+#### Scenario: prompt_create then prompt_get round-trips
+- **WHEN** `prompt_create` is called with `name`, `contract_type`, `purpose`, and `content`, then `prompt_get` is called with that `name`
+- **THEN** the returned record matches the created fields
+
+#### Scenario: prompt_delete on an unknown id surfaces an error
+- **WHEN** `prompt_delete` is called with a `prompt_id` that does not exist
+- **THEN** the tool returns an error to the client
+
+### Requirement: Compare Tools
+The MCP server SHALL expose compare orchestration and reads by wrapping `src.eval.compare` and `src.eval.store`: `compare_run(contract_type, rubric_name, task_desc, prompt_names, n_drafts=1, label?)`, `compare_list(limit=20)`, `compare_get(compare_id)`, `compare_matrix(compare_id)`, and `run_draft(compare_id, run_id)`. `compare_run` SHALL resolve `prompt_names` to prompt records via `src.eval.compare.load_prompts`, then call `src.eval.compare.run_compare` unchanged (drafter-only generation via the DRAFTER model plus the existing `src.eval.scoring.evaluate_contract` judge) and SHALL persist the grouped compare. `compare_matrix` SHALL return `src.eval.compare.build_matrix(src.eval.store.get_compare(compare_id))`. `NotFoundError`, `ValidationError`, and `KeyError` SHALL propagate to the MCP client as a tool error. The `compare_*` tools SHALL be tagged `eval`; `run_draft` SHALL be tagged `eval`.
+
+#### Scenario: compare_run with fewer than two prompt names surfaces an error
+- **WHEN** `compare_run` is called with a single prompt name
+- **THEN** the tool returns a validation error to the client and no compare is persisted
+
+#### Scenario: compare_list returns recent compares
+- **WHEN** `compare_list` is called
+- **THEN** it returns the most recent compares with `id`, `label`, `contract_type`, `rubric_name`, `n_drafts`, and `created_at`
+
+#### Scenario: compare_get on an unknown id surfaces an error
+- **WHEN** `compare_get` is called with a `compare_id` that does not exist
+- **THEN** the tool returns an error to the client
+
+#### Scenario: compare_matrix returns the criteria x prompts matrix
+- **WHEN** `compare_matrix` is called with a known `compare_id`
+- **THEN** the result contains `criteria`, `columns` (one per prompt), `cells` keyed by prompt name, and `n_drafts`
+
+### Requirement: Law-Info and Legal-References Tools
+The MCP server SHALL expose read-only law-info and legal-references helpers by wrapping `src.eval.law_info` and `src.eval.legal_refs`: `law_types()`, `law_info(contract_type)`, and `law_references()`. `law_info` SHALL delegate to `src.eval.law_info.get_law_info` and SHALL surface `NotFoundError` as a tool error when no row exists for the type. `law_references` SHALL aggregate `src.eval.law_info.all_law_info` through `src.eval.legal_refs.extract_references` and return the categorized, deduplicated law-reference index. These tools SHALL be read-only and tagged `law`.
+
+#### Scenario: law_types returns types with their sources
+- **WHEN** `law_types` is called
+- **THEN** it returns rows with `key`, `zh_name`, and a `sources` list
+
+#### Scenario: law_info on an unknown type surfaces an error
+- **WHEN** `law_info` is called with a `contract_type` that has no law_info row
+- **THEN** the tool returns an error to the client
+
+#### Scenario: law_references returns categorized laws
+- **WHEN** `law_references` is called and law_info rows exist
+- **THEN** it returns laws each with `name`, `category`, `category_zh`, `contract_types`, `sources`, and `occurrences`, sorted by category then name
+
+### Requirement: Tool Registration and Test Coverage
+The MCP server SHALL register, on startup, the eval-lifecycle tool set: `contract_generate`, `contract_evaluate`, `rubric_list`, `run_list`, `search_clauses`, `rubric_get`, `rubric_create`, `rubric_update`, `rubric_delete`, `criterion_add`, `criterion_update`, `criterion_delete`, `criterion_reorder`, `prompt_list`, `prompt_get`, `prompt_create`, `prompt_update`, `prompt_delete`, `compare_run`, `compare_list`, `compare_get`, `compare_matrix`, `run_draft`, `run_get`, `law_types`, `law_info`, and `law_references` (in addition to tools defined by other requirements such as pipeline and tag tools). Every advertised tool SHALL be covered by at least one hermetic test that monkeypatches its `src.*` dependency so that no DB, LLM, judge endpoint, or network is required. The test suite SHALL include a registration assertion that introspects the server's registered tool names and fails if any of the expected tools above is missing or mis-named.
+
+#### Scenario: Server advertises the expected eval-lifecycle tools
+- **WHEN** the server's registered tool names are introspected
+- **THEN** every tool in the expected eval-lifecycle set is present and correctly named (no missing, no mis-named tool)
+
+#### Scenario: Every tool has a passing hermetic test
+- **WHEN** the MCP test suite runs
+- **THEN** every advertised tool is exercised by at least one hermetic test with its `src.*` dependency monkeypatched, and the suite passes without a DB, LLM, or network

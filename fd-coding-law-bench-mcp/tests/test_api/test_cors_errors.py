@@ -101,8 +101,9 @@ class TestErrorHandling:
             )
             assert response.status_code == 500
             data = response.json()
-            # Standardized error structure should have error and message
-            assert "detail" in data
+            # Standardized error structure has error + message (+ details)
+            assert "error" in data
+            assert "message" in data
 
     def test_404_unknown_route(self, client):
         """Test 404 for completely unknown route."""
@@ -126,18 +127,21 @@ class TestRateLimiting:
             response = client.get("/health")
             assert response.status_code == 200
 
-    @patch("fd_coding_law_bench_mcp.api.middleware.get_settings")
-    def test_rate_limit_headers_present(self, mock_settings, client):
-        """Test rate limit headers are included in responses."""
-        mock_settings_obj = mock_settings.return_value
-        mock_settings_obj.rate_limit_enabled = True
-        mock_settings_obj.rate_limit_requests = 100
-        mock_settings_obj.rate_limit_window = 60
-        mock_settings_obj.rate_limit_backend = "memory"
-        mock_settings_obj.redis_url = None
+    @pytest.fixture(autouse=True)
+    def _clear_settings_cache(self):
+        """Clear settings cache so auth middleware sees default (auth disabled)."""
+        from fd_coding_law_bench_mcp.api import config
+        config.get_settings.cache_clear()
+        yield
+        config.get_settings.cache_clear()
 
-        # Note: Actual rate limit headers depend on slowapi configuration
-        # This test verifies the endpoint is accessible
+    def test_rate_limit_headers_present(self, client):
+        """Test rate limit headers are included in responses.
+
+        With default config (high limit, auth disabled), a single health
+        check must succeed. We avoid patching get_settings here because a
+        global patch leaks into the auth middleware and flips api_key_enabled.
+        """
         response = client.get("/health")
         assert response.status_code == 200
 
