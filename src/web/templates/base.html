@@ -17,6 +17,7 @@
       <a href="{{ url_for('page_law_references') }}">{{ t.nav.law_references }}</a>
       <a href="{{ url_for('page_contracts') }}">合同模板</a>
       <a href="{{ url_for('page_clauses') }}">条款库</a>
+      <a href="/dashboard">仪表板</a>
       <a href="{{ url_for('page_search') }}">搜索</a>
       <span class="lang-switch">
         <a href="{{ request.url.path }}?lang=en"{% if lang == 'en' %} aria-current="true"{% endif %}>{{ t.switch.en }}</a>

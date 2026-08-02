@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}评价仪表板 - {{ t.nav.brand }}{% endblock %}
+
+{% block content %}
+<h1>合同评价仪表板</h1>
+
+<!-- Overall Stats -->
+<section class="stats-overview">
+  <h2>总览</h2>
+  <div class="stats-grid">
+    <div class="stat-card">
+      <span class="stat-value">{{ overall.total_runs if overall else 0 }}</span>
+      <span class="stat-label">总流水线运行</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value">{{ total_types }}</span>
+      <span class="stat-label">合同类型数</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value">{{ "%.1f"|format((overall.avg_pass_rate or 0) * 100) }}%</span>
+      <span class="stat-label">平均通过率</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value">{{ overall.all_pass_count if overall else 0 }}</span>
+      <span class="stat-label">全通过数</span>
+    </div>
+  </div>
+</section>
+
+<!-- Version Comparison -->
+{% if version_comparison %}
+<section class="version-comparison">
+  <h2>版本对比</h2>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>版本</th>
+        <th>运行数</th>
+        <th>平均通过率</th>
+        <th>全通过数</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for v in version_comparison %}
+      <tr>
+        <td><strong>{{ v.rubric_version }}</strong></td>
+        <td>{{ v.run_count }}</td>
+        <td>{{ "%.1f"|format((v.avg_pass_rate or 0) * 100) }}%</td>
+        <td>{{ v.all_pass_count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<!-- Per-Type Breakdown -->
+<section class="by-type">
+  <h2>各合同类型评分（最佳运行）</h2>
+  <table class="data-table sortable">
+    <thead>
+      <tr>
+        <th>合同类型</th>
+        <th>评价规则</th>
+        <th>通过率</th>
+        <th>通过/总数</th>
+        <th>迭代次数</th>
+        <th>全通过</th>
+        <th>时间</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in by_type %}
+      <tr class="{{ 'pass-row' if r.all_pass else ('high-pass' if (r.pass_pct or 0) >= 80 else ('mid-pass' if (r.pass_pct or 0) >= 50 else 'low-pass')) }}">
+        <td><strong>{{ r.contract_type }}</strong></td>
+        <td>{{ r.rubric_name }}</td>
+        <td>
+          <div class="pass-bar">
+            <div class="pass-bar-fill" style="width: {{ r.pass_pct or 0 }}%"></div>
+            <span class="pass-bar-text">{{ r.pass_pct or 0 }}%</span>
+          </div>
+        </td>
+        <td>{{ r.n_passed }}/{{ r.n_criteria }}</td>
+        <td>{{ r.iteration }}</td>
+        <td>{{ '✓' if r.all_pass else '✗' }}</td>
+        <td>{{ r.created_at[:19] if r.created_at else '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<!-- Recent Runs -->
+<section class="recent-runs">
+  <h2>最近运行</h2>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>合同类型</th>
+        <th>评价规则</th>
+        <th>通过</th>
+        <th>全通过</th>
+        <th>迭代</th>
+        <th>时间</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in recent %}
+      <tr>
+        <td>{{ r.id }}</td>
+        <td>{{ r.contract_type }}</td>
+        <td>{{ r.rubric_name }}</td>
+        <td>{{ r.n_passed }}/{{ r.n_criteria }}</td>
+        <td>{{ '✓' if r.all_pass else '✗' }}</td>
+        <td>{{ r.iteration }}</td>
+        <td>{{ r.created_at[:19] if r.created_at else '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<style>
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+  margin: 16px 0;
+}
+.stat-card {
+  background: var(--card-bg, #f8f9fa);
+  border-radius: 8px;
+  padding: 20px;
+  text-align: center;
+  border: 1px solid var(--border, #e0e0e0);
+}
+.stat-value {
+  display: block;
+  font-size: 2em;
+  font-weight: bold;
+  color: var(--primary, #2563eb);
+}
+.stat-label {
+  display: block;
+  font-size: 0.85em;
+  color: var(--muted, #666);
+  margin-top: 4px;
+}
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 0.9em;
+}
+.data-table th, .data-table td {
+  padding: 8px 12px;
+  border: 1px solid #e0e0e0;
+  text-align: left;
+}
+.data-table th {
+  background: #f1f5f9;
+  font-weight: 600;
+}
+.pass-row { background: #dcfce7; }
+.high-pass { background: #f0fdf4; }
+.mid-pass { background: #fef9c3; }
+.low-pass { background: #fee2e2; }
+.pass-bar {
+  position: relative;
+  width: 120px;
+  height: 20px;
+  background: #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.pass-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ef4444, #f59e0b, #22c55e);
+  transition: width 0.3s;
+}
+.pass-bar-text {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  text-align: center;
+  font-size: 0.8em;
+  line-height: 20px;
+  color: #000;
+  font-weight: 600;
+}
+section { margin-bottom: 32px; }
+h2 { border-bottom: 2px solid #e0e0e0; padding-bottom: 8px; }
+</style>
+{% endblock %}

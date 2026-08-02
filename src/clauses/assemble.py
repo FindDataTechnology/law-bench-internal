@@ -209,7 +209,7 @@ def generate_contract_assembled(
     scenario: str | None = None,
     custom_clause_ids: list[int] | None = None,
     stance: str | None = None,
-    format: str = "markdown",
+    format: str = "docx",
     out_dir: str | Path | None = None,
     db: Any = None,
 ) -> dict:
@@ -217,9 +217,10 @@ def generate_contract_assembled(
 
     The contract is resolved by per-section override (``custom > tagged >
     base``) with base fallback and section extension, then passes the coherence
-    gate before rendering. ``format`` is ``"markdown"`` (default, fastest - no
-    file I/O), ``"docx"``, ``"pdf"``, or ``"both"``; files are written under
-    ``out_dir`` (default ``output/contracts``). Every ``{{slot}}`` is rendered
+    gate before rendering. ``format`` is ``"docx"`` (default), ``"pdf"``,
+    ``"markdown"`` (text only, no file I/O), or ``"both"``; files are written
+    under ``out_dir`` (default ``output/contracts``). Every ``{{slot}}`` is
+    rendered
     as a highlighted, fillable placeholder. Returns
     ``{docx_path, pdf_path, body_text, slots, instructions, law_refs, diagnostics}``
     where unrequested formats map to ``None`` and ``diagnostics.heuristic_sections``
