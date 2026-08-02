@@ -34,7 +34,7 @@ NAMED_CONTRACTS: dict[str, str] = {
     "partnership": "合伙合同",               # 第二十七章 (967-978)
 }
 
-# 非具名合同（无名合同）- 22 个
+# 非具名合同（无名合同）- 24 个
 # Governed by statutes beyond the Civil Code
 UNNAMED_CONTRACTS: dict[str, str] = {
     # 公司股权类 - 公司法 (2023 修订)
@@ -65,6 +65,10 @@ UNNAMED_CONTRACTS: dict[str, str] = {
     "talent_agency": "演艺经纪合同",           # 营业性演出管理条例
     "ppp_project": "PPP项目合同",              # 基础设施和公用事业特许经营管理办法
     "tourism_service": "旅游服务合同",          # 旅游法
+    # 通用服务类 - 民法典合同编通则
+    "service": "服务合同",                     # 承揽/劳务/服务合同
+    # 土地流转类 - 农村土地承包法
+    "land_transfer": "土地流转合同",           # 土地承包经营权流转合同
 }
 
 # 民法典章节映射 (for named contracts)
@@ -137,10 +141,10 @@ def list_named_contracts() -> list[str]:
 
 
 def list_unnamed_contracts() -> list[str]:
-    """Return the keys of all 22 unnamed contracts."""
+    """Return the keys of all 24 unnamed contracts."""
     return list(UNNAMED_CONTRACTS.keys())
 
 
 def list_all_contracts() -> list[str]:
-    """Return the keys of all 41 known contract types."""
+    """Return the keys of all 43 known contract types."""
     return list(_all_types().keys())

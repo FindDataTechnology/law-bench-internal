@@ -35,7 +35,7 @@ from .store import get_custom_clause, list_clauses
 from .tag_review import is_assembly_ready
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_FORMATS = ("docx", "pdf", "both")
+_FORMATS = ("markdown", "docx", "pdf", "both")
 # Extended (non-canonical) sections rank just before 附则 so they land after the
 # canonical body and before the closing 附则/签署信息 sections.
 _EXT_RANK = SECTION_ORDER.index("附则") - 0.5
@@ -209,7 +209,7 @@ def generate_contract_assembled(
     scenario: str | None = None,
     custom_clause_ids: list[int] | None = None,
     stance: str | None = None,
-    format: str = "pdf",
+    format: str = "markdown",
     out_dir: str | Path | None = None,
     db: Any = None,
 ) -> dict:
@@ -217,11 +217,12 @@ def generate_contract_assembled(
 
     The contract is resolved by per-section override (``custom > tagged >
     base``) with base fallback and section extension, then passes the coherence
-    gate before rendering. ``format`` is ``"docx"``, ``"pdf"``, or ``"both"``;
-    files are written under ``out_dir`` (default ``output/contracts``). Every
-    ``{{slot}}`` is rendered as a highlighted, fillable placeholder. Returns
-    ``{docx_path, pdf_path, slots, instructions, law_refs, diagnostics}`` where
-    unrequested formats map to ``None`` and ``diagnostics.heuristic_sections``
+    gate before rendering. ``format`` is ``"markdown"`` (default, fastest - no
+    file I/O), ``"docx"``, ``"pdf"``, or ``"both"``; files are written under
+    ``out_dir`` (default ``output/contracts``). Every ``{{slot}}`` is rendered
+    as a highlighted, fillable placeholder. Returns
+    ``{docx_path, pdf_path, body_text, slots, instructions, law_refs, diagnostics}``
+    where unrequested formats map to ``None`` and ``diagnostics.heuristic_sections``
     lists sections resolved by a within-source tiebreak. Raises
     :class:`NotFoundError` for an unknown contract type and
     :class:`CoherenceError` if the resolved contract fails the coherence gate.
@@ -250,7 +251,10 @@ def generate_contract_assembled(
     docx_path: Path | None = None
     pdf_path: Path | None = None
     base_name = contract_type if not scenario else f"{contract_type}__{scenario}"
-    if format == "docx":
+    if format == "markdown":
+        # Content-only path: no file I/O, fastest return
+        pass
+    elif format == "docx":
         docx_path = out / f"{base_name}.docx"
         create_docx(body, str(docx_path), title=zh)
     elif format == "both":

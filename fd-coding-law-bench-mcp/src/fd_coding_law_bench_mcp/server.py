@@ -24,6 +24,9 @@ from .tools import prompts as _prompts  # noqa: E402,F401
 from .tools import rag as _rag  # noqa: E402,F401
 from .tools import rubrics as _rubrics  # noqa: E402,F401
 from .tools import tags as _tags  # noqa: E402,F401
+from .tools import content as _content  # noqa: E402,F401
+from .tools import batch as _batch  # noqa: E402,F401
+from .tools import catalog as _catalog  # noqa: E402,F401
 
 
 def main() -> None:
