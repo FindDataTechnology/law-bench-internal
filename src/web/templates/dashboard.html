@@ -72,8 +72,8 @@
     <tbody>
       {% for r in by_type %}
       <tr class="{{ 'pass-row' if r.all_pass else ('high-pass' if (r.pass_pct or 0) >= 80 else ('mid-pass' if (r.pass_pct or 0) >= 50 else 'low-pass')) }}">
-        <td><strong>{{ r.contract_type }}</strong></td>
-        <td>{{ r.rubric_name }}</td>
+        <td><strong>{{ r.zh_name }}</strong><br><span class="muted">{{ r.contract_type }}</span></td>
+        <td>{{ r.rubric_zh }}</td>
         <td>
           <div class="pass-bar">
             <div class="pass-bar-fill" style="width: {{ r.pass_pct or 0 }}%"></div>
@@ -83,7 +83,7 @@
         <td>{{ r.n_passed }}/{{ r.n_criteria }}</td>
         <td>{{ r.iteration }}</td>
         <td>{{ '✓' if r.all_pass else '✗' }}</td>
-        <td>{{ r.created_at[:19] if r.created_at else '' }}</td>
+        <td>{{ r.local_time }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -109,12 +109,12 @@
       {% for r in recent %}
       <tr>
         <td>{{ r.id }}</td>
-        <td>{{ r.contract_type }}</td>
-        <td>{{ r.rubric_name }}</td>
+        <td>{{ r.zh_name }}<br><span class="muted">{{ r.contract_type }}</span></td>
+        <td>{{ r.rubric_zh }}</td>
         <td>{{ r.n_passed }}/{{ r.n_criteria }}</td>
         <td>{{ '✓' if r.all_pass else '✗' }}</td>
         <td>{{ r.iteration }}</td>
-        <td>{{ r.created_at[:19] if r.created_at else '' }}</td>
+        <td>{{ r.local_time }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -147,6 +147,7 @@
   color: var(--muted, #666);
   margin-top: 4px;
 }
+.muted { color: #999; font-size: 0.8em; }
 .data-table {
   width: 100%;
   border-collapse: collapse;
