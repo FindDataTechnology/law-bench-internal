@@ -57,24 +57,24 @@
 - [x] 7.3 添加行业标准参照表的 seeding 逻辑（scripts/init_industry_standards.py - 已运行）
 - [x] 7.4 添加合同类型分类的 seeding 逻辑（src/contracts/classification.py - 代码级）
 - [x] 7.5 确保 seeding 脚本的幂等性（ConflictError 处理 + ON CONFLICT upsert）
-- [ ] 7.6 编写 seeding 脚本测试用例
+- [x] 7.6 编写 seeding 脚本测试用例（tests/test_v3_rubrics.py - 55 tests pass）
 
 ## 8. 测试与验证
 
 - [x] 8.5 验证合同类型分类的正确性（69 tests pass）
 - [x] 8.2 对比 v2 和 v3 标准的通过率差异（sale: v2 6-7/10 -> v3 9/10）
-- [ ] 8.1 重新运行所有 41 种合同类型的 pipeline 测试（v3）
-- [ ] 8.3 验证分层判定机制的正确性
-- [ ] 8.4 验证行业标准参照机制的正确性
+- [ ] 8.1 重新运行所有 41 种合同类型的 pipeline 测试（v3）（进行中）
+- [x] 8.3 验证分层判定机制的正确性（test_v3_rubrics.py::TestV3OptimizedGuidance）
+- [x] 8.4 验证行业标准参照机制的正确性（test_v3_rubrics.py::TestV3TypeSpecificCriteria）
 - [ ] 8.6 调整不合理标准（基于测试结果）
-- [ ] 8.7 编写集成测试用例
+- [x] 8.7 编写集成测试用例（tests/test_v3_rubrics.py）
 
 ## 9. 部署与文档
 
 - [x] 9.1 将 v3 标准应用到生产环境（DB 中 41 个 v3 rubrics 已创建，default_rubric 自动选 v3）
-- [ ] 9.2 更新评价规则文档（提供合同类型->评价标准的映射表）
+- [x] 9.2 更新评价规则文档（docs/rubric-mapping.md）
 - [ ] 9.3 更新 API 文档（支持新的标准分类结构）
-- [ ] 9.4 提供迁移指南（从 v2 到 v3）
+- [x] 9.4 提供迁移指南（从 v2 到 v3）（rubric-mapping.md 包含迁移指南）
 - [ ] 9.5 培训用户使用新标准
 - [ ] 9.6 收集用户反馈并持续改进
 
