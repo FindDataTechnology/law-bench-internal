@@ -37,10 +37,10 @@ def dashboard(request: Request):
                 all_pass,
                 iteration,
                 score,
-                ROUND((n_passed::float / NULLIF(n_criteria, 0)) * 100, 1) AS pass_pct,
+                ROUND((n_passed::numeric / NULLIF(n_criteria, 0)) * 100, 1) AS pass_pct,
                 created_at
             FROM pipeline_runs
-            ORDER BY contract_type, (n_passed::float / NULLIF(n_criteria, 0)) DESC, id DESC
+            ORDER BY contract_type, (n_passed::numeric / NULLIF(n_criteria, 0)) DESC, id DESC
         """).fetchall()
 
         # v2 vs v3 comparison
@@ -106,9 +106,9 @@ def dashboard_stats():
                 n_passed,
                 n_criteria,
                 all_pass,
-                ROUND((n_passed::float / NULLIF(n_criteria, 0)) * 100, 1) AS pass_pct
+                ROUND((n_passed::numeric / NULLIF(n_criteria, 0)) * 100, 1) AS pass_pct
             FROM pipeline_runs
-            ORDER BY contract_type, (n_passed::float / NULLIF(n_criteria, 0)) DESC
+            ORDER BY contract_type, (n_passed::numeric / NULLIF(n_criteria, 0)) DESC
         """).fetchall()
 
         return {
