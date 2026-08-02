@@ -12,6 +12,15 @@ EXPECTED_TOOLS = {
     # contracts (generate + evaluate)
     "contract_generate",
     "contract_evaluate",
+    # clauses (CRUD + tag review)
+    "clause_list",
+    "clause_get",
+    "clause_update",
+    "clause_delete",
+    "clause_review",
+    "pipeline_run",
+    "pipeline_list",
+    "pipeline_get",
     # rubrics (rubric + criterion management)
     "rubric_list",
     "rubric_get",
@@ -52,6 +61,14 @@ EXPECTED_TOOLS = {
 EXPECTED_TAGS = {
     "contract_generate": "contracts",
     "contract_evaluate": "contracts",
+    "clause_list": "clauses",
+    "clause_get": "clauses",
+    "clause_update": "clauses",
+    "clause_delete": "clauses",
+    "clause_review": "clauses",
+    "pipeline_run": "pipeline",
+    "pipeline_list": "pipeline",
+    "pipeline_get": "pipeline",
     "rubric_list": "rubrics",
     "rubric_get": "rubrics",
     "rubric_create": "rubrics",
@@ -84,9 +101,11 @@ EXPECTED_TAGS = {
 # Every tool module that registers ``@mcp.tool`` decorators on import.
 _TOOL_MODULES = (
     "fd_coding_law_bench_mcp.tools.compare",
+    "fd_coding_law_bench_mcp.tools.clauses",
     "fd_coding_law_bench_mcp.tools.evaluate",
     "fd_coding_law_bench_mcp.tools.generate",
     "fd_coding_law_bench_mcp.tools.law_info",
+    "fd_coding_law_bench_mcp.tools.pipeline",
     "fd_coding_law_bench_mcp.tools.prompts",
     "fd_coding_law_bench_mcp.tools.rag",
     "fd_coding_law_bench_mcp.tools.rubrics",

@@ -124,6 +124,47 @@ CREATE TABLE IF NOT EXISTS tag_dims (
 );
 """
 
+# Pipeline tables (LangGraph generate->fill->evaluate pipeline). One
+# pipeline_runs row per pipeline_run call (links to eval_runs via eval_run_id);
+# fill_cache memoizes LLM slot-fills so identical inputs are deterministic.
+PIPELINE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS pipeline_runs (
+    id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    contract_type   TEXT NOT NULL,
+    tags            JSONB NOT NULL DEFAULT '{}'::jsonb,
+    stance          TEXT,
+    rubric_name     TEXT NOT NULL,
+    task_desc       TEXT,
+    fill_mode       TEXT,
+    fill_values     JSONB NOT NULL DEFAULT '{}'::jsonb,
+    filled_text     TEXT,
+    eval_run_id     BIGINT REFERENCES eval_runs(id) ON DELETE SET NULL,
+    score           REAL,
+    max_score       REAL,
+    n_passed        INTEGER,
+    n_criteria      INTEGER,
+    all_pass        INTEGER,
+    iteration       INTEGER NOT NULL DEFAULT 1,
+    actions_taken   JSONB NOT NULL DEFAULT '[]'::jsonb,
+    recommendations JSONB NOT NULL DEFAULT '[]'::jsonb,
+    fill_cache_id   BIGINT,
+    fill_temperature REAL,
+    created_at      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS fill_cache (
+    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    cache_key     TEXT NOT NULL UNIQUE,
+    contract_type TEXT NOT NULL,
+    scenario      TEXT,
+    slots_hash    TEXT NOT NULL,
+    fill_values   JSONB NOT NULL DEFAULT '{}'::jsonb,
+    temperature   REAL,
+    model         TEXT,
+    created_at    TEXT NOT NULL
+);
+"""
+
 
 # Additive columns added after the tables' first release, applied idempotically
 # in a single round trip via ``ALTER TABLE IF EXISTS ... ADD COLUMN IF NOT
@@ -178,6 +219,7 @@ def ensure_schema(db_path=DEFAULT_DB) -> None:
         conn.execute(LAW_INFO_SCHEMA)
         conn.execute(CLAUSES_SCHEMA)
         conn.execute(TAG_DIMS_SCHEMA)
+        conn.execute(PIPELINE_SCHEMA)
         conn.execute(_ADDITIVE_COLUMNS)
         conn.commit()
         _ensured_dbs.add(key)

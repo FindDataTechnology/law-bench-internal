@@ -14,6 +14,7 @@ def _skeleton_result(**over):
     base = {
         "docx_path": None,
         "pdf_path": "/tmp/sale.pdf",
+        "body_text": "## 当事人\n甲方：{{party_a}}",
         "slots": ["party_a"],
         "instructions": [{"name": "party_a"}],
         "laws": [{"name": "民法典"}],
@@ -26,6 +27,7 @@ def _assembled_result(**over):
     base = {
         "docx_path": None,
         "pdf_path": "/tmp/employment.pdf",
+        "body_text": "## 当事人\n甲方：{{party_a}}",
         "slots": ["party_a"],
         "instructions": [],
         "law_refs": [{"name": "劳动合同法"}],
@@ -207,3 +209,52 @@ def test_coherence_error_propagates(monkeypatch):
 
     with pytest.raises(CoherenceError):
         contract_generate("sale", stance="balanced")
+
+
+# --- add-contract-pipeline: custom_clause_ids + body_text ---
+
+def test_custom_clause_ids_forwarded_to_assembled(monkeypatch):
+    import src.clauses.assemble as assemble_mod
+
+    captured = {}
+
+    def fake_assembled(contract_type, *, scenario=None, custom_clause_ids=None,
+                       stance=None, format="pdf", out_dir=None, db=None):
+        captured["custom_clause_ids"] = custom_clause_ids
+        return _assembled_result()
+
+    monkeypatch.setattr(assemble_mod, "generate_contract_assembled", fake_assembled)
+
+    from fd_coding_law_bench_mcp.tools.generate import contract_generate
+
+    contract_generate("sale", stance="balanced", custom_clause_ids=[420, 421])
+    assert captured["custom_clause_ids"] == [420, 421]
+
+
+def test_custom_clause_ids_none_default_unchanged(monkeypatch):
+    import src.clauses.assemble as assemble_mod
+
+    captured = {}
+
+    def fake_assembled(contract_type, *, scenario=None, custom_clause_ids=None,
+                       stance=None, format="pdf", out_dir=None, db=None):
+        captured["custom_clause_ids"] = custom_clause_ids
+        return _assembled_result()
+
+    monkeypatch.setattr(assemble_mod, "generate_contract_assembled", fake_assembled)
+
+    from fd_coding_law_bench_mcp.tools.generate import contract_generate
+
+    contract_generate("sale", stance="balanced")
+    assert captured["custom_clause_ids"] is None  # default selection
+
+
+def test_body_text_returned_skeleton(monkeypatch):
+    import src.contracts as contracts_mod
+
+    monkeypatch.setattr(contracts_mod, "generate_contract", lambda *a, **k: _skeleton_result())
+
+    from fd_coding_law_bench_mcp.tools.generate import contract_generate
+
+    res = contract_generate("sale", format="pdf")
+    assert res["body_text"] == "## 当事人\n甲方：{{party_a}}"

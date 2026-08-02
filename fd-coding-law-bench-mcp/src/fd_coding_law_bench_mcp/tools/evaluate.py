@@ -40,7 +40,13 @@ def contract_evaluate(
     from src.eval.store import store_result
 
     path = Path(contract)
-    if path.is_file():
+    try:
+        is_file = path.is_file()
+    except OSError:
+        # A path-shaped but over-long / invalid string (e.g. a full inline
+        # contract body) cannot be stat-ed; treat it as inline text.
+        is_file = False
+    if is_file:
         contract_text = path.read_text(encoding="utf-8")
         contract_path = str(path)
     else:
@@ -55,9 +61,10 @@ def contract_evaluate(
     )
 
     if not no_store:
-        store_result(result, contract_path=contract_path, task_desc=task)
-
-    return result
+        run_id = store_result(result, contract_path=contract_path, task_desc=task)
+    else:
+        run_id = None
+    return {**result, "run_id": run_id}
 
 
 @mcp.tool(tags={"rubrics"})

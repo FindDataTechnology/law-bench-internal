@@ -182,3 +182,59 @@ def test_get_run_detail_unknown_raises(monkeypatch):
 
     with pytest.raises(KeyError):
         run_get(999999)
+
+
+# --- add-contract-pipeline: run_id ---
+
+def test_run_id_returned_when_stored(monkeypatch, tmp_path):
+    import src.eval.scoring as scoring_mod
+    import src.eval.store as store_mod
+
+    monkeypatch.setattr(
+        scoring_mod, "evaluate_contract",
+        lambda text, rubric, task_desc=None, verbose=False: _eval_result(),
+    )
+    monkeypatch.setattr(store_mod, "store_result", lambda *a, **k: 42)
+
+    from fd_coding_law_bench_mcp.tools.evaluate import contract_evaluate
+
+    res = contract_evaluate("正文", "contract_drafting_v1")
+    assert res["run_id"] == 42
+
+
+def test_run_id_null_when_no_store(monkeypatch):
+    import src.eval.scoring as scoring_mod
+    import src.eval.store as store_mod
+
+    monkeypatch.setattr(
+        scoring_mod, "evaluate_contract",
+        lambda text, rubric, task_desc=None, verbose=False: _eval_result(),
+    )
+    monkeypatch.setattr(store_mod, "store_result", lambda *a, **k: 1)
+
+    from fd_coding_law_bench_mcp.tools.evaluate import contract_evaluate
+
+    res = contract_evaluate("正文", "contract_drafting_v1", no_store=True)
+    assert res["run_id"] is None
+
+
+def test_long_inline_text_does_not_crash_stat(monkeypatch):
+    """A full contract body passed inline must be treated as text, not stat-ed."""
+    import src.eval.scoring as scoring_mod
+    import src.eval.store as store_mod
+
+    seen = {}
+    long_body = "## 当事人\n甲方：" + ("x" * 5000)
+
+    def fake_eval(contract_text, rubric_name, task_desc=None, verbose=False):
+        seen["text"] = contract_text
+        return _eval_result()
+
+    monkeypatch.setattr(scoring_mod, "evaluate_contract", fake_eval)
+    monkeypatch.setattr(store_mod, "store_result", lambda *a, **k: 1)
+
+    from fd_coding_law_bench_mcp.tools.evaluate import contract_evaluate
+
+    res = contract_evaluate(long_body, "contract_drafting_v1", no_store=True)
+    assert seen["text"] == long_body
+    assert res["run_id"] is None

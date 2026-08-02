@@ -19,6 +19,7 @@ def contract_generate(
     stance: str | None = None,
     out_dir: str | None = None,
     include_current_tags: bool = False,
+    custom_clause_ids: list[int] | None = None,
 ) -> dict:
     """Generate a contract deliverable (DOCX/PDF) for a contract class.
 
@@ -41,9 +42,16 @@ def contract_generate(
             custom-tag vocabulary (starter set + ``tag_dims`` rows + any dims
             registered in-process via ``register_tag_dim``), so the caller can
             see which tag values are currently available.
+        custom_clause_ids: optional explicit custom-clause id list forwarded to
+            ``generate_contract_assembled`` (assembly path only). Use it to
+            select / exclude specific custom clauses per call (e.g. a
+            self-healing loop dropping a thin override) without mutating the
+            shared ``clauses`` table. Ignored for the skeleton path. ``None``
+            preserves the default selection (backward-compatible).
 
-    Returns ``{docx_path, pdf_path, slots, instructions, ...}`` where the
-    skeleton path also includes ``laws`` and the assembled path includes
+    Returns ``{docx_path, pdf_path, body_text, slots, instructions, ...}`` where
+    ``body_text`` is the assembled Markdown body with ``{{slot}}`` placeholders;
+    the skeleton path also includes ``laws`` and the assembled path includes
     ``law_refs``; plus ``current_tags`` when requested. An unknown
     ``contract_type`` raises a tool error.
     """
@@ -66,6 +74,7 @@ def contract_generate(
             stance=stance,
             format=format,
             out_dir=out_dir,
+            custom_clause_ids=custom_clause_ids,
         )
     else:
         result = generate_contract(contract_type, format=format, out_dir=out_dir)

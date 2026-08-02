@@ -268,6 +268,7 @@ def generate_contract_assembled(
     return {
         "docx_path": str(docx_path) if docx_path else None,
         "pdf_path": str(pdf_path) if pdf_path else None,
+        "body_text": body,
         "slots": slots,
         "instructions": instructions,
         "law_refs": law_refs,

@@ -58,6 +58,7 @@ def generate_contract(
     return {
         "docx_path": str(docx_path) if docx_path else None,
         "pdf_path": str(pdf_path) if pdf_path else None,
+        "body_text": body,
         "slots": template["slots"],
         "instructions": instructions,
         "laws": laws,
