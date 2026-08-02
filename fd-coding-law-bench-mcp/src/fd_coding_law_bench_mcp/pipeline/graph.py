@@ -9,10 +9,32 @@ and records ``clause_review`` recommendations without executing them.
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import re
 from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
+
+
+def _sync_call(result):
+    """Unwrap a coroutine result if needed (FastMCP @mcp.tool may wrap sync
+    functions as coroutines in some versions)."""
+    if inspect.iscoroutine(result):
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If we're in a running loop, create a new one
+                import threading
+                new_loop = asyncio.new_event_loop()
+                try:
+                    return new_loop.run_until_complete(result)
+                finally:
+                    new_loop.close()
+            return loop.run_until_complete(result)
+        except RuntimeError:
+            return asyncio.run(result)
+    return result
 
 
 class PipelineState(TypedDict, total=False):
@@ -69,8 +91,10 @@ def _current_customs(contract_type: str, stance: str | None) -> list[dict]:
     from ..tools.clauses import clause_list
     from src.clauses.tag_review import is_assembly_ready
 
-    rows = clause_list(contract_type, category="custom", tags=({"stance": stance} if stance else None))
-    return [c for c in rows if is_assembly_ready(c)]
+    rows = _sync_call(clause_list(contract_type, category="custom", tags=({"stance": stance} if stance else None)))
+    if isinstance(rows, list):
+        return [c for c in rows if is_assembly_ready(c)]
+    return []
 
 
 # --- nodes ---
@@ -79,13 +103,13 @@ def _current_customs(contract_type: str, stance: str | None) -> list[dict]:
 def generate_node(state: PipelineState) -> dict:
     from ..tools.generate import contract_generate
 
-    res = contract_generate(
+    res = _sync_call(contract_generate(
         state["contract_type"],
         format="docx",
         tags=state.get("tags"),
         stance=state.get("stance"),
         custom_clause_ids=state.get("custom_clause_ids"),
-    )
+    ))
     return {
         "gen_result": res,
         "body_text": res.get("body_text") or "",
@@ -119,7 +143,7 @@ def fill_node(state: PipelineState) -> dict:
 def evaluate_node(state: PipelineState) -> dict:
     from ..tools.evaluate import contract_evaluate
 
-    res = contract_evaluate(state["filled_text"], state["rubric"], state.get("task_desc"))
+    res = _sync_call(contract_evaluate(state["filled_text"], state["rubric"], state.get("task_desc")))
     return {"eval_result": res, "eval_run_id": res.get("run_id")}
 
 

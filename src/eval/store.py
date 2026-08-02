@@ -165,6 +165,27 @@ CREATE TABLE IF NOT EXISTS fill_cache (
 );
 """
 
+# Industry standard reference tables for contract evaluation rubric refactoring.
+# industry_standard_references maps contract types to their governing statutes;
+# core_clauses defines the essential mandatory clauses for each contract type.
+INDUSTRY_STANDARD_SCHEMA = """
+CREATE TABLE IF NOT EXISTS industry_standard_references (
+    id                  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    contract_type       TEXT NOT NULL UNIQUE,
+    governing_statutes  TEXT NOT NULL,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS core_clauses (
+    id                      BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    contract_type           TEXT NOT NULL UNIQUE REFERENCES industry_standard_references(contract_type) ON DELETE CASCADE,
+    core_mandatory_clauses  JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at              TEXT NOT NULL,
+    updated_at              TEXT NOT NULL
+);
+"""
+
 
 # Additive columns added after the tables' first release, applied idempotically
 # in a single round trip via ``ALTER TABLE IF EXISTS ... ADD COLUMN IF NOT
@@ -220,6 +241,7 @@ def ensure_schema(db_path=DEFAULT_DB) -> None:
         conn.execute(CLAUSES_SCHEMA)
         conn.execute(TAG_DIMS_SCHEMA)
         conn.execute(PIPELINE_SCHEMA)
+        conn.execute(INDUSTRY_STANDARD_SCHEMA)
         conn.execute(_ADDITIVE_COLUMNS)
         conn.commit()
         _ensured_dbs.add(key)

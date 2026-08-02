@@ -10,11 +10,13 @@ plus the existing ``contract_evaluate`` judge. ``NotFoundError`` /
 
 from __future__ import annotations
 
+import anyio
+
 from ..server import mcp
 
 
 @mcp.tool(tags={"eval"})
-def compare_run(
+async def compare_run(
     contract_type: str,
     rubric_name: str,
     task_desc: str,
@@ -44,20 +46,23 @@ def compare_run(
     """
     from src.eval.compare import load_prompts, run_compare as _run
 
-    prompts = load_prompts(prompt_names)
-    return _run(
-        contract_type,
-        rubric_name,
-        task_desc,
-        prompts,
-        mode="drafter-only",
-        n_drafts=n_drafts,
-        label=label,
-    )
+    def _go() -> dict:
+        prompts = load_prompts(prompt_names)
+        return _run(
+            contract_type,
+            rubric_name,
+            task_desc,
+            prompts,
+            mode="drafter-only",
+            n_drafts=n_drafts,
+            label=label,
+        )
+
+    return await anyio.to_thread.run_sync(_go)
 
 
 @mcp.tool(tags={"eval"})
-def compare_list(limit: int = 20) -> list[dict]:
+async def compare_list(limit: int = 20) -> list[dict]:
     """List recent compare runs (compare-level fields only), newest first.
 
     Returns ``[{id, label, contract_type, rubric_name, task_desc, gen_mode,
@@ -65,11 +70,11 @@ def compare_list(limit: int = 20) -> list[dict]:
     """
     from src.eval.store import list_compares as _list
 
-    return _list(limit=limit)
+    return await anyio.to_thread.run_sync(_list, limit)
 
 
 @mcp.tool(tags={"eval"})
-def compare_get(compare_id: int) -> dict:
+async def compare_get(compare_id: int) -> dict:
     """Fetch the full grouped result for one compare.
 
     Parameters:
@@ -82,11 +87,11 @@ def compare_get(compare_id: int) -> dict:
     """
     from src.eval.store import get_compare as _get
 
-    return _get(compare_id)
+    return await anyio.to_thread.run_sync(_get, compare_id)
 
 
 @mcp.tool(tags={"eval"})
-def compare_matrix(compare_id: int) -> dict:
+async def compare_matrix(compare_id: int) -> dict:
     """Fetch a compare's criteria x prompts matrix in one call.
 
     Equivalent to ``build_matrix(get_compare(compare_id))``. Cells are binary
@@ -101,11 +106,14 @@ def compare_matrix(compare_id: int) -> dict:
     from src.eval.compare import build_matrix
     from src.eval.store import get_compare as _get
 
-    return build_matrix(_get(compare_id))
+    def _go() -> dict:
+        return build_matrix(_get(compare_id))
+
+    return await anyio.to_thread.run_sync(_go)
 
 
 @mcp.tool(tags={"eval"})
-def run_draft(compare_id: int, run_id: int) -> dict:
+async def run_draft(compare_id: int, run_id: int) -> dict:
     """Lazily fetch a single run's ``draft_text`` (verified to belong to the compare).
 
     Parameters:
@@ -117,4 +125,4 @@ def run_draft(compare_id: int, run_id: int) -> dict:
     """
     from src.eval.store import get_run_draft as _get
 
-    return _get(compare_id, run_id)
+    return await anyio.to_thread.run_sync(_get, compare_id, run_id)

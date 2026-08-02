@@ -8,11 +8,13 @@ deduplicates + categorizes the laws cited across those surveys). All read-only;
 
 from __future__ import annotations
 
+import anyio
+
 from ..server import mcp
 
 
 @mcp.tool(tags={"law"})
-def law_types() -> list[dict]:
+async def law_types() -> list[dict]:
     """List contract types that have at least one law_info survey row.
 
     Returns ``[{key, zh_name, sources}]`` ordered by contract type, where
@@ -21,11 +23,11 @@ def law_types() -> list[dict]:
     """
     from src.eval.law_info import list_law_info_types as _list
 
-    return _list()
+    return await anyio.to_thread.run_sync(_list)
 
 
 @mcp.tool(tags={"law"})
-def law_info(contract_type: str) -> dict:
+async def law_info(contract_type: str) -> dict:
     """Fetch both sources' survey content for a contract type.
 
     Parameters:
@@ -37,11 +39,11 @@ def law_info(contract_type: str) -> dict:
     """
     from src.eval.law_info import get_law_info as _get
 
-    return _get(contract_type)
+    return await anyio.to_thread.run_sync(_get, contract_type)
 
 
 @mcp.tool(tags={"law"})
-def law_references() -> list[dict]:
+async def law_references() -> list[dict]:
     """Aggregate the unique laws referenced across every law_info survey.
 
     Runs :func:`src.eval.legal_refs.extract_references` over
@@ -52,4 +54,7 @@ def law_references() -> list[dict]:
     from src.eval.law_info import all_law_info
     from src.eval.legal_refs import extract_references
 
-    return extract_references(all_law_info())
+    def _go() -> list[dict]:
+        return extract_references(all_law_info())
+
+    return await anyio.to_thread.run_sync(_go)

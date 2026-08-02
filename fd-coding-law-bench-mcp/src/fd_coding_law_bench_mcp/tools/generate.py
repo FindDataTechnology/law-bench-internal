@@ -8,11 +8,13 @@ custom-tag vocabulary (starter + ``tag_dims`` + any runtime-registered dims).
 
 from __future__ import annotations
 
+import anyio
+
 from ..server import mcp
 
 
 @mcp.tool(tags={"contracts"})
-def contract_generate(
+async def contract_generate(
     contract_type: str,
     format: str = "pdf",
     tags: dict | None = None,
@@ -39,7 +41,7 @@ def contract_generate(
         stance: convenience for ``tags["stance"]``.
         out_dir: output directory (default ``output/contracts``).
         include_current_tags: when True, attach ``current_tags`` - the live
-            custom-tag vocabulary (starter set + ``tag_dims`` rows + any dims
+            custom-tag vocabulary (starter set + ``tag_dims`` + any dims
             registered in-process via ``register_tag_dim``), so the caller can
             see which tag values are currently available.
         custom_clause_ids: optional explicit custom-clause id list forwarded to
@@ -67,28 +69,31 @@ def contract_generate(
     else:
         scenario = None
 
-    if stance or scenario:
-        result = generate_contract_assembled(
-            contract_type,
-            scenario=scenario,
-            stance=stance,
-            format=format,
-            out_dir=out_dir,
-            custom_clause_ids=custom_clause_ids,
-        )
-    else:
-        result = generate_contract(contract_type, format=format, out_dir=out_dir)
+    def _go() -> dict:
+        if stance or scenario:
+            result = generate_contract_assembled(
+                contract_type,
+                scenario=scenario,
+                stance=stance,
+                format=format,
+                out_dir=out_dir,
+                custom_clause_ids=custom_clause_ids,
+            )
+        else:
+            result = generate_contract(contract_type, format=format, out_dir=out_dir)
 
-    if include_current_tags:
-        from src.clauses.tags import load_vocab_from_db, tag_vocab_for_type
+        if include_current_tags:
+            from src.clauses.tags import load_vocab_from_db, tag_vocab_for_type
 
-        # Merge tag_dims into the live TAG_VOCAB (idempotent, best-effort:
-        # degrades to the starter set if the DB is unreachable), then expose the
-        # flat per-type vocabulary - universal dims + this contract_type's dims,
-        # including any runtime-registered temporary dim - as a simple
-        # dim -> [allowed values] mapping. ``tag_vocab_for_type`` returns a fresh
-        # dict, so the caller cannot mutate the server's process vocabulary.
-        load_vocab_from_db()
-        result["current_tags"] = tag_vocab_for_type(contract_type)
+            # Merge tag_dims into the live TAG_VOCAB (idempotent, best-effort:
+            # degrades to the starter set if the DB is unreachable), then expose the
+            # flat per-type vocabulary - universal dims + this contract_type's dims,
+            # including any runtime-registered temporary dim - as a simple
+            # dim -> [allowed values] mapping. ``tag_vocab_for_type`` returns a fresh
+            # dict, so the caller cannot mutate the server's process vocabulary.
+            load_vocab_from_db()
+            result["current_tags"] = tag_vocab_for_type(contract_type)
 
-    return result
+        return result
+
+    return await anyio.to_thread.run_sync(_go)

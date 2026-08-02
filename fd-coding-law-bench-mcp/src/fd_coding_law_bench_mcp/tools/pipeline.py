@@ -8,11 +8,13 @@ the ``compare_run`` / ``compare_list`` / ``compare_get`` shape.
 
 from __future__ import annotations
 
+import anyio
+
 from ..server import mcp
 
 
 @mcp.tool(tags={"pipeline"})
-def pipeline_run(
+async def pipeline_run(
     contract_type: str,
     tags: dict | None = None,
     stance: str | None = None,
@@ -51,36 +53,39 @@ def pipeline_run(
     """
     from ..pipeline.graph import run_pipeline
 
-    state = run_pipeline(
-        contract_type,
-        tags=tags,
-        stance=stance,
-        rubric=rubric,
-        task_desc=task_desc,
-        fill_mode=fill_mode,
-        temperature=temperature,
-        max_iterations=max_iterations,
-        custom_clause_ids=custom_clause_ids,
-    )
-    best = state.get("best") or {}
-    ev = best.get("eval_result") or state.get("eval_result") or {}
-    return {
-        "pipeline_run_id": state.get("pipeline_run_id"),
-        "eval_run_id": best.get("eval_run_id") or state.get("eval_run_id"),
-        "score": ev.get("score"),
-        "max_score": ev.get("max_score"),
-        "all_pass": ev.get("all_pass"),
-        "n_passed": ev.get("n_passed"),
-        "n_criteria": ev.get("n_criteria"),
-        "summary": ev.get("summary"),
-        "iteration": best.get("iteration") or state.get("iteration"),
-        "actions_taken": state.get("actions_taken") or [],
-        "recommendations": state.get("recommendations") or [],
-    }
+    def _go() -> dict:
+        state = run_pipeline(
+            contract_type,
+            tags=tags,
+            stance=stance,
+            rubric=rubric,
+            task_desc=task_desc,
+            fill_mode=fill_mode,
+            temperature=temperature,
+            max_iterations=max_iterations,
+            custom_clause_ids=custom_clause_ids,
+        )
+        best = state.get("best") or {}
+        ev = best.get("eval_result") or state.get("eval_result") or {}
+        return {
+            "pipeline_run_id": state.get("pipeline_run_id"),
+            "eval_run_id": best.get("eval_run_id") or state.get("eval_run_id"),
+            "score": ev.get("score"),
+            "max_score": ev.get("max_score"),
+            "all_pass": ev.get("all_pass"),
+            "n_passed": ev.get("n_passed"),
+            "n_criteria": ev.get("n_criteria"),
+            "summary": ev.get("summary"),
+            "iteration": best.get("iteration") or state.get("iteration"),
+            "actions_taken": state.get("actions_taken") or [],
+            "recommendations": state.get("recommendations") or [],
+        }
+
+    return await anyio.to_thread.run_sync(_go)
 
 
 @mcp.tool(tags={"pipeline"})
-def pipeline_list(limit: int = 20) -> list[dict]:
+async def pipeline_list(limit: int = 20) -> list[dict]:
     """List recent pipeline runs (most recent first).
 
     Returns ``[{id, contract_type, stance, rubric_name, task_desc, score,
@@ -89,11 +94,11 @@ def pipeline_list(limit: int = 20) -> list[dict]:
     """
     from src.eval.pipeline_store import list_pipeline_runs
 
-    return list_pipeline_runs(limit=limit)
+    return await anyio.to_thread.run_sync(list_pipeline_runs, limit)
 
 
 @mcp.tool(tags={"pipeline"})
-def pipeline_get(pipeline_id: int) -> dict:
+async def pipeline_get(pipeline_id: int) -> dict:
     """Fetch one pipeline run + its linked eval run's per-criterion verdicts.
 
     Parameters:
@@ -108,18 +113,23 @@ def pipeline_get(pipeline_id: int) -> dict:
     from src.eval.pipeline_store import get_pipeline_run
     from src.eval.store import get_run
 
-    row = get_pipeline_run(pipeline_id)
-    if row is None:
-        raise NotFoundError(f"pipeline run not found: {pipeline_id}")
-    out = dict(row)
-    if out.get("all_pass") is not None:
-        out["all_pass"] = bool(out["all_pass"])
-    eval_run_id = out.get("eval_run_id")
-    if eval_run_id:
-        try:
-            out["criteria_results"] = get_run(eval_run_id).get("criteria_results")
-        except Exception:  # noqa: BLE001 - eval run missing -> None, don't fail the read
+    # ponytail: wrap the multi-call sequence in a single run_sync so we take
+    # one thread hop for the whole read, not one per DB query.
+    def _go() -> dict:
+        row = get_pipeline_run(pipeline_id)
+        if row is None:
+            raise NotFoundError(f"pipeline run not found: {pipeline_id}")
+        out = dict(row)
+        if out.get("all_pass") is not None:
+            out["all_pass"] = bool(out["all_pass"])
+        eval_run_id = out.get("eval_run_id")
+        if eval_run_id:
+            try:
+                out["criteria_results"] = get_run(eval_run_id).get("criteria_results")
+            except Exception:  # noqa: BLE001 - eval run missing -> None, don't fail the read
+                out["criteria_results"] = None
+        else:
             out["criteria_results"] = None
-    else:
-        out["criteria_results"] = None
-    return out
+        return out
+
+    return await anyio.to_thread.run_sync(_go)

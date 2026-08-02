@@ -10,11 +10,13 @@ MCP client as a tool error (no second guard here). Every ``ManageError``
 
 from __future__ import annotations
 
+import anyio
+
 from ..server import mcp
 
 
 @mcp.tool(tags={"rubrics"})
-def rubric_get(name: str) -> dict:
+async def rubric_get(name: str) -> dict:
     """Fetch a rubric's metadata and ordered criteria, by name.
 
     Parameters:
@@ -26,11 +28,11 @@ def rubric_get(name: str) -> dict:
     """
     from src.eval.rubric_crud import get_rubric_detail
 
-    return get_rubric_detail(name)
+    return await anyio.to_thread.run_sync(get_rubric_detail, name)
 
 
 @mcp.tool(tags={"rubrics"})
-def rubric_create(
+async def rubric_create(
     name: str,
     context: str,
     description: str | None = None,
@@ -50,11 +52,14 @@ def rubric_create(
     """
     from src.eval.rubric_crud import create_rubric as _create
 
-    return _create(name, context, description=description, criteria=criteria)
+    def _go() -> dict:
+        return _create(name, context, description=description, criteria=criteria)
+
+    return await anyio.to_thread.run_sync(_go)
 
 
 @mcp.tool(tags={"rubrics"})
-def rubric_update(
+async def rubric_update(
     rubric_id: int,
     name: str,
     context: str,
@@ -73,11 +78,14 @@ def rubric_update(
     """
     from src.eval.rubric_crud import update_rubric as _update
 
-    return _update(rubric_id, name, context, description=description)
+    def _go() -> dict:
+        return _update(rubric_id, name, context, description=description)
+
+    return await anyio.to_thread.run_sync(_go)
 
 
 @mcp.tool(tags={"rubrics"})
-def rubric_delete(rubric_id: int) -> dict:
+async def rubric_delete(rubric_id: int) -> dict:
     """Delete a local rubric; its criteria cascade via FK ON DELETE CASCADE.
 
     Parameters:
@@ -88,12 +96,12 @@ def rubric_delete(rubric_id: int) -> dict:
     """
     from src.eval.rubric_crud import delete_rubric as _delete
 
-    _delete(rubric_id)
+    await anyio.to_thread.run_sync(_delete, rubric_id)
     return {"deleted": True, "rubric_id": rubric_id}
 
 
 @mcp.tool(tags={"rubrics"})
-def criterion_add(
+async def criterion_add(
     rubric_id: int,
     name: str,
     description: str,
@@ -112,11 +120,14 @@ def criterion_add(
     """
     from src.eval.rubric_crud import add_criterion as _add
 
-    return _add(rubric_id, name, description, guidance)
+    def _go() -> dict:
+        return _add(rubric_id, name, description, guidance)
+
+    return await anyio.to_thread.run_sync(_go)
 
 
 @mcp.tool(tags={"rubrics"})
-def criterion_update(
+async def criterion_update(
     criterion_id: int,
     name: str,
     description: str,
@@ -135,11 +146,14 @@ def criterion_update(
     """
     from src.eval.rubric_crud import update_criterion as _update
 
-    return _update(criterion_id, name, description, guidance)
+    def _go() -> dict:
+        return _update(criterion_id, name, description, guidance)
+
+    return await anyio.to_thread.run_sync(_go)
 
 
 @mcp.tool(tags={"rubrics"})
-def criterion_delete(criterion_id: int) -> dict:
+async def criterion_delete(criterion_id: int) -> dict:
     """Delete a criterion from a local rubric and renumber the survivors.
 
     Parameters:
@@ -150,12 +164,12 @@ def criterion_delete(criterion_id: int) -> dict:
     """
     from src.eval.rubric_crud import delete_criterion as _delete
 
-    _delete(criterion_id)
+    await anyio.to_thread.run_sync(_delete, criterion_id)
     return {"deleted": True, "criterion_id": criterion_id}
 
 
 @mcp.tool(tags={"rubrics"})
-def criterion_reorder(rubric_id: int, ordered_criterion_ids: list[int]) -> list[int]:
+async def criterion_reorder(rubric_id: int, ordered_criterion_ids: list[int]) -> list[int]:
     """Reassign criterion ``ordinal`` to match the given order.
 
     Parameters:
@@ -169,4 +183,7 @@ def criterion_reorder(rubric_id: int, ordered_criterion_ids: list[int]) -> list[
     """
     from src.eval.rubric_crud import reorder_criteria as _reorder
 
-    return _reorder(rubric_id, ordered_criterion_ids)
+    def _go() -> list[int]:
+        return _reorder(rubric_id, ordered_criterion_ids)
+
+    return await anyio.to_thread.run_sync(_go)

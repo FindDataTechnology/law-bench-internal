@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import pytest
 
+# Mark all tests in this file as asyncio tests
+pytestmark = pytest.mark.asyncio
+
 
 def _row(**over):
     base = {
@@ -31,32 +34,32 @@ def _record(**over):
     return base
 
 
-def test_list_prompts_omits_content(monkeypatch):
+async def test_list_prompts_omits_content(monkeypatch):
     import src.eval.prompt_crud as pc
 
     monkeypatch.setattr(pc, "list_prompts", lambda: [_row()])
 
     from fd_coding_law_bench_mcp.tools.prompts import prompt_list
 
-    rows = prompt_list()
+    rows = await prompt_list()
     assert len(rows) == 1
     assert rows[0]["name"] == "draft_sale"
     assert "content" not in rows[0]
 
 
-def test_get_prompt_returns_content(monkeypatch):
+async def test_get_prompt_returns_content(monkeypatch):
     import src.eval.prompt_crud as pc
 
     monkeypatch.setattr(pc, "get_prompt", lambda name: _record(name=name))
 
     from fd_coding_law_bench_mcp.tools.prompts import prompt_get
 
-    out = prompt_get("draft_sale")
+    out = await prompt_get("draft_sale")
     assert out["content"] == "You are a contract drafter..."
     assert out["name"] == "draft_sale"
 
 
-def test_create_then_get_round_trips(monkeypatch):
+async def test_create_then_get_round_trips(monkeypatch):
     import src.eval.prompt_crud as pc
 
     store = {}
@@ -72,17 +75,17 @@ def test_create_then_get_round_trips(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.prompts import prompt_create, prompt_get
 
-    created = prompt_create(
+    created = await prompt_create(
         "draft_lease", "lease", "draft a lease", "You draft leases...",
         description="lease drafter", prompt_type="baseline",
     )
     assert created["id"] == 42
-    got = prompt_get("draft_lease")
+    got = await prompt_get("draft_lease")
     assert got["content"] == "You draft leases..."
     assert got["contract_type"] == "lease"
 
 
-def test_delete_prompt_unknown_raises(monkeypatch):
+async def test_delete_prompt_unknown_raises(monkeypatch):
     import src.eval.prompt_crud as pc
     from src.eval.errors import NotFoundError
 
@@ -94,10 +97,10 @@ def test_delete_prompt_unknown_raises(monkeypatch):
     from fd_coding_law_bench_mcp.tools.prompts import prompt_delete
 
     with pytest.raises(NotFoundError):
-        prompt_delete(999)
+        await prompt_delete(999)
 
 
-def test_delete_prompt_returns_ack(monkeypatch):
+async def test_delete_prompt_returns_ack(monkeypatch):
     import src.eval.prompt_crud as pc
 
     deleted = []
@@ -105,6 +108,6 @@ def test_delete_prompt_returns_ack(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.prompts import prompt_delete
 
-    out = prompt_delete(7)
+    out = await prompt_delete(7)
     assert deleted == [7]
     assert out == {"deleted": True, "prompt_id": 7}

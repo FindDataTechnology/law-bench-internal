@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import pytest
 
+# Mark all tests in this file as asyncio tests
+pytestmark = pytest.mark.asyncio
 
-def test_tag_vocab_list_delegates_and_loads_first(monkeypatch):
+
+async def test_tag_vocab_list_delegates_and_loads_first(monkeypatch):
     import src.clauses.tags as tags_mod
 
     order = []
@@ -28,12 +31,12 @@ def test_tag_vocab_list_delegates_and_loads_first(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.tags import tag_vocab_list
 
-    out = tag_vocab_list("sale")
+    out = await tag_vocab_list("sale")
     assert out == {"stance": ["pro_a", "pro_b", "balanced"]}
     assert order == ["load", "vocab"]  # load refresh happens before the read
 
 
-def test_tag_vocab_list_universal_only_when_no_type(monkeypatch):
+async def test_tag_vocab_list_universal_only_when_no_type(monkeypatch):
     import src.clauses.tags as tags_mod
 
     monkeypatch.setattr(tags_mod, "load_vocab_from_db", lambda db=None: tags_mod.TAG_VOCAB)
@@ -45,11 +48,11 @@ def test_tag_vocab_list_universal_only_when_no_type(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.tags import tag_vocab_list
 
-    out = tag_vocab_list(None)
+    out = await tag_vocab_list(None)
     assert "stance" in out and "strength" in out
 
 
-def test_tag_validate_returns_cleaned(monkeypatch):
+async def test_tag_validate_returns_cleaned(monkeypatch):
     import src.clauses.tags as tags_mod
 
     cleaned = {"stance": "pro_a"}
@@ -59,11 +62,11 @@ def test_tag_validate_returns_cleaned(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.tags import tag_validate
 
-    out = tag_validate({"stance": "pro_a", "mood": "happy"}, contract_type="sale")
+    out = await tag_validate({"stance": "pro_a", "mood": "happy"}, contract_type="sale")
     assert out == {"stance": "pro_a"}
 
 
-def test_tag_validate_invalid_value_propagates(monkeypatch):
+async def test_tag_validate_invalid_value_propagates(monkeypatch):
     import src.clauses.tags as tags_mod
 
     def boom(tags, contract_type=None):
@@ -75,4 +78,4 @@ def test_tag_validate_invalid_value_propagates(monkeypatch):
     from fd_coding_law_bench_mcp.tools.tags import tag_validate
 
     with pytest.raises(ValueError):
-        tag_validate({"stance": "pro_A"})
+        await tag_validate({"stance": "pro_A"})

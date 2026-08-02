@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import pytest
 
+# Mark all tests in this file as asyncio tests
+pytestmark = pytest.mark.asyncio
+
 
 def _eval_result(**over):
     base = {
@@ -29,7 +32,7 @@ def _eval_result(**over):
     return base
 
 
-def test_inline_text_no_store(monkeypatch):
+async def test_inline_text_no_store(monkeypatch):
     import src.eval.scoring as scoring_mod
     import src.eval.store as store_mod
 
@@ -45,7 +48,7 @@ def test_inline_text_no_store(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.evaluate import contract_evaluate
 
-    res = contract_evaluate("# 服务协议\n甲方...", "contract_drafting_v1", task="起草", no_store=True)
+    res = await contract_evaluate("# 服务协议\n甲方...", "contract_drafting_v1", task="起草", no_store=True)
     assert calls["text"].startswith("# 服务协议")
     assert calls["rubric"] == "contract_drafting_v1"
     assert calls["task"] == "起草"
@@ -54,7 +57,7 @@ def test_inline_text_no_store(monkeypatch):
     assert res["criteria_results"][0]["verdict"] == "pass"
 
 
-def test_file_path_is_read_and_stored(monkeypatch, tmp_path):
+async def test_file_path_is_read_and_stored(monkeypatch, tmp_path):
     import src.eval.scoring as scoring_mod
     import src.eval.store as store_mod
 
@@ -78,13 +81,13 @@ def test_file_path_is_read_and_stored(monkeypatch, tmp_path):
 
     from fd_coding_law_bench_mcp.tools.evaluate import contract_evaluate
 
-    contract_evaluate(str(draft), "contract_drafting_v1", task="t")
+    await contract_evaluate(str(draft), "contract_drafting_v1", task="t")
     assert seen["text"] == "# 合同正文"
     assert store_args["contract_path"] == str(draft)
     assert store_args["task_desc"] == "t"
 
 
-def test_missing_rubric_propagates(monkeypatch):
+async def test_missing_rubric_propagates(monkeypatch):
     import src.eval.scoring as scoring_mod
 
     def boom(contract_text, rubric_name, task_desc=None, verbose=False):
@@ -95,10 +98,10 @@ def test_missing_rubric_propagates(monkeypatch):
     from fd_coding_law_bench_mcp.tools.evaluate import contract_evaluate
 
     with pytest.raises(KeyError):
-        contract_evaluate("some text", "not_a_rubric")
+        await contract_evaluate("some text", "not_a_rubric")
 
 
-def test_list_rubrics_and_runs(monkeypatch):
+async def test_list_rubrics_and_runs(monkeypatch):
     import src.eval.rubric as rubric_mod
     import src.eval.store as store_mod
 
@@ -111,11 +114,11 @@ def test_list_rubrics_and_runs(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.evaluate import rubric_list, run_list
 
-    assert rubric_list() == [{"name": "r1", "context": "check", "source": "s"}]
-    assert run_list(limit=5) == [{"id": 1}]
+    assert await rubric_list() == [{"name": "r1", "context": "check", "source": "s"}]
+    assert await run_list(limit=5) == [{"id": 1}]
 
 
-def test_list_rubrics_include_counts_routes_to_with_counts(monkeypatch):
+async def test_list_rubrics_include_counts_routes_to_with_counts(monkeypatch):
     import src.eval.rubric_crud as rc
 
     enriched = [{
@@ -128,13 +131,13 @@ def test_list_rubrics_include_counts_routes_to_with_counts(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.evaluate import rubric_list
 
-    out = rubric_list(include_counts=True)
+    out = await rubric_list(include_counts=True)
     assert out == enriched
     assert out[0]["criterion_count"] == 3
     assert out[0]["is_harbor"] is False
 
 
-def test_list_rubrics_default_ignores_counts(monkeypatch):
+async def test_list_rubrics_default_ignores_counts(monkeypatch):
     import src.eval.rubric as rubric_mod
 
     monkeypatch.setattr(
@@ -144,11 +147,11 @@ def test_list_rubrics_default_ignores_counts(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.evaluate import rubric_list
 
-    out = rubric_list()
+    out = await rubric_list()
     assert out == [{"name": "r1", "context": "check", "source": "s"}]
 
 
-def test_get_run_detail_returns_fields_and_criteria(monkeypatch):
+async def test_get_run_detail_returns_fields_and_criteria(monkeypatch):
     import src.eval.store as store_mod
 
     monkeypatch.setattr(
@@ -165,12 +168,12 @@ def test_get_run_detail_returns_fields_and_criteria(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.evaluate import run_get
 
-    out = run_get(42)
+    out = await run_get(42)
     assert out["id"] == 42
     assert [c["criterion_id"] for c in out["criteria_results"]] == ["c1", "c2"]
 
 
-def test_get_run_detail_unknown_raises(monkeypatch):
+async def test_get_run_detail_unknown_raises(monkeypatch):
     import src.eval.store as store_mod
 
     def boom(run_id):
@@ -181,12 +184,12 @@ def test_get_run_detail_unknown_raises(monkeypatch):
     from fd_coding_law_bench_mcp.tools.evaluate import run_get
 
     with pytest.raises(KeyError):
-        run_get(999999)
+        await run_get(999999)
 
 
 # --- add-contract-pipeline: run_id ---
 
-def test_run_id_returned_when_stored(monkeypatch, tmp_path):
+async def test_run_id_returned_when_stored(monkeypatch, tmp_path):
     import src.eval.scoring as scoring_mod
     import src.eval.store as store_mod
 
@@ -198,11 +201,11 @@ def test_run_id_returned_when_stored(monkeypatch, tmp_path):
 
     from fd_coding_law_bench_mcp.tools.evaluate import contract_evaluate
 
-    res = contract_evaluate("正文", "contract_drafting_v1")
+    res = await contract_evaluate("正文", "contract_drafting_v1")
     assert res["run_id"] == 42
 
 
-def test_run_id_null_when_no_store(monkeypatch):
+async def test_run_id_null_when_no_store(monkeypatch):
     import src.eval.scoring as scoring_mod
     import src.eval.store as store_mod
 
@@ -214,11 +217,11 @@ def test_run_id_null_when_no_store(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.evaluate import contract_evaluate
 
-    res = contract_evaluate("正文", "contract_drafting_v1", no_store=True)
+    res = await contract_evaluate("正文", "contract_drafting_v1", no_store=True)
     assert res["run_id"] is None
 
 
-def test_long_inline_text_does_not_crash_stat(monkeypatch):
+async def test_long_inline_text_does_not_crash_stat(monkeypatch):
     """A full contract body passed inline must be treated as text, not stat-ed."""
     import src.eval.scoring as scoring_mod
     import src.eval.store as store_mod
@@ -235,6 +238,6 @@ def test_long_inline_text_does_not_crash_stat(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.evaluate import contract_evaluate
 
-    res = contract_evaluate(long_body, "contract_drafting_v1", no_store=True)
+    res = await contract_evaluate(long_body, "contract_drafting_v1", no_store=True)
     assert seen["text"] == long_body
     assert res["run_id"] is None

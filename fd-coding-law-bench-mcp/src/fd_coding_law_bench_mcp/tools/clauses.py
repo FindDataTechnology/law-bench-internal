@@ -16,11 +16,13 @@ any dim is not ``"approved"`` (so ``"rejected"`` excludes it from assembly).
 
 from __future__ import annotations
 
+import anyio
+
 from ..server import mcp
 
 
 @mcp.tool(tags={"clauses"})
-def clause_list(
+async def clause_list(
     contract_type: str | None = None,
     category: str | None = None,
     tags: dict | None = None,
@@ -40,11 +42,14 @@ def clause_list(
     """
     from src.clauses.store import list_clauses
 
-    return list_clauses(contract_type, category=category, tags=tags, q=q)
+    def _go() -> list[dict]:
+        return list_clauses(contract_type, category=category, tags=tags, q=q)
+
+    return await anyio.to_thread.run_sync(_go)
 
 
 @mcp.tool(tags={"clauses"})
-def clause_get(clause_id: int) -> dict | None:
+async def clause_get(clause_id: int) -> dict | None:
     """Fetch one clause by id (any source: base / tagged / custom).
 
     Parameters:
@@ -54,11 +59,11 @@ def clause_get(clause_id: int) -> dict | None:
     """
     from src.clauses.store import get_custom_clause
 
-    return get_custom_clause(clause_id)
+    return await anyio.to_thread.run_sync(get_custom_clause, clause_id)
 
 
 @mcp.tool(tags={"clauses"})
-def clause_update(
+async def clause_update(
     clause_id: int,
     body: str | None = None,
     section: str | None = None,
@@ -87,11 +92,15 @@ def clause_update(
         for k, v in (("body", body), ("section", section), ("tags", tags))
         if v is not None
     }
-    return update_clause(clause_id, fields)
+
+    def _go() -> dict:
+        return update_clause(clause_id, fields)
+
+    return await anyio.to_thread.run_sync(_go)
 
 
 @mcp.tool(tags={"clauses"})
-def clause_delete(clause_id: int) -> dict:
+async def clause_delete(clause_id: int) -> dict:
     """Delete one clause by id.
 
     Parameters:
@@ -101,18 +110,18 @@ def clause_delete(clause_id: int) -> dict:
     """
     from src.clauses.store import delete_clause
 
-    delete_clause(clause_id)
+    await anyio.to_thread.run_sync(delete_clause, clause_id)
     return {"deleted": True, "clause_id": clause_id}
 
 
 @mcp.tool(tags={"clauses"})
-def clause_review(clause_id: int, status: str) -> dict:
+async def clause_review(clause_id: int, status: str) -> dict:
     """Set ALL of a clause's tag dims to one review status (bulk approve/reject).
 
     A clause is assembly-ready only when every tag dim is ``"approved"``; setting
-    any dim to ``"rejected"`` (or ``"pending"``) excludes the clause from
-    assembly, so a thin custom clause can be retired without deleting it
-    (re-approve later to restore it).
+    any dim to ``"rejected"`` (or ``"pending"``) excludes it from assembly, so a
+    thin custom clause can be retired without deleting it (re-approve later to
+    restore it).
 
     Parameters:
         clause_id: id of the clause to review.
@@ -123,5 +132,8 @@ def clause_review(clause_id: int, status: str) -> dict:
     """
     from src.clauses.tag_review import bulk_review
 
-    bulk_review(clause_id, status)
+    def _go() -> None:
+        bulk_review(clause_id, status)
+
+    await anyio.to_thread.run_sync(_go)
     return {"reviewed": True, "clause_id": clause_id, "status": status}

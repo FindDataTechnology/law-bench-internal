@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import pytest
 
+# Mark all tests in this file as asyncio tests
+pytestmark = pytest.mark.asyncio
 
-def test_clause_list_delegates(monkeypatch):
+
+async def test_clause_list_delegates(monkeypatch):
     import src.clauses.store as store
 
     captured = {}
@@ -23,7 +26,7 @@ def test_clause_list_delegates(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.clauses import clause_list
 
-    out = clause_list("sale", category="custom", tags={"stance": "balanced"}, q="风险")
+    out = await clause_list("sale", category="custom", tags={"stance": "balanced"}, q="风险")
     assert out == [{"id": 1}]
     assert captured == {
         "contract_type": "sale",
@@ -33,7 +36,7 @@ def test_clause_list_delegates(monkeypatch):
     }
 
 
-def test_clause_get_delegates(monkeypatch):
+async def test_clause_get_delegates(monkeypatch):
     import src.clauses.store as store
 
     monkeypatch.setattr(
@@ -42,11 +45,11 @@ def test_clause_get_delegates(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.clauses import clause_get
 
-    assert clause_get(7)["id"] == 7
-    assert clause_get(0) is None
+    assert (await clause_get(7))["id"] == 7
+    assert await clause_get(0) is None
 
 
-def test_clause_update_passes_only_non_none_fields(monkeypatch):
+async def test_clause_update_passes_only_non_none_fields(monkeypatch):
     import src.clauses.store as store
 
     captured = {}
@@ -59,13 +62,13 @@ def test_clause_update_passes_only_non_none_fields(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.clauses import clause_update
 
-    out = clause_update(7, body="新正文", tags={"stance": "balanced"})
+    out = await clause_update(7, body="新正文", tags={"stance": "balanced"})
     assert captured["clause_id"] == 7
     assert captured["fields"] == {"body": "新正文", "tags": {"stance": "balanced"}}
     assert out["id"] == 7
 
 
-def test_clause_update_no_fields_passes_empty(monkeypatch):
+async def test_clause_update_no_fields_passes_empty(monkeypatch):
     import src.clauses.store as store
 
     seen = {}
@@ -77,12 +80,12 @@ def test_clause_update_no_fields_passes_empty(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.clauses import clause_update
 
-    out = clause_update(7)
+    out = await clause_update(7)
     assert seen["fields"] == {}
     assert out["id"] == 7
 
 
-def test_clause_delete_returns_ack_and_delegates(monkeypatch):
+async def test_clause_delete_returns_ack_and_delegates(monkeypatch):
     import src.clauses.store as store
 
     deleted = []
@@ -90,12 +93,12 @@ def test_clause_delete_returns_ack_and_delegates(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.clauses import clause_delete
 
-    out = clause_delete(5)
+    out = await clause_delete(5)
     assert deleted == [5]
     assert out == {"deleted": True, "clause_id": 5}
 
 
-def test_clause_review_delegates_and_acks(monkeypatch):
+async def test_clause_review_delegates_and_acks(monkeypatch):
     import src.clauses.tag_review as tr
 
     captured = {}
@@ -108,12 +111,12 @@ def test_clause_review_delegates_and_acks(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.clauses import clause_review
 
-    out = clause_review(420, "rejected")
+    out = await clause_review(420, "rejected")
     assert captured == {"clause_id": 420, "status": "rejected"}
     assert out == {"reviewed": True, "clause_id": 420, "status": "rejected"}
 
 
-def test_clause_review_invalid_status_raises(monkeypatch):
+async def test_clause_review_invalid_status_raises(monkeypatch):
     import src.clauses.tag_review as tr
 
     def boom(clause_id, status, db=None):
@@ -124,4 +127,4 @@ def test_clause_review_invalid_status_raises(monkeypatch):
     from fd_coding_law_bench_mcp.tools.clauses import clause_review
 
     with pytest.raises(ValueError):
-        clause_review(1, "bogus")
+        await clause_review(1, "bogus")

@@ -77,18 +77,64 @@ def connect(db: Any = None) -> Any:
     If ``db`` is already a live connection (e.g. injected by a request
     dependency or a test fixture), return a ``_BorrowedConn`` wrapping it so the
     caller's ``finally: conn.close()`` does not close the shared connection.
-    Otherwise open a new connection from ``database_url`` with a dict-row
-    factory. Any non-connection ``db`` value (e.g. a legacy ``Path`` default) is
-    ignored and a fresh connection is opened from the DSN.
+    Otherwise, when ``db`` is ``None`` or the legacy ``DEFAULT_DB`` sentinel,
+    return the process-wide cached connection via :func:`get_shared_conn` so
+    repeated callers reuse one TCP connection instead of opening a fresh one
+    per call. Any other non-connection ``db`` value is ignored and a fresh
+    connection is opened from the DSN.
     """
     import psycopg  # local import keeps module import light
     from psycopg.rows import dict_row
 
     if is_connection(db):
         return _BorrowedConn(db)
+    # ponytail: default-arg path routes through the cached connection. Callers
+    # that pass an explicit non-default path still get a fresh connection
+    # (legacy behavior, no production caller does this today).
+    if db is None:
+        return _BorrowedConn(get_shared_conn())
+    try:
+        from src.settings import DEFAULT_DB
+        if db is DEFAULT_DB or db == DEFAULT_DB:
+            return _BorrowedConn(get_shared_conn())
+    except Exception:  # noqa: BLE001 - settings import failure -> fall through to fresh conn
+        pass
     conn = psycopg.connect(_dsn(), row_factory=dict_row)
     # Foreign keys are enforced by default in PostgreSQL (no PRAGMA needed).
     return conn
+
+
+# --- Process-wide cached connection (ponytail: global conn, reopen on failure) ---
+#
+# The MCP server wraps every tool in `anyio.to_thread.run_sync`, so the event
+# loop is free while a worker thread blocks on psycopg. Opening a fresh TCP
+# connection per tool call is pure overhead; a single cached connection reused
+# across calls removes the per-call connect/auth cost. If the DB restarts, the
+# cached connection goes stale - the next tool call surfaces that as a tool
+# error; restart the MCP server (or call `close_shared_conn()` to force a
+# reopen). Escalate to a pool only if contention shows up in practice.
+_SHARED_CONN: Any = None
+
+
+def get_shared_conn() -> Any:
+    """Return a process-wide cached psycopg connection, opening it lazily."""
+    global _SHARED_CONN
+    if _SHARED_CONN is None:
+        import psycopg
+        from psycopg.rows import dict_row
+        _SHARED_CONN = psycopg.connect(_dsn(), row_factory=dict_row)
+    return _SHARED_CONN
+
+
+def close_shared_conn() -> None:
+    """Close the cached connection (if any); next `get_shared_conn()` reopens."""
+    global _SHARED_CONN
+    if _SHARED_CONN is not None:
+        try:
+            _SHARED_CONN.close()
+        except Exception:  # noqa: BLE001 - best-effort cleanup
+            pass
+        _SHARED_CONN = None
 
 
 def now_iso() -> str:

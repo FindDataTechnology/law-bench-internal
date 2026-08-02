@@ -8,11 +8,13 @@ tool errors.
 
 from __future__ import annotations
 
+import anyio
+
 from ..server import mcp
 
 
 @mcp.tool(tags={"prompts"})
-def prompt_list() -> list[dict]:
+async def prompt_list() -> list[dict]:
     """List all generation prompts (without the content body).
 
     Returns ``[{id, name, contract_type, purpose, source, prompt_type,
@@ -20,11 +22,11 @@ def prompt_list() -> list[dict]:
     """
     from src.eval.prompt_crud import list_prompts as _list
 
-    return _list()
+    return await anyio.to_thread.run_sync(_list)
 
 
 @mcp.tool(tags={"prompts"})
-def prompt_get(name: str) -> dict:
+async def prompt_get(name: str) -> dict:
     """Fetch a prompt's full record (including ``content``), by name.
 
     Parameters:
@@ -35,11 +37,11 @@ def prompt_get(name: str) -> dict:
     """
     from src.eval.prompt_crud import get_prompt as _get
 
-    return _get(name)
+    return await anyio.to_thread.run_sync(_get, name)
 
 
 @mcp.tool(tags={"prompts"})
-def prompt_create(
+async def prompt_create(
     name: str,
     contract_type: str,
     purpose: str,
@@ -62,14 +64,17 @@ def prompt_create(
     """
     from src.eval.prompt_crud import create_prompt as _create
 
-    return _create(
-        name, contract_type, purpose, content,
-        description=description, prompt_type=prompt_type,
-    )
+    def _go() -> dict:
+        return _create(
+            name, contract_type, purpose, content,
+            description=description, prompt_type=prompt_type,
+        )
+
+    return await anyio.to_thread.run_sync(_go)
 
 
 @mcp.tool(tags={"prompts"})
-def prompt_update(
+async def prompt_update(
     prompt_id: int,
     name: str,
     contract_type: str,
@@ -91,14 +96,17 @@ def prompt_update(
     """
     from src.eval.prompt_crud import update_prompt as _update
 
-    return _update(
-        prompt_id, name, contract_type, purpose, content,
-        description=description, prompt_type=prompt_type,
-    )
+    def _go() -> dict:
+        return _update(
+            prompt_id, name, contract_type, purpose, content,
+            description=description, prompt_type=prompt_type,
+        )
+
+    return await anyio.to_thread.run_sync(_go)
 
 
 @mcp.tool(tags={"prompts"})
-def prompt_delete(prompt_id: int) -> dict:
+async def prompt_delete(prompt_id: int) -> dict:
     """Delete a prompt (no child table, nothing cascades).
 
     Parameters:
@@ -108,5 +116,5 @@ def prompt_delete(prompt_id: int) -> dict:
     """
     from src.eval.prompt_crud import delete_prompt as _delete
 
-    _delete(prompt_id)
+    await anyio.to_thread.run_sync(_delete, prompt_id)
     return {"deleted": True, "prompt_id": prompt_id}

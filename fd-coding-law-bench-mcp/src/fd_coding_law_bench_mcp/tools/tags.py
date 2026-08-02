@@ -11,11 +11,13 @@ best-effort) so type-specific dims are reflected, mirroring
 
 from __future__ import annotations
 
+import anyio
+
 from ..server import mcp
 
 
 @mcp.tool(tags={"tags"})
-def tag_vocab_list(contract_type: str | None = None) -> dict[str, list[str]]:
+async def tag_vocab_list(contract_type: str | None = None) -> dict[str, list[str]]:
     """List the merged flat tag vocabulary for a contract type.
 
     Returns ``{dim: [allowed values]}`` for every dimension valid for the type:
@@ -30,12 +32,15 @@ def tag_vocab_list(contract_type: str | None = None) -> dict[str, list[str]]:
     """
     from src.clauses.tags import load_vocab_from_db, tag_vocab_for_type
 
-    load_vocab_from_db()
-    return tag_vocab_for_type(contract_type)
+    def _go() -> dict[str, list[str]]:
+        load_vocab_from_db()
+        return tag_vocab_for_type(contract_type)
+
+    return await anyio.to_thread.run_sync(_go)
 
 
 @mcp.tool(tags={"tags"})
-def tag_validate(tags: dict, contract_type: str | None = None) -> dict:
+async def tag_validate(tags: dict, contract_type: str | None = None) -> dict:
     """Validate a tag dict against the controlled vocabulary.
 
     Returns the cleaned dict: unknown keys are dropped, and ``scenario`` plus
@@ -52,5 +57,8 @@ def tag_validate(tags: dict, contract_type: str | None = None) -> dict:
     """
     from src.clauses.tags import load_vocab_from_db, validate_tags
 
-    load_vocab_from_db()
-    return validate_tags(tags, contract_type)
+    def _go() -> dict:
+        load_vocab_from_db()
+        return validate_tags(tags, contract_type)
+
+    return await anyio.to_thread.run_sync(_go)

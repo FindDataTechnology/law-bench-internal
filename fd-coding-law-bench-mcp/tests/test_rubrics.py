@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import pytest
 
+# Mark all tests in this file as asyncio tests
+pytestmark = pytest.mark.asyncio
+
 
 def _detail(**over):
     base = {
@@ -29,20 +32,20 @@ def _detail(**over):
     return base
 
 
-def test_get_rubric_returns_detail(monkeypatch):
+async def test_get_rubric_returns_detail(monkeypatch):
     import src.eval.rubric_crud as rc
 
     monkeypatch.setattr(rc, "get_rubric_detail", lambda name: _detail(name=name))
 
     from fd_coding_law_bench_mcp.tools.rubrics import rubric_get
 
-    out = rubric_get("contract_sale_v1")
+    out = await rubric_get("contract_sale_v1")
     assert out["name"] == "contract_sale_v1"
     assert out["is_harbor"] is False
     assert [c["name"] for c in out["criteria"]] == ["c1", "c2"]
 
 
-def test_create_rubric_round_trips(monkeypatch):
+async def test_create_rubric_round_trips(monkeypatch):
     import src.eval.rubric_crud as rc
 
     calls = {}
@@ -55,7 +58,7 @@ def test_create_rubric_round_trips(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.rubrics import rubric_create
 
-    out = rubric_create(
+    out = await rubric_create(
         "r", "contract", description="d",
         criteria=[{"name": "c1", "description": "d", "guidance": "g"}],
     )
@@ -64,7 +67,7 @@ def test_create_rubric_round_trips(monkeypatch):
     assert out["name"] == "r"
 
 
-def test_update_rubric_on_harbor_raises(monkeypatch):
+async def test_update_rubric_on_harbor_raises(monkeypatch):
     import src.eval.rubric_crud as rc
     from src.eval.errors import HarborReadOnlyError
 
@@ -76,10 +79,10 @@ def test_update_rubric_on_harbor_raises(monkeypatch):
     from fd_coding_law_bench_mcp.tools.rubrics import rubric_update
 
     with pytest.raises(HarborReadOnlyError):
-        rubric_update(7, "n", "contract")
+        await rubric_update(7, "n", "contract")
 
 
-def test_delete_rubric_returns_ack_and_delegates(monkeypatch):
+async def test_delete_rubric_returns_ack_and_delegates(monkeypatch):
     import src.eval.rubric_crud as rc
 
     deleted = []
@@ -87,12 +90,12 @@ def test_delete_rubric_returns_ack_and_delegates(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.rubrics import rubric_delete
 
-    out = rubric_delete(5)
+    out = await rubric_delete(5)
     assert deleted == [5]
     assert out == {"deleted": True, "rubric_id": 5}
 
 
-def test_reorder_criteria_mismatched_raises(monkeypatch):
+async def test_reorder_criteria_mismatched_raises(monkeypatch):
     import src.eval.rubric_crud as rc
     from src.eval.errors import ValidationError
 
@@ -104,10 +107,10 @@ def test_reorder_criteria_mismatched_raises(monkeypatch):
     from fd_coding_law_bench_mcp.tools.rubrics import criterion_reorder
 
     with pytest.raises(ValidationError):
-        criterion_reorder(1, [1, 2])
+        await criterion_reorder(1, [1, 2])
 
 
-def test_add_criterion_delegates(monkeypatch):
+async def test_add_criterion_delegates(monkeypatch):
     import src.eval.rubric_crud as rc
 
     monkeypatch.setattr(
@@ -117,5 +120,5 @@ def test_add_criterion_delegates(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.rubrics import criterion_add
 
-    out = criterion_add(1, "c3", "desc", "guidance")
+    out = await criterion_add(1, "c3", "desc", "guidance")
     assert out == {"id": 12, "rubric_id": 1, "name": "c3"}

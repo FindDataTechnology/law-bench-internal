@@ -11,6 +11,9 @@ import pytest
 
 from src.eval.errors import ValidationError
 
+# Mark all tests in this file as asyncio tests
+pytestmark = pytest.mark.asyncio
+
 
 def _prompt(name, ptype="baseline"):
     return {"id": 1, "name": name, "content": "draft...", "prompt_type": ptype}
@@ -32,7 +35,7 @@ def _compare(**over):
     return base
 
 
-def test_run_compare_resolves_names_and_delegates(monkeypatch):
+async def test_run_compare_resolves_names_and_delegates(monkeypatch):
     import src.eval.compare as cmp
 
     seen = {}
@@ -52,7 +55,7 @@ def test_run_compare_resolves_names_and_delegates(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.compare import compare_run
 
-    out = compare_run("sale", "contract_sale_v1", "task",
+    out = await compare_run("sale", "contract_sale_v1", "task",
                       ["draft_sale", "draft_sale_v2"], n_drafts=2, label="lbl")
     assert seen["names"] == ["draft_sale", "draft_sale_v2"]
     assert seen["mode"] == "drafter-only"
@@ -62,7 +65,7 @@ def test_run_compare_resolves_names_and_delegates(monkeypatch):
     assert out["id"] == 7
 
 
-def test_run_compare_fewer_than_two_prompts_raises(monkeypatch):
+async def test_run_compare_fewer_than_two_prompts_raises(monkeypatch):
     """The wrapped run_compare raises ValidationError before any LLM/DB call."""
     import src.eval.compare as cmp
 
@@ -71,21 +74,21 @@ def test_run_compare_fewer_than_two_prompts_raises(monkeypatch):
     from fd_coding_law_bench_mcp.tools.compare import compare_run
 
     with pytest.raises(ValidationError):
-        compare_run("sale", "contract_sale_v1", "task", ["only_one"])
+        await compare_run("sale", "contract_sale_v1", "task", ["only_one"])
 
 
-def test_list_compares_delegates(monkeypatch):
+async def test_list_compares_delegates(monkeypatch):
     import src.eval.store as store
 
     monkeypatch.setattr(store, "list_compares", lambda limit=20: [_compare()])
 
     from fd_coding_law_bench_mcp.tools.compare import compare_list
 
-    out = compare_list(limit=5)
+    out = await compare_list(limit=5)
     assert len(out) == 1 and out[0]["id"] == 7
 
 
-def test_get_compare_unknown_raises(monkeypatch):
+async def test_get_compare_unknown_raises(monkeypatch):
     import src.eval.store as store
 
     def boom(compare_id):
@@ -96,10 +99,10 @@ def test_get_compare_unknown_raises(monkeypatch):
     from fd_coding_law_bench_mcp.tools.compare import compare_get
 
     with pytest.raises(KeyError):
-        compare_get(999)
+        await compare_get(999)
 
 
-def test_get_compare_matrix_builds_from_compare(monkeypatch):
+async def test_get_compare_matrix_builds_from_compare(monkeypatch):
     import src.eval.compare as cmp
     import src.eval.store as store
 
@@ -116,12 +119,12 @@ def test_get_compare_matrix_builds_from_compare(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.compare import compare_matrix
 
-    out = compare_matrix(7)
+    out = await compare_matrix(7)
     assert out == matrix
     assert received["compare_id"] == 7
 
 
-def test_get_run_draft_delegates(monkeypatch):
+async def test_get_run_draft_delegates(monkeypatch):
     import src.eval.store as store
 
     monkeypatch.setattr(
@@ -131,5 +134,5 @@ def test_get_run_draft_delegates(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.compare import run_draft
 
-    out = run_draft(7, 42)
+    out = await run_draft(7, 42)
     assert out == {"run_id": 42, "prompt_name": "p", "draft_text": "DRAFT"}

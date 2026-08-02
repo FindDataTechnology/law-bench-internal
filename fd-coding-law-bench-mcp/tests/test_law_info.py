@@ -8,8 +8,11 @@ from __future__ import annotations
 
 import pytest
 
+# Mark all tests in this file as asyncio tests
+pytestmark = pytest.mark.asyncio
 
-def test_list_law_info_types_delegates(monkeypatch):
+
+async def test_list_law_info_types_delegates(monkeypatch):
     import src.eval.law_info as li
 
     monkeypatch.setattr(
@@ -19,11 +22,11 @@ def test_list_law_info_types_delegates(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.law_info import law_types
 
-    out = law_types()
+    out = await law_types()
     assert out == [{"key": "sale", "zh_name": "买卖合同", "sources": ["doubao", "deepseek"]}]
 
 
-def test_get_law_info_unknown_raises(monkeypatch):
+async def test_get_law_info_unknown_raises(monkeypatch):
     import src.eval.law_info as li
     from src.eval.errors import NotFoundError
 
@@ -35,10 +38,10 @@ def test_get_law_info_unknown_raises(monkeypatch):
     from fd_coding_law_bench_mcp.tools.law_info import law_info
 
     with pytest.raises(NotFoundError):
-        law_info("not_a_type")
+        await law_info("not_a_type")
 
 
-def test_get_law_info_returns_both_sources(monkeypatch):
+async def test_get_law_info_returns_both_sources(monkeypatch):
     import src.eval.law_info as li
 
     monkeypatch.setattr(
@@ -49,13 +52,13 @@ def test_get_law_info_returns_both_sources(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.law_info import law_info
 
-    out = law_info("sale")
+    out = await law_info("sale")
     assert out["type"] == "sale"
     assert out["doubao"] == "# doubao survey"
     assert out["deepseek"] == "# deepseek survey"
 
 
-def test_extract_legal_references_pipes_all_through_extractor(monkeypatch):
+async def test_extract_legal_references_pipes_all_through_extractor(monkeypatch):
     import src.eval.law_info as li
     import src.eval.legal_refs as lr
 
@@ -70,6 +73,6 @@ def test_extract_legal_references_pipes_all_through_extractor(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.law_info import law_references
 
-    out = law_references()
+    out = await law_references()
     assert out == laws
     assert received["items"] == items

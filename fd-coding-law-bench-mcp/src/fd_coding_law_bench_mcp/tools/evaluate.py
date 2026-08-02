@@ -9,11 +9,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import anyio
+
 from ..server import mcp
 
 
 @mcp.tool(tags={"contracts"})
-def contract_evaluate(
+async def contract_evaluate(
     contract: str,
     rubric: str,
     task: str | None = None,
@@ -39,6 +41,8 @@ def contract_evaluate(
     from src.eval.scoring import evaluate_contract as _evaluate
     from src.eval.store import store_result
 
+    # ponytail: file-exists check is sync + cheap; do it on the event loop
+    # before hopping to the worker thread for the LLM-bound evaluation.
     path = Path(contract)
     try:
         is_file = path.is_file()
@@ -53,22 +57,24 @@ def contract_evaluate(
         contract_text = contract
         contract_path = None
 
-    result = _evaluate(
-        contract_text,
-        rubric,
-        task_desc=task,
-        verbose=verbose,
-    )
+    def _go() -> dict:
+        result = _evaluate(
+            contract_text,
+            rubric,
+            task_desc=task,
+            verbose=verbose,
+        )
+        if not no_store:
+            run_id = store_result(result, contract_path=contract_path, task_desc=task)
+        else:
+            run_id = None
+        return {**result, "run_id": run_id}
 
-    if not no_store:
-        run_id = store_result(result, contract_path=contract_path, task_desc=task)
-    else:
-        run_id = None
-    return {**result, "run_id": run_id}
+    return await anyio.to_thread.run_sync(_go)
 
 
 @mcp.tool(tags={"rubrics"})
-def rubric_list(include_counts: bool = False) -> list[dict]:
+async def rubric_list(include_counts: bool = False) -> list[dict]:
     """List available evaluation rubrics.
 
     Parameters:
@@ -82,22 +88,22 @@ def rubric_list(include_counts: bool = False) -> list[dict]:
     if include_counts:
         from src.eval.rubric_crud import list_rubrics_with_counts
 
-        return list_rubrics_with_counts()
+        return await anyio.to_thread.run_sync(list_rubrics_with_counts)
     from src.eval.rubric import list_rubrics as _list_rubrics
 
-    return _list_rubrics()
+    return await anyio.to_thread.run_sync(_list_rubrics)
 
 
 @mcp.tool(tags={"eval"})
-def run_list(limit: int = 20) -> list[dict]:
+async def run_list(limit: int = 20) -> list[dict]:
     """List recent evaluation runs (most recent first)."""
     from src.eval.store import list_runs as _list_runs
 
-    return _list_runs(limit=limit)
+    return await anyio.to_thread.run_sync(_list_runs, limit)
 
 
 @mcp.tool(tags={"eval"})
-def run_get(run_id: int) -> dict:
+async def run_get(run_id: int) -> dict:
     """Fetch a single evaluation run's run-level fields and its per-criterion verdicts.
 
     The counterpart to ``run_list`` (which returns run-level fields only).
@@ -114,4 +120,4 @@ def run_get(run_id: int) -> dict:
     """
     from src.eval.store import get_run
 
-    return get_run(run_id)
+    return await anyio.to_thread.run_sync(get_run, run_id)

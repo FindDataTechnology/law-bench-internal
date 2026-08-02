@@ -10,11 +10,14 @@ from __future__ import annotations
 
 import pytest
 
+# Mark all tests in this file as asyncio tests
+pytestmark = pytest.mark.asyncio
+
 
 # --- MCP tool: pipeline_run summary extraction ---
 
 
-def test_pipeline_run_returns_summary(monkeypatch):
+async def test_pipeline_run_returns_summary(monkeypatch):
     import fd_coding_law_bench_mcp.pipeline.graph as graph_mod
 
     fake_state = {
@@ -38,7 +41,7 @@ def test_pipeline_run_returns_summary(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.pipeline import pipeline_run
 
-    out = pipeline_run("sale", tags={"scenario": "农产品买卖", "stance": "balanced"})
+    out = await pipeline_run("sale", tags={"scenario": "农产品买卖", "stance": "balanced"})
     assert out["pipeline_run_id"] == 7
     assert out["eval_run_id"] == 99
     assert out["iteration"] == 2
@@ -49,17 +52,17 @@ def test_pipeline_run_returns_summary(monkeypatch):
 # --- MCP tools: list / get ---
 
 
-def test_pipeline_list_delegates(monkeypatch):
+async def test_pipeline_list_delegates(monkeypatch):
     import src.eval.pipeline_store as ps
 
     monkeypatch.setattr(ps, "list_pipeline_runs", lambda limit=20: [{"id": 1}])
 
     from fd_coding_law_bench_mcp.tools.pipeline import pipeline_list
 
-    assert pipeline_list(limit=5) == [{"id": 1}]
+    assert await pipeline_list(limit=5) == [{"id": 1}]
 
 
-def test_pipeline_get_joins_criteria(monkeypatch):
+async def test_pipeline_get_joins_criteria(monkeypatch):
     import src.eval.pipeline_store as ps
     import src.eval.store as store_mod
 
@@ -74,12 +77,12 @@ def test_pipeline_get_joins_criteria(monkeypatch):
 
     from fd_coding_law_bench_mcp.tools.pipeline import pipeline_get
 
-    out = pipeline_get(7)
+    out = await pipeline_get(7)
     assert out["all_pass"] is True  # int -> bool
     assert out["criteria_results"][0]["verdict"] == "pass"
 
 
-def test_pipeline_get_unknown_raises(monkeypatch):
+async def test_pipeline_get_unknown_raises(monkeypatch):
     import src.eval.pipeline_store as ps
     from src.eval.errors import NotFoundError
 
@@ -88,13 +91,13 @@ def test_pipeline_get_unknown_raises(monkeypatch):
     from fd_coding_law_bench_mcp.tools.pipeline import pipeline_get
 
     with pytest.raises(NotFoundError):
-        pipeline_get(999)
+        await pipeline_get(999)
 
 
 # --- rubric latest-version default ---
 
 
-def test_default_rubric_latest_version(monkeypatch):
+async def test_default_rubric_latest_version(monkeypatch):
     import src.eval.rubric as rubric_mod
 
     monkeypatch.setattr(rubric_mod, "list_rubrics", lambda db_path=None: [
@@ -108,7 +111,7 @@ def test_default_rubric_latest_version(monkeypatch):
     assert default_rubric("sale") == "contract_sale_v2"
 
 
-def test_default_rubric_missing_raises(monkeypatch):
+async def test_default_rubric_missing_raises(monkeypatch):
     import src.eval.rubric as rubric_mod
     from src.eval.errors import NotFoundError
 
@@ -125,7 +128,7 @@ def test_default_rubric_missing_raises(monkeypatch):
 # --- fill cache ---
 
 
-def test_fill_cache_hit_skips_llm(monkeypatch):
+async def test_fill_cache_hit_skips_llm(monkeypatch):
     import fd_coding_law_bench_mcp.pipeline.fill as fill_mod
 
     called = {"llm": 0, "insert": 0}
@@ -145,7 +148,7 @@ def test_fill_cache_hit_skips_llm(monkeypatch):
     assert called["insert"] == 0
 
 
-def test_fill_cache_miss_calls_llm_and_records_temperature(monkeypatch):
+async def test_fill_cache_miss_calls_llm_and_records_temperature(monkeypatch):
     import fd_coding_law_bench_mcp.pipeline.fill as fill_mod
 
     captured = {}
@@ -164,7 +167,7 @@ def test_fill_cache_miss_calls_llm_and_records_temperature(monkeypatch):
     assert captured["m"] == "doubao"
 
 
-def test_render_filled_leaves_unfilled():
+async def test_render_filled_leaves_unfilled():
     from fd_coding_law_bench_mcp.pipeline.fill import render_filled
 
     filled, unfilled = render_filled("甲方：{{party_a}} 乙方：{{party_b}}", {"party_a": "甲"})
@@ -206,7 +209,7 @@ def _patch_graph_deps(monkeypatch, *, eval_results, customs=None, diagnose_out=N
     monkeypatch.setattr(ps, "insert_pipeline_run", lambda row: 7)
 
 
-def test_graph_happy_path_stops_at_iteration_1(monkeypatch):
+async def test_graph_happy_path_stops_at_iteration_1(monkeypatch):
     _patch_graph_deps(monkeypatch, eval_results=[{
         "all_pass": True, "n_passed": 2, "n_criteria": 2, "score": 1.0, "max_score": 1.0,
         "criteria_results": [{"verdict": "pass", "title": "t"}], "run_id": 99, "summary": "2/2",
@@ -222,7 +225,7 @@ def test_graph_happy_path_stops_at_iteration_1(monkeypatch):
     assert state["eval_run_id"] == 99
 
 
-def test_graph_loop_records_recommendations(monkeypatch):
+async def test_graph_loop_records_recommendations(monkeypatch):
     fail = {
         "all_pass": False, "n_passed": 1, "n_criteria": 2, "score": 0.5, "max_score": 1.0,
         "criteria_results": [{"verdict": "fail", "title": "检验期间", "reasoning": "missing"}],

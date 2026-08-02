@@ -8,11 +8,13 @@ never raises to the client.
 
 from __future__ import annotations
 
+import anyio
+
 from ..server import mcp
 
 
 @mcp.tool(tags={"search"})
-def search_clauses(query: str, top_k: int = 5) -> list[dict]:
+async def search_clauses(query: str, top_k: int = 5) -> list[dict]:
     """Retrieve ranked clause chunks for a natural-language query.
 
     Parameters:
@@ -24,7 +26,10 @@ def search_clauses(query: str, top_k: int = 5) -> list[dict]:
     """
     from src.search.query import search
 
-    try:
-        return search(query, top_k=top_k)
-    except Exception:  # noqa: BLE001 - graceful degradation, never raise
-        return []
+    def _go() -> list[dict]:
+        try:
+            return search(query, top_k=top_k)
+        except Exception:  # noqa: BLE001 - graceful degradation, never raise
+            return []
+
+    return await anyio.to_thread.run_sync(_go)
