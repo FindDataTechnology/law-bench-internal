@@ -186,6 +186,27 @@ CREATE TABLE IF NOT EXISTS core_clauses (
 );
 """
 
+# Generated contract docx/pdf artifacts (uploaded to MinIO, content-addressed
+# by body_hash so identical inputs reuse the same artifact). One row per
+# distinct assembled body; docx_key/pdf_key are nullable per-format MinIO keys.
+CONTRACT_ARTIFACTS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS contract_artifacts (
+    id                  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    contract_type       TEXT NOT NULL,
+    scenario            TEXT,
+    stance              TEXT,
+    custom_clause_ids   JSONB,
+    body_hash           TEXT NOT NULL UNIQUE,
+    body_text           TEXT NOT NULL,
+    slots               JSONB NOT NULL DEFAULT '[]'::jsonb,
+    docx_key            TEXT,
+    pdf_key             TEXT,
+    minio_bucket        TEXT NOT NULL,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+);
+"""
+
 
 # Additive columns added after the tables' first release, applied idempotically
 # in a single round trip via ``ALTER TABLE IF EXISTS ... ADD COLUMN IF NOT
@@ -242,6 +263,7 @@ def ensure_schema(db_path=DEFAULT_DB) -> None:
         conn.execute(TAG_DIMS_SCHEMA)
         conn.execute(PIPELINE_SCHEMA)
         conn.execute(INDUSTRY_STANDARD_SCHEMA)
+        conn.execute(CONTRACT_ARTIFACTS_SCHEMA)
         conn.execute(_ADDITIVE_COLUMNS)
         conn.commit()
         _ensured_dbs.add(key)

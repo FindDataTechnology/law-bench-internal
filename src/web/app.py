@@ -40,7 +40,7 @@ from .i18n import (
     title_for_rubric,
     translate,
 )
-from .routes import api
+from .routes import api, contract_context
 
 _HERE = Path(__file__).resolve().parent
 TEMPLATES_DIR = _HERE / "templates"
@@ -113,6 +113,7 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     app.include_router(api.router)
+    app.include_router(contract_context.router)
 
     # Resolve the active locale once per request, stash it for the template
     # context processor, and persist the choice as a cookie so it sticks.

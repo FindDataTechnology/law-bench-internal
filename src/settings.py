@@ -90,6 +90,8 @@ MINIO_SECRET_KEY = _env("minio_root_password", "")
 MINIO_BUCKET = _env("MINIO_BUCKET", "scraw-law-contracts")
 MINIO_TEMPLATES_PREFIX = _env("MINIO_TEMPLATES_PREFIX", "templates/")
 MINIO_DRAFTS_PREFIX = _env("MINIO_DRAFTS_PREFIX", "drafts/")
+# Generated contract docx/pdf (artifacts) are stored under this prefix.
+MINIO_ARTIFACTS_PREFIX = _env("MINIO_ARTIFACTS_PREFIX", "artifacts/")
 
 # CrewAI RAG retrieval tool toggle (on by default; degrades gracefully if off).
 RAG_TOOL_ENABLED = _env("RAG_TOOL_ENABLED", "1") == "1"

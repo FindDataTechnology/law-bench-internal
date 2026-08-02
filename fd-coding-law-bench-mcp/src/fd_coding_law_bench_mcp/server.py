@@ -27,6 +27,7 @@ from .tools import tags as _tags  # noqa: E402,F401
 from .tools import content as _content  # noqa: E402,F401
 from .tools import batch as _batch  # noqa: E402,F401
 from .tools import catalog as _catalog  # noqa: E402,F401
+from .tools import artifacts as _artifacts  # noqa: E402,F401
 
 
 def main() -> None:

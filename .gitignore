@@ -35,6 +35,9 @@ ENV/
 # Project
 *.log
 output/
+# generated contract docx/pdf artifacts (regenerable via scripts/generate_all_types_stored.py,
+# also persisted to MinIO + the contract_artifacts DB table - never commit the local copies)
+output/contracts/
 
 # contract template LLM-draft cache (regenerable; contracts.json is committed)
 src/contracts/data/_llm_bodies/

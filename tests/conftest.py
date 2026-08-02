@@ -54,6 +54,7 @@ _ALL_TABLES = (
     "prompts",
     "law_info",
     "clauses",
+    "contract_artifacts",
 )
 
 
