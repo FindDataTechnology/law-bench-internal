@@ -48,6 +48,8 @@ spec:
                 name: law-bench-db
             - secretRef:
                 name: law-bench-minio
+            - secretRef:
+                name: law-bench-judge
           ports:
             - containerPort: 8010
           livenessProbe:
