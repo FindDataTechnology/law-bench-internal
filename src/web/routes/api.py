@@ -13,12 +13,21 @@ import subprocess
 import sys
 from pathlib import Path
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, UploadFile
 from fastapi.responses import JSONResponse
 
 from src.eval import manage as M
 from src.eval.compare import build_matrix, load_prompts, run_compare
-from src.eval.store import get_compare, get_run_draft, list_compares
+from src.eval.scoring import evaluate_contract
+from src.eval.store import (
+    get_api_eval_run,
+    get_compare,
+    get_run_draft,
+    list_api_eval_runs,
+    list_compares,
+    store_api_eval_run,
+    update_api_eval_run,
+)
 from src.settings import DEFAULT_DB, EXTRACT_SCRIPT, REPO_ROOT
 
 from ..deps import get_db
@@ -26,6 +35,9 @@ from ..models import (
     CompareCreate,
     CriterionCreate,
     CriterionUpdate,
+    EvaluateRunDetail,
+    EvaluateRunSummary,
+    EvaluateSubmitResponse,
     PromptCreate,
     PromptUpdate,
     ReorderRequest,
@@ -252,3 +264,80 @@ def harbor_extract(db: Path = Depends(get_db)) -> JSONResponse:
     return JSONResponse(
         {"returncode": code, "stdout": out, "rubrics": M.list_rubrics_with_counts(db_path=db)}
     )
+
+
+# --- evaluate -------------------------------------------------------------- #
+
+
+def _run_evaluation_background(run_id: int, rubric_name: str, contract_text: str, db_path: Path) -> None:
+    """Background task: evaluate contract and update api_eval_runs."""
+    try:
+        update_api_eval_run(run_id, status="running", db_path=db_path)
+        result = evaluate_contract(contract_text, rubric_name, db_path=db_path)
+        update_api_eval_run(
+            run_id,
+            status="completed",
+            score=result["score"],
+            all_pass=result["all_pass"],
+            n_passed=result["n_passed"],
+            n_criteria=result["n_criteria"],
+            results=result,
+            judge_model=result.get("judge_model"),
+            db_path=db_path,
+        )
+    except Exception as e:
+        update_api_eval_run(
+            run_id,
+            status="failed",
+            error_message=str(e),
+            db_path=db_path,
+        )
+
+
+@router.post("/evaluate", status_code=202, response_model=EvaluateSubmitResponse)
+async def submit_evaluation(
+    background_tasks: BackgroundTasks,
+    rubric: str = Form(...),
+    contract_text: str = Form(None),
+    contract_file: UploadFile = None,
+    db: Path = Depends(get_db),
+) -> dict:
+    """Submit a contract for async evaluation against a rubric.
+
+    Accepts either inline contract_text or a contract_file upload (one required).
+    Returns 202 Accepted with run_id for polling.
+    """
+    # Validate rubric exists (raises NotFoundError -> 404 if missing)
+    M.get_rubric_detail(rubric, db_path=db)
+
+    # Read contract text from file or form field
+    if contract_file:
+        content = await contract_file.read()
+        text = content.decode("utf-8")
+    elif contract_text:
+        text = contract_text
+    else:
+        return _err(400, "Either contract_text or contract_file is required")
+
+    # Insert pending row
+    run_id = store_api_eval_run(rubric, text, db_path=db)
+
+    # Start background evaluation
+    background_tasks.add_task(_run_evaluation_background, run_id, rubric, text, db)
+
+    return {"run_id": run_id, "status": "pending"}
+
+
+@router.get("/evaluate", response_model=list[EvaluateRunSummary])
+def list_evaluations(limit: int = 20, db: Path = Depends(get_db)) -> list[dict]:
+    """Recent API evaluation runs (most recent first)."""
+    return list_api_eval_runs(limit=limit, db_path=db)
+
+
+@router.get("/evaluate/{run_id}", response_model=EvaluateRunDetail)
+def get_evaluation(run_id: int, db: Path = Depends(get_db)) -> dict:
+    """Full detail of an API evaluation run."""
+    try:
+        return get_api_eval_run(run_id, db_path=db)
+    except KeyError:
+        return _err(404, f"API eval run not found: {run_id}")

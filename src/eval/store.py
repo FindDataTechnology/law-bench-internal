@@ -215,6 +215,27 @@ CREATE TABLE IF NOT EXISTS core_clauses (
 );
 """
 
+# API evaluation runs (async REST API for contract evaluation). Separate from
+# eval_runs because the lifecycle is different: pending -> running -> completed/
+# failed, with the full contract text stored inline for self-contained records.
+API_EVAL_SCHEMA = """
+CREATE TABLE IF NOT EXISTS api_eval_runs (
+    id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    rubric_name     TEXT NOT NULL,
+    contract_text   TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    score           REAL,
+    all_pass        BOOLEAN,
+    n_passed        INTEGER,
+    n_criteria      INTEGER,
+    results         JSONB,
+    error_message   TEXT,
+    judge_model     TEXT,
+    created_at      TEXT NOT NULL,
+    completed_at    TEXT
+);
+"""
+
 # Generated contract docx/pdf artifacts (uploaded to MinIO, content-addressed
 # by body_hash so identical inputs reuse the same artifact). One row per
 # distinct assembled body; docx_key/pdf_key are nullable per-format MinIO keys.
@@ -263,7 +284,9 @@ _ADDITIVE_COLUMNS = (
     # region (province) tag retired in favor of scenario (业务场景): drop the
     # JSONB keys from existing rows. Idempotent (no-op once the keys are gone).
     "UPDATE clauses SET tags = tags - 'region' WHERE tags ? 'region'; "
-    "UPDATE clauses SET tag_review = tag_review - 'region' WHERE tag_review ? 'region';"
+    "UPDATE clauses SET tag_review = tag_review - 'region' WHERE tag_review ? 'region'; "
+    # learn_applied: clauses auto-rejected by the learn node (auto-iteration pipeline)
+    "ALTER TABLE IF EXISTS pipeline_runs ADD COLUMN IF NOT EXISTS learn_applied JSONB NOT NULL DEFAULT '[]'::jsonb;"
 )
 
 # The DDL is fully idempotent, so ensure_schema is memoized per database (keyed
@@ -298,6 +321,7 @@ def ensure_schema(db_path=DEFAULT_DB) -> None:
             conn.execute(PIPELINE_SCHEMA)
             conn.execute(INDUSTRY_STANDARD_SCHEMA)
             conn.execute(CONTRACT_ARTIFACTS_SCHEMA)
+            conn.execute(API_EVAL_SCHEMA)
             conn.execute(_ADDITIVE_COLUMNS)
             conn.commit()
             _ensured_dbs.add(key)
@@ -556,3 +580,112 @@ def get_run_draft(compare_id: int, run_id: int, db_path=DEFAULT_DB) -> dict:
         "prompt_name": row["prompt_name"],
         "draft_text": row["draft_text"],
     }
+
+
+# --- api eval runs --------------------------------------------------------- #
+
+
+def store_api_eval_run(
+    rubric_name: str,
+    contract_text: str,
+    db_path=DEFAULT_DB,
+) -> int:
+    """Insert a new api_eval_runs row with status='pending'. Returns run_id."""
+    ensure_schema(db_path)
+    now = datetime.now(timezone.utc).isoformat()
+
+    def _do_insert():
+        conn = connect(db_path)
+        try:
+            cur = conn.execute(
+                "INSERT INTO api_eval_runs (rubric_name, contract_text, status, created_at) "
+                "VALUES (%s, %s, 'pending', %s) RETURNING id",
+                (rubric_name, contract_text, now),
+            )
+            conn.commit()
+            return cur.fetchone()["id"]
+        finally:
+            conn.close()
+
+    return _retry_on_deadlock(_do_insert)
+
+
+def update_api_eval_run(
+    run_id: int,
+    *,
+    status: str,
+    score: Optional[float] = None,
+    all_pass: Optional[bool] = None,
+    n_passed: Optional[int] = None,
+    n_criteria: Optional[int] = None,
+    results: Optional[dict] = None,
+    error_message: Optional[str] = None,
+    judge_model: Optional[str] = None,
+    db_path=DEFAULT_DB,
+) -> None:
+    """Update an api_eval_runs row's status and results."""
+    import json
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    def _do_update():
+        conn = connect(db_path)
+        try:
+            conn.execute(
+                "UPDATE api_eval_runs SET status=%s, score=%s, all_pass=%s, "
+                "n_passed=%s, n_criteria=%s, results=%s, error_message=%s, "
+                "judge_model=%s, completed_at=%s WHERE id=%s",
+                (
+                    status, score, all_pass, n_passed, n_criteria,
+                    json.dumps(results) if results else None,
+                    error_message, judge_model, now, run_id,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    _retry_on_deadlock(_do_update)
+
+
+def get_api_eval_run(run_id: int, db_path=DEFAULT_DB) -> dict:
+    """Fetch a single api_eval_run by id. Raises KeyError if not found."""
+    ensure_schema(db_path)
+
+    def _do_get():
+        conn = connect(db_path)
+        try:
+            row = conn.execute(
+                "SELECT id, rubric_name, contract_text, status, score, all_pass, "
+                "       n_passed, n_criteria, results, error_message, judge_model, "
+                "       created_at, completed_at "
+                "FROM api_eval_runs WHERE id = %s",
+                (run_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is None:
+            raise KeyError(f"API eval run not found: {run_id}")
+        return dict(row)
+
+    return _retry_db_operation(_do_get)
+
+
+def list_api_eval_runs(limit: int = 20, db_path=DEFAULT_DB) -> list[dict]:
+    """Recent API eval runs (most recent first)."""
+    ensure_schema(db_path)
+
+    def _do_list():
+        conn = connect(db_path)
+        try:
+            rows = conn.execute(
+                "SELECT id, rubric_name, status, score, all_pass, n_passed, "
+                "       n_criteria, error_message, judge_model, created_at, completed_at "
+                "FROM api_eval_runs ORDER BY id DESC LIMIT %s",
+                (limit,),
+            ).fetchall()
+        finally:
+            conn.close()
+        return [dict(r) for r in rows]
+
+    return _retry_db_operation(_do_list)

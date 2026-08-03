@@ -76,3 +76,44 @@ class CompareCreate(BaseModel):
     mode: str = "drafter-only"
     n_drafts: int = 1
     label: Optional[str] = None
+
+
+class EvaluateSubmitResponse(BaseModel):
+    """Response from POST /api/evaluate (202 Accepted)."""
+
+    run_id: int
+    status: str
+
+
+class EvaluateRunSummary(BaseModel):
+    """Summary row for GET /api/evaluate (list)."""
+
+    id: int
+    rubric_name: str
+    status: str
+    score: Optional[float] = None
+    all_pass: Optional[bool] = None
+    n_passed: Optional[int] = None
+    n_criteria: Optional[int] = None
+    error_message: Optional[str] = None
+    judge_model: Optional[str] = None
+    created_at: str
+    completed_at: Optional[str] = None
+
+
+class EvaluateRunDetail(BaseModel):
+    """Full detail for GET /api/evaluate/{run_id}."""
+
+    id: int
+    rubric_name: str
+    status: str
+    contract_text: str
+    score: Optional[float] = None
+    all_pass: Optional[bool] = None
+    n_passed: Optional[int] = None
+    n_criteria: Optional[int] = None
+    results: Optional[dict] = None
+    error_message: Optional[str] = None
+    judge_model: Optional[str] = None
+    created_at: str
+    completed_at: Optional[str] = None
