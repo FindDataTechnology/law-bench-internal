@@ -19,7 +19,7 @@ spec:
         - name: harbor-pull
       initContainers:
         - name: seed-db
-          image: harbor.local/law-bench/law-template:sha-0b093ee
+          image: harbor.local/law-bench/law-template:sha-4551b41
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsUser: 0
@@ -41,11 +41,13 @@ spec:
               ls -la /data
       containers:
         - name: law-bench
-          image: harbor.local/law-bench/law-template:sha-0b093ee
+          image: harbor.local/law-bench/law-template:sha-4551b41
           imagePullPolicy: IfNotPresent
           envFrom:
             - secretRef:
                 name: law-bench-db
+            - secretRef:
+                name: law-bench-minio
           ports:
             - containerPort: 8010
           livenessProbe:
