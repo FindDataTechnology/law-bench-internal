@@ -99,7 +99,12 @@ def connect(db: Any = None) -> Any:
             return _BorrowedConn(get_shared_conn())
     except Exception:  # noqa: BLE001 - settings import failure -> fall through to fresh conn
         pass
-    conn = psycopg.connect(_dsn(), row_factory=dict_row)
+    # Add TCP keepalive parameters to prevent connection timeout during long LLM calls
+    dsn = _dsn()
+    if 'keepalives=' not in dsn:
+        separator = '&' if '?' in dsn else '?'
+        dsn = f"{dsn}{separator}keepalives=1&keepalives_idle=60&keepalives_interval=10&keepalives_count=5"
+    conn = psycopg.connect(dsn, row_factory=dict_row)
     # Foreign keys are enforced by default in PostgreSQL (no PRAGMA needed).
     return conn
 
@@ -116,13 +121,41 @@ def connect(db: Any = None) -> Any:
 _SHARED_CONN: Any = None
 
 
+def _is_conn_alive(conn: Any) -> bool:
+    """Check if a connection is still alive by testing its status."""
+    if conn is None:
+        return False
+    try:
+        # psycopg3 connections have an info.status attribute
+        # 0 = CONNECTION_OK, other values indicate problems
+        return hasattr(conn, 'info') and conn.info.status == 0
+    except Exception:
+        return False
+
+
 def get_shared_conn() -> Any:
-    """Return a process-wide cached psycopg connection, opening it lazily."""
+    """Return a process-wide cached psycopg connection, opening it lazily.
+
+    If the cached connection has been terminated by the server (e.g., AdminShutdown),
+    automatically reopen it.
+    """
     global _SHARED_CONN
-    if _SHARED_CONN is None:
+    if _SHARED_CONN is None or not _is_conn_alive(_SHARED_CONN):
+        if _SHARED_CONN is not None:
+            # Try to close the stale connection
+            try:
+                _SHARED_CONN.close()
+            except Exception:
+                pass
         import psycopg
         from psycopg.rows import dict_row
-        _SHARED_CONN = psycopg.connect(_dsn(), row_factory=dict_row)
+        # Add TCP keepalive parameters to prevent connection timeout during long LLM calls
+        dsn = _dsn()
+        # Parse and augment DSN with keepalive parameters if not already present
+        if 'keepalives=' not in dsn:
+            separator = '&' if '?' in dsn else '?'
+            dsn = f"{dsn}{separator}keepalives=1&keepalives_idle=60&keepalives_interval=10&keepalives_count=5"
+        _SHARED_CONN = psycopg.connect(dsn, row_factory=dict_row, autocommit=True)
     return _SHARED_CONN
 
 

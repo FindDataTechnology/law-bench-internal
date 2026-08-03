@@ -14,12 +14,41 @@ queried and compared over time. The schema is created idempotently.
 
 from __future__ import annotations
 
+import threading
+import time
 from datetime import datetime, timezone
 from typing import Optional
+
+import psycopg
+from psycopg.errors import DeadlockDetected
 
 from src.settings import DEFAULT_DB  # retained as the legacy default param value
 
 from .db import connect
+
+
+def _retry_on_deadlock(func, max_retries: int = 3, base_delay: float = 0.1):
+    """Retry a database operation if it hits a deadlock or connection error.
+
+    PostgreSQL deadlocks can occur when multiple processes run ALTER TABLE
+    (via ensure_schema) concurrently with INSERT operations. Connection errors
+    (AdminShutdown, OperationalError) can occur when the server terminates idle
+    connections during long LLM calls. This wrapper retries with exponential backoff.
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            return func()
+        except (DeadlockDetected, psycopg.errors.AdminShutdown, psycopg.errors.OperationalError, psycopg.errors.LockNotAvailable, psycopg.errors.InFailedSqlTransaction) as e:
+            if attempt == max_retries:
+                raise
+            # Force close the shared connection to trigger reconnect on retry
+            try:
+                from src.eval.db import close_shared_conn
+                close_shared_conn()
+            except Exception:
+                pass
+            delay = base_delay * (2 ** attempt)
+            time.sleep(delay)
 
 RESULTS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS eval_runs (
@@ -242,6 +271,7 @@ _ADDITIVE_COLUMNS = (
 # (every store/list/compare) are a cheap no-op. This matters because the store
 # functions call ensure_schema defensively on every invocation.
 _ensured_dbs: set[str] = set()
+_ensure_lock = threading.Lock()
 
 
 def ensure_schema(db_path=DEFAULT_DB) -> None:
@@ -252,23 +282,33 @@ def ensure_schema(db_path=DEFAULT_DB) -> None:
     after the tables' first release (a no-op once the columns exist). Memoized
     per database so repeated calls are cheap.
     """
-    conn = connect(db_path)
-    try:
-        key = getattr(getattr(conn, "info", None), "dbname", None) or str(db_path)
-        if key in _ensured_dbs:
-            return
-        conn.execute(RESULTS_SCHEMA)
-        conn.execute(LAW_INFO_SCHEMA)
-        conn.execute(CLAUSES_SCHEMA)
-        conn.execute(TAG_DIMS_SCHEMA)
-        conn.execute(PIPELINE_SCHEMA)
-        conn.execute(INDUSTRY_STANDARD_SCHEMA)
-        conn.execute(CONTRACT_ARTIFACTS_SCHEMA)
-        conn.execute(_ADDITIVE_COLUMNS)
-        conn.commit()
-        _ensured_dbs.add(key)
-    finally:
-        conn.close()
+    def _do_ensure():
+        conn = connect(db_path)
+        try:
+            key = getattr(getattr(conn, "info", None), "dbname", None) or str(db_path)
+            if key in _ensured_dbs:
+                return
+            # Set a short lock timeout so DDL doesn't deadlock with concurrent
+            # processes; the DDL is idempotent so skipping on lock timeout is safe.
+            conn.execute("SET lock_timeout = '3s'")
+            conn.execute(RESULTS_SCHEMA)
+            conn.execute(LAW_INFO_SCHEMA)
+            conn.execute(CLAUSES_SCHEMA)
+            conn.execute(TAG_DIMS_SCHEMA)
+            conn.execute(PIPELINE_SCHEMA)
+            conn.execute(INDUSTRY_STANDARD_SCHEMA)
+            conn.execute(CONTRACT_ARTIFACTS_SCHEMA)
+            conn.execute(_ADDITIVE_COLUMNS)
+            conn.commit()
+            _ensured_dbs.add(key)
+        except psycopg.errors.LockNotAvailable:
+            # Another process holds the lock; schema should already exist from
+            # previous runs, so just mark as ensured and continue.
+            _ensured_dbs.add(key)
+        finally:
+            conn.close()
+    with _ensure_lock:
+        _retry_on_deadlock(_do_ensure)
 
 
 def store_result(
@@ -294,63 +334,80 @@ def store_result(
     """
     ensure_schema(db_path)
     now = datetime.now(timezone.utc).isoformat()
-    conn = connect(db_path)
-    try:
-        cur = conn.execute(
-            "INSERT INTO eval_runs "
-            "(rubric_name, contract_path, task_desc, score, max_score, all_pass, "
-            " n_criteria, n_passed, summary, judge_model, scored_at, created_at, "
-            " compare_run_id, prompt_name, prompt_type, variant_label, draft_text) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
-            (
-                result["rubric"],
-                contract_path,
-                task_desc,
-                result["score"],
-                result["max_score"],
-                int(result["all_pass"]),
-                result["n_criteria"],
-                result["n_passed"],
-                result.get("summary"),
-                result.get("judge_model"),
-                result.get("scored_at") or now,
-                now,
-                compare_run_id,
-                prompt_name,
-                prompt_type,
-                variant_label,
-                draft_text,
-            ),
-        )
-        run_id = cur.fetchone()["id"]
 
-        for i, c in enumerate(result.get("criteria_results", [])):
-            conn.execute(
-                "INSERT INTO eval_criteria_results "
-                "(run_id, criterion_id, title, verdict, reasoning, ordinal) "
-                "VALUES (%s,%s,%s,%s,%s,%s)",
-                (run_id, c["id"], c.get("title"), c["verdict"], c.get("reasoning", ""), i),
+    def _do_insert():
+        conn = connect(db_path)
+        try:
+            cur = conn.execute(
+                "INSERT INTO eval_runs "
+                "(rubric_name, contract_path, task_desc, score, max_score, all_pass, "
+                " n_criteria, n_passed, summary, judge_model, scored_at, created_at, "
+                " compare_run_id, prompt_name, prompt_type, variant_label, draft_text) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+                (
+                    result["rubric"],
+                    contract_path,
+                    task_desc,
+                    result["score"],
+                    result["max_score"],
+                    int(result["all_pass"]),
+                    result["n_criteria"],
+                    result["n_passed"],
+                    result.get("summary"),
+                    result.get("judge_model"),
+                    result.get("scored_at") or now,
+                    now,
+                    compare_run_id,
+                    prompt_name,
+                    prompt_type,
+                    variant_label,
+                    draft_text,
+                ),
             )
-        conn.commit()
-        return run_id
-    finally:
-        conn.close()
+            run_id = cur.fetchone()["id"]
+
+            for i, c in enumerate(result.get("criteria_results", [])):
+                conn.execute(
+                    "INSERT INTO eval_criteria_results "
+                    "(run_id, criterion_id, title, verdict, reasoning, ordinal) "
+                    "VALUES (%s,%s,%s,%s,%s,%s)",
+                    (run_id, c["id"], c.get("title"), c["verdict"], c.get("reasoning", ""), i),
+                )
+            conn.commit()
+            return run_id
+        finally:
+            conn.close()
+
+    return _retry_on_deadlock(_do_insert)
+
+
+def _retry_db_operation(func, max_retries: int = 3, base_delay: float = 0.1):
+    """Retry a database operation if it hits a deadlock."""
+    for attempt in range(max_retries + 1):
+        try:
+            return func()
+        except DeadlockDetected:
+            if attempt == max_retries:
+                raise
+            delay = base_delay * (2 ** attempt)
+            time.sleep(delay)
 
 
 def list_runs(limit: int = 20, db_path=DEFAULT_DB) -> list[dict]:
     """Recent runs (run-level fields only) for quick inspection."""
-    ensure_schema(db_path)
-    conn = connect(db_path)
-    try:
-        rows = conn.execute(
-            "SELECT id, rubric_name, contract_path, score, all_pass, "
-            "       n_passed, n_criteria, judge_model, scored_at "
-            "FROM eval_runs ORDER BY id DESC LIMIT %s",
-            (limit,),
-        ).fetchall()
-    finally:
-        conn.close()
-    return [dict(r) for r in rows]
+    def _do_list():
+        conn = connect(db_path)
+        try:
+            rows = conn.execute(
+                "SELECT id, rubric_name, contract_path, score, all_pass, "
+                "       n_passed, n_criteria, judge_model, scored_at "
+                "FROM eval_runs ORDER BY id DESC LIMIT %s",
+                (limit,),
+            ).fetchall()
+        finally:
+            conn.close()
+        return [dict(r) for r in rows]
+    return _retry_db_operation(_do_list)
 
 
 def get_run(run_id: int, db_path=DEFAULT_DB) -> dict:
@@ -360,26 +417,27 @@ def get_run(run_id: int, db_path=DEFAULT_DB) -> dict:
     use this to fetch one run's full ``criteria_results``. Raises ``KeyError`` if
     no run has ``id == run_id``.
     """
-    ensure_schema(db_path)
-    conn = connect(db_path)
-    try:
-        row = conn.execute(
-            "SELECT id, rubric_name, contract_path, task_desc, score, max_score, "
-            "       all_pass, n_criteria, n_passed, summary, judge_model, "
-            "       scored_at, compare_run_id, prompt_name, prompt_type, variant_label "
-            "FROM eval_runs WHERE id = %s",
-            (run_id,),
-        ).fetchone()
-        if row is None:
-            raise KeyError(f"Run not found: {run_id}")
-        crits = conn.execute(
-            "SELECT criterion_id, title, verdict, reasoning, ordinal "
-            "FROM eval_criteria_results WHERE run_id = %s ORDER BY ordinal",
-            (run_id,),
-        ).fetchall()
-    finally:
-        conn.close()
-    return {**dict(row), "criteria_results": [dict(c) for c in crits]}
+    def _do_get():
+        conn = connect(db_path)
+        try:
+            row = conn.execute(
+                "SELECT id, rubric_name, contract_path, task_desc, score, max_score, "
+                "       all_pass, n_criteria, n_passed, summary, judge_model, "
+                "       scored_at, compare_run_id, prompt_name, prompt_type, variant_label "
+                "FROM eval_runs WHERE id = %s",
+                (run_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Run not found: {run_id}")
+            crits = conn.execute(
+                "SELECT criterion_id, title, verdict, reasoning, ordinal "
+                "FROM eval_criteria_results WHERE run_id = %s ORDER BY ordinal",
+                (run_id,),
+            ).fetchall()
+        finally:
+            conn.close()
+        return {**dict(row), "criteria_results": [dict(c) for c in crits]}
+    return _retry_db_operation(_do_get)
 
 
 # --- compare runs ---------------------------------------------------------- #

@@ -9,17 +9,35 @@ are deterministic and amortize the LLM cost. Mirrors the connection /
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+import psycopg
 from psycopg.types.json import Jsonb
 
-from .db import connect
+from .db import connect, close_shared_conn
 from .store import ensure_schema
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _retry_on_conn_error(func, max_retries: int = 3, base_delay: float = 0.1):
+    """Retry a database operation on connection errors (AdminShutdown, etc.)."""
+    for attempt in range(max_retries + 1):
+        try:
+            return func()
+        except (psycopg.errors.AdminShutdown, psycopg.errors.OperationalError) as e:
+            if attempt == max_retries:
+                raise
+            try:
+                close_shared_conn()
+            except Exception:
+                pass
+            delay = base_delay * (2 ** attempt)
+            time.sleep(delay)
 
 
 def insert_pipeline_run(row: dict, db: Any = None) -> int:
@@ -31,44 +49,48 @@ def insert_pipeline_run(row: dict, db: Any = None) -> int:
     """
     ensure_schema(db)
     now = _now()
-    conn = connect(db)
-    try:
-        cur = conn.execute(
-            "INSERT INTO pipeline_runs "
-            "(contract_type, tags, stance, rubric_name, task_desc, fill_mode, "
-            " fill_values, filled_text, eval_run_id, score, max_score, n_passed, "
-            " n_criteria, all_pass, iteration, actions_taken, recommendations, "
-            " fill_cache_id, fill_temperature, created_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
-            "RETURNING id",
-            (
-                row["contract_type"],
-                Jsonb(row.get("tags") or {}),
-                row.get("stance"),
-                row["rubric_name"],
-                row.get("task_desc"),
-                row.get("fill_mode"),
-                Jsonb(row.get("fill_values") or {}),
-                row.get("filled_text"),
-                row.get("eval_run_id"),
-                row.get("score"),
-                row.get("max_score"),
-                row.get("n_passed"),
-                row.get("n_criteria"),
-                row.get("all_pass"),
-                row.get("iteration", 1),
-                Jsonb(row.get("actions_taken") or []),
-                Jsonb(row.get("recommendations") or []),
-                row.get("fill_cache_id"),
-                row.get("fill_temperature"),
-                now,
-            ),
-        )
-        conn.commit()
-        return cur.fetchone()["id"]
-    finally:
-        if db is None:
-            conn.close()
+
+    def _do_insert():
+        conn = connect(db)
+        try:
+            cur = conn.execute(
+                "INSERT INTO pipeline_runs "
+                "(contract_type, tags, stance, rubric_name, task_desc, fill_mode, "
+                " fill_values, filled_text, eval_run_id, score, max_score, n_passed, "
+                " n_criteria, all_pass, iteration, actions_taken, recommendations, "
+                " fill_cache_id, fill_temperature, created_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                "RETURNING id",
+                (
+                    row["contract_type"],
+                    Jsonb(row.get("tags") or {}),
+                    row.get("stance"),
+                    row["rubric_name"],
+                    row.get("task_desc"),
+                    row.get("fill_mode"),
+                    Jsonb(row.get("fill_values") or {}),
+                    row.get("filled_text"),
+                    row.get("eval_run_id"),
+                    row.get("score"),
+                    row.get("max_score"),
+                    row.get("n_passed"),
+                    row.get("n_criteria"),
+                    row.get("all_pass"),
+                    row.get("iteration", 1),
+                    Jsonb(row.get("actions_taken") or []),
+                    Jsonb(row.get("recommendations") or []),
+                    row.get("fill_cache_id"),
+                    row.get("fill_temperature"),
+                    now,
+                ),
+            )
+            conn.commit()
+            return cur.fetchone()["id"]
+        finally:
+            if db is None:
+                conn.close()
+
+    return _retry_on_conn_error(_do_insert)
 
 
 def list_pipeline_runs(limit: int = 20, db: Any = None) -> list[dict]:

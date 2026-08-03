@@ -13,11 +13,14 @@ Dashboard-created/edited clauses carry ``manual=true`` so re-extraction
 from __future__ import annotations
 
 import hashlib
+import time
 from typing import Any, Optional
 
+import psycopg
+from psycopg.errors import DeadlockDetected, InFailedSqlTransaction
 from psycopg.types.json import Jsonb
 
-from src.eval.db import connect
+from src.eval.db import connect, close_shared_conn
 from src.eval.errors import NotFoundError
 from src.eval.store import ensure_schema
 
@@ -308,6 +311,22 @@ def _row_to_dict(r) -> dict:
     }
 
 
+def _retry_db(func, max_retries: int = 3, base_delay: float = 0.1):
+    """Retry a database operation if it hits a deadlock or connection error."""
+    for attempt in range(max_retries + 1):
+        try:
+            return func()
+        except (DeadlockDetected, psycopg.errors.AdminShutdown, psycopg.errors.OperationalError, psycopg.errors.InFailedSqlTransaction) as e:
+            if attempt == max_retries:
+                raise
+            try:
+                close_shared_conn()
+            except Exception:
+                pass
+            delay = base_delay * (2 ** attempt)
+            time.sleep(delay)
+
+
 def list_clauses(
     contract_type: Optional[str] = None,
     *,
@@ -350,11 +369,15 @@ def list_clauses(
     if where:
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY id"
-    conn = connect(db)
-    try:
-        rows = conn.execute(sql, params).fetchall()
-    finally:
-        conn.close()
+
+    def _do_query():
+        conn = connect(db)
+        try:
+            return conn.execute(sql, params).fetchall()
+        finally:
+            conn.close()
+
+    rows = _retry_db(_do_query)
     out = [_row_to_dict(r) for r in rows]
     out.sort(key=lambda c: (section_rank(c["section"]), c["id"]))
     return out
