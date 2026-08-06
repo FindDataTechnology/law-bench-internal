@@ -21,10 +21,10 @@ export function QuizForm() {
       })),
       total_slots: z.number(),
     }),
-    render: ({ respond, status, args }) => {
+    render: ({ respond, status, args }: any) => {
       if (status !== "executing" || !respond) return null;
 
-      const quizItems = args.quiz_items || [];
+      const quizItems = args?.quiz_items || [];
       const allFilled = quizItems.every(
         (item) => values[item.slot]?.trim()
       );

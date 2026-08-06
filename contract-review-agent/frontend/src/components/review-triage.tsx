@@ -19,10 +19,10 @@ export function ReviewTriage() {
         sources: z.array(z.string()).optional(),
       })),
     }),
-    render: ({ respond, status, args }) => {
+    render: ({ respond, status, args }: any) => {
       if (status !== "executing" || !respond) return null;
 
-      const suggestions = args.suggestions || [];
+      const suggestions = args?.suggestions || [];
 
       const handleToggle = (index: number) => {
         const newSelected = new Set(selected);

@@ -20,7 +20,7 @@ export function ContractPreview() {
       }).optional(),
       deepeval_scores: z.record(z.any()).optional(),
     }),
-    render: ({ respond, status, args }) => {
+    render: ({ respond, status, args }: any) => {
       if (status !== "executing" || !respond) return null;
 
       const handleApprove = () => {
@@ -33,8 +33,8 @@ export function ContractPreview() {
         setApproved(false);
       };
 
-      const evalResult = args.eval_result || {};
-      const deepevalScores = args.deepeval_scores || {};
+      const evalResult = args?.eval_result || {};
+      const deepevalScores = args?.deepeval_scores || {};
       const nPassed = evalResult.n_passed || 0;
       const nCriteria = evalResult.n_criteria || 0;
       const passRate = nCriteria > 0 ? ((nPassed / nCriteria) * 100).toFixed(0) : 0;
@@ -84,7 +84,7 @@ export function ContractPreview() {
           {/* Contract Preview */}
           <div className="border rounded-lg p-4 mb-4 max-h-96 overflow-y-auto">
             <pre className="whitespace-pre-wrap text-sm font-mono">
-              {args.draft || "（合同内容为空）"}
+              {args?.draft || "（合同内容为空）"}
             </pre>
           </div>
 
