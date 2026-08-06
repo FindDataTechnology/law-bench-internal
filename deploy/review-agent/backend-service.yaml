@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: review-agent-backend
+  namespace: law-bench
+spec:
+  type: ClusterIP
+  selector:
+    app: review-agent-backend
+  ports:
+    - port: 8000
+      targetPort: 8000

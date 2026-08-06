@@ -55,3 +55,6 @@ src/clauses/data/_extracted/
 # local MCP config (contains SSH creds)
 .mcp.json
 fd-coding-law-bench-mcp/site/
+contract-review-agent/frontend/node_modules/
+contract-review-agent/.venv/
+contract-review-agent/frontend/.next/
