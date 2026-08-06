@@ -92,14 +92,11 @@ def create_app() -> FastAPI:
         app.add_middleware(APIKeyMiddleware, api_keys=config.api_keys)
 
     # Register routes
-    from .routes import agent_runs, health
-    from .copilotkit import setup_copilotkit
+    from .routes import agent_runs, chat, health
 
     app.include_router(health.router, prefix="/api")
     app.include_router(agent_runs.router, prefix="/api")
-
-    # CopilotKit AG-UI endpoint (mounts the LangGraph graph at /)
-    setup_copilotkit(app)
+    app.include_router(chat.router, prefix="/api")
 
     return app
 
