@@ -3,14 +3,23 @@
 import { useAgent } from "@copilotkit/react-core/v2";
 
 export function MetricsPanel() {
-  const { agent } = useAgent({ agentId: "contract-review-agent" });
+  const { agent } = useAgent();
 
-  const modelCalls = agent.state?.model_calls || [];
-  const totalTokens = modelCalls.reduce((sum: number, call: any) => sum + (call.tokens || 0), 0);
-  const totalCost = modelCalls.reduce((sum: number, call: any) => sum + (call.cost || 0), 0);
-  const totalDuration = agent.state?.total_duration || 0;
-  const totalSlots = agent.state?.slots?.length || 0;
-  const humanFilled = agent.state?.human_filled_slots || 0;
+  const state = (agent?.state ?? {}) as Record<string, any>;
+  const modelCalls: any[] = state.model_calls ?? [];
+  const totalTokens = modelCalls.reduce(
+    (sum: number, call: any) => sum + (call.tokens || 0),
+    0
+  );
+  const totalCost = modelCalls.reduce(
+    (sum: number, call: any) => sum + (call.cost || 0),
+    0
+  );
+  const totalDuration: number = state.total_duration ?? 0;
+  const totalSlots: number = state.slots?.length ?? 0;
+  const humanFilled: number = state.human_filled_slots ?? 0;
+  const coveragePct =
+    totalSlots > 0 ? ((humanFilled / totalSlots) * 100).toFixed(0) : "0";
 
   return (
     <div className="bg-white rounded-lg shadow p-4">
@@ -35,7 +44,7 @@ export function MetricsPanel() {
         <div className="flex justify-between">
           <span className="text-gray-600">槽位覆盖率:</span>
           <span className="font-mono">
-            {humanFilled}/{totalSlots} ({totalSlots > 0 ? ((humanFilled / totalSlots) * 100).toFixed(0) : 0}%)
+            {humanFilled}/{totalSlots} ({coveragePct}%)
           </span>
         </div>
       </div>

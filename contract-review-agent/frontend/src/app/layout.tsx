@@ -13,7 +13,7 @@ export default function RootLayout({
       <body style={{ margin: 0, padding: 0 }}>
         <CopilotKit
           runtimeUrl="/api/copilotkit"
-          agent="contract-review-agent"
+          agentId="contract-review-agent"
         >
           {children}
         </CopilotKit>
