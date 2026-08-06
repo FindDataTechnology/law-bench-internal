@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Chat } from "../components/chat";
 import { StatePanel } from "../components/state-panel";
 import { MetricsPanel } from "../components/metrics-panel";
+import { RubricPanel } from "../components/rubric-panel";
 
 export type ChatResult = {
   thread_id: string;
@@ -37,7 +38,7 @@ export default function Home() {
               Contract Review Agent
             </h1>
             <p className="text-xs text-slate-500">
-              多模型合同评审 · 3个AI并行分析 · 双重评估
+              多模型合同评审 · 3 个 AI 并行分析 · 双重评估
             </p>
           </div>
         </div>
@@ -62,6 +63,7 @@ export default function Home() {
             <EmptyState />
           ) : (
             <>
+              <RubricPanel result={result} />
               <StatePanel result={result} />
               <MetricsPanel result={result} />
             </>
@@ -81,7 +83,7 @@ function EmptyState() {
           等待评审开始
         </h2>
         <p className="text-sm text-slate-400 leading-relaxed">
-          在左侧聊天框输入消息（例如「生成一份农产品买卖合同"），
+          在左侧聊天框输入消息（例如「生成一份农产品买卖合同」），
           系统会用 3 个 AI 评审员并行分析合同，并给出双重评估结果。
         </p>
         <div className="mt-6 grid grid-cols-3 gap-3 text-xs">
