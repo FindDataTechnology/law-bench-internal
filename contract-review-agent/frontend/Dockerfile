@@ -32,7 +32,9 @@ ENV NODE_ENV=production \
 # Next.js standalone output copies only the needed files into .next/standalone.
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
+# public/ may not exist if the app has no static assets; create an empty one so
+# the COPY doesn't fail.
+RUN mkdir -p ./public
 
 # Runtime env: the backend Service DNS inside the cluster.
 ENV BACKEND_URL=http://review-agent-backend:8000
