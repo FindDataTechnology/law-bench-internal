@@ -19,7 +19,7 @@ spec:
         - name: harbor-pull
       containers:
         - name: frontend
-          image: 23.144.68.246:30880/law-bench/review-agent-frontend:latest
+          image: harbor.local/law-bench/review-agent-frontend:latest
           imagePullPolicy: IfNotPresent
           env:
             - name: BACKEND_URL
