@@ -20,9 +20,9 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     PYTHONPATH=/app
 
-# Build deps for psycopg (libpq-dev + gcc).
+# Build deps for psycopg (libpq-dev + gcc) + LibreOffice headless for DOCX->PDF.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpq-dev gcc \
+    && apt-get install -y --no-install-recommends libpq-dev gcc libreoffice-writer \
     && rm -rf /var/lib/apt/lists/*
 
 # 1. Install the PARENT project deps (provides src.* transitive deps).
