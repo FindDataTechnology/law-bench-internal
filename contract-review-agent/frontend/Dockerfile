@@ -10,8 +10,10 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
 
-COPY package.json yarn.lock ./
-RUN yarn install --frozen-lockfile
+# Generate a fresh lockfile from the pinned package.json (no committed yarn.lock
+# to avoid the version-mismatch rebuild loop).
+COPY package.json ./
+RUN yarn install
 
 COPY . .
 # BACKEND_URL is read at build time by next.config.js rewrites; default to the
