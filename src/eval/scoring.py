@@ -127,3 +127,159 @@ def evaluate_contract(
         or os.environ.get("EVAL_MODEL"),
         "scored_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def evaluate_with_multi_judge(
+    contract_text: str,
+    rubric_name: str,
+    task_desc: Optional[str] = None,
+    judge_models: Optional[list[str]] = None,
+    verbose: bool = False,
+    max_workers: int = 8,
+    db_path=DEFAULT_DB,
+) -> dict:
+    """Multi-judge evaluation with majority voting.
+
+    Runs N judges in parallel (one per model), aggregates verdicts using
+    majority voting. Returns consensus verdict with confidence scores.
+
+    Args:
+        contract_text: The contract to evaluate
+        rubric_name: Rubric to evaluate against
+        task_desc: Original user request (optional context)
+        judge_models: List of model names (default: ["kimi-k3", "glm-5", "deepseek"])
+        verbose: Show detailed judge output
+        max_workers: Max parallel workers
+        db_path: Database path
+
+    Returns:
+        Dict with consensus verdicts, confidence scores, and per-judge breakdown
+    """
+    if judge_models is None:
+        judge_models = ["kimi-k3", "glm-5", "deepseek"]
+
+    criteria = load_criteria(rubric_name, db_path=db_path)
+    n_criteria = len(criteria)
+
+    # Run each judge in parallel
+    judge_results = {}
+    judge_errors = []
+
+    def _run_judge(model_name: str) -> tuple[str, dict]:
+        """Run one judge model, return (model_name, result_dict)."""
+        try:
+            # Set EVAL_MODEL for this judge
+            old_model = os.environ.get("EVAL_MODEL")
+            os.environ["EVAL_MODEL"] = model_name
+
+            result = evaluate_contract(
+                contract_text=contract_text,
+                rubric_name=rubric_name,
+                task_desc=task_desc,
+                verbose=verbose,
+                max_workers=max_workers,
+                db_path=db_path,
+            )
+
+            # Restore original model
+            if old_model:
+                os.environ["EVAL_MODEL"] = old_model
+
+            return model_name, result
+        except Exception as e:
+            return model_name, {"error": str(e)}
+
+    # Execute judges in parallel
+    with ThreadPoolExecutor(max_workers=len(judge_models)) as pool:
+        futures = [pool.submit(_run_judge, model) for model in judge_models]
+        for future in futures:
+            model_name, result = future.result()
+            if "error" in result:
+                judge_errors.append({"model": model_name, "error": result["error"]})
+            else:
+                judge_results[model_name] = result
+
+    n_judges = len(judge_results)
+    if n_judges == 0:
+        raise RuntimeError(f"All judges failed: {judge_errors}")
+
+    # Aggregate verdicts per criterion using majority voting
+    consensus_results = []
+    n_unanimous_pass = 0
+    n_majority_pass = 0
+    n_failures = 0
+
+    for i, criterion in enumerate(criteria):
+        criterion_id = criterion["id"]
+
+        # Collect verdicts from all judges
+        verdicts = []
+        per_judge_reasoning = {}
+        for model_name, result in judge_results.items():
+            if "criteria_results" in result and i < len(result["criteria_results"]):
+                cr = result["criteria_results"][i]
+                verdicts.append(cr["verdict"])
+                per_judge_reasoning[model_name] = cr.get("reasoning", "")
+
+        # Majority vote
+        pass_count = verdicts.count("pass")
+        fail_count = verdicts.count("fail")
+
+        if pass_count > fail_count:
+            consensus_verdict = "pass"
+            confidence = pass_count / n_judges
+            if pass_count == n_judges:
+                n_unanimous_pass += 1
+            else:
+                n_majority_pass += 1
+        else:
+            consensus_verdict = "fail"
+            confidence = fail_count / n_judges
+            n_failures += 1
+
+        # Use reasoning from first judge that agreed with consensus
+        consensus_reasoning = ""
+        for model_name, result in judge_results.items():
+            if "criteria_results" in result and i < len(result["criteria_results"]):
+                cr = result["criteria_results"][i]
+                if cr["verdict"] == consensus_verdict:
+                    consensus_reasoning = cr.get("reasoning", "")
+                    break
+
+        consensus_results.append({
+            "id": criterion_id,
+            "title": criterion["title"],
+            "verdict": consensus_verdict,
+            "confidence": confidence,
+            "reasoning": consensus_reasoning,
+            "per_judge_reasoning": per_judge_reasoning,
+        })
+
+    n_passed = n_unanimous_pass + n_majority_pass
+    all_pass = n_passed == n_criteria
+
+    # Determine low_confidence flag
+    min_confidence = min((r["confidence"] for r in consensus_results), default=0.0)
+    low_confidence = min_confidence < 0.67 if n_judges < 3 else False
+
+    return {
+        "rubric": rubric_name,
+        "score": 1.0 if all_pass and not low_confidence else 0.0,
+        "max_score": 1.0,
+        "all_pass": all_pass,
+        "n_criteria": n_criteria,
+        "n_passed": n_passed,
+        "n_unanimous_pass": n_unanimous_pass,
+        "n_majority_pass": n_majority_pass,
+        "n_failures": n_failures,
+        "low_confidence": low_confidence,
+        "summary": (
+            f"{n_passed}/{n_criteria} criteria passed. ALL PASS."
+            if all_pass
+            else f"{n_passed}/{n_criteria} criteria passed. Missed {n_criteria - n_passed} - FAIL."
+        ),
+        "criteria_results": consensus_results,
+        "judge_models": list(judge_results.keys()),
+        "judge_errors": judge_errors,
+        "scored_at": datetime.now(timezone.utc).isoformat(),
+    }

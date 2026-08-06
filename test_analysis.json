@@ -1,0 +1,39 @@
+[
+  {
+    "type": "reject_clauses",
+    "clause_id": 7257,
+    "section": "所有权保留",
+    "body_preview": "双方可约定所有权保留：买受人付清全部价款前，标的物所有权归出卖人；出卖人应于{{system_name}}办理动产担保登记，否则不得对抗善意第三人。付清全款后所有权转移至买受人（参见《民法典》第641...",
+    "reject_count": 4,
+    "reasons": [
+      "住宅属于不动产，不适用《民法典》第 641 条关于动产所有权保留的规定；不动产物权变动以登记为生效要件，而非付款完成，该条款存在法律适用错误。",
+      "条款涉及所有权保留及担保登记，属于买卖合同特有制度，不适用于住宅租赁，强行使用会导致法律适用错误。",
+      "所有权保留条款适用于买卖合同，若本合同实质为租赁关系，则所有权不发生转移，该条款无效且误导。"
+    ],
+    "confidence": "medium"
+  },
+  {
+    "type": "reject_clauses",
+    "clause_id": 7263,
+    "section": "试用期",
+    "body_preview": "本合同为固定期限劳动合同，试用期为2个月。试用期工资不低于转正工资的80%。...",
+    "reject_count": 2,
+    "reasons": [
+      "Trial period validity depends on contract term which is not specified; risks non-compliance with Lab",
+      "仅提及固定期但未约定具体合同期限，且试用期时长需与合同期限法定匹配，存在合规风险，建议由 Base 条款完善合同期限及试用期逻辑。"
+    ],
+    "confidence": "medium"
+  },
+  {
+    "type": "reject_clauses",
+    "clause_id": 7256,
+    "section": "检验期间",
+    "body_preview": "买受人应当在收到标的物之日起{{inspection_days}}日内完成数量与质量检验；发现隐蔽瑕疵的，应在发现后{{notice_days}}日内以书面形式通知出卖人，怠于通知的视为标的物数量或质...",
+    "reject_count": 2,
+    "reasons": [
+      "条款主体为买受人/出卖人且涉及质量检验异议，属于买卖合同特征，与输入要求的住宅租赁场景冲突，导致合同类型识别错误。",
+      "条款主体为买卖关系（买受人/出卖人），与合同名称中的‘租赁’属性存在法律定性冲突，可能导致权利义务界定不清。"
+    ],
+    "confidence": "medium"
+  }
+]

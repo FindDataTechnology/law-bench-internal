@@ -24,6 +24,9 @@ spec:
           envFrom:
             - secretRef:
                 name: review-agent-secrets
+          env:
+            - name: CORS_ORIGINS
+              value: "http://23.144.68.246:30830,http://23.144.68.246:30831,http://localhost:3000"
           ports:
             - containerPort: 8000
           livenessProbe:

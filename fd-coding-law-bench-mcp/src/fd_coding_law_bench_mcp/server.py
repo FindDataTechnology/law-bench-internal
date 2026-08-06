@@ -20,6 +20,8 @@ from .tools import evaluate as _evaluate  # noqa: E402,F401
 from .tools import generate as _generate  # noqa: E402,F401
 from .tools import law_info as _law_info  # noqa: E402,F401
 from .tools import pipeline as _pipeline  # noqa: E402,F401
+from .tools import auto_pipeline as _auto_pipeline  # noqa: E402,F401
+from .tools import tag_iteration as _tag_iteration  # noqa: E402,F401
 from .tools import prompts as _prompts  # noqa: E402,F401
 from .tools import rag as _rag  # noqa: E402,F401
 from .tools import rubrics as _rubrics  # noqa: E402,F401
@@ -28,6 +30,7 @@ from .tools import content as _content  # noqa: E402,F401
 from .tools import batch as _batch  # noqa: E402,F401
 from .tools import catalog as _catalog  # noqa: E402,F401
 from .tools import artifacts as _artifacts  # noqa: E402,F401
+from .tools import agent_metrics as _agent_metrics  # noqa: E402,F401
 
 
 def main() -> None:

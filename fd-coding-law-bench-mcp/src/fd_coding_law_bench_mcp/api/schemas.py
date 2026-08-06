@@ -238,3 +238,52 @@ class ErrorResponse(BaseModel):
         default=None,
         description="Trace ID for debugging"
     )
+
+
+# ============================================================================
+# Agent Runs Schemas (for contract-review-agent metrics)
+# ============================================================================
+
+class AgentRunStoreRequest(BaseModel):
+    """Request schema for storing an agent run."""
+
+    thread_id: str = Field(..., description="LangGraph thread identifier")
+    contract_type: str = Field(..., description="Contract type key")
+    tags: Optional[Dict[str, Any]] = Field(default=None, description="Tags used")
+    task_desc: Optional[str] = Field(default=None, description="Drafting request")
+    node_timings: Optional[Dict[str, float]] = Field(default=None, description="Per-node timings")
+    model_calls: Optional[List[Dict[str, Any]]] = Field(default=None, description="Per-model calls")
+    review_suggestions: Optional[List[Dict[str, Any]]] = Field(default=None, description="Suggestions before triage")
+    suggestions_applied: Optional[List[Dict[str, Any]]] = Field(default=None, description="Accepted suggestions")
+    total_slots: int = Field(default=0, description="Total slots in contract")
+    human_filled_slots: int = Field(default=0, description="Slots filled by human")
+    eval_run_id: Optional[int] = Field(default=None, description="FK to eval_runs")
+    deepeval_scores: Optional[Dict[str, Any]] = Field(default=None, description="Deepeval metrics")
+    total_duration: Optional[float] = Field(default=None, description="Wall-clock duration")
+
+
+class AgentRunResponse(BaseModel):
+    """Response schema for a single agent run."""
+
+    id: int = Field(..., description="Row ID")
+    thread_id: str = Field(..., description="Thread identifier")
+    contract_type: str = Field(..., description="Contract type")
+    tags: Dict[str, Any] = Field(..., description="Tags used")
+    task_desc: Optional[str] = Field(default=None)
+    node_timings: Dict[str, float] = Field(default_factory=dict)
+    model_calls: List[Dict[str, Any]] = Field(default_factory=list)
+    review_suggestions: List[Dict[str, Any]] = Field(default_factory=list)
+    suggestions_applied: List[Dict[str, Any]] = Field(default_factory=list)
+    total_slots: int = Field(default=0)
+    human_filled_slots: int = Field(default=0)
+    eval_run_id: Optional[int] = Field(default=None)
+    deepeval_scores: Dict[str, Any] = Field(default_factory=dict)
+    total_duration: Optional[float] = Field(default=None)
+    created_at: str = Field(..., description="ISO timestamp")
+
+
+class AgentRunListResponse(BaseModel):
+    """Response schema for listing recent agent runs."""
+
+    runs: List[AgentRunResponse] = Field(..., description="Recent agent runs")
+    total: int = Field(..., description="Total count")

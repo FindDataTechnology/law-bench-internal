@@ -4,9 +4,10 @@ metadata:
   name: review-agent-backend
   namespace: law-bench
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app: review-agent-backend
   ports:
     - port: 8000
       targetPort: 8000
+      nodePort: 30831

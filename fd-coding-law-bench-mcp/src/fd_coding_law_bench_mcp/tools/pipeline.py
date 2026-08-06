@@ -14,7 +14,7 @@ from ..server import mcp
 
 
 @mcp.tool(tags={"pipeline"})
-async def pipeline_run(
+async def self_heal_pipeline_run(
     contract_type: str,
     tags: dict | None = None,
     stance: str | None = None,
@@ -31,6 +31,8 @@ async def pipeline_run(
     store``. The ``improve`` node excludes thin custom clauses **per run** (via
     ``custom_clause_ids``) and records ``clause_review`` recommendations without
     executing them. The best-scoring iteration is persisted.
+
+    **Concurrency:** Safe to run in parallel (read-only on clauses table).
 
     Parameters:
         contract_type: contract class key (e.g. ``"sale"``).
@@ -51,10 +53,10 @@ async def pipeline_run(
     n_passed, n_criteria, summary, iteration, actions_taken, recommendations}``.
     An unknown contract type or a missing default rubric raises a tool error.
     """
-    from ..pipeline.graph import run_pipeline
+    from ..pipeline.graph import run_self_heal_pipeline
 
     def _go() -> dict:
-        state = run_pipeline(
+        state = run_self_heal_pipeline(
             contract_type,
             tags=tags,
             stance=stance,
@@ -82,6 +84,10 @@ async def pipeline_run(
         }
 
     return await anyio.to_thread.run_sync(_go)
+
+
+# Backward compatibility alias (deprecated)
+pipeline_run = self_heal_pipeline_run
 
 
 @mcp.tool(tags={"pipeline"})

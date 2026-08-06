@@ -78,6 +78,11 @@ from .routes import contracts, tags  # noqa: E402
 app.include_router(contracts.router, prefix="/contracts", tags=["contracts"])
 app.include_router(tags.router, prefix="/tags", tags=["tags"])
 
+# Agent runs endpoints for contract-review-agent metrics
+from .routes import agent_runs  # noqa: E402
+
+app.include_router(agent_runs.router, prefix="/api", tags=["Agent Runs"])
+
 # Health check endpoint
 @app.get("/health", include_in_schema=False)
 async def health_check():

@@ -1,6 +1,12 @@
-"""LangGraph contract-pipeline: generate -> fill -> evaluate -> (self-heal) -> store.
+"""Self-heal pipeline: generate -> fill -> evaluate -> (self-heal) -> store.
 
-Hosted inside the ``pipeline_run`` MCP tool (B+). Nodes call the existing MCP
+This is the standard contract generation pipeline with self-healing capability.
+When evaluation fails, the improve node diagnoses failing clauses and excludes
+thin custom overrides, allowing richer base clauses to take over.
+
+**Concurrency:** Safe to run in parallel (read-only on clauses table).
+
+Hosted inside the ``self_heal_pipeline_run`` MCP tool. Nodes call the existing MCP
 tool **functions** (``contract_generate``, ``contract_evaluate``, ``clause_list``)
 in-process, plus the LLM ``fill`` / ``improve`` nodes and ``pipeline_store``. The
 self-heal loop excludes thin custom clauses **per run** (via ``custom_clause_ids``)
@@ -64,6 +70,10 @@ class PipelineState(TypedDict, total=False):
     actions_taken: list
     recommendations: list
     pipeline_run_id: int
+    # auto_reject_pipeline fields
+    learn_applied: list
+    # tag_iteration_pipeline fields
+    retag_suggestions: list
 
 
 def default_rubric(contract_type: str) -> str:
@@ -244,8 +254,8 @@ def store_node(state: PipelineState) -> dict:
     return {"pipeline_run_id": pid}
 
 
-def build_graph():
-    """Compile and return the pipeline StateGraph."""
+def build_self_heal_graph():
+    """Compile and return the self-heal pipeline StateGraph."""
     g = StateGraph(PipelineState)
     g.add_node("generate", generate_node)
     g.add_node("fill", fill_node)
@@ -263,7 +273,7 @@ def build_graph():
     return g.compile()
 
 
-def run_pipeline(
+def run_self_heal_pipeline(
     contract_type: str,
     tags: dict | None = None,
     stance: str | None = None,
@@ -274,7 +284,7 @@ def run_pipeline(
     max_iterations: int = 3,
     custom_clause_ids: list[int] | None = None,
 ) -> dict:
-    """Run the pipeline graph; return the final state (incl. ``pipeline_run_id``)."""
+    """Run the self-heal pipeline graph; return the final state (incl. ``pipeline_run_id``)."""
     if rubric is None:
         rubric = default_rubric(contract_type)
     if stance is None:
@@ -294,4 +304,9 @@ def run_pipeline(
         "actions_taken": [],
         "recommendations": [],
     }
-    return build_graph().invoke(initial)
+    return build_self_heal_graph().invoke(initial)
+
+
+# Backward compatibility aliases (deprecated)
+build_graph = build_self_heal_graph
+run_pipeline = run_self_heal_pipeline

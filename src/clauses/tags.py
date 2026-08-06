@@ -33,9 +33,6 @@ TAG_VOCAB: dict[str | None, dict[str, list[str]]] = {
     None: {
         "source": ["base", "tagged", "custom"],
         "stance": ["pro_a", "pro_b", "balanced"],
-        "strength": ["strong", "standard", "mild"],
-        "risk": ["high", "medium", "low"],
-        "mandatory": ["mandatory", "default", "recommended"],
     }
 }
 
@@ -130,6 +127,9 @@ def validate_tags(tags: dict | None, contract_type: str | None = None) -> dict:
         vs = str(v)
         if not vs:
             continue
+        # Resolve stance aliases for backward compatibility
+        if k == "stance" and vs in ("pro_seller", "pro_buyer"):
+            vs = "pro_a" if vs == "pro_seller" else "pro_b"
         if k == "scenario":
             out[k] = vs  # lenient: LLM-suggested/governed, keep any non-empty
         elif k in FREE_FORM_TAGS:
@@ -161,6 +161,9 @@ def normalize_tags(tags: dict | None, contract_type: str | None = None) -> dict:
         vs = str(v)
         if not vs:
             continue
+        # Resolve stance aliases for backward compatibility
+        if k == "stance" and vs in ("pro_seller", "pro_buyer"):
+            vs = "pro_a" if vs == "pro_seller" else "pro_b"
         if k == "scenario":
             out[k] = vs  # lenient
         elif k in FREE_FORM_TAGS:
@@ -183,3 +186,51 @@ def tag_vocab_for_type(contract_type: str | None = None) -> dict[str, list[str]]
     if contract_type:
         merged.update(TAG_VOCAB.get(contract_type, {}))
     return merged
+
+
+def register_legal_topic_dims(contract_type: str, criteria_names: list[str], db=None) -> None:
+    """Register legal_topic dimension for a contract type based on rubric criteria.
+
+    Each rubric criterion becomes a legal_topic value, establishing a 1-to-1
+    mapping between rubric criteria and clause topics. This enables the
+    self-iteration pipeline to target specific legal concepts when generating
+    or selecting clauses.
+
+    Args:
+        contract_type: The contract type key (e.g., "sale", "lease")
+        criteria_names: List of rubric criterion names (e.g., ["ownership_transfer", "risk_transfer"])
+        db: Database connection (optional, uses default if None)
+    """
+    if not criteria_names:
+        return
+
+    # Register as type-specific dimension
+    register_tag_dim(
+        contract_type=contract_type,
+        name="legal_topic",
+        category="法律主题",
+        values=criteria_names,
+        free_form=False,
+        zh_label="法律主题",
+    )
+
+    # Persist to database
+    try:
+        from src.eval.db import connect
+        from psycopg.types.json import Jsonb
+
+        conn = connect(db)
+        try:
+            conn.execute(
+                "INSERT INTO tag_dims (name, contract_type, category, values, free_form, zh_label) "
+                "VALUES (%s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT (name, contract_type) DO UPDATE SET values = EXCLUDED.values",
+                ("legal_topic", contract_type, "法律主题", Jsonb(criteria_names), False, "法律主题"),
+            )
+            conn.commit()
+        finally:
+            if db is None:
+                conn.close()
+    except Exception:
+        # If database persistence fails, in-memory registration still works
+        pass
