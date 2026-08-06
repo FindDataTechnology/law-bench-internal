@@ -80,6 +80,9 @@ async def get_agent_run(run_id: int) -> Any:
     row = get_agent_run(run_id)
     if row is None:
         raise HTTPException(status_code=404, detail=f"agent run {run_id} not found")
+    ca = row.get("created_at")
+    if ca is not None and not isinstance(ca, str):
+        row["created_at"] = ca.isoformat() if hasattr(ca, "isoformat") else str(ca)
     return row
 
 
@@ -88,4 +91,10 @@ async def list_agent_runs(limit: int = 20) -> list[dict]:
     """Recent agent_runs rows (summary fields only)."""
     from agent.store import list_agent_runs
 
-    return list_agent_runs(limit=limit)
+    rows = list_agent_runs(limit=limit)
+    # Convert datetime -> ISO string for the response model.
+    for r in rows:
+        ca = r.get("created_at")
+        if ca is not None and not isinstance(ca, str):
+            r["created_at"] = ca.isoformat() if hasattr(ca, "isoformat") else str(ca)
+    return rows
