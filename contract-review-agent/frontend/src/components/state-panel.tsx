@@ -2,53 +2,57 @@
 
 import type { ChatResult } from "../app/page";
 
-const NODE_ORDER = [
-  "generate_v1",
-  "review_panel",
-  "synthesize",
-  "generate_quiz",
-  "generate_v2",
-  "evaluate",
-  "export",
-] as const;
+const NODE_LABELS: Record<string, string> = {
+  generate_v1: "生成草案",
+  review_panel: "多模型评审",
+  synthesize: "综合建议",
+  generate_quiz: "生成填槽",
+  generate_v2: "生成终稿",
+  evaluate: "双重评估",
+  export: "导出文档",
+};
+
+const NODE_ICONS: Record<string, string> = {
+  generate_v1: "📝",
+  review_panel: "🔍",
+  synthesize: "🔀",
+  generate_quiz: "❓",
+  generate_v2: "📄",
+  evaluate: "📊",
+  export: "📤",
+};
 
 export function StatePanel({ result }: { result: ChatResult | null }) {
-  if (!result) {
-    return (
-      <div className="bg-white rounded-lg shadow p-4">
-        <h2 className="text-lg font-semibold mb-3 text-gray-800">进度面板</h2>
-        <p className="text-sm text-gray-400 italic">
-          等待启动...在左侧聊天框输入消息开始。
-        </p>
-      </div>
-    );
-  }
-
-  const timings = result.node_timings || {};
-  const reviews = result.reviews || [];
-  const suggestions = result.synthesized_suggestions || [];
-  const slots = result.slots || [];
-  const errors = result.errors || [];
+  const timings = result?.node_timings || {};
+  const reviews = result?.reviews || [];
+  const suggestions = result?.synthesized_suggestions || [];
+  const errors = (result?.errors || []).filter(
+    (e) => !e.message?.includes("isn't mapped")
+  );
 
   return (
-    <div className="bg-white rounded-lg shadow p-4 space-y-4">
-      <h2 className="text-lg font-semibold text-gray-800">评审结果</h2>
-
+    <div className="space-y-4">
       {/* Node timings */}
-      <div>
-        <h3 className="text-sm font-medium text-gray-700 mb-2">⏱ 节点耗时</h3>
-        <div className="space-y-1">
-          {NODE_ORDER.map((node) => {
+      <div className="bg-white rounded-xl border border-slate-200 p-4">
+        <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+          <span>⏱</span> 执行流程
+          <span className="ml-auto text-xs font-normal text-slate-400">
+            总耗时 {result?.total_duration || 0}s
+          </span>
+        </h3>
+        <div className="space-y-1.5">
+          {Object.entries(NODE_LABELS).map(([node, label]) => {
             const t = timings[node];
             if (t === undefined) return null;
             return (
               <div
                 key={node}
-                className="flex items-center gap-2 px-3 py-1 rounded text-sm bg-green-50"
+                className="flex items-center gap-3 px-3 py-2 rounded-lg bg-green-50 border border-green-100"
               >
-                <span>✅</span>
-                <span className="flex-1 text-gray-700">{node}</span>
-                <span className="text-xs text-gray-500">{t}s</span>
+                <span className="text-base">{NODE_ICONS[node]}</span>
+                <span className="text-sm text-slate-700 flex-1">{label}</span>
+                <span className="text-xs font-mono text-slate-500">{t}s</span>
+                <span className="text-green-600 text-xs">✓</span>
               </div>
             );
           })}
@@ -57,62 +61,116 @@ export function StatePanel({ result }: { result: ChatResult | null }) {
 
       {/* Reviews */}
       {reviews.length > 0 && (
-        <div className="pt-3 border-t">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">
-            🔍 评审员反馈（{reviews.length}个模型）
+        <div className="bg-white rounded-xl border border-slate-200 p-4">
+          <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+            <span>🔍</span> 评审员反馈
+            <span className="ml-auto text-xs font-normal text-slate-400">
+              {reviews.length} 个模型
+            </span>
           </h3>
           <div className="space-y-2">
-            {reviews.map((r, i) => (
-              <div key={i} className="text-sm border rounded p-2">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-medium text-gray-800">{r.name}</span>
-                  <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">
-                    {r.lens}
-                  </span>
-                  <span className="text-xs text-gray-500">{r.model}</span>
-                  {r.error && <span className="text-xs text-red-500">⚠️ 错误</span>}
+            {reviews.map((r, i) => {
+              const suggCount = r.suggestions?.length || 0;
+              return (
+                <div
+                  key={i}
+                  className="border border-slate-200 rounded-lg p-3 hover:border-brand-300 transition-colors"
+                >
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="font-medium text-sm text-slate-800">
+                      {r.name}
+                    </span>
+                    <span className="text-[10px] px-1.5 py-0.5 bg-brand-50 text-brand-700 rounded font-medium">
+                      {r.lens}
+                    </span>
+                    {r.error && (
+                      <span className="text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded">
+                        ⚠️
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-slate-500">
+                    <span>{r.model}</span>
+                    <span>·</span>
+                    <span>{suggCount} 条建议</span>
+                    <span>·</span>
+                    <span>{r.timing}s</span>
+                    {r.tokens > 0 && (
+                      <>
+                        <span>·</span>
+                        <span>{r.tokens} tokens</span>
+                      </>
+                    )}
+                  </div>
                 </div>
-                <p className="text-xs text-gray-600">
-                  {r.suggestions?.length || 0} 条建议 · {r.timing}s · {r.tokens || 0} tokens
-                </p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
 
       {/* Suggestions */}
       {suggestions.length > 0 && (
-        <div className="pt-3 border-t">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">
-            📝 综合建议（{suggestions.length}条）
+        <div className="bg-white rounded-xl border border-slate-200 p-4">
+          <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+            <span>📝</span> 综合建议
+            <span className="ml-auto text-xs font-normal text-slate-400">
+              {suggestions.length} 条
+            </span>
           </h3>
-          <div className="space-y-1">
-            {suggestions.slice(0, 8).map((s, i) => (
-              <div key={i} className="text-xs border-l-2 pl-2 py-1"
-                style={{
-                  borderColor: s.severity === "critical" ? "#dc2626" : s.severity === "warning" ? "#f59e0b" : "#9ca3af"
-                }}
-              >
-                <span className="font-medium">[{s.severity}]</span>{" "}
-                <span className="text-gray-700">{s.section}</span>:{" "}
-                {s.recommendation?.slice(0, 80)}
-              </div>
-            ))}
+          <div className="space-y-2">
+            {suggestions.slice(0, 10).map((s, i) => {
+              const color =
+                s.severity === "critical"
+                  ? "border-l-red-500 bg-red-50"
+                  : s.severity === "warning"
+                  ? "border-l-amber-500 bg-amber-50"
+                  : "border-l-slate-400 bg-slate-50";
+              const badge =
+                s.severity === "critical"
+                  ? "bg-red-100 text-red-700"
+                  : s.severity === "warning"
+                  ? "bg-amber-100 text-amber-700"
+                  : "bg-slate-200 text-slate-600";
+              return (
+                <div
+                  key={i}
+                  className={`border-l-2 ${color} rounded-r-lg p-2.5`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${badge}`}
+                    >
+                      {s.severity}
+                    </span>
+                    <span className="text-xs font-medium text-slate-700">
+                      {s.section}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    {s.recommendation}
+                  </p>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
 
-      {/* Errors */}
+      {/* Errors (non-model-mapping) */}
       {errors.length > 0 && (
-        <div className="pt-3 border-t">
-          <h3 className="text-sm font-medium text-red-600 mb-2">
-            ⚠️ 警告（{errors.length}条）
+        <div className="bg-white rounded-xl border border-amber-200 p-4">
+          <h3 className="text-sm font-semibold text-amber-700 mb-2 flex items-center gap-2">
+            <span>⚠️</span> 警告
+            <span className="ml-auto text-xs font-normal text-slate-400">
+              {errors.length} 条
+            </span>
           </h3>
           <div className="space-y-1">
             {errors.slice(0, 5).map((e, i) => (
-              <div key={i} className="text-xs text-gray-500">
-                [{e.node}] {e.message?.slice(0, 80)}
+              <div key={i} className="text-xs text-slate-500">
+                <span className="font-mono text-amber-600">[{e.node}]</span>{" "}
+                {e.message?.slice(0, 80)}
               </div>
             ))}
           </div>
