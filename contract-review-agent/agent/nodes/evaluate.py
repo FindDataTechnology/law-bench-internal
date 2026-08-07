@@ -10,16 +10,33 @@ Deepeval side: run three metrics directly:
 - GEval("Slot Relevance"): are filled slot values contextually appropriate?
 
 Both run concurrently via anyio; the node never crashes on a metric error.
+
+Config (env):
+- EVAL_MAX_WORKERS: max concurrent criterion judges (default 2; lower to avoid
+  API rate limits, raise for speed when the endpoint allows it).
 """
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from typing import Any
 
+from dotenv import load_dotenv
 from langchain_core.runnables import RunnableConfig
 
 from ..state import ReviewState
+
+load_dotenv()
+
+
+def _eval_max_workers() -> int:
+    """Read EVAL_MAX_WORKERS from env, clamped to [1, 16]. Default 2."""
+    try:
+        val = int(os.environ.get("EVAL_MAX_WORKERS", "2"))
+    except (TypeError, ValueError):
+        return 2
+    return max(1, min(16, val))
 
 
 def _run_rubric_eval(state: ReviewState) -> dict:
@@ -50,6 +67,7 @@ def _run_rubric_eval(state: ReviewState) -> dict:
             contract_text=state.get("draft_v2") or "",
             rubric_name=rubric,
             task_desc=state.get("task_desc"),
+            max_workers=_eval_max_workers(),  # configurable to avoid rate limits
         )
         result["run_id"] = result.get("run_id")  # may be None if no_store
         return result
