@@ -94,12 +94,24 @@ async def review_panel_node(state: ReviewState, config: RunnableConfig) -> dict:
     t0 = time.perf_counter()
     model_calls = list(state.get("model_calls") or [])
 
-    # Fire all reviewers concurrently. Track the coroutine so we can map
-    # results back to their reviewer config (asyncio.as_completed yields
-    # wrapper coroutines, not the original tasks).
-    coros = [_review_once(r, draft, contract_type, scenario) for r in reviewers]
+    # Fire reviewers with configurable concurrency (default 1 = serial). The
+    # relay enforces a low concurrency cap (~4 shared), so serializing the 3
+    # reviewers avoids "并发请求过多" throttling. Config: REVIEW_CONCURRENCY.
+    import os
+
+    try:
+        concurrency = max(1, min(int(os.environ.get("REVIEW_CONCURRENCY", "1")), len(reviewers)))
+    except (TypeError, ValueError):
+        concurrency = 1
 
     reviews: list[dict] = []
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _run_one(r: dict) -> dict:
+        async with sem:
+            return await _review_once(r, draft, contract_type, scenario)
+
+    coros = [_run_one(r) for r in reviewers]
     for coro, reviewer in zip(asyncio.as_completed(coros), reviewers):
         result = await coro
         reviews.append(result)
