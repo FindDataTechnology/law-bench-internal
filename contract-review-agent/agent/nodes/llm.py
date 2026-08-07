@@ -6,11 +6,12 @@ node can record per-model metrics for the agent_runs table.
 
 All nodes go through ``call_llm`` so model-call accounting is centralized.
 
-Rate-limit resilience: the relay (www.linjie.love) enforces a low concurrency
-cap (~4) shared across all consumers. ``call_llm`` retries rate-limit /
-concurrency errors with a short backoff so a transient throttle doesn't drop a
-reviewer. Config:
-- LLM_MAX_RETRIES: retries on rate-limit/429/too-many (default 3).
+Rate-limit resilience: the relay (www.linjie.love) is a shared service with a
+low concurrency cap (~4) that is often saturated by other consumers ("没有可
+分配的空闲 PAT"). ``call_llm`` retries rate-limit / concurrency / quota /
+transient errors with backoff so a transient throttle doesn't drop a reviewer.
+Config:
+- LLM_MAX_RETRIES: retries on rate-limit/429/quota/5xx (default 4).
 - LLM_RETRY_BACKOFF: base seconds between retries (default 2).
 """
 from __future__ import annotations
@@ -29,9 +30,9 @@ os.environ.setdefault("LITELLM_MODEL_COST_MAP_URL", "")
 
 def _max_retries() -> int:
     try:
-        return max(0, int(os.environ.get("LLM_MAX_RETRIES", "3")))
+        return max(0, int(os.environ.get("LLM_MAX_RETRIES", "4")))
     except (TypeError, ValueError):
-        return 3
+        return 4
 
 
 def _retry_backoff() -> float:
@@ -42,7 +43,7 @@ def _retry_backoff() -> float:
 
 
 def _is_retryable(exc: Exception) -> bool:
-    """True for rate-limit / concurrency / transient network errors."""
+    """True for rate-limit / concurrency / quota / transient network errors."""
     msg = str(exc).lower()
     markers = (
         "ratelimit",
@@ -51,10 +52,19 @@ def _is_retryable(exc: Exception) -> bool:
         "429",
         "并发请求过多",
         "concurrency",
+        "serviceunavailable",
+        "service unavailable",
+        "没有可分配的空闲",
+        "空闲 pat",
+        "quota",
+        "配额",
         "connection reset",
         "timeout",
         "temporarily",
         "overloaded",
+        "busy",
+        "502",
+        "503",
     )
     return any(m in msg for m in markers)
 
