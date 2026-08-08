@@ -48,6 +48,9 @@ USER appuser
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Apply the agent_runs migration (idempotent) then serve.
-CMD ["sh", "-c", "python -m db.apply_migration && uvicorn api.main:app --host 0.0.0.0 --port 8000"]
+# --loop asyncio: deepeval calls nest_asyncio.apply(), which cannot patch
+# uvloop ("Can't patch loop of type uvloop.Loop"); the stdlib loop is patchable
+# and plenty fast for this workload.
+CMD ["sh", "-c", "python -m db.apply_migration && uvicorn api.main:app --host 0.0.0.0 --port 8000 --loop asyncio"]
 
 EXPOSE 8000

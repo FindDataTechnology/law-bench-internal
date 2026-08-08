@@ -122,11 +122,18 @@ async def call_llm(
         text = (resp.choices[0].message.content or "").strip()
         usage = getattr(resp, "usage", None)
         tokens = int(getattr(usage, "total_tokens", 0) or 0)
-        cost = float(
-            litellm.completion_cost(completion_response=resp)
-            if _cost_available(resp)
-            else 0.0
-        )
+        # The relay rewrites ``resp.model`` to upstream ids (gm51model, qmodel,
+        # auto, kmodel_latest) that litellm's cost map doesn't know; guard the
+        # pricing call so an unmapped model yields cost=0.0 instead of
+        # discarding a successful completion as an error.
+        try:
+            cost = float(
+                litellm.completion_cost(completion_response=resp)
+                if _cost_available(resp)
+                else 0.0
+            )
+        except Exception:
+            cost = 0.0
         latency = time.perf_counter() - t0
         return {"text": text, "tokens": tokens, "cost": cost, "latency": latency}
     except Exception as exc:  # noqa: BLE001
