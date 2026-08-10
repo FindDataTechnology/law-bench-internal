@@ -2,17 +2,28 @@
 
 ### Requirement: Tag vocabulary listing with type-specific dims
 
-The system MUST expose `tag_vocab_list` with support for both universal and per-type dimensions.
+The `tag_vocab_list` output schema SHALL drop the dead dimensions (`strength`, `risk`, `mandatory`) and MUST merge type-specific dims (including the new `legal_topic` axis, which replaces them as the filtering axis) into the response when a `contract_type` is given.
 
-#### Scenario: Universal-only vocab query
+#### Scenario: Universal-only vocab query (unchanged)
 - **WHEN** caller invokes `tag_vocab_list(contract_type=None)`
-- **THEN** response includes only universal dims: `{source, stance, strength, risk, mandatory}`
+- **THEN** response includes only universal dims: `{source, stance}` (DELETED: strength, risk, mandatory)
 
-#### Scenario: Type-specific vocab query
+#### Scenario: Type-specific vocab query (NEW)
 - **WHEN** caller invokes `tag_vocab_list(contract_type="sale")`
-- **THEN** response merges universal dims with type-specific dims: `{risk_transfer_node, quality_objection_type, retention_of_title_status}`
+- **THEN** response merges universal dims with type-specific dims:
+  ```json
+  {
+    "stance": ["pro_a", "pro_b", "balanced"],
+    "scenario": ["农产品买卖", "消费品零售", "工业品建材", "展销会", "共享服务", "其他"],
+    "legal_topic": ["party_identification", "governing_law", "clause_completeness", "legal_citation", "ownership_transfer", "risk_transfer", "inspection_period", "defect_warranty", "ownership_retention", "legal_basis"],
+    "retention_of_title_status": ["unregistered", "registered", "not_applicable"],
+    "quality_objection_type": ["appearance_defect", "hidden_defect", "performance_failure"],
+    "risk_transfer_node": ["on_delivery", "at_port_of_shipment", "at_destination", "delivered_to_carrier"]
+  }
+  ```
+  (DELETED: `strength`, `risk`, `mandatory`)
 
-#### Scenario: Lenient scenario handling
+#### Scenario: Lenient scenario handling (unchanged)
 - **WHEN** caller passes an unknown scenario value to `tag_validate`
 - **THEN** validation accepts it (scenario is free-form) rather than rejecting
 
@@ -78,3 +89,51 @@ The system MUST enable comparing scenarios across multiple contract types.
 #### Scenario: Coverage gap identification
 - **WHEN** caller inspects comparison output
 - **THEN** response highlights types missing scenario coverage that others have
+
+---
+
+## ADDED Requirements
+
+### Requirement: Clean combinatorial space (delete dead dims)
+
+The system MUST exclude dead tag dimensions from `tag_combinations_list` output.
+
+#### Scenario: Enumerate sale combinations without dead dims
+- **WHEN** system calls `tag_combinations_list(contract_type="sale", include_clause_availability=true)`
+- **THEN** response excludes combinations built from `{strength, risk, mandatory}`; only includes `{stance, scenario, legal_topic, retention_of_title_status, quality_objection_type, risk_transfer_node}`
+
+#### Scenario: Combinatorial explosion prevention
+- **WHEN** estimated tagged clause combinations exceed 1000
+- **THEN** response includes warning flag `combinatorial_warning: true` suggesting filtered enumeration by stance/scenario
+
+### Requirement: legal_topic in combination enumeration
+
+The system MUST include `legal_topic` as a dimension for contract types with rubrics.
+
+#### Scenario: Generate legal_topic values per topic
+- **WHEN** system enumerates combinations for sale
+- **THEN** each of the 10 legal_topics appears as an independent value in the Cartesian product
+
+#### Scenario: Filter by legal_topic presence
+- **WHEN** caller requests combinations where `has_tagged_clauses=true` AND `legal_topic="ownership_transfer"`
+- **THEN** response returns only scenarios where ownership_transfer has assembly-ready clauses
+
+---
+
+## MODIFIED Requirements
+
+### Requirement: Clause selection precedence with legal_topic
+
+`_select_clauses` MUST prioritize clauses matching the target `legal_topic` when available (selection is by section AND topic coverage), and SHALL fall back to section-only selection (old behavior) when no topic-matching clause exists.
+
+#### Scenario: Override resolution adds legal_topic filter
+- **WHEN** resolving one clause per section
+- **THEN** precedence is `custom(stance+legal_topic) > tagged(scenario+legal_topic) > base(母版)`
+
+#### Scenario: Coverage-based fallback
+- **WHEN** no custom clause exists for a legal_topic
+- **THEN** pipeline falls back to any clause covering that section (old behavior)
+
+#### Scenario: Tag alias resolution during clause selection
+- **WHEN** filtering custom clauses by stance
+- **THEN** alias mapping is applied: clauses with `stance: pro_seller` match user request for `pro_a`

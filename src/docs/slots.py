@@ -30,11 +30,13 @@ __all__ = [
 ]
 
 # A slot token: ``{{ name }}`` with optional inner whitespace. The captured
-# group is the slot name (``[a-zA-Z_][\\w-]*``).
-SLOT_PATTERN = re.compile(r"\{\{\s*([a-zA-Z_][\w-]*)\s*\}\}")
+# group is the slot name (Unicode word chars + dash; CJK names like
+# ``{{工作内容}}`` are valid — LLM-generated clauses emit them, and the
+# coherence gate / extractor / filler must all see the same set of slots).
+SLOT_PATTERN = re.compile(r"\{\{\s*([\w][\w-]*)\s*\}\}")
 
 # A bare slot name (used to validate names passed to :func:`slot_token`).
-SLOT_NAME_RE = re.compile(r"[a-zA-Z_][\w-]*")
+SLOT_NAME_RE = re.compile(r"[\w][\w-]*")
 
 # Run-level child tags whose text content we treat as "run text" and clear when
 # rewriting a run.

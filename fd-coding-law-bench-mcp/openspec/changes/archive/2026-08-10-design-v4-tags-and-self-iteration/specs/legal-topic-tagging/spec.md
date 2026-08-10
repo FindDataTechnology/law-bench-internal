@@ -42,9 +42,7 @@ The system MUST ensure every rubric criterion has at least one assembly-ready cl
 
 ### Requirement: Tag vocabulary listing with type-specific dims
 
-**REASON**: `legal_topic` replaces dead dimensions (`strength`, `risk`, `mandatory`) as the only new axis for filtering.
-
-**MODIFICATION**: Update `tag_vocab_list` output schema.
+The `tag_vocab_list` output schema SHALL drop the dead dimensions (`strength`, `risk`, `mandatory`) and MUST merge type-specific dims (including the new `legal_topic` axis, which replaces them as the filtering axis) into the response when a `contract_type` is given.
 
 #### Scenario: Universal-only vocab query (unchanged)
 - **WHEN** caller invokes `tag_vocab_list(contract_type=None)`
@@ -73,9 +71,7 @@ The system MUST ensure every rubric criterion has at least one assembly-ready cl
 
 ### Requirement: Stance vocabulary aliasing
 
-**REASON**: Fix vocab mismatch where pipeline generates `pro_seller/pro_buyer` but DB uses `pro_a/pro_b`.
-
-**MODIFICATION**: Add alias mapping layer during tag validation and clause selection.
+Tag validation and clause selection MUST apply an alias-mapping layer resolving `pro_seller` to `pro_a` and `pro_buyer` to `pro_b`, so pipeline-generated stance values match the DB vocabulary.
 
 #### Scenario: Map pro_seller to pro_a
 - **WHEN** system receives stance="pro_seller" from user input

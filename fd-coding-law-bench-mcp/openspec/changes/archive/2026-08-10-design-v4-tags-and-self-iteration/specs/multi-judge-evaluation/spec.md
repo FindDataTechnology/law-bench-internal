@@ -70,9 +70,7 @@ The system MUST handle partial judge availability without crashing the pipeline.
 
 ### Requirement: Evaluation scoring function
 
-**REASON**: Multi-judge verdict aggregation requires modified scoring logic.
-
-**MODIFICATION**: The `score` field is now 1.0 ONLY if ALL criteria pass with at least medium confidence; otherwise 0.0.
+The `score` field MUST be 1.0 only when ALL criteria pass with at least medium confidence (min confidence >= 0.67); otherwise it SHALL be 0.0.
 
 #### Scenario: All-pass calculation
 - **WHEN** evaluating a contract
@@ -84,9 +82,7 @@ The system MUST handle partial judge availability without crashing the pipeline.
 
 ### Requirement: Per-criterion reasoning output
 
-**REASON**: Multi-judge needs to surface which judges agreed/disagreed on each verdict.
-
-**MODIFICATION**: The `criteria_results[].reasoning` field now includes per-judge breakdown.
+The `criteria_results[].reasoning` field MUST include a per-judge breakdown showing which judges agreed or disagreed on each verdict.
 
 #### Scenario: Reasoning format
 - **WHEN** returning criteria results

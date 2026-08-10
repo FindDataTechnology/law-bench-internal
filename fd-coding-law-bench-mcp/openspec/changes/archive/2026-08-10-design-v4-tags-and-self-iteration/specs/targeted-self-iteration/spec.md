@@ -46,9 +46,7 @@ The system MUST generate new custom clauses targeting specific missing legal_top
 
 ### Requirement: Self-heal improve node behavior
 
-**REASON**: Improve node must target specific legal_topics instead of blindly excluding thin clauses.
-
-**MODIFICATION**: Replace "exclude thin overrides" logic with "identify missing topics + generate targeted clauses".
+The improve node MUST diagnose failures by mapping failing criteria to `legal_topic` coverage and generating targeted clauses for gaps, replacing the old "exclude thin overrides" logic with "identify missing topics + generate targeted clauses".
 
 #### Scenario: Diagnose failure by legal_topic (NEW)
 - **WHEN** improve node receives failing criteria
@@ -68,9 +66,7 @@ The system MUST generate new custom clauses targeting specific missing legal_top
 
 ### Requirement: Named vs unnamed contract differentiation
 
-**REASON**: Named contracts have deterministic structure from Civil Code articles; unnamed contracts require conservative handling.
-
-**MODIFICATION**: Different max_iterations and auto-reject thresholds based on contract classification.
+The pipeline MUST set `max_iterations` and auto-reject thresholds based on contract classification: aggressive defaults for named contracts (deterministic structure from Civil Code articles) and conservative defaults for unnamed contracts.
 
 #### Scenario: Classify named contract
 - **WHEN** system processes `contract_type="sale"`

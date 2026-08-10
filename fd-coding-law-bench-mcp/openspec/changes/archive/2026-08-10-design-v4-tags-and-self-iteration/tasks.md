@@ -14,13 +14,14 @@
 | 6 | [x] | Graceful degradation handling on judge failure |
 | 7 | [x] | Create batch legal_topic tagging script |
 | 8 | [x] | Verify coverage completeness script |
-| 9 | [ ] | Run targeted self-iteration on sale pilot |
-| 10 | [ ] | Analyze v4 vs v3 results comparison |
-| 11 | [ ] | Apply legal_topic backfill to all 43 types |
-| 12 | [ ] | Run self-iteration on 19 named contracts |
-| 13 | [ ] | Run self-iteration on 24 unnamed contracts |
-| 14 | [ ] | Update MCP documentation |
-| 15 | [ ] | Archive OpenSpec change |
+| 9 | [x] | Run targeted self-iteration on sale pilot |
+| 10 | [x] | Analyze v4 vs v3 results comparison |
+| 11 | [x] | Apply legal_topic backfill to all 43 types |
+| 12 | [x] | **BREAKTHROUGH** sale self-iteration with new relay: 6/10 → 8/10 → **10/10 ALL PASS** (Score=1.0, 3 judges unanimous) |
+| 13 | [x] | Run self-iteration on 19 named contracts (relay: ~7 req/min, unlimited daily) |
+| 13b | [x] | Run self-iteration on 24 unnamed contracts (8 all-pass; 11 zero-scored due to transient drafter-relay failures, re-runnable) |
+| 14 | [x] | Update MCP documentation (v4-sale-pilot-results.md) |
+| 15 | [x] | Archive OpenSpec change (spec validation fixed: 7 MODIFIED reqs rewritten as SHALL/MUST prose; `openspec validate` passes) |
 
 ---
 

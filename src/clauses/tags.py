@@ -36,6 +36,10 @@ TAG_VOCAB: dict[str | None, dict[str, list[str]]] = {
     }
 }
 
+# Lazy-load guard: once a DB-backed vocab has been loaded, the starter set is
+# considered overridden and validate/normalize won't re-merge the module default.
+_VOCAB_LOADED = False
+
 # Dims that accept any non-empty string (not a controlled vocabulary).
 # Populated from tag_dims.free_form at load. None by default since ``region``
 # (province) was removed in favor of the controlled ``scenario`` dim.
@@ -74,7 +78,9 @@ def load_vocab_from_db(db=None) -> dict:
     """Load tag_dims into ``TAG_VOCAB`` (per-type) + ``FREE_FORM_TAGS``.
 
     Best-effort: if the DB/table is unreachable, the starter set remains.
+    Sets ``_VOCAB_LOADED`` so validate/normalize can lazily refresh once.
     """
+    global _VOCAB_LOADED
     from src.eval.db import connect
 
     try:
@@ -95,7 +101,24 @@ def load_vocab_from_db(db=None) -> dict:
         TAG_VOCAB.setdefault(ct, {})[name] = vals
         if r["free_form"]:
             FREE_FORM_TAGS.add(name)
+    _VOCAB_LOADED = True
     return TAG_VOCAB
+
+
+def _ensure_db_vocab(contract_type: str | None) -> None:
+    """Lazily merge DB-backed type-specific dims into the in-memory vocab.
+
+    Called from validate/normalize so a fresh process (script, MCP tool) sees
+    persisted dims like ``legal_topic`` without an explicit load. One-shot per
+    process via ``_VOCAB_LOADED``.
+    """
+    global _VOCAB_LOADED
+    if _VOCAB_LOADED:
+        return
+    try:
+        load_vocab_from_db()
+    except Exception:  # noqa: BLE001 - never let validation crash on DB flake
+        _VOCAB_LOADED = True
 
 
 def validate_tags(tags: dict | None, contract_type: str | None = None) -> dict:
@@ -120,6 +143,9 @@ def validate_tags(tags: dict | None, contract_type: str | None = None) -> dict:
     """
     if not tags:
         return {}
+    # Lazily merge DB-backed type-specific dims (legal_topic, etc.) so fresh
+    # processes validate persisted tags correctly.
+    _ensure_db_vocab(contract_type)
     universal = TAG_VOCAB.get(None, {})
     type_specific = TAG_VOCAB.get(contract_type, {}) if contract_type else {}
     out: dict[str, str] = {}
@@ -154,6 +180,7 @@ def normalize_tags(tags: dict | None, contract_type: str | None = None) -> dict:
     """Safe read: validated tags, dropping unknown keys/values without raising."""
     if not tags:
         return {}
+    _ensure_db_vocab(contract_type)
     universal = TAG_VOCAB.get(None, {})
     type_specific = TAG_VOCAB.get(contract_type, {}) if contract_type else {}
     out: dict[str, str] = {}

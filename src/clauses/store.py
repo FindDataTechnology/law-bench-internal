@@ -56,7 +56,9 @@ def _row(clause: dict, *, now: str) -> tuple:
         body_hash = hashlib.md5(body.encode("utf-8")).hexdigest()
     else:
         body_hash = clause.get("body_hash") or hashlib.md5(body.encode("utf-8")).hexdigest()
-    slot_instructions = normalize_instruction_names(clause.get("slot_instructions") or [], ct)
+    slot_instructions = _normalize_slot_instructions(
+        body, normalize_instruction_names(clause.get("slot_instructions") or [], ct)
+    )
     source_path = clause.get("source_path")
     tags = dict(clause.get("tags") or {})
     if "source" not in tags and "category" in clause:

@@ -257,3 +257,107 @@ else:
 - **数据存储**:所有评估记录存于 `api_eval_runs` 表,与 MCP 用的 `eval_runs` 表分离。
 - **无清理机制**:目前无 TTL,旧记录不会自动删除。
 - **可用的 rubric**:调用 `GET /api/rubrics` 查看全部 rubric 及其 criteria 数量。
+
+---
+
+## V4:多评审(multi-judge)评估
+
+V4 起,`evaluate_contract` 之外新增 `evaluate_with_multi_judge`(`src/eval/scoring.py`),
+用 **N 个评审模型并行打分 + 多数表决**,抑制单评审噪声(引用类 criterion 尤其明显)。
+
+```python
+from src.eval.scoring import evaluate_with_multi_judge
+
+result = evaluate_with_multi_judge(
+    contract_text=body,
+    rubric_name="contract_sale_v3",
+    task_desc="起草一份农产品买卖合同",
+    judge_models=["openai/kimi-k3", "openai/glm-5.2", "openai/qwen-3.7-plus"],
+    max_workers=1,   # 串行!并发会触发 relay 限流噪声
+)
+```
+
+### 评分语义
+
+- 每个 criterion 由全部 judge 投票,`pass` 多数决 → 共识 verdict。
+- `confidence` = 共识票数 / judge 数:3 评审时取 1.0(全票)或 0.67(2:1)。
+- `score = 1.0` 当且仅当 **全部 criterion 通过** 且非 low_confidence。
+- 结果含 `n_unanimous_pass` / `n_majority_pass` / `n_failures` 明细,
+  每个 criterion 带 `per_judge_reasoning`(各评审原始理由)。
+
+### 降级策略
+
+- 单个 judge 失败不崩溃:记入 `judge_errors`,其余 judge 继续。
+- 仅剩 2 个 judge:要求 2/2 全票;仅剩 1 个:置 `low_confidence=true`,score 强制 0。
+- 全部失败:抛 `RuntimeError`。
+
+### 实践经验(来自 19 类有名合同自迭代)
+
+- **judge 选型**:避免推理型模型(如 deepseek-v4-pro,思考耗时 10 倍);
+  推荐 kimi-k3 + glm-5.2 + qwen-3.7-plus 组合。
+- **串行执行**:`max_workers=1`。多评审本身已是 3 倍调用量,
+  再并发会触发 relay 限流,失败 criterion 混入噪声。
+- **自迭代停止条件**:只剩 judge 分裂(0.67 置信)的 fail 时即为噪声地板,
+  继续迭代只会来回震荡,应停止(见 `scripts/self_iterate.py`)。
+
+---
+
+## V4:标签体系(tag schema)
+
+V4 精简了 tag 维度,`tag_vocab_list()` 返回:
+
+| 维度 | 范围 | 说明 |
+|------|------|------|
+| `source` | 全局 | `base` / `tagged` / `custom`(条款来源,自动维护) |
+| `stance` | 全局 | `pro_a` / `pro_b` / `balanced`(立场) |
+| `scenario` | 按类型 | 业务场景(如 `农产品买卖`、`住宅租赁`) |
+| `legal_topic` | 按类型 | 条款对应的 rubric criterion id(每类型 10 个左右) |
+
+**已删除的死维度**:`strength` / `risk` / `mandatory`(旧数据保留,新条款不再使用)。
+
+### stance 别名
+
+`tag_validate()` 与组装的 custom 条款过滤都会先做别名解析:
+
+| 输入 | 解析为 |
+|------|--------|
+| `pro_seller` | `pro_a` |
+| `pro_buyer` | `pro_b` |
+
+即 `contract_generate(tags={"stance": "pro_seller"})` 等价于 `stance="pro_a"`,
+同时匹配 `pro_a` 与 `pro_seller` 两种存量数据。
+
+### legal_topic 的作用
+
+`legal_topic` 把条款挂到 rubric criterion 上,自迭代据此定位"哪个 criterion
+挂了 → 该补哪类条款"。回填由 `scripts/backfill_legal_topics.py` 完成,
+覆盖率校验用 `scripts/verify_topic_coverage.py`(有缺口时退出码非 0)。
+
+---
+
+## V4:自迭代闭环(self-iteration)
+
+`scripts/self_iterate.py` 把"生成 → 多评审 → 补条款"串成闭环:
+
+```
+生成合同 → 串行多评审 → 取全票 FAIL(conf≥0.99)的 criterion
+        → LLM 基于现有 custom + base 条款内容合并生成补充条款
+        → create/update + 审批全部 tag 维度 → 重新生成评估
+        → 直到 all_pass 或达到 max_rounds
+```
+
+```bash
+# 单类型
+python3 -u scripts/self_iterate.py sale --max-rounds 3 \
+  --judges openai/kimi-k3 openai/glm-5.2 openai/qwen-3.7-plus
+
+# 批量(顺序执行,per-type 日志 + 增量汇总)
+python3 -u scripts/self_iterate_batch.py lease gift loan --max-rounds 3 \
+  --summary batch_named_a.json
+```
+
+报告写入 `output/self_iterate/<type>_report.json`。注意:
+
+- **合并而非替换**:补充条款合并进已有 custom 条款(`update_clause`),
+  避免覆盖 base 的丰富内容(sale 权利义务条款曾因此丢检验期限)。
+- **`-u` 必加**:管道/后台运行时 Python stdout 是块缓冲,不加看不到进度。

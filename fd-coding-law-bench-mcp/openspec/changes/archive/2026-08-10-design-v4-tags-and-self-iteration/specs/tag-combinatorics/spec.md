@@ -30,9 +30,7 @@ The system MUST include `legal_topic` as a dimension for contract types with rub
 
 ### Requirement: Clause selection precedence with legal_topic
 
-**REASON**: Now clauses are selected not just by section but also by legal_topic coverage.
-
-**MODIFICATION**: The `_select_clauses` function now prioritizes clauses matching the target legal_topic if available.
+`_select_clauses` MUST prioritize clauses matching the target `legal_topic` when available (selection is by section AND topic coverage), and SHALL fall back to section-only selection (old behavior) when no topic-matching clause exists.
 
 #### Scenario: Override resolution adds legal_topic filter
 - **WHEN** resolving one clause per section
