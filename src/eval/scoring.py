@@ -20,6 +20,7 @@ deepeval mapping (no hand-rolled prompt; uses deepeval's base GEval ability):
 from __future__ import annotations
 
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Optional
@@ -83,11 +84,24 @@ def evaluate_contract(
     metrics = _build_metrics(criteria, judge, include_input)
 
     # Judge each criterion concurrently (mirrors harvey-labs' ThreadPoolExecutor).
+    # Retry on rate-limit / transient relay errors: a 429 must NOT become a FAIL,
+    # because a unanimous-FAIL (conf=1.0) drives the self-iteration loop to
+    # generate+overwrite clauses based on noise — which is how property_service
+    # collapsed to 0/10 under relay saturation. The openai SDK retries most
+    # 429s already, but deepeval wraps calls and some leak through as exceptions.
     def _score_one(metric: GEval) -> None:
-        try:
-            metric.measure(test_case, _show_indicator=False)
-        except Exception as e:  # one bad judge call must not sink the run
-            metric.error = str(e)
+        for attempt in range(3):
+            try:
+                metric.measure(test_case, _show_indicator=False)
+                return
+            except Exception as e:
+                s = str(e)
+                if ("RateLimit" in s or "429" in s or "ServiceUnavailable" in s
+                        or "503" in s) and attempt < 2:
+                    time.sleep(8 * (attempt + 1))
+                    continue
+                metric.error = s  # one bad judge call must not sink the run
+                return
 
     with ThreadPoolExecutor(max_workers=max(1, min(max_workers, len(metrics)))) as pool:
         list(pool.map(_score_one, metrics))

@@ -3,7 +3,13 @@
 
 Closed loop per round:
 1. Generate contract (balanced stance)
-2. Serial multi-judge eval (max_workers=1) to avoid rate-limit noise
+2. Multi-judge eval (3 judges × EVAL_MAX_WORKERS criteria concurrent).
+   Concurrency is deliberately LOW: the relay rate-limits per uid (not per
+   model), so with B batch streams the relay sees B×3×EVAL_MAX_WORKERS
+   concurrent reqs. A probe (2026-08-11) showed 12 concurrent = clean, 16 =
+   429s. With 2 streams and EVAL_MAX_WORKERS=2 that's 12 — at the ceiling.
+   Higher concurrency produced rate-limit-noise FAILs that masqueraded as
+   conf=1.0 fails and polluted the clause DB (property_service 0/10).
 3. Collect unanimous-FAIL criteria (conf=1.0) → map to legal_topic
 4. For each gap, LLM-generate a custom clause (merging base's rich content)
 5. Create + approve the clause (tag_review all dims approved)
@@ -24,7 +30,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# override=True: the launching shell often exports OPENAI_API_KEY / OPENAI_API_BASE
+# as EMPTY strings (from a profile or a prior `export X=`), and load_dotenv's
+# default override=False then treats them as "already set" and skips them — leaving
+# both the litellm drafter and the deepeval judges with no credentials, which
+# surfaces as "Missing credentials" / 0-of-N scores. override=True forces the .env
+# values to win every run regardless of inherited shell state.
+load_dotenv(override=True)
 os.environ.setdefault("LITELLM_MODEL_COST_MAP_URL", "")
 
 import litellm
@@ -37,6 +49,27 @@ from src.eval.scoring import evaluate_with_multi_judge
 
 DEFAULT_JUDGES = ["openai/kimi-k3", "openai/glm-5.2", "openai/deepseek-v3"]
 GEN_MODEL = os.environ.get("DRAFTER_MODEL", "openai/glm-5.2")
+# Inner per-criterion concurrency passed to evaluate_with_multi_judge. The 3 judges
+# all go through ONE relay (http://154.94.237.22:3000) which rate-limits per uid
+# (NOT per model), so total concurrent reqs to the relay == streams × 3 × this value.
+# A probe (2026-08-11) showed 12 concurrent = all ok, 16 = 429s start. With 2 batch
+# streams, max_workers=2 → 2×3×2 = 12, right at the clean ceiling. The drafter fires
+# only between rounds (during the sleep), never during eval, so eval-time peak is 12.
+# Going higher (3 workers × 4 streams = 36) produced rate-limit-noise FAILs that
+# masqueraded as conf=1.0 fails and polluted the clause DB — see property_service 0/10.
+EVAL_MAX_WORKERS = int(os.environ.get("EVAL_MAX_WORKERS", "2"))
+
+# Confidence threshold for acting on a FAIL. Default 0.6 = act on MAJORITY
+# fails (≥2/3 judges), not just unanimous ones. The original 0.99 only acted on
+# 3/3-unanimous FAILs — safe, but left 2-1 judge-split FAILs untouched, and 8
+# named types were stuck exactly there: 1 criterion short of all-pass with a
+# single dissenting judge. NOTE: a 2/3 majority confidence is the float
+# 0.6666... (displays as "0.67" with :.2f), which is strictly < 0.67, so a
+# threshold of 0.67 MISSES every 2-1 split — that bug stalled partnership et al.
+# 0.6 catches 2/3 (0.667) and 3/3 (1.0) but never 1/3 (a 1-judge dissent is
+# verdict="pass", not collected). merge-not-replace (no content loss) + the
+# 429-retry guard in scoring.py (no noise-as-FAIL) make this safe.
+FAIL_CONF_THRESHOLD = float(os.environ.get("FAIL_CONF_THRESHOLD", "0.6"))
 
 
 def get_latest_rubric(contract_type: str) -> str:
@@ -179,9 +212,12 @@ def iterate(contract_type: str, max_rounds: int = 5, judges: list[str] | None = 
         body = result.get("body_text", "")
         print(f"Contract: {len(body)} chars")
 
-        # Evaluate (serial)
+        # Evaluate: 3 judges (outer pool) × EVAL_MAX_WORKERS criteria (inner pool).
+        # With 2 batch streams × 3 judges × 2 workers = 12 concurrent, right at the
+        # relay's clean ceiling (probe 2026-08-11: 12 ok, 16 starts 429). The openai
+        # SDK's built-in 429-retry absorbs transient blips.
         eval_result = evaluate_with_multi_judge(
-            contract_text=body, rubric_name=rubric, judge_models=judges, max_workers=1,
+            contract_text=body, rubric_name=rubric, judge_models=judges, max_workers=EVAL_MAX_WORKERS,
         )
         n_passed = eval_result["n_passed"]
         n_total = eval_result["n_criteria"]
@@ -194,7 +230,7 @@ def iterate(contract_type: str, max_rounds: int = 5, judges: list[str] | None = 
         for cr in eval_result.get("criteria_results", []):
             mark = "✓" if cr["verdict"] == "pass" else "✗"
             print(f"  {mark} [{cr['verdict']}] conf={cr.get('confidence', 0):.2f} {cr['id']}")
-            if cr["verdict"] != "pass" and cr.get("confidence", 0) >= 0.99:
+            if cr["verdict"] != "pass" and cr.get("confidence", 0) >= FAIL_CONF_THRESHOLD:
                 fails.append(cr)
 
         if eval_result["all_pass"]:

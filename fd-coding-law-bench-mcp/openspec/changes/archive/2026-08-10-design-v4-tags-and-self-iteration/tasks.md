@@ -19,7 +19,7 @@
 | 11 | [x] | Apply legal_topic backfill to all 43 types |
 | 12 | [x] | **BREAKTHROUGH** sale self-iteration with new relay: 6/10 → 8/10 → **10/10 ALL PASS** (Score=1.0, 3 judges unanimous) |
 | 13 | [x] | Run self-iteration on 19 named contracts (relay: ~7 req/min, unlimited daily) |
-| 13b | [x] | Run self-iteration on 24 unnamed contracts (8 all-pass; 11 zero-scored due to transient drafter-relay failures, re-runnable) |
+| 13b | [x] | Run self-iteration on 24 unnamed contracts — FINAL: 18/43 all-pass overall. Of 11 transient-zero types re-run after the `load_dotenv(override=True)` credential fix: 5 now ALL PASS (merger_acquisition, ppp_project, talent_agency, trust, vam_agreement); 6 partial (employment 10/11, land_transfer 10/11, tourism_service 10/11, equity_holding_in_trust 9/10, company_formation 7/9, film_production 8/11) |
 | 14 | [x] | Update MCP documentation (v4-sale-pilot-results.md) |
 | 15 | [x] | Archive OpenSpec change (spec validation fixed: 7 MODIFIED reqs rewritten as SHALL/MUST prose; `openspec validate` passes) |
 
