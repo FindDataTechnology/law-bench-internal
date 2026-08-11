@@ -72,6 +72,39 @@ EVAL_MAX_WORKERS = int(os.environ.get("EVAL_MAX_WORKERS", "2"))
 FAIL_CONF_THRESHOLD = float(os.environ.get("FAIL_CONF_THRESHOLD", "0.6"))
 
 
+def persist_pipeline_run(contract_type: str, rubric: str, judges: list[str], report: dict) -> None:
+    """Best-effort: record the run to ``pipeline_runs`` so the web dashboard sees it.
+
+    The dashboard (src/web/routes/dashboard.py) reads ONLY ``pipeline_runs``; this
+    script historically wrote just clauses + a local JSON report, so V4/V5 runs were
+    invisible online until backfilled (scripts/backfill_pipeline_runs.py). Never let
+    a DB hiccup kill the iteration — swallow all errors.
+    """
+    try:
+        from src.eval.pipeline_store import insert_pipeline_run
+
+        rounds = report.get("rounds") or []
+        last = rounds[-1] if rounds else {}
+        actions = [g for r in rounds for g in r.get("generated", [])]
+        pid = insert_pipeline_run({
+            "contract_type": contract_type,
+            "tags": {"source": "self_iterate"},
+            "stance": "balanced",
+            "rubric_name": rubric,
+            "task_desc": f"V4 self-iteration via scripts/self_iterate.py (judges: {', '.join(judges)})",
+            "score": last.get("score"),
+            "max_score": last.get("n_total"),
+            "n_passed": last.get("n_passed"),
+            "n_criteria": last.get("n_total"),
+            "all_pass": 1 if report.get("all_pass") else 0,
+            "iteration": report.get("final_round", len(rounds) or 1),
+            "actions_taken": actions,
+        })
+        print(f"📊 pipeline_runs id={pid}")
+    except Exception as e:
+        print(f"⚠ pipeline_runs persist failed (non-fatal): {e}")
+
+
 def get_latest_rubric(contract_type: str) -> str:
     rubrics = [r["name"] for r in list_rubrics() if r["name"].startswith(f"contract_{contract_type}_")]
     return max(rubrics) if rubrics else f"contract_{contract_type}_v3"
@@ -331,6 +364,7 @@ def iterate(contract_type: str, max_rounds: int = 5, judges: list[str] | None = 
         report["final_round"] = max_rounds
 
     report["rounds"] = report.get("rounds", [])
+    persist_pipeline_run(contract_type, rubric, judges, report)
     return report
 
 
