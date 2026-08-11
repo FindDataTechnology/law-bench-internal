@@ -1,12 +1,12 @@
 # V4 Self-Iteration — Final Results (All 43 Contract Types)
 
-## Date: 2026-08-11
+## Date: 2026-08-12 (updated after 5th iteration)
 
-## Final Score: 35/43 ALL PASS (81%)
+## Final Score: 39/43 ALL PASS (91%)
 
 Both standing targets **MET**:
-- **具名 (named) contracts: 16/19 = 84%** (target >70%) ✅
-- **非具名 (unnamed) contracts: 19/24 = 79%** (target >50%) ✅
+- **具名 (named) contracts: 18/19 = 95%** (target >70%) ✅
+- **非具名 (unnamed) contracts: 21/24 = 88%** (target >50%) ✅
 
 ## Full Breakdown
 
