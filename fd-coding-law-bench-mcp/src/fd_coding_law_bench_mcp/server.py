@@ -31,6 +31,7 @@ from .tools import batch as _batch  # noqa: E402,F401
 from .tools import catalog as _catalog  # noqa: E402,F401
 from .tools import artifacts as _artifacts  # noqa: E402,F401
 from .tools import agent_metrics as _agent_metrics  # noqa: E402,F401
+from .tools import validation as _validation  # noqa: E402,F401
 
 
 def main() -> None:

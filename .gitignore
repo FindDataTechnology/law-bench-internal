@@ -58,3 +58,7 @@ fd-coding-law-bench-mcp/site/
 contract-review-agent/frontend/node_modules/
 contract-review-agent/.venv/
 contract-review-agent/frontend/.next/
+
+# cloned external contract-generator source (referenced by-path at runtime
+# via src/clauses/generator_import.py; not our code — never commit)
+contract-generator/

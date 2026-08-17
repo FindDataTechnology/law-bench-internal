@@ -171,7 +171,7 @@ def _normalize_slot_instructions(body: str, instructions: list[dict]) -> list[di
     for ins in instructions or []:
         name = ins.get("name")
         if name and name not in by_name:
-            by_name[name] = {
+            entry = {
                 "name": name,
                 "label": str(ins.get("label") or name),
                 "description": str(ins.get("description") or ""),
@@ -180,6 +180,13 @@ def _normalize_slot_instructions(body: str, instructions: list[dict]) -> list[di
                 "example": "" if ins.get("example") is None else str(ins.get("example")),
                 "required": bool(ins.get("required", False)),
             }
+            # Round-trip generator metadata: prompt / type / enum_values.
+            # Additive only — copy when present, never add when absent, so
+            # entries without these keys stay exactly as before.
+            for _k in ("prompt", "type", "enum_values"):
+                if _k in ins:
+                    entry[_k] = ins[_k]
+            by_name[name] = entry
     out = []
     for s in body_slots:
         out.append(
@@ -189,6 +196,53 @@ def _normalize_slot_instructions(body: str, instructions: list[dict]) -> list[di
             )
         )
     return out
+
+
+if __name__ == "__main__":
+    # Round-trip self-check for generator metadata keys (prompt/type/enum_values).
+    body = "甲方{{party_a}}向乙方{{party_b}}交付{{subject}}。"
+
+    # (a) entry WITH prompt/type/enum_values survives a round-trip intact.
+    rich = [
+        {"name": "party_a", "label": "甲", "description": "甲方名称", "example": "甲公司",
+         "required": True, "prompt": "请输入甲方全称", "type": "string", "enum_values": None},
+        {"name": "party_b", "label": "乙", "description": "乙方名称", "example": "乙公司",
+         "required": True, "prompt": "请输入乙方全称", "type": "enum",
+         "enum_values": ["A", "B"]},
+        {"name": "subject", "label": "标的", "description": "", "example": "",
+         "required": False, "prompt": "描述标的", "type": "string"},
+    ]
+    out_rich = _normalize_slot_instructions(body, rich)
+    assert len(out_rich) == 3, out_rich
+    by = {e["name"]: e for e in out_rich}
+    assert by["party_a"]["prompt"] == "请输入甲方全称", by["party_a"]
+    assert by["party_a"]["type"] == "string", by["party_a"]
+    assert by["party_a"]["enum_values"] is None, by["party_a"]
+    assert by["party_b"]["enum_values"] == ["A", "B"], by["party_b"]
+    assert by["subject"]["prompt"] == "描述标的", by["subject"]
+
+    # (b) entry WITHOUT the 3 keys is unchanged (no new keys added);
+    # the 5 existing keys behave exactly as before.
+    plain = [
+        {"name": "party_a", "label": "甲", "description": "甲方名称",
+         "example": "甲公司", "required": True},
+        {"name": "party_b", "label": "乙", "description": "乙方名称",
+         "example": "乙公司", "required": True},
+        {"name": "subject", "label": "标的", "description": "", "example": "",
+         "required": False},
+    ]
+    out_plain = _normalize_slot_instructions(body, plain)
+    assert len(out_plain) == 3, out_plain
+    for e in out_plain:
+        assert "prompt" not in e, e
+        assert "type" not in e, e
+        assert "enum_values" not in e, e
+    assert out_plain[0] == {"name": "party_a", "label": "甲",
+                            "description": "甲方名称", "example": "甲公司",
+                            "required": True}, out_plain[0]
+
+    print("OK: _normalize_slot_instructions round-trips prompt/type/enum_values "
+          "and leaves plain entries unchanged.")
 
 
 def _post_process(raw: dict, source_path: str) -> dict:
