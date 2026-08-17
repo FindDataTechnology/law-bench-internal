@@ -309,6 +309,31 @@ _ADDITIVE_COLUMNS = (
     "ALTER TABLE IF EXISTS pipeline_runs ADD COLUMN IF NOT EXISTS learn_applied JSONB NOT NULL DEFAULT '[]'::jsonb;"
 )
 
+# Self-managed long-lived API keys (Phase 2 auth). The plaintext key is never
+# persisted or logged. The key is ``lbk_<43urlsafe>``; we split it into a public
+# ``key_prefix`` (first 16 chars) used for O(1) indexed lookup, and a salted
+# slow-hash (``key_hash``, pbkdf2-hmac-sha256) verified *after* the lookup. The
+# UNIQUE index therefore lives on ``key_prefix`` (not ``key_hash`` — a salted
+# hash is non-deterministic and cannot be indexed by the incoming plaintext).
+# ``revoked_at`` soft-deletes a key so the row survives for audit without being
+# usable. Owned by src/web/auth, but the DDL lives here so ensure_schema
+# establishes it on any database the app touches — same convention as clauses /
+# tag_dims.
+API_KEYS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS api_keys (
+    id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    key_prefix   TEXT NOT NULL UNIQUE,
+    key_hash     TEXT NOT NULL,
+    user_id      TEXT NOT NULL,
+    label        TEXT NOT NULL,
+    scopes       JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at   TEXT NOT NULL,
+    last_used_at TEXT,
+    revoked_at   TEXT
+);
+"""
+
+
 # The DDL is fully idempotent, so ensure_schema is memoized per database (keyed
 # by dbname): the first call on a given DB creates/migrates; subsequent calls
 # (every store/list/compare) are a cheap no-op. This matters because the store
@@ -343,6 +368,7 @@ def ensure_schema(db_path=DEFAULT_DB) -> None:
             conn.execute(CONTRACT_ARTIFACTS_SCHEMA)
             conn.execute(API_EVAL_SCHEMA)
             conn.execute(GENERATION_JOBS_SCHEMA)
+            conn.execute(API_KEYS_SCHEMA)
             conn.execute(_ADDITIVE_COLUMNS)
             conn.commit()
             _ensured_dbs.add(key)

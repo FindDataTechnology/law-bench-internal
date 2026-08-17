@@ -18,7 +18,7 @@ templates`` callers.
 
 from __future__ import annotations
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -38,6 +38,7 @@ from .paths import STATIC_DIR, TEMPLATES_DIR
 from .templating import templates  # noqa: F401
 from .routes import (
     api,
+    auth,
     clauses,
     contract_context,
     contracts,
@@ -47,6 +48,10 @@ from .routes import (
     pages,
     search,
 )
+
+from src.settings import check_auth_config
+from .auth import logto
+from .auth.deps import get_current_user
 
 
 # ManageError subclass -> HTTP status.
@@ -66,7 +71,14 @@ def _make_handler(status: int):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Evaluation Rules Manager", docs_url="/api/docs")
+    app = FastAPI(
+        title="Evaluation Rules Manager",
+        docs_url="/api/docs",
+        # App-level auth: every route inherits get_current_user. Exempt paths
+        # (/healthz, /auth/*) short-circuit inside the dep to an anonymous
+        # sentinel, so the login flow and liveness probe stay reachable.
+        dependencies=[Depends(get_current_user)],
+    )
 
     # Ensure the asset dirs exist so the mounts/templating work on first run.
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -75,6 +87,7 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     app.include_router(api.router)
+    app.include_router(auth.router)
     app.include_router(contract_context.router)
     app.include_router(generation.router)
     app.include_router(pages.router)
@@ -109,6 +122,15 @@ def create_app() -> FastAPI:
     async def healthz() -> JSONResponse:
         """Liveness/readiness probe target: always 200 when the process is up."""
         return JSONResponse({"status": "ok"})
+
+    @app.on_event("startup")
+    def _verify_auth_startup() -> None:
+        """Fail-closed auth readiness: refuse to serve if auth env is unset or
+        the Logto IdP / JWKS is unreachable — never run an open server. Also
+        warms the discovery + JWKS caches so the first request isn't penalized.
+        """
+        check_auth_config()
+        logto.verify_reachable()
 
     @app.on_event("startup")
     def _load_tag_vocab() -> None:

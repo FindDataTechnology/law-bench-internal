@@ -162,3 +162,33 @@ class GenerationJobDetail(BaseModel):
     error_message: Optional[str] = None
     created_at: str
     updated_at: str
+
+
+# --- API-key management (auth) --------------------------------------------- #
+
+
+class ApiKeyCreate(BaseModel):
+    """Payload to create an API key (POST /api/keys)."""
+
+    label: str
+    scopes: list[str] = Field(default_factory=list)
+
+
+class ApiKeyCreated(BaseModel):
+    """Response from POST /api/keys — the plaintext is shown ONCE."""
+
+    key: str
+    label: str
+    scopes: list[str] = Field(default_factory=list)
+
+
+class ApiKeyOut(BaseModel):
+    """A listed API key row (never the hash, never the plaintext)."""
+
+    id: int
+    key_prefix: str
+    label: str
+    scopes: list[str] = Field(default_factory=list)
+    created_at: str
+    last_used_at: Optional[str] = None
+    revoked_at: Optional[str] = None

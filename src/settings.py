@@ -109,3 +109,74 @@ SEARCH_REQUIRED_VARS = [
     "minio_host",
     "minio_root_password",
 ]
+
+
+# --------------------------------------------------------------------------- #
+# Auth config (Phase 2 — Logto hybrid Cookie + APIKey)
+# --------------------------------------------------------------------------- #
+# Identity is fully delegated to a self-deployed Logto instance (OIDC). This
+# project stores NO passwords and has NO local users table. Browser sessions
+# use the OIDC authorization-code flow -> signed httpOnly cookie; programmatic
+# callers use either a Logto-issued Bearer JWT (JWKS-validated) or a
+# self-managed X-API-Key (salted hash in the ``api_keys`` table).
+
+# Logto OIDC endpoint (base URL, e.g. https://logto.example.com). Trailing
+# slash stripped so ``LOGTO_ENDPOINT + "/oidc/..."`` composes cleanly.
+LOGTO_ENDPOINT = _env("LOGTO_ENDPOINT", "").rstrip("/")
+LOGTO_CLIENT_ID = _env("LOGTO_CLIENT_ID", "")
+LOGTO_CLIENT_SECRET = _env("LOGTO_CLIENT_SECRET", "")
+# Absolute public URL the IdP redirects to after authorize (-> /auth/callback).
+LOGTO_REDIRECT_URI = _env("LOGTO_REDIRECT_URI", "")
+# Public base URL of this app (e.g. https://lawbench.example.com). Used only as
+# the OIDC post-logout redirect target so the IdP can send the browser back here
+# after ending its session. When empty, logout clears the cookie locally and
+# redirects to "/" without calling the IdP end-session endpoint.
+APP_BASE_URL = _env("APP_BASE_URL", "").rstrip("/")
+# OIDC scopes requested at the authorize step.
+LOGTO_SCOPES = _env("LOGTO_SCOPES", "openid profile email").split()
+
+# Optional: the Logto API-resource indicator that Bearer access-token JWTs are
+# minted for. When set, Bearer JWTs are audience-checked against it. When empty,
+# audience verification is skipped (issuer + signature + exp still enforced) —
+# acceptable only for a single-resource self-deploy; set it in prod to bind
+# tokens to this API. Defaults to the client_id so ID-token-style bearers also
+# validate.
+LOGTO_API_AUDIENCE = _env("LOGTO_API_AUDIENCE", LOGTO_CLIENT_ID)
+
+# Session cookie signing secret. MUST be a stable deploy secret — never
+# auto-generated per restart; rotating it invalidates every live session and
+# there is no key-rotation path here, so treat it as a permanent deploy secret.
+AUTH_SESSION_SECRET = _env("AUTH_SESSION_SECRET", "")
+# Session cookie lifetime in seconds (default: 7 days).
+AUTH_SESSION_TTL = int(_env("AUTH_SESSION_TTL", str(7 * 24 * 3600)))
+# Cookie attributes. AUTH_COOKIE_SECURE=0 allows http on localhost for dev;
+# leave 1 in prod (Secure requires https). httpOnly + SameSite=Lax are fixed.
+AUTH_COOKIE_NAME = _env("AUTH_COOKIE_NAME", "lawbench_session")
+AUTH_COOKIE_SECURE = _env("AUTH_COOKIE_SECURE", "1") == "1"
+
+# Env vars that MUST be populated before the app serves any traffic. Checked
+# fail-fast at startup in create_app() — a missing value means the process
+# refuses to boot (fail closed: never run an open server). JWKS reachability
+# is validated separately in the auth package (also fail-closed).
+AUTH_REQUIRED_VARS = [
+    "LOGTO_ENDPOINT",
+    "LOGTO_CLIENT_ID",
+    "LOGTO_CLIENT_SECRET",
+    "LOGTO_REDIRECT_URI",
+    "AUTH_SESSION_SECRET",
+]
+
+
+def check_auth_config() -> None:
+    """Raise :class:`ConfigError` if any required auth env var is unset.
+
+    Called from ``create_app()`` at startup so the process fails closed — no
+    auth config, no server. Only checks *presence* of the values; reachability
+    of the Logto endpoint / JWKS is validated in :mod:`src.web.auth.logto`.
+    """
+    missing = [name for name in AUTH_REQUIRED_VARS if not _env(name)]
+    if missing:
+        raise ConfigError(
+            "Auth is not configured — refusing to start. "
+            "Set these env vars: " + ", ".join(missing)
+        )

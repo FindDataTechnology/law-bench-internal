@@ -36,8 +36,23 @@ os.environ.setdefault("DEEPEVAL_TELEMETRY_OPT_OUT", "true")
 # copy (keeps the suite hermetic and network-free).
 os.environ.setdefault("LITELLM_MODEL_COST_MAP_URL", "")
 
+# Auth env for the test session. Dummy values so create_app()'s fail-closed
+# startup check_auth_config() passes and the src.settings module constants
+# bind non-empty. logto.verify_reachable() is monkeypatched per-fixture (see
+# app_client) so no real IdP HTTP call is made. setdefault honors any real
+# values from .env (a locally-configured Logto is still not hit in tests).
+# AUTH_COOKIE_SECURE=0 lets TestClient (http) set/read session cookies.
+os.environ.setdefault("LOGTO_ENDPOINT", "http://test-logto.local")
+os.environ.setdefault("LOGTO_CLIENT_ID", "test-client-id")
+os.environ.setdefault("LOGTO_CLIENT_SECRET", "test-client-secret")
+os.environ.setdefault("LOGTO_REDIRECT_URI", "http://localhost/auth/callback")
+os.environ.setdefault("AUTH_SESSION_SECRET", "test-session-secret-stable-value")
+os.environ.setdefault("AUTH_COOKIE_SECURE", "0")
+
 from src.eval.harbor_seed import create_schema  # noqa: E402
 from src.web.app import create_app  # noqa: E402
+from src.web.auth import logto  # noqa: E402
+from src.web.auth.deps import User, get_current_user  # noqa: E402
 from src.web.deps import get_db  # noqa: E402
 
 from _fakes import FakeJudge  # noqa: E402  (tests/ is on sys.path via conftest)
@@ -56,6 +71,7 @@ _ALL_TABLES = (
     "clauses",
     "contract_artifacts",
     "generation_jobs",
+    "api_keys",
 )
 
 
@@ -192,11 +208,38 @@ def empty_db(monkeypatch) -> "psycopg.Connection":
     _drop_db(name)
 
 
+def _test_user() -> User:
+    """Stub authenticated user for the non-auth test suite.
+
+    Installed as a dependency_overrides replacement for get_current_user so
+    every protected route sees an authenticated caller without per-test
+    tokens. Auth behavior itself is exercised in tests/test_web_auth.py via a
+    separate fixture that does NOT override get_current_user.
+    """
+    return User(
+        sub="test-user",
+        name="Test User",
+        email="test@example.com",
+        scopes=["*"],
+        channel="test",
+    )
+
+
 @pytest.fixture
-def app_client(seeded_db) -> TestClient:
-    """A TestClient whose web routes read/write the throwaway DB."""
+def app_client(seeded_db, monkeypatch) -> TestClient:
+    """A TestClient whose web routes read/write the throwaway DB.
+
+    Auth is bypassed for the existing suite: logto.verify_reachable is
+    neutralized so the fail-closed startup probe doesn't hit a real IdP, and
+    get_current_user is overridden to a stub test user so every protected
+    route sees an authenticated caller. (Auth-channel behavior — 401 without
+    creds, cookie/bearer/apikey paths — is covered by tests/test_web_auth.py
+    with a fixture that leaves get_current_user real.)
+    """
+    monkeypatch.setattr(logto, "verify_reachable", lambda: None)
     app = create_app()
     app.dependency_overrides[get_db] = lambda: seeded_db
+    app.dependency_overrides[get_current_user] = _test_user
     with TestClient(app) as client:
         yield client
 
