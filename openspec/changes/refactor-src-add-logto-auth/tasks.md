@@ -17,15 +17,15 @@
 
 - [x] 3.1 Move `src/docs/` (the code package: `__init__.py`, `slots.py`, `generator.py`) to `src/generator/`. Update all `from src.docs...` / `import src.docs` references across `src/`, `scripts/`, `tests/`. NOTE: left a thin `src/docs/__init__.py` compatibility shim so out-of-scope siblings (`contract-review-agent`, `fd-coding-law-bench-mcp`) that still `from src.docs import ...` keep resolving without a code change.
 - [x] 3.2 Sharpen the `audit.py` boundary: add module docstrings to `src/clauses/audit.py` (clause-library audit: rows, tag hygiene, dedup) and `src/contracts/audit.py` (assembled-contract audit: section coverage, slot fill, coherence). No merge.
-- [ ] 3.3 Run the full test suite; confirm green. Commit as "refactor: resolve src/docs name collision + audit ownership docstrings".
+- [x] 3.3 Run the full test suite; confirm green. Commit as "refactor: resolve src/docs name collision + audit ownership docstrings". (committed 61e4020; subset runs green, full-suite baseline = 9 pre-existing content-count drift failures, unchanged from pre-refactor.)
 
 ## 4. Phase 1 — Repo hygiene: archive, delete clutter, harden .gitignore
 
-- [ ] 4.1 Create `scripts/archive/` and move historical migration scripts (`backfill_*`, `seed_*`, `retag_*`) and leading-underscore probes (`_p2_*.py`, `_probe_models.py`, `_regression_gate.py`, `_seed_subtypes.py`, `_verify_catb_assembly.py`) there. Keep git-tracked (not deleted).
-- [ ] 4.2 Delete one-shot debug scripts in `output/` (`_fix_*.py`, `_inspect_*.py`, `_*_rollback.json`, `_create_gap_fill_*.py`) — but first `grep -rn "from output\|import output"` across the repo to confirm none is imported. Delete only if zero hits.
-- [ ] 4.3 Delete stray root files: `test_analysis.json`, `prompts.md` (0-byte), `extract_batch_results.py`, all `.DS_Store`.
-- [ ] 4.4 Zombie-DB sweep: for each of `db/{evaluation,evaluation_rules,lawbench}.db` and `data/{app.db,law_bench.db,lawbench.db,evaluation.db}`, run `grep -rn <filename>` across `src/`, `scripts/`, `tests/`, `*.yaml`, `.env*`. Delete only files with zero live references. Document any kept file and why.
-- [ ] 4.5 Harden `.gitignore`: add `__pycache__/`, `*.egg-info/`, `.DS_Store`, `output/contracts/` (verify no tracked code lives there first). Then `git rm --cached` already-tracked files that now match the ignore. Commit as "chore: archive migration scripts, remove debug scratch + zombie DBs, harden gitignore".
+- [x] 4.1 Create `scripts/archive/` and move historical migration scripts (`backfill_*`, `seed_*`, `retag_*`) and leading-underscore probes (`_p2_*.py`, `_probe_models.py`, `_regression_gate.py`, `_seed_subtypes.py`, `_verify_catb_assembly.py`) there. Keep git-tracked (not deleted). (26 scripts moved; the `seed_contract_rubrics.py` ↔ `seed_sample_local_rubric.py` sibling-import pair moved together so the bare `from seed_sample_local_rubric import` still resolves.)
+- [x] 4.2 Delete one-shot debug scripts in `output/` (`_fix_*.py`, `_inspect_*.py`, `_*_rollback.json`, `_create_gap_fill_*.py`) — `grep` confirmed zero imports. Deleted all 10 (untracked under gitignored `output/`).
+- [x] 4.3 Delete stray root files: `test_analysis.json`, `prompts.md` (0-byte), `extract_batch_results.py`, all `.DS_Store` (src+root scope; none were git-tracked).
+- [x] 4.4 Zombie-DB sweep: `git rm`'d the 6 zero-reference SQLite DBs (`db/evaluation.db`, `db/lawbench.db`, `data/app.db`, `data/law_bench.db`, `data/lawbench.db`, `data/evaluation.db`). KEPT `db/evaluation_rules.db` — it is the `DEFAULT_DB` sentinel referenced in ~40 function default-args and compared via `db is DEFAULT_DB` in `src/eval/db.py`; `db.py` redirects it to Postgres at runtime, so the file itself is never opened but must exist as a sentinel value.
+- [x] 4.5 `.gitignore` already had `__pycache__/`, `*.egg-info/`, `.DS_Store`, `**/.DS_Store`, `output/`, `output/contracts/`. No tracked files under those patterns needed `git rm --cached` (the tracked zombie DBs were handled in 4.4; no tracked `.DS_Store` or `output/` files existed). Commit as "chore: archive migration scripts, remove debug scratch + zombie DBs, harden gitignore".
 
 ## 5. Phase 2 — Auth foundation: config & api_keys table
 
