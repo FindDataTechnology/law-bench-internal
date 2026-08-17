@@ -204,6 +204,26 @@ table.matrix td.cell.rate { color: var(--accent); background: #eff6ff; }
   gap: 1rem;
   align-items: start;
 }
+
+/* contract-generation panel: mode radios + shared inputs */
+.gen-modes {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.9rem;
+  margin-bottom: 0.8rem;
+  background: #fbfcfd;
+}
+.gen-modes legend { font-size: 0.8rem; color: var(--muted); padding: 0 0.3rem; }
+.gen-modes .check { margin-bottom: 0.2rem; }
+.gen-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+@media (max-width: 720px) { .gen-grid { grid-template-columns: 1fr; } }
+.gen-extra { margin-top: 0.4rem; }
+.gen-result { margin-top: 0.6rem; }
+.gen-result .toolbar { margin-bottom: 0.4rem; }
 @media (max-width: 900px) { .law-info-grid { grid-template-columns: 1fr; } }
 .markdown-body { line-height: 1.6; word-break: break-word; }
 .markdown-body h1, .markdown-body h2, .markdown-body h3 { margin: 0.8rem 0 0.4rem; }

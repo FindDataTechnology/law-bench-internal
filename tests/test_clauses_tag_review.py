@@ -80,7 +80,7 @@ def test_assembly_gates_custom_by_review(seeded_db):
     )
     # cid2 not reviewed -> not assembly-ready
 
-    selected = _select_clauses("sale", None, None, stance="pro_a", db=seeded_db)
+    selected, _, _ = _select_clauses("sale", None, None, stance="pro_a", db=seeded_db)
     bodies = [c["body"] for c in selected]
     assert any("approved-marker" in b for b in bodies)
     assert not any("pending-marker" in b for b in bodies)

@@ -55,6 +55,7 @@ _ALL_TABLES = (
     "law_info",
     "clauses",
     "contract_artifacts",
+    "generation_jobs",
 )
 
 
@@ -157,6 +158,13 @@ def _session_db_name() -> str:
     seed_tag_dims()
     load_vocab_from_db()
     yield name
+    # Close any process-wide cached connection to the session DB so the DROP
+    # below isn't blocked by "database is being accessed by other users" (the
+    # shared connection opened by load_vocab_from_db / store calls via
+    # get_shared_conn leaks across the session otherwise).
+    from src.eval.db import close_shared_conn
+
+    close_shared_conn()
     _drop_db(name)
 
 

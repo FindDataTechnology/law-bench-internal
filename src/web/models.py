@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -117,3 +117,48 @@ class EvaluateRunDetail(BaseModel):
     judge_model: Optional[str] = None
     created_at: str
     completed_at: Optional[str] = None
+
+
+# --- contract generation modes -------------------------------------------- #
+
+
+class GenerationRequest(BaseModel):
+    """Shared payload for the generation-mode routes (D/E/F/G).
+
+    Mirrors the existing ``GenerateRequest`` (mode B/C) plus an optional
+    ``mode`` field the panel sends for bookkeeping; the route validates the
+    mode against its own. ``tag_combinations`` is only used by mode D.
+    """
+
+    mode: Optional[str] = None
+    stance: Optional[str] = None
+    scenario: Optional[str] = None
+    custom_clause_ids: Optional[list[int]] = None
+    format: str = "docx"
+    tag_combinations: Optional[list[dict]] = None
+    enumerate_all: bool = False
+    max_concurrent: int = 5
+    rubric: Optional[str] = None
+    task_desc: Optional[str] = None
+    max_iterations: int = 3
+    temperature: float = 0.0
+
+
+class GenerationJobSubmit(BaseModel):
+    """Response from async generation routes (202 Accepted)."""
+
+    job_id: int
+    status: str
+
+
+class GenerationJobDetail(BaseModel):
+    """Full row for GET /api/generation-jobs/{id}."""
+
+    id: int
+    kind: str
+    contract_type: str
+    status: str
+    result_ref: Optional[Any] = None
+    error_message: Optional[str] = None
+    created_at: str
+    updated_at: str

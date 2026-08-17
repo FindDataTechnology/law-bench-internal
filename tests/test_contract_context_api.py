@@ -95,7 +95,8 @@ def test_list_types(app_client: TestClient):
     r = app_client.get("/api/contracts")
     assert r.status_code == 200
     types = r.json()
-    assert len(types) == 43
+    # 43 母版类型 + 23 Cat B 类型 (generator-rules 导入) = 66
+    assert len(types) == 66
     assert {"key": "sale", "zh": "买卖合同"} in types
 
 

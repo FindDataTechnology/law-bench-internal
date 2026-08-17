@@ -11,6 +11,25 @@ from src.contracts.classification import NAMED_CONTRACTS, UNNAMED_CONTRACTS
 ALL_TYPES = list(NAMED_CONTRACTS.keys()) + list(UNNAMED_CONTRACTS.keys())
 
 
+@pytest.fixture(autouse=True, scope="module")
+def _require_v3_catalog():
+    """Skip unless the active DB has a seeded v3 rubric catalog.
+
+    These are integration tests against a catalog DB pre-seeded with v2 + v3
+    rubrics (``scripts/seed_v3_rubrics.py``). The hermetic per-session test DB
+    (see ``conftest._session_db_name``) only seeds harbor/local rubrics, so no
+    v3 rubrics exist there and every assertion would fail. Skip rather than
+    report ~60 false failures; run this module in isolation against the dev
+    catalog to exercise it.
+    """
+    try:
+        rubrics = list_rubrics_with_counts()
+    except Exception as exc:  # noqa: BLE001
+        pytest.skip(f"v3 catalog unavailable: {exc}")
+    if not any(r["name"].endswith("_v3") for r in rubrics):
+        pytest.skip("no v3 rubrics seeded in active DB (run scripts/seed_v3_rubrics.py)")
+
+
 class TestV3RubricExistence:
     """Verify v3 rubrics exist for all 41 contract types."""
 

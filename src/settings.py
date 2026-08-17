@@ -27,6 +27,10 @@ TEMPLATES_DIR = REPO_ROOT / "templates"
 # Harbor extraction script (single source of truth for the rubric schema).
 EXTRACT_SCRIPT = REPO_ROOT / "scripts" / "extract_harbor_rules.py"
 
+# LLM contract-template regeneration script (mode G): rewrites the global
+# ``src/contracts/data/contracts.json`` 母版 bodies via the DRAFTER LLM.
+GENERATE_TEMPLATES_SCRIPT = REPO_ROOT / "scripts" / "generate_contract_templates_llm.py"
+
 
 class ConfigError(Exception):
     """A required environment variable is missing or misconfigured."""

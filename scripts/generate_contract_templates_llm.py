@@ -95,9 +95,21 @@ def main() -> int:
     )
     parser.add_argument("--force", action="store_true", help="re-generate even if a cached body exists")
     parser.add_argument("--limit", type=int, default=None, help="only generate the first N types (debug)")
+    parser.add_argument(
+        "--type",
+        type=str,
+        default=None,
+        help="only regenerate the given contract-type key (mode G web route); "
+        "exits non-zero if the key is not in contract_types.json",
+    )
     args = parser.parse_args()
 
     types = json.loads(TYPES_PATH.read_text(encoding="utf-8"))
+    if args.type:
+        types = [t for t in types if t["key"] == args.type]
+        if not types:
+            print(f"[error] --type {args.type!r} not found in {TYPES_PATH}", file=sys.stderr)
+            return 2
     targets = types[: args.limit] if args.limit else types
 
     BODIES_DIR.mkdir(parents=True, exist_ok=True)

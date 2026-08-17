@@ -236,6 +236,26 @@ CREATE TABLE IF NOT EXISTS api_eval_runs (
 );
 """
 
+# Generation jobs (async REST API for the contract-detail "生成合同模板" panel).
+# One row per long-running generation run for modes D/E/F/G. The `kind` column
+# discriminates the mode ('batch' | 'pipeline' | 'auto_reject' | 'regenerate');
+# `result_ref` is a JSON-text pointer to the mode's real output
+# (e.g. {"pipeline_run_id": 42} for E/F, {"files": [...]} for D/G) so the
+# panel's poller is one shape regardless of mode. Mirrors the api_eval_runs
+# pending -> running -> completed/failed status machine.
+GENERATION_JOBS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS generation_jobs (
+    id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    kind            TEXT NOT NULL CHECK (kind IN ('batch','pipeline','auto_reject','regenerate')),
+    contract_type   TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','completed','failed')),
+    result_ref      TEXT,
+    error_message   TEXT,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+"""
+
 # Generated contract docx/pdf artifacts (uploaded to MinIO, content-addressed
 # by body_hash so identical inputs reuse the same artifact). One row per
 # distinct assembled body; docx_key/pdf_key are nullable per-format MinIO keys.
@@ -322,6 +342,7 @@ def ensure_schema(db_path=DEFAULT_DB) -> None:
             conn.execute(INDUSTRY_STANDARD_SCHEMA)
             conn.execute(CONTRACT_ARTIFACTS_SCHEMA)
             conn.execute(API_EVAL_SCHEMA)
+            conn.execute(GENERATION_JOBS_SCHEMA)
             conn.execute(_ADDITIVE_COLUMNS)
             conn.commit()
             _ensured_dbs.add(key)
@@ -682,6 +703,118 @@ def list_api_eval_runs(limit: int = 20, db_path=DEFAULT_DB) -> list[dict]:
                 "SELECT id, rubric_name, status, score, all_pass, n_passed, "
                 "       n_criteria, error_message, judge_model, created_at, completed_at "
                 "FROM api_eval_runs ORDER BY id DESC LIMIT %s",
+                (limit,),
+            ).fetchall()
+        finally:
+            conn.close()
+        return [dict(r) for r in rows]
+
+    return _retry_db_operation(_do_list)
+
+
+# --- generation jobs ------------------------------------------------------- #
+
+
+def store_generation_job(
+    kind: str,
+    contract_type: str,
+    db_path=DEFAULT_DB,
+) -> int:
+    """Insert a new ``generation_jobs`` row with ``status='pending'``.
+
+    ``kind`` discriminates the mode
+    (``'batch' | 'pipeline' | 'auto_reject' | 'regenerate'``). Returns the new
+    job id (the value the panel polls via ``GET /api/generation-jobs/{id}``).
+    """
+    ensure_schema(db_path)
+    now = datetime.now(timezone.utc).isoformat()
+
+    def _do_insert():
+        conn = connect(db_path)
+        try:
+            cur = conn.execute(
+                "INSERT INTO generation_jobs (kind, contract_type, status, created_at, updated_at) "
+                "VALUES (%s, %s, 'pending', %s, %s) RETURNING id",
+                (kind, contract_type, now, now),
+            )
+            conn.commit()
+            return cur.fetchone()["id"]
+        finally:
+            conn.close()
+
+    return _retry_on_deadlock(_do_insert)
+
+
+def update_generation_job(
+    job_id: int,
+    *,
+    status: str,
+    result_ref: Optional[dict] = None,
+    error_message: Optional[str] = None,
+    db_path=DEFAULT_DB,
+) -> None:
+    """Update a ``generation_jobs`` row's status and result/error.
+
+    ``result_ref`` is a dict pointer to the mode's real output (e.g.
+    ``{"pipeline_run_id": 42}``); it is JSON-encoded for storage. Only the
+    fields passed are written; the row's ``updated_at`` is always refreshed.
+    """
+    import json
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    def _do_update():
+        conn = connect(db_path)
+        try:
+            conn.execute(
+                "UPDATE generation_jobs SET status=%s, result_ref=%s, "
+                "error_message=%s, updated_at=%s WHERE id=%s",
+                (
+                    status,
+                    json.dumps(result_ref, ensure_ascii=False) if result_ref else None,
+                    error_message,
+                    now,
+                    job_id,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    _retry_on_deadlock(_do_update)
+
+
+def get_generation_job(job_id: int, db_path=DEFAULT_DB) -> Optional[dict]:
+    """Fetch a single ``generation_jobs`` row by id, or ``None`` if absent."""
+    ensure_schema(db_path)
+
+    def _do_get():
+        conn = connect(db_path)
+        try:
+            row = conn.execute(
+                "SELECT id, kind, contract_type, status, result_ref, "
+                "       error_message, created_at, updated_at "
+                "FROM generation_jobs WHERE id = %s",
+                (job_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        return dict(row) if row is not None else None
+
+    return _retry_db_operation(_do_get)
+
+
+def list_generation_jobs(limit: int = 20, db_path=DEFAULT_DB) -> list[dict]:
+    """Recent generation jobs (most recent first)."""
+    ensure_schema(db_path)
+
+    def _do_list():
+        conn = connect(db_path)
+        try:
+            rows = conn.execute(
+                "SELECT id, kind, contract_type, status, result_ref, "
+                "       error_message, created_at, updated_at "
+                "FROM generation_jobs ORDER BY id DESC LIMIT %s",
                 (limit,),
             ).fetchall()
         finally:
