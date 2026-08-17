@@ -3,7 +3,7 @@
 > 面向通过浏览器使用 law-bench Web 控制台的同学。这套 Web 是 `src/web` 这个 FastAPI
 > 应用提供的服务端渲染管理界面，用来**管理评测规则 / 提示词 / 条款库 / 合同模板，查看
 > 法律法规与评测仪表板**。合同**生成**的 JSON 接口见
-> [contract-generation-api.md](contract-generation-api.md)，本文只讲浏览器里的页面怎么用。
+> [api_instruction.md](api_instruction.md)，本文只讲浏览器里的页面怎么用。
 
 ## 1. 访问地址
 
@@ -22,7 +22,7 @@
 | 对比 | `/compare` | 选多个 prompt 跑对比评测，看 criteria×prompts 矩阵 |
 | 法律法规 | `/law-info` | 按合同类型看豆包 / DeepSeek 的法律调研原文（左右对照） |
 | 法规索引 | `/law-references` | 全类型聚合的法律法规索引，可按来源/类型过滤 |
-| 合同模板 | `/contracts` | 浏览 43 种合同母版模板、slot、法条，下载**母版** docx/pdf |
+| 合同模板 | `/contracts` | 浏览 43 种合同母版模板、slot、法条，下载**母版** docx/pdf；详情页可**生成合同模板**（7 模式） |
 | 条款库 | `/clauses` | 条款的浏览/搜索/抽取/CRUD/标签审核，下载**组装后**合同 |
 | 仪表板 | `/dashboard` | pipeline 评测通过率统计、分类型明细、版本对比、最近运行 |
 | 搜索 | `/search` | 条款片段 RAG 语义检索 |
@@ -111,6 +111,29 @@
 > ⚠️ 想要「按场景+立场组装后」的合同，去 **条款库** 详情页下载（见第 9 节），不是这里。
 > 这里下载的是空壳模板。
 
+### 8.1 生成合同模板（详情页面板）
+
+`/contracts/{type}` 详情页底部有「生成合同模板」面板，提供 **7 种生成模式**（单选）：
+
+| 模式 | 名称 | 行为 | 同步/异步 |
+|------|------|------|----------|
+| A | 母版骨架 | 只读，直接给母版 docx/pdf 下载链接（等同上方下载按钮，不发请求） | — |
+| B | 标签组装 | 按 scenario+stance 组装一份合同，同步返回下载链接 | 同步 |
+| C | 存储 MinIO | 组装后上传 MinIO + 落库，同步返回 artifact 下载链接 | 同步 |
+| D | 批量组装 | 跨多组 tag 批量组装，同步返回每组的下载链接 | 同步 |
+| E | 自愈流水线 | 异步跑「生成→填充→评价→自愈」循环，写 clauses 表与 pipeline_runs | 异步 |
+| F | 自动拒绝 | 在 E 基础上把反复不合格的 custom 条款标记为 rejected | 异步 |
+| G | LLM 重生成 | 用 LLM 重写该类型母版正文，直接改写全局 `contracts.json` | 异步 |
+
+**共享参数**（所有模式）：立场 `stance`、业务场景 `scenario`、输出格式 `format`、自定义条款 id `custom_clause_ids`。
+- D 额外：`tag_combinations`（JSON 数组）或勾选「枚举全部组合」`enumerate_all`。
+- E/F 额外：`rubric`、`max_iterations`、`task_desc`、`temperature`。
+
+**同步模式（A/B/C/D）**：点「生成」后直接返回结果与下载链接。
+**异步模式（E/F/G）**：提交前弹**确认框**（会改写数据），确认后返回 `job_id`，面板每 3 秒轮询
+`GET /api/generation-jobs/{id}`，终态（completed/failed）停止并展示摘要；约 10 分钟轮询上限，
+超时请刷新页面查看 job 状态。异步接口详情见 [api_instruction.md](api_instruction.md) 的「合同生成模式接口」一节。
+
 ## 9. 条款库（`/clauses`）⭐
 
 最常用、功能最全的模块。管理 base / tagged / custom 三类条款。
@@ -179,7 +202,7 @@ pipeline 评测的统计看板（只读）。
 2. 进 `sale` 类型详情页 `/clauses/sale`，选 `scenario=农产品买卖`、（组装下载链接里）
    `stance=pro_a`、`format=pdf`，下载即可。
 3. 下载的是**带 `{{slot}}` 占位符**的组装正文，需要后续填空（或交给生成 Agent，见
-   [contract-generation-api.md](contract-generation-api.md)）。
+   [api_instruction.md](api_instruction.md)）。
 
 ### 想新增一条「违约责任」的 custom 条款
 

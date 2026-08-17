@@ -1,7 +1,9 @@
 # 合同生成 API 接口文档
 
 > 面向「在已有基础上开发合同生成 Agent」的同事。本文档覆盖 `src/web` 下
-> `/api/contracts/*` 这一套 **agent-facing** 接口（即最近新增的 contract-context 路由）。
+> `/api/contracts/*` 这一套 **agent-facing** 接口（contract-context 路由：上下文 + 单次
+> 组装 / 落库），**以及** `/api/contracts/{type}/*` 的合同生成模式接口 + `/api/generation-jobs`
+> 任务轮询（§5.13：批量组装 / 自愈 / 自动拒绝 / 重生成母版 + 异步轮询）。
 > 文档自包含，拿到这份 md 就能开工。
 
 ## 1. 这套 API 是什么
@@ -130,6 +132,17 @@ custom  >  tagged  >  base
 | GET | `/api/contracts/artifacts/{id}` | 单个产物详情（含正文） | 取某次产物正文 |
 | GET | `/api/contracts/artifacts/{id}/download` | 下载已落库的 docx/pdf | 取文件流 |
 | GET | `/api/contracts/{type}/files/{filename}` | 取本次生成的临时文件 | `generate` 返回的 docx_url 指向它（内部用）|
+
+**合同生成模式接口**（详情见 §5.13）：模式 D 同步批量；E/F/G 异步（`202` + 轮询）。
+
+| 方法 | 路径 | 用途 | Agent 何时用 |
+|------|------|------|--------------|
+| POST | `/api/contracts/{type}/generate-batch` | 跨多组 tag 同步批量组装（模式 D） | 一次要多个变体 |
+| POST | `/api/contracts/{type}/pipeline` | 异步跑自愈流水线（模式 E，202） | 要高质量自愈 |
+| POST | `/api/contracts/{type}/auto-reject` | 异步跑自动拒绝流水线（模式 F，202） | 清理反复不合格 custom |
+| POST | `/api/contracts/{type}/regenerate-template` | 异步 LLM 重生成母版（模式 G，202） | 重写母版正文 |
+| GET | `/api/generation-jobs` | 列出最近的生成任务 | 看异步任务历史 |
+| GET | `/api/generation-jobs/{id}` | 轮询单个任务 | 拿异步任务结果 |
 
 > 路由顺序注意：`/artifacts` 这类静态路径在 `{contract_type}` 之前注册，所以
 > `GET /api/contracts/artifacts` 不会被当成 `contract_type="artifacts"`。
@@ -451,6 +464,223 @@ curl -OJ http://23.144.68.246:30820/api/contracts/sale/files/sale.docx
 - 路径穿越安全：文件名含 `..` / `/` / `\` 一律 `404`。
 - 文件不存在 → `404`。
 
+### 5.13 合同生成模式接口（D / E / F / G + 任务轮询）
+
+上面 §5.7 / §5.8 的 `generate` / `generate-stored` 覆盖的是**模式 B / C**（单次组装）。
+本节讲另外 4 个生成模式 + 2 个任务轮询接口。模式 A（母版骨架下载）是纯前端下载，
+不发请求，不在此列。源码在 `src/web/routes/generation.py`。
+
+请求体统一是 `GenerationRequest`（§5.13.6），比 `GenerateRequest` 多了 `mode` /
+`tag_combinations` / `enumerate_all` / `max_concurrent` / `rubric` / `task_desc` /
+`max_iterations` / `temperature` 等字段。
+
+> **同步 vs 异步**：模式 D 同步（批量组装是本地 DB+模板工作，无 LLM，秒级返回）；
+> 模式 E / F / G 异步（要跑 LLM / langgraph / subprocess，返回 `202 + job_id`，
+> 轮询 `GET /api/generation-jobs/{id}` 拿结果）。状态机：`pending → running →
+> completed | failed`。
+
+#### 5.13.1 `POST /api/contracts/{type}/generate-batch` — 批量组装（模式 D，同步）
+
+跨多组 tag 组合批量组装。组装是纯本地工作，几十组也秒级返回。
+
+请求体关键字段：
+
+| 字段 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `tag_combinations` | dict[]? | null | 显式指定要跑哪些组合，每项形如 `{"scenario":"农产品买卖","stance":"pro_a"}` |
+| `enumerate_all` | bool | false | 为 true 时枚举该类型全部 tag 维度的笛卡尔积 |
+| `format` | enum | `docx` | `docx`/`pdf`/`both`/`markdown` |
+| `custom_clause_ids` | int[]? | null | 统一指定用哪一组 custom 条款 |
+| `mode` | string? | null | 面板簿记；若传且不为 `"D"` 会 400 |
+
+> `tag_combinations` 与 `enumerate_all` **二选一**：都不传 → `400`。每项组合会用
+> `validate_tags` 校验，非法值丢弃；全被丢弃 → `400`。
+
+```bash
+curl -X POST http://23.144.68.246:30820/api/contracts/sale/generate-batch \
+  -H 'Content-Type: application/json' \
+  -d '{"tag_combinations":[{"scenario":"农产品买卖","stance":"pro_a"},{"scenario":"农产品买卖","stance":"pro_b"}],"format":"docx"}'
+
+# 或枚举全部组合
+curl -X POST http://23.144.68.246:30820/api/contracts/sale/generate-batch \
+  -H 'Content-Type: application/json' -d '{"enumerate_all":true,"format":"pdf"}'
+```
+
+响应：
+
+```json
+{
+  "contract_type": "sale",
+  "total_requested": 2,
+  "success_count": 2,
+  "failure_count": 0,
+  "results": [
+    {"success": true, "tags": {"scenario":"农产品买卖","stance":"pro_a"}, "body_text":"...", "docx_url":"/api/contracts/sale/files/sale.docx", "pdf_url": null, "diagnostics": {}},
+    {"success": true, "tags": {"scenario":"农产品买卖","stance":"pro_b"}, "body_text":"...", "docx_url":"/api/contracts/sale/files/sale_1.docx", "pdf_url": null, "diagnostics": {}}
+  ]
+}
+```
+
+失败的单个组合**不会**让整批 `422`，而是记到该项的 `error`：
+
+```json
+{"success": false, "tags": {...}, "error": "missing canonical sections: ['价款及支付']"}
+```
+
+错误：`404`（类型未知）、`400`（没传 `tag_combinations` 也没 `enumerate_all`、或 `mode` 不匹配）。
+
+#### 5.13.2 `POST /api/contracts/{type}/pipeline` — 自愈流水线（模式 E，异步 202）
+
+提交一个**自愈**任务：后台跑「生成 → 填充 → 评价 → 自愈」循环，写 `clauses` 表与
+`pipeline_runs` 表。适合要高质量、可反复改写条款的场景。
+
+请求体关键字段：
+
+| 字段 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `stance` | string? | null | 立场 `pro_a`/`pro_b`/`balanced` |
+| `scenario` | string? | null | 业务场景 |
+| `rubric` | string? | null | 评分规则名；留空取该类型最大 `v<N>` |
+| `task_desc` | string? | null | 原始起草需求，作为 judge 输入 |
+| `max_iterations` | int | 3 | 自愈轮数上限；`1` 关闭循环 |
+| `temperature` | float | 0.0 | LLM 填充温度 |
+| `custom_clause_ids` | int[]? | null | 指定 custom 条款（自愈里可临时排除不合适的覆盖） |
+| `mode` | string? | null | 须为 `"E"` |
+
+```bash
+curl -X POST http://23.144.68.246:30820/api/contracts/sale/pipeline \
+  -H 'Content-Type: application/json' \
+  -d '{"stance":"balanced","scenario":"农产品买卖","max_iterations":3,"rubric":"contract_sale_v3","task_desc":"偏买方的农产品采购合同"}'
+```
+
+响应（**202**，立即返回）：
+
+```json
+{"job_id": 17, "status": "pending"}
+```
+
+然后用 `GET /api/generation-jobs/17` 轮询。`completed` 后 `result_ref` 形如：
+
+```json
+{
+  "pipeline_run_id": 128,
+  "score": 0.84,
+  "all_pass": false,
+  "n_passed": 9,
+  "n_criteria": 11,
+  "iteration": 2,
+  "eval_run_id": 305
+}
+```
+
+错误：`404`（类型未知）、`400`（`mode` 不匹配）。
+
+#### 5.13.3 `POST /api/contracts/{type}/auto-reject` — 自动拒绝（模式 F，异步 202）
+
+在模式 E 基础上多跑一个 `learn` 节点：聚合本轮 + 历史轮的条款审核建议，把反复不合格
+（跨过 `AUTO_REJECT_THRESHOLD`，默认 3）的 **custom** 条款自动标记为 `rejected`，使其
+不再进入后续组装。base / tagged 条款**永不被拒**。
+
+请求体同 5.13.2（`mode` 须为 `"F"`）。
+
+```bash
+curl -X POST http://23.144.68.246:30820/api/contracts/sale/auto-reject \
+  -H 'Content-Type: application/json' -d '{"stance":"balanced","max_iterations":3}'
+```
+
+响应（202）同上。`completed` 后 `result_ref` 多一个 `learn_applied`：
+
+```json
+{"pipeline_run_id": 130, "score": 0.91, "all_pass": true, "iteration": 3, "learn_applied": 4}
+```
+
+#### 5.13.4 `POST /api/contracts/{type}/regenerate-template` — 重生成母版（模式 G，异步 202）
+
+用 LLM 重写该类型的**母版正文**，直接改写全局 `src/contracts/data/contracts.json`。
+⚠️ **全局副作用**，会影响所有依赖该母版的组装。面板会弹确认框点名 `contracts.json`。
+
+请求体只需 `mode:"G"`（其余字段被忽略，类型由路径决定）：
+
+```bash
+curl -X POST http://23.144.68.246:30820/api/contracts/sale/regenerate-template \
+  -H 'Content-Type: application/json' -d '{"mode":"G"}'
+```
+
+后台实际执行：`python scripts/generate_contract_templates_llm.py --type sale --force`
+（cwd=仓库根）。`completed` 后 `result_ref`：
+
+```json
+{"returncode": 0, "stdout": "...", "stderr": ""}
+```
+
+退出码非 0 → `status:"failed"`，`error_message` 取 stderr。
+
+#### 5.13.5 `GET /api/generation-jobs` / `GET /api/generation-jobs/{id}` — 任务轮询
+
+异步模式 E/F/G 提交后拿 `job_id`，靠这两个接口查状态与结果。
+
+**列出最近任务**（`limit` 默认 20，按时间倒序）：
+
+```bash
+curl 'http://23.144.68.246:30820/api/generation-jobs?limit=20'
+```
+
+**轮询单个任务**（`id` 不存在 → `404`）：
+
+```bash
+curl http://23.144.68.246:30820/api/generation-jobs/17
+```
+
+响应（`GenerationJobDetail`）：
+
+```json
+{
+  "id": 17,
+  "kind": "pipeline",
+  "contract_type": "sale",
+  "status": "completed",
+  "result_ref": {"pipeline_run_id": 128, "score": 0.84, "all_pass": false, "n_passed": 9, "n_criteria": 11, "iteration": 2, "eval_run_id": 305},
+  "error_message": null,
+  "created_at": "2026-08-17T10:00:00Z",
+  "updated_at": "2026-08-17T10:03:12Z"
+}
+```
+
+| 字段 | 说明 |
+|------|------|
+| `kind` | 任务类型：`pipeline` / `auto_reject` / `regenerate`（模式 D 同步，不落 job 行） |
+| `status` | `pending` → `running` → `completed` \| `failed` |
+| `result_ref` | 指向该模式真实输出的 JSON 对象（见各模式）；`pending`/`running` 期间为 `null` |
+| `error_message` | `failed` 时的错误信息 |
+
+> 轮询建议：每 3 秒查一次（面板 `POLL_MS=3000`），终态停止；面板上限约 200 次
+> （`MAX_POLLS=200`，约 10 分钟），超时后刷新页面或直接查 job。`result_ref` 各 `kind`
+> 形状见 5.13.2 / 5.13.3 / 5.13.4。
+
+#### 5.13.6 请求体 Schema（`GenerationRequest`）
+
+模式 D/E/F/G 共用，是 `GenerateRequest`（§6）的超集：
+
+```python
+class GenerationRequest(BaseModel):
+    mode: str | None = None              # 面板簿记；路由校验是否匹配
+    stance: str | None = None
+    scenario: str | None = None
+    custom_clause_ids: list[int] | None = None
+    format: str = "docx"                  # 模式 D 用
+    tag_combinations: list[dict] | None = None  # 模式 D 用
+    enumerate_all: bool = False           # 模式 D 用
+    max_concurrent: int = 5               # 模式 D 预留（当前串行）
+    rubric: str | None = None             # 模式 E/F 用
+    task_desc: str | None = None          # 模式 E/F 用
+    max_iterations: int = 3               # 模式 E/F 用
+    temperature: float = 0.0              # 模式 E/F 用
+```
+
+> 不同模式只读自己关心的字段，多余字段会被忽略。
+>
+> 提交响应（E/F/G）：`GenerationJobSubmit = {job_id: int, status: "pending"}`。
+
 ## 6. 请求体 Schema（`generate` / `generate-stored` 共用）
 
 ```python
@@ -482,6 +712,9 @@ class GenerateRequest(BaseModel):
 | `400` | `generate-stored` 下载 `format` 非 docx/pdf | 改正 format |
 | `422` | `format` 取值非法（pydantic Literal 校验）；或组装未通过一致性闸门 | 看返回 `detail`：若是闸门失败，说明该 scenario+stance 组合缺关键章节，换个组合或补条款 |
 | `500` | 其他内部错误（DB / 渲染失败等） | 重试；持续失败联系底座维护者 |
+| `202` | 异步生成模式 E/F/G 已受理（§5.13） | 不算错误：拿 `job_id` 轮询 `GET /api/generation-jobs/{id}` |
+| `400` | 模式 D 没传 `tag_combinations` 也没 `enumerate_all`；或 `mode` 与路由不匹配 | 补齐参数 / 改正 `mode` |
+| `404` | `GET /api/generation-jobs/{id}` 的 id 不存在 | 查 `GET /api/generation-jobs` 确认 id |
 
 一致性闸门失败示例：
 
@@ -593,6 +826,11 @@ uvicorn fd_coding_law_bench_mcp.api.main:app --port 8000
 `GET /tags/combinations/{type}`、`POST /tags/validate` 等，功能子集与本文档重叠但更偏
 「纯生成」，**上下文粒度不如本文档**（没有 slots/laws/clauses catalog/bundle）。
 两套可以并用：用本文档拿上下文 + 填空，用 async 那套做对外生成网关。
+
+> **注意区分**：§5.13 的生成模式接口（E/F/G）虽然也是「异步」，但它们跑在**本应用
+> 8010 端口**上（`src/web/routes/generation.py`，FastAPI `BackgroundTasks` + `generation_jobs`
+> 表），不是上面这套 8000 端口的 async 网关。8010 这套无鉴权、无限流，适合内部 / Web 面板用；
+> 对外部署仍走 8000 那套。
 
 另外 `src/web/routes/api.py` 下还有一套 `/api/rubrics`、`/api/prompts`、`/api/compare`
 **评测管理**接口（rubric / criterion / prompt 的 CRUD + prompt 对比评测），与「生成」关系不大，
