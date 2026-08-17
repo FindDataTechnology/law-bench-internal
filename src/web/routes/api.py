@@ -30,7 +30,7 @@ from src.eval.store import (
 )
 from src.settings import DEFAULT_DB, EXTRACT_SCRIPT, REPO_ROOT
 
-from ..deps import get_db
+from ..deps import DbConn, get_db
 from ..models import (
     CompareCreate,
     CriterionCreate,
@@ -56,13 +56,13 @@ def _err(status: int, message: str) -> JSONResponse:
 
 
 @router.get("/rubrics")
-def list_rubrics(db: Path = Depends(get_db)) -> list[dict]:
+def list_rubrics(db: DbConn = Depends(get_db)) -> list[dict]:
     """All rubrics with source/context/criterion count."""
     return M.list_rubrics_with_counts(db_path=db)
 
 
 @router.get("/rubrics/{name}")
-def get_rubric(name: str, db: Path = Depends(get_db)) -> dict:
+def get_rubric(name: str, db: DbConn = Depends(get_db)) -> dict:
     """A rubric's metadata and its ordered criteria."""
     return M.get_rubric_detail(name, db_path=db)
 
@@ -71,7 +71,7 @@ def get_rubric(name: str, db: Path = Depends(get_db)) -> dict:
 
 
 @router.post("/rubrics", status_code=201)
-def create_rubric(body: RubricCreate, db: Path = Depends(get_db)) -> dict:
+def create_rubric(body: RubricCreate, db: DbConn = Depends(get_db)) -> dict:
     return M.create_rubric(
         body.name,
         body.context,
@@ -82,7 +82,7 @@ def create_rubric(body: RubricCreate, db: Path = Depends(get_db)) -> dict:
 
 
 @router.patch("/rubrics/{name}")
-def update_rubric(name: str, body: RubricUpdate, db: Path = Depends(get_db)) -> dict:
+def update_rubric(name: str, body: RubricUpdate, db: DbConn = Depends(get_db)) -> dict:
     detail = M.get_rubric_detail(name, db_path=db)  # raises NotFoundError if missing
     return M.update_rubric(
         detail["id"], body.name, body.context, body.description, db_path=db
@@ -90,7 +90,7 @@ def update_rubric(name: str, body: RubricUpdate, db: Path = Depends(get_db)) -> 
 
 
 @router.delete("/rubrics/{name}")
-def delete_rubric(name: str, db: Path = Depends(get_db)) -> dict:
+def delete_rubric(name: str, db: DbConn = Depends(get_db)) -> dict:
     detail = M.get_rubric_detail(name, db_path=db)
     M.delete_rubric(detail["id"], db_path=db)
     return {"deleted": name}
@@ -100,7 +100,7 @@ def delete_rubric(name: str, db: Path = Depends(get_db)) -> dict:
 
 
 @router.post("/rubrics/{name}/criteria", status_code=201)
-def add_criterion(name: str, body: CriterionCreate, db: Path = Depends(get_db)) -> dict:
+def add_criterion(name: str, body: CriterionCreate, db: DbConn = Depends(get_db)) -> dict:
     detail = M.get_rubric_detail(name, db_path=db)
     return M.add_criterion(
         detail["id"], body.name, body.description, body.guidance, db_path=db
@@ -109,7 +109,7 @@ def add_criterion(name: str, body: CriterionCreate, db: Path = Depends(get_db)) 
 
 # Defined before the {cid} routes so "/criteria/reorder" is not matched as an int cid.
 @router.post("/rubrics/{name}/criteria/reorder")
-def reorder_criteria(name: str, body: ReorderRequest, db: Path = Depends(get_db)) -> dict:
+def reorder_criteria(name: str, body: ReorderRequest, db: DbConn = Depends(get_db)) -> dict:
     detail = M.get_rubric_detail(name, db_path=db)
     ordered = M.reorder_criteria(detail["id"], body.ordered_criterion_ids, db_path=db)
     return {"ordered_criterion_ids": ordered}
@@ -117,13 +117,13 @@ def reorder_criteria(name: str, body: ReorderRequest, db: Path = Depends(get_db)
 
 @router.patch("/rubrics/{name}/criteria/{cid}")
 def update_criterion(
-    name: str, cid: int, body: CriterionUpdate, db: Path = Depends(get_db)
+    name: str, cid: int, body: CriterionUpdate, db: DbConn = Depends(get_db)
 ) -> dict:
     return M.update_criterion(cid, body.name, body.description, body.guidance, db_path=db)
 
 
 @router.delete("/rubrics/{name}/criteria/{cid}")
-def delete_criterion(name: str, cid: int, db: Path = Depends(get_db)) -> dict:
+def delete_criterion(name: str, cid: int, db: DbConn = Depends(get_db)) -> dict:
     M.delete_criterion(cid, db_path=db)
     return {"deleted": cid}
 
@@ -132,19 +132,19 @@ def delete_criterion(name: str, cid: int, db: Path = Depends(get_db)) -> dict:
 
 
 @router.get("/prompts")
-def list_prompts(db: Path = Depends(get_db)) -> list[dict]:
+def list_prompts(db: DbConn = Depends(get_db)) -> list[dict]:
     """All generation prompts (without content bodies)."""
     return M.list_prompts(db_path=db)
 
 
 @router.get("/prompts/{name}")
-def get_prompt(name: str, db: Path = Depends(get_db)) -> dict:
+def get_prompt(name: str, db: DbConn = Depends(get_db)) -> dict:
     """A prompt's full record including its content."""
     return M.get_prompt(name, db_path=db)
 
 
 @router.post("/prompts", status_code=201)
-def create_prompt(body: PromptCreate, db: Path = Depends(get_db)) -> dict:
+def create_prompt(body: PromptCreate, db: DbConn = Depends(get_db)) -> dict:
     return M.create_prompt(
         body.name,
         body.contract_type,
@@ -157,7 +157,7 @@ def create_prompt(body: PromptCreate, db: Path = Depends(get_db)) -> dict:
 
 
 @router.patch("/prompts/{name}")
-def update_prompt(name: str, body: PromptUpdate, db: Path = Depends(get_db)) -> dict:
+def update_prompt(name: str, body: PromptUpdate, db: DbConn = Depends(get_db)) -> dict:
     detail = M.get_prompt(name, db_path=db)  # raises NotFoundError if missing
     return M.update_prompt(
         detail["id"],
@@ -172,7 +172,7 @@ def update_prompt(name: str, body: PromptUpdate, db: Path = Depends(get_db)) -> 
 
 
 @router.delete("/prompts/{name}")
-def delete_prompt(name: str, db: Path = Depends(get_db)) -> dict:
+def delete_prompt(name: str, db: DbConn = Depends(get_db)) -> dict:
     detail = M.get_prompt(name, db_path=db)
     M.delete_prompt(detail["id"], db_path=db)
     return {"deleted": name}
@@ -182,13 +182,13 @@ def delete_prompt(name: str, db: Path = Depends(get_db)) -> dict:
 
 
 @router.get("/compare")
-def list_compares_route(db: Path = Depends(get_db)) -> list[dict]:
+def list_compares_route(db: DbConn = Depends(get_db)) -> list[dict]:
     """Recent compare runs (compare-level fields only)."""
     return list_compares(db_path=db)
 
 
 @router.get("/compare/{compare_id}")
-def get_compare_route(compare_id: int, db: Path = Depends(get_db)) -> dict:
+def get_compare_route(compare_id: int, db: DbConn = Depends(get_db)) -> dict:
     """Full grouped compare result with a derived criteria × prompts matrix.
 
     ``draft_text`` is excluded (lazy-fetched via ``/run/{run_id}/draft``).
@@ -201,7 +201,7 @@ def get_compare_route(compare_id: int, db: Path = Depends(get_db)) -> dict:
 
 
 @router.post("/compare", status_code=201)
-def create_compare(body: CompareCreate, db: Path = Depends(get_db)) -> dict:
+def create_compare(body: CompareCreate, db: DbConn = Depends(get_db)) -> dict:
     """Create and run a compare synchronously.
 
     Runs the drafter-only generation + the real judge for each prompt/draft.
@@ -224,7 +224,7 @@ def create_compare(body: CompareCreate, db: Path = Depends(get_db)) -> dict:
 
 
 @router.get("/compare/{compare_id}/run/{run_id}/draft")
-def get_run_draft_route(compare_id: int, run_id: int, db: Path = Depends(get_db)) -> dict:
+def get_run_draft_route(compare_id: int, run_id: int, db: DbConn = Depends(get_db)) -> dict:
     """Lazy-fetch a single run's ``draft_text`` (kept out of the default payload)."""
     try:
         return get_run_draft(compare_id, run_id, db_path=db)
@@ -251,14 +251,14 @@ def run_harbor_extraction(db_path: Path = DEFAULT_DB) -> tuple[int, str, str]:
 
 
 @router.post("/harbor/extract")
-def harbor_extract(db: Path = Depends(get_db)) -> JSONResponse:
+def harbor_extract(db: DbConn = Depends(get_db)) -> JSONResponse:
     """Re-run the harbor extraction script; return its summary + refreshed rubrics.
 
     Surface a non-zero exit as an error (e.g. harbor not installed).
     """
     if not EXTRACT_SCRIPT.is_file():
         return _err(500, f"extraction script not found: {EXTRACT_SCRIPT}")
-    code, out, err = run_harbor_extraction(db_path=db)
+    code, out, err = run_harbor_extraction()
     if code != 0:
         return _err(500, f"harbor extraction failed (exit {code}): {(err or '').strip()}")
     return JSONResponse(
@@ -269,7 +269,7 @@ def harbor_extract(db: Path = Depends(get_db)) -> JSONResponse:
 # --- evaluate -------------------------------------------------------------- #
 
 
-def _run_evaluation_background(run_id: int, rubric_name: str, contract_text: str, db_path: Path) -> None:
+def _run_evaluation_background(run_id: int, rubric_name: str, contract_text: str, db_path: DbConn) -> None:
     """Background task: evaluate contract and update api_eval_runs."""
     try:
         update_api_eval_run(run_id, status="running", db_path=db_path)
@@ -300,7 +300,7 @@ async def submit_evaluation(
     rubric: str = Form(...),
     contract_text: str = Form(None),
     contract_file: UploadFile = None,
-    db: Path = Depends(get_db),
+    db: DbConn = Depends(get_db),
 ) -> dict:
     """Submit a contract for async evaluation against a rubric.
 
@@ -329,13 +329,13 @@ async def submit_evaluation(
 
 
 @router.get("/evaluate", response_model=list[EvaluateRunSummary])
-def list_evaluations(limit: int = 20, db: Path = Depends(get_db)) -> list[dict]:
+def list_evaluations(limit: int = 20, db: DbConn = Depends(get_db)) -> list[dict]:
     """Recent API evaluation runs (most recent first)."""
     return list_api_eval_runs(limit=limit, db_path=db)
 
 
 @router.get("/evaluate/{run_id}", response_model=EvaluateRunDetail)
-def get_evaluation(run_id: int, db: Path = Depends(get_db)) -> dict:
+def get_evaluation(run_id: int, db: DbConn = Depends(get_db)) -> dict:
     """Full detail of an API evaluation run."""
     try:
         return get_api_eval_run(run_id, db_path=db)

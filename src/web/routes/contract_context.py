@@ -2,7 +2,7 @@
 
 Every endpoint is a thin route over an existing service function (``src.contracts``,
 ``src.clauses``, ``src.eval``) - no business logic. DB-backed reads take
-``db: Any = Depends(get_db)`` reusing the existing connection-borrowing seam so
+``db: DbConn = Depends(get_db)`` reusing the existing connection-borrowing seam so
 tests can point the layer at a throwaway DB. All endpoints are documented in the
 ``/api/docs`` OpenAPI schema (the generated-file download route is the only
 exception - it is an implementation detail of the ``generate`` download URLs).
@@ -22,7 +22,7 @@ Endpoints:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -51,7 +51,7 @@ from src.eval.errors import NotFoundError
 from src.eval.law_info import get_law_info
 from src.eval.manage import list_prompts, list_rubrics_with_counts
 
-from ..deps import get_db
+from ..deps import DbConn, get_db
 
 # src/web/routes/contract_context.py -> routes -> web -> src -> repo root
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -123,7 +123,7 @@ def _slot_manifest_with_ontology(
     return out
 
 
-def _latest_rubric_for_type(contract_type: str, db: Any) -> dict | None:
+def _latest_rubric_for_type(contract_type: str, db: DbConn) -> dict | None:
     """Latest-version rubric for the type as ``{name}``, or ``None``.
 
     Highest ``v<N>`` among ``contract_<type>_v<N>`` names; else the alphabetically-
@@ -148,7 +148,7 @@ def _version_pattern(contract_type: str):
     return re.compile(rf"^contract_{re.escape(contract_type)}_v(\d+)$")
 
 
-def _clause_count_summary(contract_type: str, db: Any) -> dict:
+def _clause_count_summary(contract_type: str, db: DbConn) -> dict:
     """``{base: N, tagged: N, custom: N}`` (+ any other sources) for the type."""
     clauses = list_clauses(contract_type=contract_type, db=db)
     counts: dict[str, int] = {"base": 0, "tagged": 0, "custom": 0}
@@ -196,7 +196,7 @@ def list_types() -> list[dict]:
 
 @router.get("/artifacts", summary="List stored contract artifacts")
 def list_artifacts_route(
-    contract_type: str | None = None, db: Any = Depends(get_db)
+    contract_type: str | None = None, db: DbConn = Depends(get_db)
 ) -> list[dict]:
     """Stored artifact metadata rows (no ``body_text``), newest first, optionally
     filtered by ``?contract_type=``.
@@ -205,7 +205,7 @@ def list_artifacts_route(
 
 
 @router.get("/artifacts/{artifact_id}", summary="Stored artifact metadata")
-def get_artifact_route(artifact_id: int, db: Any = Depends(get_db)) -> dict:
+def get_artifact_route(artifact_id: int, db: DbConn = Depends(get_db)) -> dict:
     """Full artifact row including ``body_text``. 404 if the id is unknown."""
     row = get_artifact(artifact_id, db=db)
     if row is None:
@@ -215,7 +215,7 @@ def get_artifact_route(artifact_id: int, db: Any = Depends(get_db)) -> dict:
 
 @router.get("/artifacts/{artifact_id}/download", summary="Download a stored artifact")
 def download_artifact_route(
-    artifact_id: int, format: str = "docx", db: Any = Depends(get_db)
+    artifact_id: int, format: str = "docx", db: DbConn = Depends(get_db)
 ) -> StreamingResponse:
     """Stream a stored docx/pdf from MinIO. 404 if the artifact or the requested
     format is missing.
@@ -247,7 +247,7 @@ def download_artifact_route(
 
 @router.post("/{contract_type}/generate-stored", summary="Generate, upload to MinIO, store")
 def generate_stored_route(
-    contract_type: str, body: GenerateRequest, db: Any = Depends(get_db)
+    contract_type: str, body: GenerateRequest, db: DbConn = Depends(get_db)
 ) -> dict:
     """Generate a contract (docx/pdf), upload to MinIO, record ``contract_artifacts``
     row(s). Content-addressed by ``md5(body_text)``: identical inputs reuse the same
@@ -279,7 +279,7 @@ def generate_stored_route(
 
 
 @router.get("/{contract_type}", summary="Comprehensive context bundle")
-def get_bundle(contract_type: str, db: Any = Depends(get_db)) -> dict:
+def get_bundle(contract_type: str, db: DbConn = Depends(get_db)) -> dict:
     """Everything an agent needs to draft a contract of this type in one call:
     template body + slots, slot instructions (with ontology coverage), structured
     法律法规 refs, the tag vocabulary, the canonical section order, a clause
@@ -320,7 +320,7 @@ def get_slots(contract_type: str) -> list[dict]:
 
 
 @router.get("/{contract_type}/laws", summary="Per-type laws (refs + survey markdown)")
-def get_laws(contract_type: str, db: Any = Depends(get_db)) -> dict:
+def get_laws(contract_type: str, db: DbConn = Depends(get_db)) -> dict:
     """Structured 法律法规 refs plus the full Doubao+DeepSeek survey markdown."""
     _require_type(contract_type)
     try:
@@ -350,7 +350,7 @@ def get_clauses(
     source: str | None = None,
     limit: int = 50,
     offset: int = 0,
-    db: Any = Depends(get_db),
+    db: DbConn = Depends(get_db),
 ) -> dict:
     """Clause catalog for the type, filterable by ``scenario`` / ``stance`` / ``source``
     and paginated via ``limit`` (default 50, max 200) / ``offset`` (default 0).
@@ -381,7 +381,7 @@ def get_clauses(
 
 @router.post("/{contract_type}/generate", summary="Assemble + render a contract")
 def generate_contract(
-    contract_type: str, body: GenerateRequest, db: Any = Depends(get_db)
+    contract_type: str, body: GenerateRequest, db: DbConn = Depends(get_db)
 ) -> dict:
     """Assemble a contract via the existing tag-driven assembly (per-section override
     ``custom > tagged > base`` + coherence gate) and render it. ``format`` defaults to

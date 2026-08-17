@@ -51,7 +51,7 @@ from src.eval.store import (
 )
 from src.settings import GENERATE_TEMPLATES_SCRIPT, REPO_ROOT
 
-from ..deps import get_db
+from ..deps import DbConn, get_db
 from ..models import GenerationJobDetail, GenerationJobSubmit, GenerationRequest
 
 router = APIRouter(prefix="/api", tags=["contract-generation"])
@@ -135,7 +135,7 @@ def _enumerate_combinations(contract_type: str) -> list[dict]:
     summary="Batch-assemble contracts across tag combinations (mode D, sync)",
 )
 def generate_batch(
-    contract_type: str, body: GenerationRequest, db: Any = Depends(get_db)
+    contract_type: str, body: GenerationRequest, db: DbConn = Depends(get_db)
 ) -> dict:
     """Assemble the contract across the requested (or enumerated) tag combinations.
 
@@ -208,7 +208,7 @@ def generate_batch(
 
 
 def _run_self_heal(
-    job_id: int, contract_type: str, body: GenerationRequest, db_path: Any
+    job_id: int, contract_type: str, body: GenerationRequest, db_path: DbConn
 ) -> None:
     """Background task: run the self-heal pipeline and update the job row.
 
@@ -249,7 +249,7 @@ def _run_self_heal(
 
 
 def _run_auto_reject(
-    job_id: int, contract_type: str, body: GenerationRequest, db_path: Any
+    job_id: int, contract_type: str, body: GenerationRequest, db_path: DbConn
 ) -> None:
     """Background task: run the auto-reject pipeline (generate -> fill -> evaluate
     -> check -> improve -> store -> learn) and update the job row.
@@ -290,7 +290,7 @@ def _run_auto_reject(
 
 
 def _run_regenerate(
-    job_id: int, contract_type: str, db_path: Any
+    job_id: int, contract_type: str, db_path: DbConn
 ) -> None:
     """Background task: regenerate the type's 母版 body via the LLM script.
 
@@ -355,7 +355,7 @@ def submit_pipeline(
     contract_type: str,
     body: GenerationRequest,
     background_tasks: BackgroundTasks,
-    db: Any = Depends(get_db),
+    db: DbConn = Depends(get_db),
 ) -> dict:
     """Validate the type, insert a ``pipeline`` job row, schedule the self-heal
     pipeline, and return ``202 + {job_id, status:'pending'}``. Poll via
@@ -378,7 +378,7 @@ def submit_auto_reject(
     contract_type: str,
     body: GenerationRequest,
     background_tasks: BackgroundTasks,
-    db: Any = Depends(get_db),
+    db: DbConn = Depends(get_db),
 ) -> dict:
     """Insert an ``auto_reject`` job row, schedule the auto-reject pipeline
     (which also runs the ``learn`` node that auto-rejects repeatedly-thin custom
@@ -401,7 +401,7 @@ def submit_regenerate(
     contract_type: str,
     body: GenerationRequest,
     background_tasks: BackgroundTasks,
-    db: Any = Depends(get_db),
+    db: DbConn = Depends(get_db),
 ) -> dict:
     """Insert a ``regenerate`` job row, schedule the LLM 母版-regeneration
     subprocess for this contract type, return ``202 + {job_id, status:'pending'}``.
@@ -424,7 +424,7 @@ def submit_regenerate(
     response_model=list[GenerationJobDetail],
     summary="List recent generation jobs",
 )
-def list_jobs(limit: int = 20, db: Any = Depends(get_db)) -> list[dict]:
+def list_jobs(limit: int = 20, db: DbConn = Depends(get_db)) -> list[dict]:
     """Recent generation jobs (most recent first, default 20)."""
     rows = list_generation_jobs(limit=limit, db_path=db)
     for r in rows:
@@ -437,7 +437,7 @@ def list_jobs(limit: int = 20, db: Any = Depends(get_db)) -> list[dict]:
     response_model=GenerationJobDetail,
     summary="Poll a generation job",
 )
-def get_job(job_id: int, db: Any = Depends(get_db)) -> dict:
+def get_job(job_id: int, db: DbConn = Depends(get_db)) -> dict:
     """Full job row. ``status`` is ``pending``/``running``/``completed``/``failed``;
     ``result_ref`` is the parsed JSON pointer to the mode's output (or ``None``
     while pending/running). 404 if the id is unknown.

@@ -13,8 +13,8 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
 
-from ..app import templates as _templates
-from ..deps import get_db
+from ..templating import templates as _templates
+from ..deps import DbConn, get_db
 from ..markdown_render import render_markdown
 from ...clauses import TAG_VOCAB, generate_contract_assembled, list_clauses, tag_vocab_for_type
 from ...clauses.store import (
@@ -71,7 +71,7 @@ def _zh_map() -> dict:
     return {t["key"]: t["zh"] for t in list_contract_types()}
 
 
-def _type_rows(db) -> list[dict]:
+def _type_rows(db: DbConn) -> list[dict]:
     zh = _zh_map()
     return [
         {
@@ -87,7 +87,7 @@ def _type_rows(db) -> list[dict]:
 
 
 @router.get("/clauses", include_in_schema=False, name="page_clauses")
-def clauses_list(request: Request, q: str = "", db=Depends(get_db)):
+def clauses_list(request: Request, q: str = "", db: DbConn = Depends(get_db)):
     counts = count_clauses(db)
     tags = _tags_from_query(request)
     results = search_clauses(q, tags=tags or None, db=db) if (q or tags) else None
@@ -148,7 +148,7 @@ def clauses_generate(
     format: str = "pdf",
     scenario: str | None = None,
     stance: str | None = None,
-    db=Depends(get_db),
+    db: DbConn = Depends(get_db),
 ):
     if format not in ("docx", "pdf"):
         raise HTTPException(status_code=400, detail="unsupported format; use docx or pdf")
@@ -198,7 +198,7 @@ def clauses_new(request: Request, contract_type: str):
 
 
 @router.post("/clauses/{contract_type}/new", include_in_schema=False)
-async def clauses_create(request: Request, contract_type: str, db=Depends(get_db)):
+async def clauses_create(request: Request, contract_type: str, db: DbConn = Depends(get_db)):
     form = await request.form()
     category = form.get("category", "custom") or "custom"
     if category not in _CATEGORIES:
@@ -223,7 +223,7 @@ async def clauses_create(request: Request, contract_type: str, db=Depends(get_db
     include_in_schema=False,
     name="page_clauses_edit",
 )
-def clauses_edit(request: Request, contract_type: str, clause_id: int, db=Depends(get_db)):
+def clauses_edit(request: Request, contract_type: str, clause_id: int, db: DbConn = Depends(get_db)):
     zh = _zh_map()
     if contract_type not in zh:
         raise HTTPException(status_code=404, detail=f"unknown contract type: {contract_type}")
@@ -247,7 +247,7 @@ def clauses_edit(request: Request, contract_type: str, clause_id: int, db=Depend
 
 
 @router.post("/clauses/{contract_type}/clauses/{clause_id}", include_in_schema=False)
-async def clauses_update(request: Request, contract_type: str, clause_id: int, db=Depends(get_db)):
+async def clauses_update(request: Request, contract_type: str, clause_id: int, db: DbConn = Depends(get_db)):
     form = await request.form()
     category = form.get("category") or "custom"
     if category not in _CATEGORIES:
@@ -275,7 +275,7 @@ async def clauses_update(request: Request, contract_type: str, clause_id: int, d
     include_in_schema=False,
     name="page_clauses_delete",
 )
-async def clauses_delete_route(contract_type: str, clause_id: int, db=Depends(get_db)):
+async def clauses_delete_route(contract_type: str, clause_id: int, db: DbConn = Depends(get_db)):
     try:
         delete_clause(clause_id, db=db)
     except NotFoundError:
@@ -289,7 +289,7 @@ async def clauses_delete_route(contract_type: str, clause_id: int, db=Depends(ge
 
 
 @router.get("/clauses/review", include_in_schema=False, name="page_clauses_review")
-def clauses_review(request: Request, db=Depends(get_db)):
+def clauses_review(request: Request, db: DbConn = Depends(get_db)):
     pending = list_pending(db=db)
     return _templates.TemplateResponse(
         request,
@@ -303,7 +303,7 @@ def clauses_review(request: Request, db=Depends(get_db)):
     include_in_schema=False,
 )
 async def clauses_review_tag_route(
-    request: Request, contract_type: str, clause_id: int, db=Depends(get_db)
+    request: Request, contract_type: str, clause_id: int, db: DbConn = Depends(get_db)
 ):
     form = await request.form()
     dim = (form.get("dim") or "").strip()
@@ -324,7 +324,7 @@ async def clauses_review_tag_route(
     include_in_schema=False,
 )
 async def clauses_review_all_route(
-    request: Request, contract_type: str, clause_id: int, db=Depends(get_db)
+    request: Request, contract_type: str, clause_id: int, db: DbConn = Depends(get_db)
 ):
     form = await request.form()
     status = (form.get("status") or "approved").strip()
@@ -349,7 +349,7 @@ def clauses_detail(
     scenario: str = "",
     category: str = "",
     q: str = "",
-    db=Depends(get_db),
+    db: DbConn = Depends(get_db),
 ):
     zh = _zh_map()
     if contract_type not in zh:

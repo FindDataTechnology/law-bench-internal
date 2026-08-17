@@ -10,7 +10,6 @@ the layer at a throwaway DB.
 
 from __future__ import annotations
 
-from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Request
@@ -20,8 +19,8 @@ from src.eval import manage as M
 from src.eval.manage import ManageError
 from src.eval.store import list_compares
 
-from ..app import templates as _templates
-from ..deps import get_db
+from ..templating import templates as _templates
+from ..deps import DbConn, get_db
 from .api import run_harbor_extraction
 
 router = APIRouter(tags=["pages"])
@@ -56,7 +55,7 @@ def index() -> RedirectResponse:
 
 
 @router.get("/rubrics", include_in_schema=False, name="page_list_rubrics")
-def list_rubrics(request: Request, db: Path = Depends(get_db)):
+def list_rubrics(request: Request, db: DbConn = Depends(get_db)):
     return _templates.TemplateResponse(
         request, "rubrics_list.html", {"rubrics": M.list_rubrics_with_counts(db_path=db)}
     )
@@ -71,14 +70,14 @@ def new_rubric(request: Request):
 
 
 @router.get("/rubrics/{name}", include_in_schema=False, name="page_rubric_detail")
-def rubric_detail(request: Request, name: str, db: Path = Depends(get_db)):
+def rubric_detail(request: Request, name: str, db: DbConn = Depends(get_db)):
     return _templates.TemplateResponse(
         request, "rubric_detail.html", {"rubric": M.get_rubric_detail(name, db_path=db)}
     )
 
 
 @router.get("/rubrics/{name}/edit", include_in_schema=False, name="page_edit_rubric")
-def edit_rubric(request: Request, name: str, db: Path = Depends(get_db)):
+def edit_rubric(request: Request, name: str, db: DbConn = Depends(get_db)):
     return _templates.TemplateResponse(
         request, "rubric_form.html", {"mode": "edit", "rubric": M.get_rubric_detail(name, db_path=db)}
     )
@@ -88,7 +87,7 @@ def edit_rubric(request: Request, name: str, db: Path = Depends(get_db)):
 
 
 @router.post("/rubrics", include_in_schema=False, name="page_create_rubric")
-async def create_rubric(request: Request, db: Path = Depends(get_db)):
+async def create_rubric(request: Request, db: DbConn = Depends(get_db)):
     form = await request.form()
     name = form.get("name", "")
     context = form.get("context", "")
@@ -102,7 +101,7 @@ async def create_rubric(request: Request, db: Path = Depends(get_db)):
 
 
 @router.post("/rubrics/{name}", include_in_schema=False, name="page_update_rubric")
-async def update_rubric(request: Request, name: str, db: Path = Depends(get_db)):
+async def update_rubric(request: Request, name: str, db: DbConn = Depends(get_db)):
     form = await request.form()
     try:
         detail = M.get_rubric_detail(name, db_path=db)
@@ -119,7 +118,7 @@ async def update_rubric(request: Request, name: str, db: Path = Depends(get_db))
 
 
 @router.post("/rubrics/{name}/delete", include_in_schema=False, name="page_delete_rubric")
-async def delete_rubric(request: Request, name: str, db: Path = Depends(get_db)):
+async def delete_rubric(request: Request, name: str, db: DbConn = Depends(get_db)):
     try:
         detail = M.get_rubric_detail(name, db_path=db)
         M.delete_rubric(detail["id"], db_path=db)
@@ -134,7 +133,7 @@ async def delete_rubric(request: Request, name: str, db: Path = Depends(get_db))
 @router.post(
     "/rubrics/{name}/criteria", include_in_schema=False, name="page_add_criterion"
 )
-async def add_criterion(request: Request, name: str, db: Path = Depends(get_db)):
+async def add_criterion(request: Request, name: str, db: DbConn = Depends(get_db)):
     form = await request.form()
     try:
         detail = M.get_rubric_detail(name, db_path=db)
@@ -150,7 +149,7 @@ async def add_criterion(request: Request, name: str, db: Path = Depends(get_db))
 @router.post(
     "/rubrics/{name}/criteria/{cid}", include_in_schema=False, name="page_update_criterion"
 )
-async def update_criterion(request: Request, name: str, cid: int, db: Path = Depends(get_db)):
+async def update_criterion(request: Request, name: str, cid: int, db: DbConn = Depends(get_db)):
     form = await request.form()
     try:
         M.update_criterion(
@@ -167,7 +166,7 @@ async def update_criterion(request: Request, name: str, cid: int, db: Path = Dep
     include_in_schema=False,
     name="page_delete_criterion",
 )
-async def delete_criterion(request: Request, name: str, cid: int, db: Path = Depends(get_db)):
+async def delete_criterion(request: Request, name: str, cid: int, db: DbConn = Depends(get_db)):
     try:
         M.delete_criterion(cid, db_path=db)
     except ManageError as exc:
@@ -178,7 +177,7 @@ async def delete_criterion(request: Request, name: str, cid: int, db: Path = Dep
 @router.post(
     "/rubrics/{name}/criteria/{cid}/move", include_in_schema=False, name="page_move_criterion"
 )
-async def move_criterion(request: Request, name: str, cid: int, db: Path = Depends(get_db)):
+async def move_criterion(request: Request, name: str, cid: int, db: DbConn = Depends(get_db)):
     form = await request.form()
     direction = form.get("direction", "")
     try:
@@ -199,7 +198,7 @@ async def move_criterion(request: Request, name: str, cid: int, db: Path = Depen
 
 
 @router.get("/prompts", include_in_schema=False, name="page_list_prompts")
-def list_prompts(request: Request, db: Path = Depends(get_db)):
+def list_prompts(request: Request, db: DbConn = Depends(get_db)):
     return _templates.TemplateResponse(
         request, "prompts_list.html", {"prompts": M.list_prompts(db_path=db)}
     )
@@ -214,14 +213,14 @@ def new_prompt(request: Request):
 
 
 @router.get("/prompts/{name}", include_in_schema=False, name="page_prompt_detail")
-def prompt_detail(request: Request, name: str, db: Path = Depends(get_db)):
+def prompt_detail(request: Request, name: str, db: DbConn = Depends(get_db)):
     return _templates.TemplateResponse(
         request, "prompt_detail.html", {"prompt": M.get_prompt(name, db_path=db)}
     )
 
 
 @router.get("/prompts/{name}/edit", include_in_schema=False, name="page_edit_prompt")
-def edit_prompt(request: Request, name: str, db: Path = Depends(get_db)):
+def edit_prompt(request: Request, name: str, db: DbConn = Depends(get_db)):
     return _templates.TemplateResponse(
         request, "prompt_form.html", {"mode": "edit", "prompt": M.get_prompt(name, db_path=db)}
     )
@@ -231,7 +230,7 @@ def edit_prompt(request: Request, name: str, db: Path = Depends(get_db)):
 
 
 @router.post("/prompts", include_in_schema=False, name="page_create_prompt")
-async def create_prompt(request: Request, db: Path = Depends(get_db)):
+async def create_prompt(request: Request, db: DbConn = Depends(get_db)):
     form = await request.form()
     try:
         created = M.create_prompt(
@@ -249,7 +248,7 @@ async def create_prompt(request: Request, db: Path = Depends(get_db)):
 
 
 @router.post("/prompts/{name}", include_in_schema=False, name="page_update_prompt")
-async def update_prompt(request: Request, name: str, db: Path = Depends(get_db)):
+async def update_prompt(request: Request, name: str, db: DbConn = Depends(get_db)):
     form = await request.form()
     try:
         detail = M.get_prompt(name, db_path=db)
@@ -271,7 +270,7 @@ async def update_prompt(request: Request, name: str, db: Path = Depends(get_db))
 @router.post(
     "/prompts/{name}/delete", include_in_schema=False, name="page_delete_prompt"
 )
-async def delete_prompt(request: Request, name: str, db: Path = Depends(get_db)):
+async def delete_prompt(request: Request, name: str, db: DbConn = Depends(get_db)):
     try:
         detail = M.get_prompt(name, db_path=db)
         M.delete_prompt(detail["id"], db_path=db)
@@ -284,8 +283,11 @@ async def delete_prompt(request: Request, name: str, db: Path = Depends(get_db))
 
 
 @router.post("/harbor/extract", include_in_schema=False, name="page_harbor_extract")
-async def harbor_extract(request: Request, db: Path = Depends(get_db)):
-    code, _out, err = run_harbor_extraction(db_path=db)
+async def harbor_extract(request: Request):
+    # ``run_harbor_extraction`` shells out to the harbor script with a ``--db``
+    # file path; it must NOT receive the borrowed Postgres connection (str() of
+    # a connection is a repr, not a path). It falls back to DEFAULT_DB.
+    code, _out, err = run_harbor_extraction()
     if code != 0:
         return _flash("/rubrics", "flash.harbor_failed", err=True, detail=(err or '').strip())
     return _flash("/rubrics", "flash.harbor_refreshed")
@@ -295,14 +297,14 @@ async def harbor_extract(request: Request, db: Path = Depends(get_db)):
 
 
 @router.get("/compare", include_in_schema=False, name="page_list_compares")
-def list_compares_page(request: Request, db: Path = Depends(get_db)):
+def list_compares_page(request: Request, db: DbConn = Depends(get_db)):
     return _templates.TemplateResponse(
         request, "compare_list.html", {"compares": list_compares(db_path=db)}
     )
 
 
 @router.get("/compare/new", include_in_schema=False, name="page_new_compare")
-def new_compare(request: Request, db: Path = Depends(get_db)):
+def new_compare(request: Request, db: DbConn = Depends(get_db)):
     # Defined before /compare/{id} so "new" is not captured as an id.
     return _templates.TemplateResponse(
         request,
@@ -315,7 +317,7 @@ def new_compare(request: Request, db: Path = Depends(get_db)):
 
 
 @router.get("/compare/{compare_id}", include_in_schema=False, name="page_compare_detail")
-def compare_detail(request: Request, compare_id: int, db: Path = Depends(get_db)):
+def compare_detail(request: Request, compare_id: int, db: DbConn = Depends(get_db)):
     # The matrix is rendered client-side by app.js (localStorage mirror +
     # reconcile with /api/compare/{id}); the page is a shell carrying the id.
     return _templates.TemplateResponse(

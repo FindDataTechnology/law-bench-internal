@@ -28,7 +28,7 @@ def _local_time(utc_str: str | None) -> str:
 @router.get("/dashboard", include_in_schema=False)
 def dashboard(request: Request):
     """Server-rendered dashboard page with pipeline evaluation stats."""
-    from ..app import templates as _templates
+    from ..templating import templates as _templates
 
     ensure_schema()
     conn = connect()

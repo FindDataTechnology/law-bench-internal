@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 
-from ..app import templates as _templates
-from ..deps import get_db
+from ..templating import templates as _templates
+from ..deps import DbConn, get_db
 from ..markdown_render import render_markdown
 from ...eval.errors import NotFoundError
 from ...eval.law_info import all_law_info, get_law_info, list_law_info_types
@@ -22,7 +22,7 @@ router = APIRouter(tags=["law-info"])
 
 
 @router.get("/law-info", include_in_schema=False, name="page_law_info")
-def law_info_list(request: Request, db=Depends(get_db)):
+def law_info_list(request: Request, db: DbConn = Depends(get_db)):
     types = list_law_info_types(db)
     return _templates.TemplateResponse(
         request, "law_info_list.html", {"types": types}
@@ -30,7 +30,7 @@ def law_info_list(request: Request, db=Depends(get_db)):
 
 
 @router.get("/law-info/{contract_type}", include_in_schema=False, name="page_law_info_detail")
-def law_info_detail(request: Request, contract_type: str, db=Depends(get_db)):
+def law_info_detail(request: Request, contract_type: str, db: DbConn = Depends(get_db)):
     try:
         info = get_law_info(contract_type, db)
     except NotFoundError:
@@ -56,7 +56,7 @@ def law_info_detail(request: Request, contract_type: str, db=Depends(get_db)):
 @router.get("/law-references", include_in_schema=False, name="page_law_references")
 def law_references(
     request: Request,
-    db=Depends(get_db),
+    db: DbConn = Depends(get_db),
     source: str = "",
     contract_type: str = "",
 ):

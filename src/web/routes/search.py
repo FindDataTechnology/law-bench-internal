@@ -10,7 +10,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from ..app import templates as _templates
+from ..templating import templates as _templates
 
 router = APIRouter(tags=["search"])
 

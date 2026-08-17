@@ -11,7 +11,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 
-from ..app import templates as _templates
+from ..templating import templates as _templates
 from ..markdown_render import render_markdown
 from ...contracts import (
     extract_laws_for_type,

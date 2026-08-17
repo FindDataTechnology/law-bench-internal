@@ -4,22 +4,25 @@ Run locally with::
 
     uv run uvicorn src.web.app:app --reload --host 127.0.0.1 --port 8010
 
-The HTML routes (``src/web/routes/pages.py``) are included when present; the
-JSON API lives under ``/api`` (``src/web/routes/api.py``). Manage-layer errors
-(``src/eval/manage.py``) are mapped to HTTP statuses here so routes stay thin.
+All routers — the HTML pages (``src/web/routes/pages.py`` and siblings) and
+the JSON API (``src/web/routes/api.py``) — are included unconditionally at
+module load, so a missing or broken router surfaces at startup instead of
+404-ing silently at request time. Manage-layer errors (``src/eval/manage.py``)
+are mapped to HTTP statuses here so routes stay thin.
+
+The Jinja2 ``templates`` renderer lives in ``src/web/templating.py`` (not here)
+so the HTML route modules can import it without a circular import through this
+module; it is re-exported below for any existing ``from ..app import
+templates`` callers.
 """
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 
-from src.eval import manage as M
+from src.eval import manage as M  # noqa: F401 — re-exported for callers
 from src.eval.manage import (
     ConflictError,
     HarborReadOnlyError,
@@ -28,62 +31,21 @@ from src.eval.manage import (
     ValidationError,
 )
 
-from .i18n import (
-    DEFAULT,
-    LABELS,
-    LOCALES,
-    criterion_for,
-    label_for,
-    resolve_locale,
-    source_label,
-    title_for_prompt,
-    title_for_rubric,
-    translate,
-)
-from .routes import api, contract_context, generation
-
-_HERE = Path(__file__).resolve().parent
-TEMPLATES_DIR = _HERE / "templates"
-STATIC_DIR = _HERE / "static"
-
-
-def _locale_context(request: Request) -> dict:
-    """Per-request Jinja context: active locale + catalog + a bound translator.
-
-    ``request.state.lang``/``request.state.t`` are set by the locale middleware
-    below; this processor just exposes them (and a ``tr`` helper for flash
-    key lookup with interpolation) to every template render.
-    """
-    lang = getattr(request.state, "lang", DEFAULT)
-    t = getattr(request.state, "t", None) or LOCALES[DEFAULT]
-    labels = LABELS.get(lang) or LABELS[DEFAULT]
-    return {
-        "lang": lang,
-        "t": t,
-        # Pre-serialized for the window.__LOCALE__ bootstrap in base.html,
-        # so we don't depend on a tojson filter being registered.
-        "t_json": json.dumps(t, ensure_ascii=False),
-        "tr": lambda key, **fmt: translate(t, key, **fmt),
-        # Data-label localization (see spec `data-label-i18n`): the active
-        # locale's label catalog + resolvers bound to this locale, so every
-        # template can call label_for/title_for_* without threading lang through.
-        # labels_json bootstraps window.__LABELS__ for app.js (matrix meta, etc.).
-        "labels": labels,
-        "labels_json": json.dumps(labels, ensure_ascii=False),
-        "label_for": lambda kind, value: label_for(kind, value, lang),
-        "title_for_prompt": lambda name: title_for_prompt(name, lang),
-        "title_for_rubric": lambda name: title_for_rubric(name, lang),
-        "source_label": lambda source: source_label(source, lang),
-        "criterion_for": lambda name, field, fallback="": criterion_for(name, field, lang, fallback),
-    }
-
-
-# Jinja2 templates (lazily loaded at render time; dir created below). The
-# context processor injects lang/t/tr into every render so individual handlers
-# do not need to thread them through their context dicts.
-templates = Jinja2Templates(
-    directory=str(TEMPLATES_DIR),
-    context_processors=[_locale_context],
+from .i18n import resolve_locale
+from .paths import STATIC_DIR, TEMPLATES_DIR
+# Re-exported (bound before the routes import below) so route modules that do
+# ``from ..app import templates`` resolve without a circular-import error.
+from .templating import templates  # noqa: F401
+from .routes import (
+    api,
+    clauses,
+    contract_context,
+    contracts,
+    dashboard,
+    generation,
+    law_info,
+    pages,
+    search,
 )
 
 
@@ -115,6 +77,12 @@ def create_app() -> FastAPI:
     app.include_router(api.router)
     app.include_router(contract_context.router)
     app.include_router(generation.router)
+    app.include_router(pages.router)
+    app.include_router(law_info.router)
+    app.include_router(search.router)
+    app.include_router(contracts.router)
+    app.include_router(clauses.router)
+    app.include_router(dashboard.router)
 
     # Resolve the active locale once per request, stash it for the template
     # context processor, and persist the choice as a cookie so it sticks.
@@ -128,23 +96,6 @@ def create_app() -> FastAPI:
         # (covers both explicit switches and first-visit defaulting to zh).
         response.set_cookie("lang", lang, samesite="lax", max_age=60 * 60 * 24 * 365)
         return response
-
-    # Optional HTML routes (added by routes/pages.py in the UI build step).
-    try:
-        from .routes import pages  # noqa: WPS433 (intentional lazy import)
-        app.include_router(pages.router)
-        from .routes import law_info  # noqa: WPS433 (intentional lazy import)
-        app.include_router(law_info.router)
-        from .routes import search  # noqa: WPS433 (intentional lazy import)
-        app.include_router(search.router)
-        from .routes import contracts  # noqa: WPS433 (intentional lazy import)
-        app.include_router(contracts.router)
-        from .routes import clauses  # noqa: WPS433 (intentional lazy import)
-        app.include_router(clauses.router)
-        from .routes import dashboard  # noqa: WPS433 (intentional lazy import)
-        app.include_router(dashboard.router)
-    except ImportError:
-        pass
 
     # Map manage-layer errors to HTTP statuses.
     for exc_cls, status in _ERR_STATUS:
