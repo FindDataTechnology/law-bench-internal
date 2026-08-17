@@ -6,7 +6,7 @@ Public API:
 - :func:`list_contract_types` / :func:`get_template` - contract class registry.
 - :func:`get_slot_instructions` / :func:`check_slot_consistency` - slot docs.
 - :func:`extract_laws_for_type` - per-class 法律法规 extraction.
-- :func:`generate_contract` - DOCX/PDF generation via ``src.docs``.
+- :func:`generate_contract` - DOCX/PDF generation via ``src.generator``.
 - :func:`audit_template` / :func:`audit_body` / :func:`audit_all` - slot
   completeness evaluator for contract 母版 (deterministic, no LLM/DB).
 """

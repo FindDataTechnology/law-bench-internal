@@ -19,6 +19,13 @@ pass/fail ``status``, and a ``coverage`` ratio.
 No LLM, no database - hermetic and fast. Exposed as a Python API
 (``audit_template`` / ``audit_body`` / ``audit_all``) and a CLI
 (``python -m src.contracts audit``).
+
+Boundary note: this is the **contract-template** audit — slot completeness of
+the 母版 skeleton, deterministic and hermetic. The sibling
+:mod:`src.clauses.audit` is the **clause-library** audit — an LLM-driven
+per-row quality pass (region leak / missing-slot / extraction-artifact). The
+two share a name but operate at different layers (template vs. clause) and
+must not be merged.
 """
 
 from __future__ import annotations
@@ -26,7 +33,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from src.docs import SLOT_PATTERN
+from src.generator import SLOT_PATTERN
 from src.contracts.slots import REQUIRED_SLOTS, get_slot_instructions
 from src.contracts.templates import get_template, list_contract_types
 from src.eval.errors import NotFoundError

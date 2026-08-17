@@ -1,11 +1,11 @@
-"""Tests for the DOCX generator (``src.docs.generator``)."""
+"""Tests for the DOCX generator (``src.generator.generator``)."""
 
 from pathlib import Path
 
 from docx import Document
 from docx.oxml.ns import qn
 
-from src.docs import add_slot, create_docx, find_slots
+from src.generator import add_slot, create_docx, find_slots
 
 
 def _doc(path: Path) -> Document:

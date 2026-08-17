@@ -20,7 +20,7 @@ from ...contracts import (
     get_template,
     list_contract_types,
 )
-from ...docs import ConverterNotAvailableError
+from ...generator import ConverterNotAvailableError
 from ...eval.errors import NotFoundError
 from ...eval.legal_refs import CATEGORY_ORDER, CATEGORY_ZH
 

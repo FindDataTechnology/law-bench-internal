@@ -1,10 +1,10 @@
-"""Tests for the DOCX -> PDF converter (``src.docs.converter``)."""
+"""Tests for the DOCX -> PDF converter (``src.generator.converter``)."""
 
 import shutil
 
 import pytest
 
-from src.docs import (
+from src.generator import (
     ConverterNotAvailableError,
     Docx2PdfConverter,
     LibreOfficeConverter,

@@ -29,7 +29,7 @@ load_dotenv()
 # Avoid litellm's remote model-cost-map fetch (network-dependent); local fallback.
 os.environ.setdefault("LITELLM_MODEL_COST_MAP_URL", "")
 
-from src.docs import SLOT_PATTERN
+from src.generator import SLOT_PATTERN
 from src.eval.legal_refs import CATEGORY_ZH, categorize
 
 _HERE = Path(__file__).resolve().parent

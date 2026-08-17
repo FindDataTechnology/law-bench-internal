@@ -15,8 +15,8 @@
 
 ## 3. Phase 1 — Naming collision & audit ownership
 
-- [ ] 3.1 Move `src/docs/` (the code package: `__init__.py`, `slots.py`, `generator.py`) to `src/generator/`. Update all `from src.docs...` / `import src.docs` references across `src/`, `scripts/`, `tests/`.
-- [ ] 3.2 Sharpen the `audit.py` boundary: add module docstrings to `src/clauses/audit.py` (clause-library audit: rows, tag hygiene, dedup) and `src/contracts/audit.py` (assembled-contract audit: section coverage, slot fill, coherence). No merge.
+- [x] 3.1 Move `src/docs/` (the code package: `__init__.py`, `slots.py`, `generator.py`) to `src/generator/`. Update all `from src.docs...` / `import src.docs` references across `src/`, `scripts/`, `tests/`. NOTE: left a thin `src/docs/__init__.py` compatibility shim so out-of-scope siblings (`contract-review-agent`, `fd-coding-law-bench-mcp`) that still `from src.docs import ...` keep resolving without a code change.
+- [x] 3.2 Sharpen the `audit.py` boundary: add module docstrings to `src/clauses/audit.py` (clause-library audit: rows, tag hygiene, dedup) and `src/contracts/audit.py` (assembled-contract audit: section coverage, slot fill, coherence). No merge.
 - [ ] 3.3 Run the full test suite; confirm green. Commit as "refactor: resolve src/docs name collision + audit ownership docstrings".
 
 ## 4. Phase 1 — Repo hygiene: archive, delete clutter, harden .gitignore

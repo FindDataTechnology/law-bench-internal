@@ -25,7 +25,7 @@ from typing import Any
 
 from src.contracts.slots import REQUIRED_SLOTS, default_slot_instructions
 from src.contracts.templates import list_contract_types
-from src.docs import SLOT_PATTERN, ConverterNotAvailableError, create_docx, docx_to_pdf
+from src.generator import SLOT_PATTERN, ConverterNotAvailableError, create_docx, docx_to_pdf
 from src.eval.errors import NotFoundError
 from src.eval.legal_refs import CATEGORY_ORDER
 

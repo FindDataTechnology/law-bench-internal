@@ -5,7 +5,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from src.docs import create_docx, docx_to_pdf
+from src.generator import create_docx, docx_to_pdf
 
 from .legal import extract_laws_for_type
 from .slots import get_slot_instructions

@@ -1,4 +1,4 @@
-"""Tests for the slot model (``src.docs.slots``)."""
+"""Tests for the slot model (``src.generator.slots``)."""
 
 from pathlib import Path
 
@@ -6,7 +6,7 @@ import pytest
 from docx import Document
 from docx.oxml.ns import qn
 
-from src.docs import create_docx, fill_slots, find_slots, slot_token, SlotValueError
+from src.generator import create_docx, fill_slots, find_slots, slot_token, SlotValueError
 
 
 def test_slot_token_builds_placeholder():

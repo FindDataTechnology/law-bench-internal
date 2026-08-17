@@ -13,7 +13,7 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
-from src.docs import SLOT_PATTERN
+from src.generator import SLOT_PATTERN
 from src.eval.errors import NotFoundError
 
 _HERE = Path(__file__).resolve().parent

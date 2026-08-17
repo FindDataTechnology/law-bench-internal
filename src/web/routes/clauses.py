@@ -28,7 +28,7 @@ from ...clauses.store import (
 )
 from ...clauses.tag_review import bulk_review, list_pending, review_tag
 from ...contracts import list_contract_types
-from ...docs import ConverterNotAvailableError
+from ...generator import ConverterNotAvailableError
 from ...eval.errors import NotFoundError
 
 router = APIRouter(tags=["clauses"])

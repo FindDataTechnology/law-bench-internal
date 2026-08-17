@@ -20,7 +20,7 @@ from src.contracts import (
     get_template,
     list_contract_types,
 )
-from src.docs import SLOT_PATTERN, find_slots
+from src.generator import SLOT_PATTERN, find_slots
 from src.eval.errors import NotFoundError
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
