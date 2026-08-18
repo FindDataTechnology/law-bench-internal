@@ -17,6 +17,29 @@ spec:
     spec:
       imagePullSecrets:
         - name: harbor-pull
+      # Node resolv.conf picked up a wildcard `mesh.finddata.cn` search domain
+      # (returns 8.218.137.223 for everything). ClusterFirst inherits it, so new
+      # pods resolve postgres.postgres.svc.cluster.local -> 8.218.137.223 (black
+      # hole) and psycopg.connect() hangs at startup -> CrashLoopBackOff. Pin DNS
+      # to kube-dns + the clean 3-domain search (matches the working pre-pollution
+      # pod), and pin the public Logto/Lawbench domains via hostAliases so the
+      # fail-closed auth path never depends on upstream DNS.
+      dnsPolicy: None
+      dnsConfig:
+        nameservers:
+          - 10.43.0.10
+        searches:
+          - law-bench.svc.cluster.local
+          - svc.cluster.local
+          - cluster.local
+        options:
+          - name: ndots
+            value: "5"
+      hostAliases:
+        - ip: 23.144.68.246
+          hostnames:
+            - logto.tokenvault.vip
+            - lawbench.tokenvault.vip
       initContainers:
         - name: seed-db
           image: harbor.local/law-bench/law-template:sha-90cd611
