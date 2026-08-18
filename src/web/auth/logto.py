@@ -65,7 +65,11 @@ class InvalidToken(LogtoError):
 # across threads; httpx clients are thread-safe for issuing requests.
 _discovery: dict[str, Any] | None = None
 _jwks: dict[str, Any] | None = None
-_cache_lock = threading.Lock()
+# RLock (reentrant): ``_fetch_jwks`` calls ``fetch_discovery`` while still
+# holding the cache lock to resolve ``jwks_uri``, and ``get_signing_key``'s
+# refetch-on-unknown-kid path re-enters ``_fetch_jwks``. A plain Lock would
+# deadlock the same thread on both paths; RLock permits the nested acquisition.
+_cache_lock = threading.RLock()
 
 _client: httpx.Client | None = None
 _client_lock = threading.Lock()
