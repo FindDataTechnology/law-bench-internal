@@ -18,9 +18,12 @@ templates`` callers.
 
 from __future__ import annotations
 
+from urllib.parse import quote
+
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src.eval import manage as M  # noqa: F401 — re-exported for callers
 from src.eval.manage import (
@@ -46,6 +49,7 @@ from .routes import (
     generation,
     law_info,
     pages,
+    samples,
     search,
 )
 
@@ -70,6 +74,20 @@ def _make_handler(status: int):
     return handler
 
 
+def _wants_html(request: Request) -> bool:
+    """Is this a browser navigation (vs an API/script call)?
+
+    A top-level browser navigation sends ``Sec-Fetch-Mode: navigate`` and an
+    Accept of ``text/html``; a fetch()/curl call sends ``Sec-Fetch-Mode: cors``
+    (or no Sec-Fetch-Mode) and ``*/*`` or ``application/json``. We redirect only
+    navigations so the documented 401 JSON behavior for API callers is unchanged.
+    """
+    if request.headers.get("sec-fetch-mode", "") == "navigate":
+        return True
+    accept = request.headers.get("accept", "")
+    return "text/html" in accept and "application/json" not in accept
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Evaluation Rules Manager",
@@ -91,6 +109,7 @@ def create_app() -> FastAPI:
     app.include_router(contract_context.router)
     app.include_router(generation.router)
     app.include_router(pages.router)
+    app.include_router(samples.router)
     app.include_router(law_info.router)
     app.include_router(search.router)
     app.include_router(contracts.router)
@@ -117,6 +136,30 @@ def create_app() -> FastAPI:
     @app.exception_handler(ManageError)
     async def _fallback(request: Request, exc: Exception) -> JSONResponse:
         return JSONResponse(status_code=500, content={"error": str(exc)})
+
+    @app.exception_handler(StarletteHTTPException)
+    async def _auth_redirect(request: Request, exc: StarletteHTTPException):
+        """Make the login flow discoverable: a 401 on a *browser* navigation
+        (Accept: text/html, or Sec-Fetch-Mode: navigate) 302s to /auth/login so a
+        human can sign in; API calls (curl, XHR, fetch — Accept is ``*/*`` or
+        ``application/json``) keep the default JSON ``{"detail": ...}``. Without
+        this, visiting any page unauthenticated returns bare
+        ``{"detail":"not authenticated"}`` and a human has no way to reach the
+        sign-in page. The redirect only starts the flow — /auth/callback sets the
+        session cookie, and every authenticated request still goes through
+        get_current_user. ``next`` is validated same-origin in the callback, so
+        this is not an open-redirect sink.
+        """
+        if exc.status_code == 401 and _wants_html(request):
+            return RedirectResponse(
+                url=f"/auth/login?next={quote(request.url.path)}",
+                status_code=302,
+            )
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+            headers=getattr(exc, "headers", None),
+        )
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> JSONResponse:
