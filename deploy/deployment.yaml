@@ -64,7 +64,7 @@ spec:
               ls -la /data
       containers:
         - name: law-bench
-          image: harbor.local/law-bench/law-template:sha-46944ad
+          image: harbor.local/law-bench/law-template:sha-524613d
           imagePullPolicy: IfNotPresent
           envFrom:
             - secretRef:
