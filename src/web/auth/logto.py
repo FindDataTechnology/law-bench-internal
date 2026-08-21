@@ -19,7 +19,7 @@ swallowed into a 401, because 401 implies the token was *rejected* rather than
 
 Uses ``httpx`` for HTTP (honors ``HTTP_PROXY``/``HTTPS_PROXY``/``NO_PROXY`` via
 ``trust_env``) and ``pyjwt`` + ``cryptography`` (already available transitively)
-for RS256 JWKS validation.
+for ES384 JWKS validation.
 """
 
 from __future__ import annotations
@@ -177,7 +177,7 @@ def get_signing_key(kid: str | None) -> Any:
         key = _find_key(_fetch_jwks(force=True), kid)
     if key is None:
         raise InvalidToken(f"no signing key for kid={kid!r}")
-    # PyJWK wraps a JWK dict -> .key is the RS256 public key jwt.decode accepts.
+    # PyJWK wraps a JWK dict -> .key is the ES384 public key jwt.decode accepts.
     return jwt.PyJWK(key).key
 
 
@@ -187,7 +187,7 @@ def get_signing_key(kid: str | None) -> Any:
 def validate_jwt(token: str) -> dict[str, Any]:
     """Validate a Logto-issued Bearer JWT and return its claims.
 
-    Verifies the RS256 signature via the IdP JWKS, the ``iss`` (the discovery
+    Verifies the ES384 signature via the IdP JWKS, the ``iss`` (the discovery
     issuer), ``exp``, and (when ``LOGTO_API_AUDIENCE`` is set) ``aud``. Raises
     :class:`InvalidToken` (-> 401) on any structural/crypto failure; lets
     :class:`LogtoUnreachable` (-> 503) propagate from a JWKS network failure so
@@ -206,7 +206,7 @@ def validate_jwt(token: str) -> dict[str, Any]:
         "require": ["exp", "iss", "sub"],
     }
     decode_kwargs: dict[str, Any] = {
-        "algorithms": ["RS256"],
+        "algorithms": ["ES384"],
         "issuer": issuer,
         "options": options,
     }
@@ -239,7 +239,7 @@ def validate_id_token(token: str) -> dict[str, Any]:
         return jwt.decode(
             token,
             signing_key,
-            algorithms=["RS256"],
+            algorithms=["ES384"],
             issuer=issuer,
             audience=LOGTO_CLIENT_ID,
             options={
