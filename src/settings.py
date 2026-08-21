@@ -97,6 +97,24 @@ MINIO_DRAFTS_PREFIX = _env("MINIO_DRAFTS_PREFIX", "drafts/")
 # Generated contract docx/pdf (artifacts) are stored under this prefix.
 MINIO_ARTIFACTS_PREFIX = _env("MINIO_ARTIFACTS_PREFIX", "artifacts/")
 
+# Public-pod MinIO override (task 5.2). When set (a full URL, e.g.
+# ``http://china-minio:9000``), the artifact read/download path
+# (``src/contracts/artifacts.py`` ``_client()``) streams from the China-local
+# MinIO mirror instead of the origin, so ``GET /api/contracts/artifacts/{id}/download``
+# and the ``/samples`` browse page serve China-local bytes with no per-request
+# border crossing. Credentials come from the shared ``minio_root_user`` /
+# ``minio_root_password`` env (on the public pod those are the China MinIO's
+# creds), so only the endpoint host is overridden. When unset (origin), the
+# public-host vars fall back to the origin ``MINIO_*`` values below so origin
+# behavior is byte-for-byte unchanged.
+_public_minio_host = _env("MINIO_PUBLIC_HOST", "")
+MINIO_PUBLIC_ENDPOINT = (
+    _urlparse(_public_minio_host).netloc if _public_minio_host else MINIO_ENDPOINT
+)
+MINIO_PUBLIC_SECURE = (
+    _public_minio_host.startswith("https") if _public_minio_host else MINIO_SECURE
+)
+
 # CrewAI RAG retrieval tool toggle (on by default; degrades gracefully if off).
 RAG_TOOL_ENABLED = _env("RAG_TOOL_ENABLED", "1") == "1"
 
@@ -180,3 +198,71 @@ def check_auth_config() -> None:
             "Auth is not configured — refusing to start. "
             "Set these env vars: " + ", ".join(missing)
         )
+
+
+# Env vars required by the public pod (China-facing read-only API). The public
+# pod has NO Logto dependency — it resolves identity via X-API-Key against the
+# replicated ``api_keys`` table and runs no browser OIDC flow — so the
+# ``LOGTO_*`` vars are not required. ``AUTH_SESSION_SECRET`` is still required
+# so the dormant cookie-signing path (reused by ``get_current_user``) does not
+# fail open, and ``DATABASE_URL`` is required so the local replica can be
+# reached. JWKS reachability is intentionally NOT checked: the China box cannot
+# reliably reach ``logto.tokenvault.vip`` across the border, and requiring that
+# fetch at boot would CrashLoopBackOff the pod (the fragility the DNS block was
+# added to avoid in the first place).
+PUBLIC_AUTH_REQUIRED_VARS = [
+    "AUTH_SESSION_SECRET",
+]
+
+
+def check_public_auth_config() -> None:
+    """Raise :class:`ConfigError` if the public pod's required auth env is unset.
+
+    Mirrors :func:`check_auth_config` but for the Logto-independent public pod:
+    only ``AUTH_SESSION_SECRET`` is required (so the shared cookie-signing path
+    does not fail open) plus a non-empty ``DATABASE_URL`` (the replica DSN).
+    Does NOT call ``logto.verify_reachable()`` — the China box cannot reliably
+    reach Logto's JWKS across the border. Preserves the origin's fail-closed
+    posture: the public pod never runs as an open server even if its env is
+    misconfigured.
+    """
+    missing = [name for name in PUBLIC_AUTH_REQUIRED_VARS if not _env(name)]
+    if missing:
+        raise ConfigError(
+            "Public pod auth is not configured — refusing to start. "
+            "Set these env vars: " + ", ".join(missing)
+        )
+    # Read the DSN live from env (not the module-level ``DATABASE_URL`` constant,
+    # which is bound at import time and would be stale when a test fixture sets
+    # ``database_url`` after import). Mirrors ``check_auth_config``'s live-read
+    # pattern so the fail-closed check works in both prod and tests.
+    if not (_env("database_url") or _env("DATABASE_URL")):
+        raise ConfigError(
+            "Public pod auth is not configured — refusing to start. "
+            "Set the database_url env var (replica DSN)."
+        )
+
+
+# Read-only replica flag (env-driven, default "0"). Set to "1" on the China
+# public pod so the best-effort ``last_used_at`` touch in ``verify_key`` is
+# skipped entirely — the replica is read-only, so a per-request UPDATE would
+# only log error noise against the standby. When unset/"0" (origin), the
+# original best-effort write behavior is preserved. Bound at import time; tests
+# that need to flip it monkeypatch ``src.web.auth.apikey.READONLY_REPLICA``
+# directly.
+READONLY_REPLICA = _env("READONLY_REPLICA", "0") == "1"
+
+
+# Rate limiting (in-process token-bucket; the abuse half of "防止恶意调用").
+# Env-gated so the middleware is active on the public pod (``RATE_LIMIT_ENABLED=1``)
+# and dormant on the origin (default "0" -> the middleware is not registered at
+# all, so origin behavior is byte-for-byte unchanged). A gateway-level limiter
+# (Caddy ``rate_limit`` / Nginx ``limit_req``) in front of the pod is the
+# preferred production posture; this in-process limiter is the fallback for the
+# no-gateway case so an abusive caller is never unthrottled. Keyed per API-key
+# prefix (or client IP for anonymous callers). Bound at import time; the
+# middleware reads these module globals at registration/construction so tests
+# flip them by monkeypatching ``src.web.rate_limit`` directly.
+RATE_LIMIT_ENABLED = _env("RATE_LIMIT_ENABLED", "0") == "1"
+RATE_LIMIT_RPS = float(_env("RATE_LIMIT_RPS", "10"))    # sustained tokens/sec refill
+RATE_LIMIT_BURST = int(_env("RATE_LIMIT_BURST", "20"))  # bucket capacity (max burst)

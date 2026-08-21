@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}合同样本库 · {{ t.nav.brand }}{% endblock %}
+
+{% block content %}
+<div class="toolbar between">
+  <h1>合同样本库</h1>
+  <span class="muted">共 {{ total }} 条</span>
+</div>
+<p class="muted">浏览已生成并上传到 MinIO 的全部合同样本（按 业务场景 × 立场 排列组合）。先选合同类型，再按场景 / 立场筛选，直接下载 DOCX / PDF。</p>
+
+<div class="panel">
+  <form method="GET" action="{{ url_for('page_samples') }}" class="filter-form">
+    <div class="filter-group">
+      <label>合同类型</label>
+      <select name="contract_type" onchange="this.form.submit()">
+        <option value="">全部类型</option>
+        {% for ct in all_types %}
+        <option value="{{ ct.key }}"{% if selected_ct == ct.key %} selected{% endif %}>{{ ct.zh }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="filter-group">
+      <label>业务场景</label>
+      <select name="scenario" onchange="this.form.submit()">
+        <option value="">全部场景</option>
+        {% for s in scen_opts %}
+        <option value="{{ s }}"{% if selected_scenario == s %} selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="filter-group">
+      <label>立场</label>
+      <select name="stance" onchange="this.form.submit()">
+        <option value="">全部立场</option>
+        {% for s in stance_opts %}
+        <option value="{{ s }}"{% if selected_stance == s %} selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    {# Preserve limit across auto-submits; offset resets on filter change. #}
+    <input type="hidden" name="limit" value="{{ limit }}">
+
+    <noscript>
+      <div class="filter-group">
+        <label>&nbsp;</label>
+        <button type="submit" class="btn btn-primary">应用筛选</button>
+      </div>
+    </noscript>
+  </form>
+</div>
+
+<div class="panel">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>合同类型</th>
+        <th>业务场景</th>
+        <th>立场</th>
+        <th>字段数</th>
+        <th>下载</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in artifacts %}
+      <tr>
+        <td class="muted">{{ offset + loop.index }}</td>
+        <td><code>{{ a.contract_type }}</code></td>
+        <td>{% if a.scenario %}{{ a.scenario }}{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td>{% if a.stance %}{{ a.stance }}{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td>{{ a.slots|length }}</td>
+        <td class="dl-cell">
+          {% if a.docx_key %}
+          <a href="/api/contracts/artifacts/{{ a.id }}/download?format=docx" class="btn btn-sm">DOCX</a>
+          {% else %}
+          <span class="btn btn-sm disabled" title="未生成 DOCX">DOCX</span>
+          {% endif %}
+          {% if a.pdf_key %}
+          <a href="/api/contracts/artifacts/{{ a.id }}/download?format=pdf" class="btn btn-sm">PDF</a>
+          {% else %}
+          <span class="btn btn-sm disabled" title="未生成 PDF">PDF</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not artifacts %}
+      <tr><td colspan="6" class="muted">没有匹配的样本{% if selected_ct %}（类型 <code>{{ selected_ct }}</code>{% if selected_scenario %}，场景 {{ selected_scenario }}{% endif %}{% if selected_stance %}，立场 {{ selected_stance }}{% endif %}）{% endif %}</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+{% if pages > 1 %}
+<div class="pagination">
+  {% if has_prev %}
+  <a href="?contract_type={{ selected_ct or '' }}&amp;scenario={{ selected_scenario or '' }}&amp;stance={{ selected_stance or '' }}&amp;limit={{ limit }}&amp;offset={{ offset - limit }}" class="btn btn-sm">◀ 上一页</a>
+  {% else %}
+  <span class="btn btn-sm disabled">◀ 上一页</span>
+  {% endif %}
+
+  <span class="page-info">第 {{ page }} / {{ pages }} 页（共 {{ total }} 条）</span>
+
+  {% if has_next %}
+  <a href="?contract_type={{ selected_ct or '' }}&amp;scenario={{ selected_scenario or '' }}&amp;stance={{ selected_stance or '' }}&amp;limit={{ limit }}&amp;offset={{ offset + limit }}" class="btn btn-sm">下一页 ▶</a>
+  {% else %}
+  <span class="btn btn-sm disabled">下一页 ▶</span>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

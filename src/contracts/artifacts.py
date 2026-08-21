@@ -33,23 +33,33 @@ from src.settings import (
     MINIO_ACCESS_KEY,
     MINIO_ARTIFACTS_PREFIX,
     MINIO_BUCKET,
-    MINIO_ENDPOINT,
+    MINIO_PUBLIC_ENDPOINT,
+    MINIO_PUBLIC_SECURE,
     MINIO_SECRET_KEY,
-    MINIO_SECURE,
 )
 
 _FORMATS = ("docx", "pdf", "both", "markdown")
 
 
 def _client() -> Minio:
-    """Build a MinIO client from settings (mirrors ``src.clauses.corpus._client``)."""
-    if not MINIO_ENDPOINT:
+    """Build a MinIO client from settings (mirrors ``src.clauses.corpus._client``).
+
+    Uses the *public* endpoint (``MINIO_PUBLIC_*``), which falls back to the
+    origin ``MINIO_*`` values when ``MINIO_PUBLIC_HOST`` is unset (task 5.2).
+    On the origin that fallback makes this identical to the pre-5.2 behavior; on
+    the public pod the public endpoint points at the China-local MinIO mirror so
+    reads/downloads stream local bytes with no per-request border crossing.
+    Uploads (``_upload``) only run on the origin — the public pod has no
+    generate routes mounted — so routing them through the public endpoint is a
+    no-op there (the fallback is the origin MinIO).
+    """
+    if not MINIO_PUBLIC_ENDPOINT:
         raise RuntimeError("minio_host is not set (MinIO unreachable).")
     return Minio(
-        MINIO_ENDPOINT,
+        MINIO_PUBLIC_ENDPOINT,
         access_key=MINIO_ACCESS_KEY,
         secret_key=MINIO_SECRET_KEY,
-        secure=MINIO_SECURE,
+        secure=MINIO_PUBLIC_SECURE,
         cert_check=False,
     )
 
@@ -104,12 +114,16 @@ def generate_stored(
     custom_clause_ids: list[int] | None = None,
     format: str = "docx",
     db: Any = None,
+    force: bool = False,
 ) -> dict:
     """Generate a contract, upload docx/pdf to MinIO, record a DB row.
 
     Content-addressed by ``md5(body_text)``: if an artifact with the same body
     already exists, it is reused (``reused: true``); only requested formats
-    missing from the existing row are generated + uploaded. Returns
+    missing from the existing row are generated + uploaded. With ``force=True``
+    the requested formats are re-uploaded (overwriting the MinIO object) even
+    when the artifact already exists — use this to refresh formatting/visuals
+    whose change does not alter ``body_text``. Returns
     ``{artifact_id, docx_url, pdf_url, body_text, slots, reused}`` where URLs
     are the HTTP download endpoints (``null`` when a format was not produced).
     """
@@ -138,9 +152,11 @@ def generate_stored(
         if existing:
             artifact_id = existing["id"]
             reused = True
-            if want_docx and not existing.get("docx_key") and result.get("docx_path"):
+            need_docx = want_docx and (force or not existing.get("docx_key"))
+            need_pdf = want_pdf and (force or not existing.get("pdf_key"))
+            if need_docx and result.get("docx_path"):
                 _set_key(conn, artifact_id, "docx", _upload(contract_type, artifact_id, result["docx_path"], "docx"))
-            if want_pdf and not existing.get("pdf_key") and result.get("pdf_path"):
+            if need_pdf and result.get("pdf_path"):
                 _set_key(conn, artifact_id, "pdf", _upload(contract_type, artifact_id, result["pdf_path"], "pdf"))
             conn.commit()
         else:
@@ -200,12 +216,15 @@ def generate_all_stored(
     *,
     format: str = "docx",
     db: Any = None,
+    force: bool = False,
 ) -> dict:
     """Generate + store **every** scenario x stance x base combination for a type.
 
     For each combination (base; each scenario; each stance; each scenario x
     stance pair), call :func:`generate_stored`. Content-addressed dedup means
-    combinations that produce the same body reuse one artifact. Returns a
+    combinations that produce the same body reuse one artifact. Pass
+    ``force=True`` to re-upload the requested formats for every existing
+    artifact (refresh visuals without changing ``body_text``). Returns a
     summary ``{contract_type, format, artifacts: [...], count, new, reused,
     failed, failures}`` where each artifact entry is
     ``{artifact_id, scenario, stance, docx_url, pdf_url, reused}``. Raises
@@ -227,7 +246,7 @@ def generate_all_stored(
     failures: list[str] = []
     for s, st in combos:
         try:
-            r = generate_stored(contract_type, scenario=s, stance=st, format=format, db=db)
+            r = generate_stored(contract_type, scenario=s, stance=st, format=format, db=db, force=force)
             artifacts.append(
                 {
                     "artifact_id": r["artifact_id"],
@@ -320,3 +339,95 @@ def download(artifact_id: int, format: str, db: Any = None) -> tuple[Any, str, s
     )
     filename = f"{artifact['contract_type']}.{format}"
     return response, content_type, filename
+
+
+# --- samples-library read helpers (browse + download UI) ---------------------
+# Additive, read-only, and do not touch the existing ``list_artifacts`` /
+# ``get_artifact`` / ``download`` functions above. They mirror the module's
+# DB-access pattern: ``connect(db)`` + ``try/finally: conn.close()`` and
+# parameterized queries (``%s`` placeholders only - never string-interpolate
+# user input, so there is no SQL-injection surface).
+
+
+def distinct_scenarios(contract_type: str, db: Any = None) -> list[str]:
+    """Distinct non-null ``scenario`` values for one contract type, ordered.
+
+    Excludes base variants (NULL ``scenario``). Used to populate the scenario
+    dropdown on the samples page once a contract type is selected.
+    """
+    conn = connect(db)
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT scenario FROM contract_artifacts "
+            "WHERE contract_type = %s AND scenario IS NOT NULL ORDER BY 1",
+            (contract_type,),
+        ).fetchall()
+        return [r["scenario"] for r in rows]
+    finally:
+        conn.close()
+
+
+def distinct_stances(contract_type: str, db: Any = None) -> list[str]:
+    """Distinct non-null ``stance`` values for one contract type, ordered.
+
+    Excludes base variants (NULL ``stance``).
+    """
+    conn = connect(db)
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT stance FROM contract_artifacts "
+            "WHERE contract_type = %s AND stance IS NOT NULL ORDER BY 1",
+            (contract_type,),
+        ).fetchall()
+        return [r["stance"] for r in rows]
+    finally:
+        conn.close()
+
+
+def list_samples(
+    contract_type: str | None = None,
+    scenario: str | None = None,
+    stance: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    db: Any = None,
+) -> tuple[list[dict], int]:
+    """Filtered + paginated artifact metadata (no ``body_text``).
+
+    Each of ``contract_type`` / ``scenario`` / ``stance``, when non-None, adds
+    an equality filter; so selecting a specific scenario excludes base rows
+    with NULL scenario. Absent filters apply no clause, so base/NULL rows are
+    included. Returns ``(rows, total)`` where ``total`` is the *filtered* count
+    (same WHERE, no LIMIT/OFFSET). Filters compose via AND. An ``offset``
+    beyond the filtered total yields an empty row list with the unchanged
+    total. Rows are newest first (``ORDER BY id DESC``).
+    """
+    clauses: list[str] = []
+    params: list[Any] = []
+    if contract_type:
+        clauses.append("contract_type = %s")
+        params.append(contract_type)
+    if scenario:
+        clauses.append("scenario = %s")
+        params.append(scenario)
+    if stance:
+        clauses.append("stance = %s")
+        params.append(stance)
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+
+    conn = connect(db)
+    try:
+        # Alias + string key (not ``[0]``) because the shared/borrowed connection
+        # uses ``dict_row`` (see ``list_artifacts`` / ``get_artifact`` above) -
+        # integer indexing would raise ``KeyError: 0``.
+        total = conn.execute(
+            f"SELECT COUNT(*) AS total FROM contract_artifacts{where}", params
+        ).fetchone()["total"]
+        rows = conn.execute(
+            f"SELECT {_LIST_COLS} FROM contract_artifacts{where} "
+            "ORDER BY id DESC LIMIT %s OFFSET %s",
+            (*params, limit, offset),
+        ).fetchall()
+        return [dict(r) for r in rows], int(total)
+    finally:
+        conn.close()
