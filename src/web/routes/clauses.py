@@ -31,7 +31,20 @@ from ...contracts import list_contract_types
 from ...generator import ConverterNotAvailableError
 from ...eval.errors import NotFoundError
 
-router = APIRouter(tags=["clauses"])
+# The router is split into a read-only surface (GET browse/search/generate pages)
+# and a write surface (POST CRUD: extract/create/update/delete/review) so the
+# public pod (``create_public_app``) can mount only ``read_only_router`` and
+# exclude the management write routes (design D2: behavior-preserving split —
+# the origin includes both). Both sub-routers carry no prefix and the
+# ``clauses`` tag so the origin's OpenAPI shape is unchanged.
+read_only_router = APIRouter(tags=["clauses"])
+write_router = APIRouter(tags=["clauses"])
+
+# Backward-compat alias ``router`` is assembled at the END of this module
+# (after every route decorator) because ``include_router`` snapshots the
+# sub-routers' route lists at call time — building the parent here, before
+# the decorators run, would copy empty lists and the origin would 404 on
+# every ``/clauses`` path. See ``router`` at the file bottom.
 
 _EXTRACT_MAX_LIMIT = 50
 _CATEGORIES = ("base", "tagged", "custom")
@@ -86,7 +99,7 @@ def _type_rows(db: DbConn) -> list[dict]:
     ]
 
 
-@router.get("/clauses", include_in_schema=False, name="page_clauses")
+@read_only_router.get("/clauses", include_in_schema=False, name="page_clauses")
 def clauses_list(request: Request, q: str = "", db: DbConn = Depends(get_db)):
     counts = count_clauses(db)
     tags = _tags_from_query(request)
@@ -108,7 +121,7 @@ def clauses_list(request: Request, q: str = "", db: DbConn = Depends(get_db)):
     )
 
 
-@router.post("/clauses/extract", include_in_schema=False, name="page_clauses_extract")
+@write_router.post("/clauses/extract", include_in_schema=False, name="page_clauses_extract")
 def clauses_extract(request: Request, limit: int = 5):
     """Trigger a small resumable extraction batch (full runs use the CLI)."""
     from src.clauses.cli import run_extraction
@@ -138,7 +151,7 @@ def clauses_extract(request: Request, limit: int = 5):
     )
 
 
-@router.get(
+@read_only_router.get(
     "/clauses/{contract_type}/generate",
     include_in_schema=False,
     name="page_clauses_generate",
@@ -174,7 +187,7 @@ def clauses_generate(
 # --- management dashboard (CRUD) ------------------------------------------- #
 
 
-@router.get(
+@read_only_router.get(
     "/clauses/{contract_type}/new",
     include_in_schema=False,
     name="page_clauses_new",
@@ -197,7 +210,7 @@ def clauses_new(request: Request, contract_type: str):
     )
 
 
-@router.post("/clauses/{contract_type}/new", include_in_schema=False)
+@write_router.post("/clauses/{contract_type}/new", include_in_schema=False)
 async def clauses_create(request: Request, contract_type: str, db: DbConn = Depends(get_db)):
     form = await request.form()
     category = form.get("category", "custom") or "custom"
@@ -218,7 +231,7 @@ async def clauses_create(request: Request, contract_type: str, db: DbConn = Depe
     )
 
 
-@router.get(
+@read_only_router.get(
     "/clauses/{contract_type}/clauses/{clause_id}",
     include_in_schema=False,
     name="page_clauses_edit",
@@ -246,7 +259,7 @@ def clauses_edit(request: Request, contract_type: str, clause_id: int, db: DbCon
     )
 
 
-@router.post("/clauses/{contract_type}/clauses/{clause_id}", include_in_schema=False)
+@write_router.post("/clauses/{contract_type}/clauses/{clause_id}", include_in_schema=False)
 async def clauses_update(request: Request, contract_type: str, clause_id: int, db: DbConn = Depends(get_db)):
     form = await request.form()
     category = form.get("category") or "custom"
@@ -270,7 +283,7 @@ async def clauses_update(request: Request, contract_type: str, clause_id: int, d
     )
 
 
-@router.post(
+@write_router.post(
     "/clauses/{contract_type}/clauses/{clause_id}/delete",
     include_in_schema=False,
     name="page_clauses_delete",
@@ -288,7 +301,7 @@ async def clauses_delete_route(contract_type: str, clause_id: int, db: DbConn = 
 # --- tag review ----------------------------------------------------------- #
 
 
-@router.get("/clauses/review", include_in_schema=False, name="page_clauses_review")
+@read_only_router.get("/clauses/review", include_in_schema=False, name="page_clauses_review")
 def clauses_review(request: Request, db: DbConn = Depends(get_db)):
     pending = list_pending(db=db)
     return _templates.TemplateResponse(
@@ -298,7 +311,7 @@ def clauses_review(request: Request, db: DbConn = Depends(get_db)):
     )
 
 
-@router.post(
+@write_router.post(
     "/clauses/{contract_type}/clauses/{clause_id}/review",
     include_in_schema=False,
 )
@@ -319,7 +332,7 @@ async def clauses_review_tag_route(
     )
 
 
-@router.post(
+@write_router.post(
     "/clauses/{contract_type}/clauses/{clause_id}/review-all",
     include_in_schema=False,
 )
@@ -338,7 +351,7 @@ async def clauses_review_all_route(
     )
 
 
-@router.get(
+@read_only_router.get(
     "/clauses/{contract_type}",
     include_in_schema=False,
     name="page_clauses_detail",
@@ -409,3 +422,14 @@ def clauses_detail(
             "active_tags": _tags_from_query(request, contract_type),
         },
     )
+
+
+# --------------------------------------------------------------------------- #
+# Backward-compat alias: assemble the parent ``router`` HERE, at module bottom,
+# AFTER every ``@read_only_router`` / ``@write_router`` decorator above has
+# registered its route. ``APIRouter.include_router`` copies the sub-router's
+# route list at call time — building the parent before the decorators run would
+# copy empty lists and the origin would 404 on every ``/clauses`` path.
+router = APIRouter(tags=["clauses"])
+router.include_router(read_only_router)
+router.include_router(write_router)

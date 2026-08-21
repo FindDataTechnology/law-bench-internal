@@ -57,7 +57,18 @@ from ..deps import DbConn, get_db
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _OUTPUT_DIR = _REPO_ROOT / "output" / "contracts"
 
-router = APIRouter(prefix="/api/contracts", tags=["contract-context"])
+# The router is split into a read-only surface and a write surface so the public
+# pod (``create_public_app``) can mount only ``read_only_router`` and exclude the
+# generation/write routes (design D2: behavior-preserving split — the origin
+# includes both). Both routers share the ``/api/contracts`` prefix and the
+# ``contract-context`` tag so the origin's OpenAPI shape is unchanged.
+read_only_router = APIRouter(prefix="/api/contracts", tags=["contract-context"])
+write_router = APIRouter(prefix="/api/contracts", tags=["contract-context"])
+
+# Backward-compat alias ``router`` is assembled at the END of this module:
+# ``include_router`` copies the sub-routers' routes at call time, so the parent
+# must be built AFTER every ``@read_only_router``/``@write_router`` decorator
+# below has registered its route. See ``router`` at the file bottom.
 
 
 class GenerateRequest(BaseModel):
@@ -66,6 +77,10 @@ class GenerateRequest(BaseModel):
     stance: str | None = None
     custom_clause_ids: list[int] | None = None
     format: Literal["docx", "pdf", "both", "markdown"] = "docx"
+    # Re-upload the requested formats for an existing artifact (overwrite the
+    # MinIO object) even when the body hash matches — refresh visuals after a
+    # renderer change that does not alter body_text. No-op on new artifacts.
+    force: bool = False
 
 
 # --- response shaping ------------------------------------------------------ #
@@ -183,7 +198,7 @@ def _file_url(path_str: str | None, contract_type: str) -> str | None:
 # --- endpoints ------------------------------------------------------------- #
 
 
-@router.get("", summary="List contract classes")
+@read_only_router.get("", summary="List contract classes")
 def list_types() -> list[dict]:
     """Supported contract classes as ``[{key, zh}]`` in registry file order."""
     return list_contract_types()
@@ -194,7 +209,7 @@ def list_types() -> list[dict]:
 # ``/artifacts`` path is not captured by the ``{contract_type}`` parameter.
 
 
-@router.get("/artifacts", summary="List stored contract artifacts")
+@read_only_router.get("/artifacts", summary="List stored contract artifacts")
 def list_artifacts_route(
     contract_type: str | None = None, db: DbConn = Depends(get_db)
 ) -> list[dict]:
@@ -204,7 +219,7 @@ def list_artifacts_route(
     return list_artifacts(contract_type=contract_type, db=db)
 
 
-@router.get("/artifacts/{artifact_id}", summary="Stored artifact metadata")
+@read_only_router.get("/artifacts/{artifact_id}", summary="Stored artifact metadata")
 def get_artifact_route(artifact_id: int, db: DbConn = Depends(get_db)) -> dict:
     """Full artifact row including ``body_text``. 404 if the id is unknown."""
     row = get_artifact(artifact_id, db=db)
@@ -213,7 +228,7 @@ def get_artifact_route(artifact_id: int, db: DbConn = Depends(get_db)) -> dict:
     return row
 
 
-@router.get("/artifacts/{artifact_id}/download", summary="Download a stored artifact")
+@read_only_router.get("/artifacts/{artifact_id}/download", summary="Download a stored artifact")
 def download_artifact_route(
     artifact_id: int, format: str = "docx", db: DbConn = Depends(get_db)
 ) -> StreamingResponse:
@@ -245,7 +260,7 @@ def download_artifact_route(
     )
 
 
-@router.post("/{contract_type}/generate-stored", summary="Generate, upload to MinIO, store")
+@write_router.post("/{contract_type}/generate-stored", summary="Generate, upload to MinIO, store")
 def generate_stored_route(
     contract_type: str, body: GenerateRequest, db: DbConn = Depends(get_db)
 ) -> dict:
@@ -272,13 +287,14 @@ def generate_stored_route(
                 custom_clause_ids=body.custom_clause_ids,
                 format=body.format,
                 db=db,
+                force=body.force,
             )
         except CoherenceError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
-    return generate_all_stored(contract_type, format=body.format, db=db)
+    return generate_all_stored(contract_type, format=body.format, db=db, force=body.force)
 
 
-@router.get("/{contract_type}", summary="Comprehensive context bundle")
+@read_only_router.get("/{contract_type}", summary="Comprehensive context bundle")
 def get_bundle(contract_type: str, db: DbConn = Depends(get_db)) -> dict:
     """Everything an agent needs to draft a contract of this type in one call:
     template body + slots, slot instructions (with ontology coverage), structured
@@ -309,7 +325,7 @@ def get_bundle(contract_type: str, db: DbConn = Depends(get_db)) -> dict:
     }
 
 
-@router.get("/{contract_type}/slots", summary="Slot instructions (with ontology)")
+@read_only_router.get("/{contract_type}/slots", summary="Slot instructions (with ontology)")
 def get_slots(contract_type: str) -> list[dict]:
     """The slot-instruction manifest for the type, covering every ``{{slot}}`` in the
     template. Variant slots (e.g. ``seller_address``) are resolved via the slot
@@ -319,7 +335,7 @@ def get_slots(contract_type: str) -> list[dict]:
     return _slot_manifest_with_ontology(contract_type, template["slots"])
 
 
-@router.get("/{contract_type}/laws", summary="Per-type laws (refs + survey markdown)")
+@read_only_router.get("/{contract_type}/laws", summary="Per-type laws (refs + survey markdown)")
 def get_laws(contract_type: str, db: DbConn = Depends(get_db)) -> dict:
     """Structured 法律法规 refs plus the full Doubao+DeepSeek survey markdown."""
     _require_type(contract_type)
@@ -335,14 +351,14 @@ def get_laws(contract_type: str, db: DbConn = Depends(get_db)) -> dict:
     return {"refs": refs, "survey_md": survey_md}
 
 
-@router.get("/{contract_type}/tags", summary="Tag vocabulary for the type")
+@read_only_router.get("/{contract_type}/tags", summary="Tag vocabulary for the type")
 def get_tags(contract_type: str) -> dict:
     """Merged tag vocabulary ``{dim: [values]}`` (universal + type-specific)."""
     _require_type(contract_type)
     return tag_vocab_for_type(contract_type)
 
 
-@router.get("/{contract_type}/clauses", summary="Clause catalog (filter + paginate)")
+@read_only_router.get("/{contract_type}/clauses", summary="Clause catalog (filter + paginate)")
 def get_clauses(
     contract_type: str,
     scenario: str | None = None,
@@ -379,7 +395,7 @@ def get_clauses(
     }
 
 
-@router.post("/{contract_type}/generate", summary="Assemble + render a contract")
+@write_router.post("/{contract_type}/generate", summary="Assemble + render a contract")
 def generate_contract(
     contract_type: str, body: GenerateRequest, db: DbConn = Depends(get_db)
 ) -> dict:
@@ -411,7 +427,7 @@ def generate_contract(
     }
 
 
-@router.get("/{contract_type}/files/{filename}", include_in_schema=False)
+@read_only_router.get("/{contract_type}/files/{filename}", include_in_schema=False)
 def download_file(contract_type: str, filename: str):
     """Serve a generated docx/pdf from ``output/contracts/`` (download URL target).
 
@@ -434,3 +450,17 @@ def download_file(contract_type: str, filename: str):
         else "application/pdf"
     )
     return FileResponse(str(target), media_type=media, filename=filename)
+
+
+# --------------------------------------------------------------------------- #
+# Backward-compat alias: assemble the parent ``router`` HERE, at module bottom,
+# AFTER every ``@read_only_router`` / ``@write_router`` decorator above has
+# registered its route. ``APIRouter.include_router`` copies the sub-router's
+# route list at call time — building the parent before the decorators run would
+# copy an empty list and the origin app (which does
+# ``app.include_router(contract_context.router)``) would 404 on every path.
+# The public pod instead mounts ``read_only_router`` directly.
+# --------------------------------------------------------------------------- #
+router = APIRouter(tags=["contract-context"])
+router.include_router(read_only_router)
+router.include_router(write_router)

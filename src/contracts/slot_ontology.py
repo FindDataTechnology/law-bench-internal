@@ -28,7 +28,12 @@ from __future__ import annotations
 
 import re
 
-from src.contracts.slots import default_slot_instructions, REQUIRED_SLOTS
+from src.contracts.slots import (
+    default_slot_instructions,
+    latin_to_chinese_map,
+    required_slots_for_type,
+    REQUIRED_SLOTS,
+)
 
 _SLOT_RE = re.compile(r"\{\{(\w+)\}\}")
 
@@ -179,7 +184,12 @@ def canonicalize_slot(slot: str, contract_type: str | None = None) -> str:
 
 
 def instruction_for_slot(slot: str, contract_type: str | None = None) -> dict | None:
-    """Return a slot instruction dict for ``slot`` (canonicalized), or None."""
+    """Return a slot instruction dict for ``slot`` (canonicalized), or None.
+
+    Returns the **Latin canonical** name so DB writes and the coherence gate
+    stay name-consistent. The Chinese display render is a separate output step
+    (:func:`render_body_chinese` / :func:`render_instructions_chinese`).
+    """
     canon = canonicalize_slot(slot, contract_type)
     # core slots: defer to the hand-written default instructions
     core = {i["name"]: i for i in default_slot_instructions("")}
@@ -216,6 +226,132 @@ def normalize_instruction_names(instructions: list[dict], contract_type: str | N
     return out
 
 
-__all__ = ["canonicalize_slot", "instruction_for_slot", "normalize_body_slots", "normalize_instruction_names"]
+# ---------------------------------------------------------------------------
+# Chinese render pass (assembly-time)
+# ---------------------------------------------------------------------------
+# The DB clause corpus carries Latin canonical slots ({{party_a}}, {{amount}},
+# {{party_a_address}}, ...). The user wants every *generated* (assembled)
+# contract to carry Chinese slot names. Rather than migrate the corpus, we
+# render Latin -> Chinese at assembly time: ``render_body_chinese`` rewrites
+# the assembled body, ``chinese_instruction_for_slot`` returns instructions
+# whose ``name`` matches the rendered Chinese tokens so the coherence gate
+# (slot name == instruction name) still passes.
+#
+# Canonicalization stays Latin (so DB writes + variant/role-prefix logic +
+# the existing tests are untouched); the Chinese form is a *display render*
+# layered on top.
+
+def _chinese_name(canon: str, contract_type: str | None, l2c: dict[str, str]) -> str:
+    """Map a Latin canonical slot to its Chinese display name.
+
+    Precedence: per-type manifest ``latin`` bridge (per-type names like
+    借款金额) -> role-prefixed attribute via the concept label (甲方联系地址)
+    -> bare concept label (联系地址). Returns ``canon`` unchanged when no
+    Chinese mapping is known (unknown single-occurrence slots stay Latin).
+    """
+    if canon in l2c:
+        return l2c[canon]
+    # role-prefixed attribute: party_a_address -> 甲方联系地址
+    role, rest = _strip_role(canon)
+    if rest and rest in _CONCEPTS:
+        m = _CONCEPTS[rest]
+        side = _role_to_canonical(role, contract_type)
+        if side == "party_a":
+            return f"甲方{m['label']}"
+        if side == "party_b":
+            return f"乙方{m['label']}"
+        return m["label"]
+    # bare concept: address -> 联系地址, legal_rep -> 法定代表人
+    if canon in _CONCEPTS:
+        return _CONCEPTS[canon]["label"]
+    return canon
+
+
+def render_body_chinese(body: str, contract_type: str | None = None) -> str:
+    """Render every ``{{slot}}`` in ``body`` to its Chinese display name.
+
+    Applied at assembly time (after the body is assembled from clause bodies)
+    so the final generated contract carries Chinese slot names. Each slot is
+    canonicalized first (variant/role-prefix -> Latin concept), then mapped to
+    the per-type Chinese name. Slots with no Chinese mapping (unknown
+    single-occurrence slots) are left unchanged so their clause-declared
+    instructions still match.
+    """
+    if not body:
+        return body
+    l2c = latin_to_chinese_map(contract_type) if contract_type else {}
+    return _SLOT_RE.sub(
+        lambda m: "{{" + _chinese_name(canonicalize_slot(m.group(1), contract_type), contract_type, l2c) + "}}",
+        body,
+    )
+
+
+def chinese_instruction_for_slot(slot: str, contract_type: str | None = None) -> dict | None:
+    """Return a slot instruction dict with a Chinese ``name``, or None.
+
+    Mirrors :func:`instruction_for_slot` but renders the slot ``name`` to
+    Chinese so it matches the Chinese tokens in a :func:`render_body_chinese`
+    body. Returns ``None`` when no Chinese mapping exists (the caller should
+    keep the original instruction so an unknown slot still matches its
+    clause-declared instruction).
+    """
+    canon = canonicalize_slot(slot, contract_type)
+    l2c = latin_to_chinese_map(contract_type) if contract_type else {}
+    cn = _chinese_name(canon, contract_type, l2c)
+    if cn == canon:
+        return None  # no Chinese mapping - caller keeps the original instruction
+    base = instruction_for_slot(slot, contract_type)
+    if base is not None:
+        return {**base, "name": cn}
+    # concept not reachable via instruction_for_slot (e.g. bare attribute stem)
+    role, rest = _strip_role(canon)
+    if rest and rest in _CONCEPTS:
+        m = _CONCEPTS[rest]
+        side = _role_to_canonical(role, contract_type)
+        label = f"{'甲方' if side == 'party_a' else '乙方'}{m['label']}" if side else m["label"]
+        return {"name": cn, "label": label, "description": m["description"],
+                "example": m["example"], "required": m["required"]}
+    if canon in _CONCEPTS:
+        m = _CONCEPTS[canon]
+        return {"name": cn, "label": m["label"], "description": m["description"],
+                "example": m["example"], "required": m["required"]}
+    return None
+
+
+def render_instructions_chinese(
+    instructions: list[dict], contract_type: str | None = None
+) -> list[dict]:
+    """Remap each instruction's ``name`` to its Chinese display name.
+
+    Mirrors :func:`render_body_chinese` so the instruction names match the
+    Chinese body slots after the render pass. Instructions whose name has no
+    Chinese mapping keep their original (Latin) name so they still match any
+    body slot that was likewise left unchanged. Dedupes by the rendered name
+    (two Latin concepts may collapse to one Chinese name within a type).
+    """
+    if not instructions:
+        return instructions
+    l2c = latin_to_chinese_map(contract_type) if contract_type else {}
+    out: list[dict] = []
+    seen: set[str] = set()
+    for ins in instructions:
+        canon = canonicalize_slot(ins.get("name", ""), contract_type)
+        cn = _chinese_name(canon, contract_type, l2c)
+        if cn in seen:
+            continue
+        seen.add(cn)
+        out.append({**ins, "name": cn})
+    return out
+
+
+__all__ = [
+    "canonicalize_slot",
+    "instruction_for_slot",
+    "normalize_body_slots",
+    "normalize_instruction_names",
+    "render_body_chinese",
+    "render_instructions_chinese",
+    "chinese_instruction_for_slot",
+]
 
 

@@ -27,8 +27,11 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 # Headless LibreOffice for DOCX -> PDF conversion (src.docs.converter). Only
 # the writer module is needed; it pulls in `soffice` via libreoffice-core.
+# fonts-noto-cjk: the DOCX declares 宋体/黑体 (SimSun/SimHei, proprietary, not
+# in Debian); LibreOffice substitutes them with Noto CJK for PDF rendering, but
+# only if a CJK font is installed. Without this, Chinese PDFs render as boxes.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libreoffice-writer \
+    && apt-get install -y --no-install-recommends libreoffice-writer fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies first (cacheable layer). --no-install-project avoids

@@ -8,7 +8,10 @@ and live in this contracts layer (they are not a change to ``document-generation
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass
+from functools import lru_cache
+from pathlib import Path
 
 from src.eval.errors import NotFoundError
 
@@ -85,4 +88,106 @@ def default_slot_instructions(zh: str) -> list[dict]:
         {"name": "jurisdiction", "label": "争议解决方式", "description": "争议解决方式及管辖/仲裁机构", "example": "提交原告所在地人民法院诉讼解决", "required": False},
         {"name": "sign_date", "label": "签署日期", "description": "合同签署日期", "example": "2026-01-01", "required": True},
         {"name": "sign_location", "label": "签署地点", "description": "合同签署地点", "example": "北京市朝阳区", "required": False},
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Per-type Chinese slot manifest (masters/*.yaml -> data/type_slots.json)
+# ---------------------------------------------------------------------------
+# The 母版 required_fields become the per-type slot source so every generated
+# contract carries Chinese slot names ({{甲方名称}}, {{借款金额}}, ...). Each slot
+# carries a ``latin`` bridge to the old Latin canonical concept so the render map
+# in slot_ontology can rewrite DB clauses that still carry Latin slots
+# ({{party_a}} -> {{甲方名称}}) at assembly time, without migrating the corpus.
+_HERE = Path(__file__).resolve().parent
+_TYPE_SLOTS_PATH = _HERE / "data" / "type_slots.json"
+
+
+@lru_cache(maxsize=1)
+def _type_slots_registry() -> dict[str, dict]:
+    """Load and cache the per-type Chinese slot manifest keyed by contract type.
+
+    Returns ``{type_key: {type, zh, slots, source}}``. Empty dict when the
+    manifest file is absent (legacy/development without a generated manifest).
+    """
+    if not _TYPE_SLOTS_PATH.is_file():
+        return {}
+    with _TYPE_SLOTS_PATH.open(encoding="utf-8") as fh:
+        return {e["type"]: e for e in json.load(fh)}
+
+
+def required_slots_for_type(contract_type: str) -> list[str]:
+    """Return the per-type slot names (Chinese) for ``contract_type``.
+
+    This is the per-type analogue of :data:`REQUIRED_SLOTS` — the full slot set
+    the contract class defines, used by the seeder/audit/normalize to know which
+    slots belong. Falls back to the Latin :data:`REQUIRED_SLOTS` when no
+    per-type manifest exists, so callers always get a usable slot set.
+    """
+    entry = _type_slots_registry().get(contract_type)
+    if entry is None:
+        return list(REQUIRED_SLOTS)
+    return [s["name"] for s in entry.get("slots", [])]
+
+
+def slot_instructions_for_type(contract_type: str, zh: str | None = None) -> list[dict]:
+    """Return the per-type slot-instruction manifest (Chinese slot names).
+
+    Each dict is ``{name, label, description, example, required}`` plus the
+    bridging ``latin`` and ``source`` fields. Falls back to
+    :func:`default_slot_instructions` when no per-type manifest exists.
+    """
+    entry = _type_slots_registry().get(contract_type)
+    if entry is None:
+        return default_slot_instructions(zh or "")
+    out: list[dict] = []
+    for s in entry.get("slots", []):
+        out.append({
+            "name": s["name"],
+            "label": s.get("label") or s["name"],
+            "description": s.get("description") or "",
+            "example": s.get("example") or "",
+            "required": bool(s.get("required", False)),
+            "latin": s.get("latin"),
+            "source": s.get("source", "both"),
+        })
+    return out
+
+
+def latin_to_chinese_map(contract_type: str) -> dict[str, str]:
+    """Latin canonical concept -> per-type Chinese slot name.
+
+    Built from the per-type manifest's ``latin`` bridge fields (first bridge
+    wins). Used by the slot-ontology render pass to rewrite Latin slots in DB
+    clause bodies to their Chinese display names at assembly time. Empty for
+    types with no manifest (callers fall back to the generic Latin set).
+    """
+    entry = _type_slots_registry().get(contract_type)
+    if entry is None:
+        return {}
+    m: dict[str, str] = {}
+    for s in entry.get("slots", []):
+        latin = s.get("latin")
+        if latin and latin not in m:
+            m[latin] = s["name"]
+    return m
+
+
+def tail_allowed_slots_for_type(contract_type: str) -> list[str]:
+    """Per-type slot names that may legitimately appear only in the 签署信息 tail.
+
+    These are the per-type slots bridged from the Latin ``sign_date`` /
+    ``sign_location`` concepts (签署日期 / 签署地点). Returns an empty list for
+    per-type manifests that define no signing slots (nothing to tail-allow).
+    Callers that need a universal fallback should fall back to the Latin
+    :data:`REQUIRED_SLOTS` tail pair when this returns ``[]`` for a type with no
+    manifest.
+    """
+    entry = _type_slots_registry().get(contract_type)
+    if entry is None:
+        return ["sign_date", "sign_location"]
+    return [
+        s["name"]
+        for s in entry.get("slots", [])
+        if s.get("latin") in ("sign_date", "sign_location")
     ]

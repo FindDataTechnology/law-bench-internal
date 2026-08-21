@@ -83,6 +83,26 @@ def normalize_body(raw: str, required_slots: list[str]) -> str:
         text = "\n".join(lines).lstrip("\n")
     required = set(required_slots)
 
+    # The drafter occasionally writes a slot token with separators it copied
+    # from the law context (e.g. ``{{交付/登记}}``). SLOT_PATTERN (``\w+``) won't
+    # match such a token, so it would survive ``_strip_unknown`` unchanged and
+    # not be counted as present, causing the slot to be (wrongly) appended to
+    # 签署信息. Sanitize separator-bearing tokens to their ``\w+`` form when that
+    # form is a required slot, so the placeholder stays fillable and slot-set
+    # consistency holds.
+    _sep_slot_re = re.compile(r"\{\{([^{}]+?)\}\}")
+
+    def _sanitize_sep(m: "re.Match[str]") -> str:
+        raw = m.group(1).strip()
+        if re.fullmatch(r"[\w-]+", raw):
+            return m.group(0)  # already a clean token; leave for _strip_unknown
+        cleaned = re.sub(r"[^\w-]+", "", raw)
+        if cleaned and cleaned in required:
+            return "{{" + cleaned + "}}"
+        return m.group(0)
+
+    text = _sep_slot_re.sub(_sanitize_sep, text)
+
     def _strip_unknown(m: "re.Match[str]") -> str:
         return "" if m.group(1) not in required else m.group(0)
 

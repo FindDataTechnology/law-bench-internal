@@ -55,11 +55,12 @@ def test_assemble_base_only(seeded_db):
     assert Path(r["docx_path"]).exists()
     txt = _docx_text(r["docx_path"])
     assert "base-marker" in txt
-    # slot kept fillable
-    assert "{{party_a}}" in txt or "party_a" in txt
-    # canonical slot instructions present + clause-declared slot absent (no tagged selected)
+    # slot kept fillable, rendered to its per-type Chinese name ({{甲方名称}})
+    assert "{{甲方名称}}" in txt
+    # canonical slot instructions present (Chinese-rendered) + clause-declared
+    # slot absent (no tagged selected)
     names = {i["name"] for i in r["instructions"]}
-    assert "party_a" in names  # canonical
+    assert "甲方名称" in names  # canonical, Chinese-rendered
 
 
 def test_assemble_with_scenario_includes_tagged(seeded_db):
@@ -68,10 +69,12 @@ def test_assemble_with_scenario_includes_tagged(seeded_db):
     txt = _docx_text(r["docx_path"])
     assert "base-marker" in txt
     assert "jinlin-marker" in txt
-    # clause-declared non-canonical slot surfaced in instructions
+    # clause-declared slots surface in instructions, rendered to Chinese where a
+    # concept mapping exists (penalty -> 违约金); property_name has no mapping so
+    # it stays Latin.
     names = {i["name"] for i in r["instructions"]}
     assert "property_name" in names
-    assert "penalty" in names
+    assert "违约金" in names
     # law_refs deduped union
     assert any(ref["name"] == "中华人民共和国民法典" for ref in r["law_refs"])
 

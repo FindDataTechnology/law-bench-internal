@@ -231,6 +231,26 @@ def test_dedup_fill_missing_format(app_client: TestClient, seeded_db, fake_minio
     assert second["pdf_url"] is not None
 
 
+def test_force_reuploads_existing_artifact(app_client: TestClient, seeded_db, fake_minio):
+    """``force=True`` re-uploads docx even when the artifact already exists.
+
+    Models the post-formatting-change refresh: body_text (hence the artifact
+    id) is unchanged, but the rendered docx must be overwritten in MinIO.
+    """
+    _seed_base(seeded_db)
+    _seed_tagged(seeded_db, "生鲜乳购销")
+    app_client.post(
+        "/api/contracts/sale/generate-stored", json={"scenario": "生鲜乳购销"}
+    )
+    n_before = len(fake_minio.uploaded)
+    r = app_client.post(
+        "/api/contracts/sale/generate-stored",
+        json={"scenario": "生鲜乳购销", "force": True},
+    ).json()
+    assert r["reused"] is True
+    assert len(fake_minio.uploaded) == n_before + 1  # re-uploaded despite reuse
+
+
 # --- list / get / download ------------------------------------------------ #
 
 

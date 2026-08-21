@@ -237,3 +237,35 @@ table.matrix td.cell.rate { color: var(--accent); background: #eff6ff; }
   border-left: 3px solid var(--border); margin: 0.5rem 0; padding: 0.2rem 0.8rem;
   color: #555; background: #fafbfc;
 }
+
+/* samples library: cascading filter form + paginated artifact table */
+.filter-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+  align-items: flex-end;
+}
+.filter-form .filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 10rem;
+  flex: 1 1 10rem;
+}
+.filter-form .filter-group select { width: 100%; }
+@media (max-width: 720px) {
+  .filter-form { flex-direction: column; gap: 0.6rem; }
+  .filter-form .filter-group { min-width: 0; }
+}
+
+table.data-table td.dl-cell { white-space: nowrap; }
+table.data-table td.dl-cell .btn + .btn { margin-left: 0.3rem; }
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+.pagination .page-info { color: var(--muted); font-size: 0.9rem; }

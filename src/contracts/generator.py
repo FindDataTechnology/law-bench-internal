@@ -42,17 +42,17 @@ def generate_contract(
 
     if format == "docx":
         docx_path = out / f"{contract_type}.docx"
-        create_docx(body, str(docx_path), title=title)
+        create_docx(body, str(docx_path), title=title, highlight_slots=False)
     elif format == "both":
         docx_path = out / f"{contract_type}.docx"
         pdf_path = out / f"{contract_type}.pdf"
-        create_docx(body, str(docx_path), title=title)
+        create_docx(body, str(docx_path), title=title, highlight_slots=False)
         docx_to_pdf(str(docx_path), output_path=str(pdf_path))
     else:  # pdf (build the DOCX in a temp dir so only the PDF lands in out_dir)
         pdf_path = out / f"{contract_type}.pdf"
         with tempfile.TemporaryDirectory() as tmp:
             tmp_docx = Path(tmp) / f"{contract_type}.docx"
-            create_docx(body, str(tmp_docx), title=title)
+            create_docx(body, str(tmp_docx), title=title, highlight_slots=False)
             docx_to_pdf(str(tmp_docx), output_path=str(pdf_path))
 
     return {

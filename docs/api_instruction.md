@@ -31,17 +31,17 @@
 
 **远端（已部署，直接用这个）**：
 
-- Base URL：`http://23.144.68.246:30820`
-- 交互式文档：`http://23.144.68.246:30820/api/docs`（Swagger UI，可直接试调）
-- OpenAPI JSON：`http://23.144.68.246:30820/openapi.json`
-- 健康检查：`GET http://23.144.68.246:30820/healthz`
+- Base URL：`https://lawbench.tokenvault.vip`
+- 交互式文档：`https://lawbench.tokenvault.vip/api/docs`（Swagger UI，可直接试调）
+- OpenAPI JSON：`https://lawbench.tokenvault.vip/openapi.json`
+- 健康检查：`GET https://lawbench.tokenvault.vip/healthz`
 
 部署在 k3s 集群 `23.144.68.246`，NodePort `30820`（容器端口 8010），由 ArgoCD 管理。
 后端连的是生产 PostgreSQL（条款库 / rubric / 产物元数据都在库里），生成的 docx/pdf 产物
 落 MinIO。日常对接**直接用这个远端地址**，不必本地跑。
 
-- **无需鉴权**：这套接口没有 API Key / 限流（鉴权在另一套 async API 上，见第 11 节）。
-- **HTTP 明文**：NodePort 直连，非 HTTPS。
+- **强制鉴权**：所有 `/api/*` 与页面路由都要身份凭证，无凭证一律 `401`（例外：`/healthz`、`/auth/*`）。对外调用用 `X-API-Key`，详见 §2.1。
+- **HTTPS**：走 TLS 域名 `https://lawbench.tokenvault.vip`（Caddy 终结 TLS）。集群另有 NodePort `30820` 明文直连，仅作内部/调试备用，鉴权同样生效。
 
 **本地开发（可选）**：
 
@@ -52,6 +52,71 @@ uv run uvicorn src.web.app:app --reload --host 127.0.0.1 --port 8010
 
 本地起来后 Base URL 为 `http://127.0.0.1:8010`，需自行配置 `database_url` 指向一个
 PostgreSQL，文件产物默认写到 `output/contracts/`。
+
+### 2.1 鉴权与 API Key（对外调用必读）
+
+所有 `/api/*` 与页面路由都**强制鉴权**，无凭证一律 `401`（唯一例外：`/healthz`、`/auth/*`）。
+系统支持三种身份凭证，按强度优先解析，**present-but-invalid 直接 401 不降级**：
+
+| 通道 | 凭证 | 适用 |
+|------|------|------|
+| Cookie | 登录后浏览器自动携带的 `lawbench_session` | **Web 面板**（人在浏览器里操作） |
+| Bearer JWT | `Authorization: Bearer <jwt>`（Logto 签发，JWKS 校验） | 短期程序化访问 |
+| **X-API-Key** | `X-API-Key: lbk_...`（自管长密钥，盐哈希存库） | **对外长期调用（推荐）** |
+
+**对外部调用方：用 `X-API-Key`。** 把 key 放在请求头里即可，无需登录、无需换 token：
+
+```bash
+# 假设管理员已发给你一个 key，形如 lbk_xxxx...，先存到环境变量
+export LBK_KEY='lbk_你的key'
+
+# 带头调用 —— 列合同类型
+curl -H "X-API-Key: $LBK_KEY" https://lawbench.tokenvault.vip/api/contracts
+
+# 带头组装合同（POST 也要带）
+curl -X POST https://lawbench.tokenvault.vip/api/contracts/sale/generate \
+  -H "X-API-Key: $LBK_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"scenario":"农产品买卖","stance":"balanced","format":"markdown"}'
+
+# 不带 key / key 无效 / key 已吊销 → 一律 401
+curl https://lawbench.tokenvault.vip/api/contracts   # → 401
+```
+
+**key 的形态与安全**：
+
+- 形如 `lbk_<43 位 urlsafe 字符>`，前 16 位是公开前缀（用于库内 O(1) 查找），完整明文**只在创建时返回一次**，库里只存盐哈希（pbkdf2-hmac-sha256，10 万次迭代），绝不持久化或记录明文。
+- 一个 key 一旦创建长期有效，直到吊销；丢失只能重新创建（旧 key 无法找回）。
+- 当前 `scopes` 字段已建模但**尚未按路由强制**——即一个有效 key 目前拥有全部 `/api/*` 的访问权（读 + 生成 + 落库）。若需要只读 / 受限 scope，请联系底座维护者（这是后续待接入项）。
+
+**管理员发 key 的操作步骤**（你需要一个能登录 Web 的管理员账号）：
+
+```bash
+# 1. 浏览器打开 https://lawbench.tokenvault.vip ，点登录走 Logto OIDC 完成登录
+#    （登录回调依赖 /auth/callback 已在 Logto 控制台登记，见文末「前置条件」）
+
+# 2. 登录态下创建一个 key（label 标注用途，scopes 暂留空）
+curl -X POST https://lawbench.tokenvault.vip/api/keys \
+  -H 'Content-Type: application/json' \
+  -b 'lawbench_session=<你的会话cookie>' \
+  -d '{"label":"外部-A公司","scopes":[]}'
+# → 201  {"key":"lbk_xxxx...","label":"外部-A公司","scopes":[]}
+#    ↑ key 明文只此一次返回，立刻复制发给对方
+
+# 3. 列出已发的 key（只看前缀 + 审计列，绝不返回明文/哈希）
+curl -b 'lawbench_session=<你的会话cookie>' https://lawbench.tokenvault.vip/api/keys
+
+# 4. 吊销（软删，行留存审计但立即失效）；非本人 key / 不存在 id 都返回 404
+curl -X DELETE -b 'lawbench_session=<你的会话cookie>' \
+  https://lawbench.tokenvault.vip/api/keys/42
+# → 204
+```
+
+> **前置条件（管理员一次性操作）**：浏览器登录流程要求在 Logto 控制台的**现有应用**
+> `5kw4u6c25rd9ucabf67cx` 里登记回调地址——Redirect URIs 增加
+> `https://lawbench.tokenvault.vip/auth/callback`，Post sign-out redirect URIs 增加
+> `https://lawbench.tokenvault.vip/`。**未登记则登录回调 400，无法登录也就无法发 key。**
+> 这一步必须在 Logto 控制台手动完成，代码侧已就绪。
 
 ## 3. 核心概念（先看这个，再看接口）
 
@@ -152,7 +217,7 @@ custom  >  tagged  >  base
 ### 5.1 `GET /api/contracts` — 列出合同类型
 
 ```bash
-curl http://23.144.68.246:30820/api/contracts
+curl https://lawbench.tokenvault.vip/api/contracts
 ```
 
 响应（43 项，仅示两条）：
@@ -170,7 +235,7 @@ curl http://23.144.68.246:30820/api/contracts
 + 条款可用量统计 + 该类型的 rubric / prompts 指针。Agent 冷启动时调这一个就够。
 
 ```bash
-curl http://23.144.68.246:30820/api/contracts/sale
+curl https://lawbench.tokenvault.vip/api/contracts/sale
 ```
 
 响应：
@@ -222,7 +287,7 @@ curl http://23.144.68.246:30820/api/contracts/sale
 等价于 bundle 里的 `slot_instructions`，单独取更轻量。
 
 ```bash
-curl http://23.144.68.246:30820/api/contracts/sale/slots
+curl https://lawbench.tokenvault.vip/api/contracts/sale/slots
 ```
 
 响应：`[{name, label, description, example, required, source}, ...]`，覆盖模板里的每一个 slot。
@@ -230,7 +295,7 @@ curl http://23.144.68.246:30820/api/contracts/sale/slots
 ### 5.4 `GET /api/contracts/{type}/laws` — 法律法规
 
 ```bash
-curl http://23.144.68.246:30820/api/contracts/sale/laws
+curl https://lawbench.tokenvault.vip/api/contracts/sale/laws
 ```
 
 响应：
@@ -252,7 +317,7 @@ curl http://23.144.68.246:30820/api/contracts/sale/laws
 ### 5.5 `GET /api/contracts/{type}/tags` — 标签词表
 
 ```bash
-curl http://23.144.68.246:30820/api/contracts/sale/tags
+curl https://lawbench.tokenvault.vip/api/contracts/sale/tags
 ```
 
 响应：`{dim: [合法值]}`。调用 `generate` 前，用这个确认你传的 `scenario` / `stance` 是否合法。
@@ -263,7 +328,7 @@ curl http://23.144.68.246:30820/api/contracts/sale/tags
 支持按 `scenario` / `stance` / `source` 过滤 + 分页。
 
 ```bash
-curl 'http://23.144.68.246:30820/api/contracts/sale/clauses?scenario=农产品买卖&source=tagged&limit=20&offset=0'
+curl 'https://lawbench.tokenvault.vip/api/contracts/sale/clauses?scenario=农产品买卖&source=tagged&limit=20&offset=0'
 ```
 
 | 参数 | 默认 | 说明 |
@@ -309,7 +374,7 @@ curl 'http://23.144.68.246:30820/api/contracts/sale/clauses?scenario=农产品�
 
 ```bash
 # 最快路径：只拿正文文本，不落地文件
-curl -X POST http://23.144.68.246:30820/api/contracts/sale/generate \
+curl -X POST https://lawbench.tokenvault.vip/api/contracts/sale/generate \
   -H 'Content-Type: application/json' \
   -d '{"scenario": "农产品买卖", "stance": "balanced", "format": "markdown"}'
 ```
@@ -358,7 +423,7 @@ curl -X POST http://23.144.68.246:30820/api/contracts/sale/generate \
 **A. 指定 tag（生成单个变体）**：传了 `scenario` / `stance` / `custom_clause_ids` 任一。
 
 ```bash
-curl -X POST http://23.144.68.246:30820/api/contracts/sale/generate-stored \
+curl -X POST https://lawbench.tokenvault.vip/api/contracts/sale/generate-stored \
   -H 'Content-Type: application/json' \
   -d '{"scenario": "农产品买卖", "stance": "balanced", "format": "both"}'
 ```
@@ -383,7 +448,7 @@ curl -X POST http://23.144.68.246:30820/api/contracts/sale/generate-stored \
 并逐个落库。
 
 ```bash
-curl -X POST http://23.144.68.246:30820/api/contracts/sale/generate-stored \
+curl -X POST https://lawbench.tokenvault.vip/api/contracts/sale/generate-stored \
   -H 'Content-Type: application/json' \
   -d '{"format": "docx"}'
 ```
@@ -409,7 +474,7 @@ curl -X POST http://23.144.68.246:30820/api/contracts/sale/generate-stored \
 ### 5.9 `GET /api/contracts/artifacts` — 列出已落库产物
 
 ```bash
-curl 'http://23.144.68.246:30820/api/contracts/artifacts?contract_type=sale'
+curl 'https://lawbench.tokenvault.vip/api/contracts/artifacts?contract_type=sale'
 ```
 
 响应（**不含 `body_text`**，按 id 倒序）：
@@ -438,7 +503,7 @@ curl 'http://23.144.68.246:30820/api/contracts/artifacts?contract_type=sale'
 ### 5.10 `GET /api/contracts/artifacts/{id}` — 产物详情
 
 ```bash
-curl http://23.144.68.246:30820/api/contracts/artifacts/42
+curl https://lawbench.tokenvault.vip/api/contracts/artifacts/42
 ```
 
 返回完整行（**含 `body_text`**）。id 不存在 → `404`。
@@ -446,7 +511,7 @@ curl http://23.144.68.246:30820/api/contracts/artifacts/42
 ### 5.11 `GET /api/contracts/artifacts/{id}/download` — 下载已落库文件
 
 ```bash
-curl -OJ 'http://23.144.68.246:30820/api/contracts/artifacts/42/download?format=docx'
+curl -OJ 'https://lawbench.tokenvault.vip/api/contracts/artifacts/42/download?format=docx'
 ```
 
 - `format` 仅支持 `docx` / `pdf`，传别的 → `400`。
@@ -458,7 +523,7 @@ curl -OJ 'http://23.144.68.246:30820/api/contracts/artifacts/42/download?format=
 `generate`（非 stored）返回的 `docx_url` / `pdf_url` 指向这里。**内部接口，不在 OpenAPI 里**。
 
 ```bash
-curl -OJ http://23.144.68.246:30820/api/contracts/sale/files/sale.docx
+curl -OJ https://lawbench.tokenvault.vip/api/contracts/sale/files/sale.docx
 ```
 
 - 路径穿越安全：文件名含 `..` / `/` / `\` 一律 `404`。
@@ -497,12 +562,12 @@ curl -OJ http://23.144.68.246:30820/api/contracts/sale/files/sale.docx
 > `validate_tags` 校验，非法值丢弃；全被丢弃 → `400`。
 
 ```bash
-curl -X POST http://23.144.68.246:30820/api/contracts/sale/generate-batch \
+curl -X POST https://lawbench.tokenvault.vip/api/contracts/sale/generate-batch \
   -H 'Content-Type: application/json' \
   -d '{"tag_combinations":[{"scenario":"农产品买卖","stance":"pro_a"},{"scenario":"农产品买卖","stance":"pro_b"}],"format":"docx"}'
 
 # 或枚举全部组合
-curl -X POST http://23.144.68.246:30820/api/contracts/sale/generate-batch \
+curl -X POST https://lawbench.tokenvault.vip/api/contracts/sale/generate-batch \
   -H 'Content-Type: application/json' -d '{"enumerate_all":true,"format":"pdf"}'
 ```
 
@@ -548,7 +613,7 @@ curl -X POST http://23.144.68.246:30820/api/contracts/sale/generate-batch \
 | `mode` | string? | null | 须为 `"E"` |
 
 ```bash
-curl -X POST http://23.144.68.246:30820/api/contracts/sale/pipeline \
+curl -X POST https://lawbench.tokenvault.vip/api/contracts/sale/pipeline \
   -H 'Content-Type: application/json' \
   -d '{"stance":"balanced","scenario":"农产品买卖","max_iterations":3,"rubric":"contract_sale_v3","task_desc":"偏买方的农产品采购合同"}'
 ```
@@ -584,7 +649,7 @@ curl -X POST http://23.144.68.246:30820/api/contracts/sale/pipeline \
 请求体同 5.13.2（`mode` 须为 `"F"`）。
 
 ```bash
-curl -X POST http://23.144.68.246:30820/api/contracts/sale/auto-reject \
+curl -X POST https://lawbench.tokenvault.vip/api/contracts/sale/auto-reject \
   -H 'Content-Type: application/json' -d '{"stance":"balanced","max_iterations":3}'
 ```
 
@@ -602,7 +667,7 @@ curl -X POST http://23.144.68.246:30820/api/contracts/sale/auto-reject \
 请求体只需 `mode:"G"`（其余字段被忽略，类型由路径决定）：
 
 ```bash
-curl -X POST http://23.144.68.246:30820/api/contracts/sale/regenerate-template \
+curl -X POST https://lawbench.tokenvault.vip/api/contracts/sale/regenerate-template \
   -H 'Content-Type: application/json' -d '{"mode":"G"}'
 ```
 
@@ -622,13 +687,13 @@ curl -X POST http://23.144.68.246:30820/api/contracts/sale/regenerate-template \
 **列出最近任务**（`limit` 默认 20，按时间倒序）：
 
 ```bash
-curl 'http://23.144.68.246:30820/api/generation-jobs?limit=20'
+curl 'https://lawbench.tokenvault.vip/api/generation-jobs?limit=20'
 ```
 
 **轮询单个任务**（`id` 不存在 → `404`）：
 
 ```bash
-curl http://23.144.68.246:30820/api/generation-jobs/17
+curl https://lawbench.tokenvault.vip/api/generation-jobs/17
 ```
 
 响应（`GenerationJobDetail`）：
@@ -708,6 +773,7 @@ class GenerateRequest(BaseModel):
 
 | 状态码 | 触发条件 | Agent 处理建议 |
 |--------|----------|----------------|
+| `401` | 未带凭证 / `X-API-Key` 无效或已吊销 / Bearer 过期（present-but-invalid 不降级） | 检查是否带 `X-API-Key`（见 §2.1）；key 丢失找管理员重发，旧 key 无法找回 |
 | `404` | `contract_type` 不存在 / artifact id 不存在 / 文件不存在 | 先 `GET /api/contracts` 确认类型 |
 | `400` | `generate-stored` 下载 `format` 非 docx/pdf | 改正 format |
 | `422` | `format` 取值非法（pydantic Literal 校验）；或组装未通过一致性闸门 | 看返回 `detail`：若是闸门失败，说明该 scenario+stance 组合缺关键章节，换个组合或补条款 |
@@ -763,47 +829,58 @@ class GenerateRequest(BaseModel):
 
 ## 10. curl 示例合集
 
+> 以下所有 `/api/*` 请求都需带 `X-API-Key: $LAWBENCH_KEY`（见 §2.1）。为简洁起见此处省略，
+> 实际调用请加上 `-H "X-API-Key: $LAWBENCH_KEY"`。`/healthz` 不需要鉴权。
+
 ```bash
-# 0. 健康检查
-curl http://23.144.68.246:30820/healthz
+# 先导出（一次性）
+export LAWBENCH_KEY=lbk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+export BASE=https://lawbench.tokenvault.vip
+H="-H X-API-Key:$LAWBENCH_KEY"   # 给 curl 复用的头（注意空格处理）
+
+# 0. 健康检查（免鉴权）
+curl "$BASE/healthz"
 
 # 1. 列合同类型
-curl http://23.144.68.246:30820/api/contracts
+curl "$BASE/api/contracts" -H "X-API-Key: $LAWBENCH_KEY"
 
 # 2. 拿 sale 的全套上下文
-curl http://23.144.68.246:30820/api/contracts/sale
+curl "$BASE/api/contracts/sale" -H "X-API-Key: $LAWBENCH_KEY"
 
 # 3. 查 sale 的标签词表
-curl http://23.144.68.246:30820/api/contracts/sale/tags
+curl "$BASE/api/contracts/sale/tags" -H "X-API-Key: $LAWBENCH_KEY"
 
 # 4. 查 sale 的 slot 清单
-curl http://23.144.68.246:30820/api/contracts/sale/slots
+curl "$BASE/api/contracts/sale/slots" -H "X-API-Key: $LAWBENCH_KEY"
 
 # 5. 查 sale「农产品买卖」场景的 tagged 条款
-curl 'http://23.144.68.246:30820/api/contracts/sale/clauses?scenario=农产品买卖&source=tagged'
+curl "$BASE/api/contracts/sale/clauses?scenario=农产品买卖&source=tagged" -H "X-API-Key: $LAWBENCH_KEY"
 
 # 6. 组装 sale 合同（只拿正文，不落地）
-curl -X POST http://23.144.68.246:30820/api/contracts/sale/generate \
+curl -X POST "$BASE/api/contracts/sale/generate" \
+  -H "X-API-Key: $LAWBENCH_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"scenario":"农产品买卖","stance":"balanced","format":"markdown"}'
 
 # 7. 组装并生成 docx
-curl -X POST http://23.144.68.246:30820/api/contracts/sale/generate \
+curl -X POST "$BASE/api/contracts/sale/generate" \
+  -H "X-API-Key: $LAWBENCH_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"scenario":"农产品买卖","stance":"pro_a","format":"docx"}'
-# → 用返回的 docx_url 下载
-curl -OJ http://23.144.68.246:30820/api/contracts/sale/files/sale.docx
+# → 用返回的 docx_url 下载（下载也要带 key）
+curl -OJ "$BASE/api/contracts/sale/files/sale.docx" -H "X-API-Key: $LAWBENCH_KEY"
 
 # 8. 组装 + 落库（both）
-curl -X POST http://23.144.68.246:30820/api/contracts/sale/generate-stored \
+curl -X POST "$BASE/api/contracts/sale/generate-stored" \
+  -H "X-API-Key: $LAWBENCH_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"scenario":"农产品买卖","stance":"balanced","format":"both"}'
 
 # 9. 列已落库产物
-curl 'http://23.144.68.246:30820/api/contracts/artifacts?contract_type=sale'
+curl "$BASE/api/contracts/artifacts?contract_type=sale" -H "X-API-Key: $LAWBENCH_KEY"
 
 # 10. 下载已落库产物的 pdf
-curl -OJ 'http://23.144.68.246:30820/api/contracts/artifacts/42/download?format=pdf'
+curl -OJ "$BASE/api/contracts/artifacts/42/download?format=pdf" -H "X-API-Key: $LAWBENCH_KEY"
 ```
 
 ## 11. 相关接口（不是本文档重点，但你需要知道）
@@ -812,7 +889,7 @@ curl -OJ 'http://23.144.68.246:30820/api/contracts/artifacts/42/download?format=
 
 | 接口 | 位置 | 端口 | 定位 | 本文是否覆盖 |
 |------|------|------|------|--------------|
-| contract-context API | `src/web/routes/contract_context.py` | 8010 | **本文档**。agent-facing，上下文最全，无鉴权 | ✅ |
+| contract-context API | `src/web/routes/contract_context.py` | 8010 | **本文档**。agent-facing，上下文最全，强制鉴权（X-API-Key / 登录态 / Bearer）| ✅ |
 | async 生成 API | `fd-coding-law-bench-mcp/src/.../api/` | 8000 | 生产级：async + API Key + 限流 + CORS + batch | ❌（已有独立文档） |
 
 如果你要做**对外部署**（鉴权、限流、跨域），用 async 那套，文档在
@@ -829,12 +906,13 @@ uvicorn fd_coding_law_bench_mcp.api.main:app --port 8000
 
 > **注意区分**：§5.13 的生成模式接口（E/F/G）虽然也是「异步」，但它们跑在**本应用
 > 8010 端口**上（`src/web/routes/generation.py`，FastAPI `BackgroundTasks` + `generation_jobs`
-> 表），不是上面这套 8000 端口的 async 网关。8010 这套无鉴权、无限流，适合内部 / Web 面板用；
-> 对外部署仍走 8000 那套。
+> 表），不是上面这套 8000 端口的 async 网关。8010 这套现已**强制鉴权**（X-API-Key / 登录态），
+> 适合内部 / Web 面板用，也可直接作为对外 API（外部调用方带 `X-API-Key`，见 §2.1）。
+> 8000 那套是另一套独立的 async 网关（自带鉴权 / 限流 / CORS），按需选用，不强制。
 
 另外 `src/web/routes/api.py` 下还有一套 `/api/rubrics`、`/api/prompts`、`/api/compare`
 **评测管理**接口（rubric / criterion / prompt 的 CRUD + prompt 对比评测），与「生成」关系不大，
-属于评测侧，需要时再看 `http://23.144.68.246:30820/api/docs`。
+属于评测侧，需要时再看 `https://lawbench.tokenvault.vip/api/docs`。
 
 ## 12. 附：规范章节顺序
 
@@ -862,9 +940,10 @@ uvicorn fd_coding_law_bench_mcp.api.main:app --port 8000
 5. **`generate-stored` 不传 tag = 全组合批量**：别误以为「不传 tag = 生成 base 一份」，
    它会生成 scenario×stance×base 的**全部**组合。
 6. **`rubric` 字段可能为 `null`**：该类型还没登记 rubric 时。不影响生成，只影响后续评测。
+7. **不带 key 一律 401**：所有 `/api/*` 强制鉴权（见 §2.1）。忘带 `X-API-Key`、key 无效或已吊销都返回 `401`，且 present-but-invalid **不降级**（不会自动走匿名）。`/healthz` 与 `/auth/*` 是仅有的免鉴权例外。
 
 ---
 
 *接口源码：`src/web/routes/contract_context.py`。所有路由都是对 `src.contracts` /
 `src.clauses` / `src.eval` 既有服务函数的薄封装，没有独立业务逻辑，出问题查对应服务层即可。
-OpenAPI 实时镜像：`http://23.144.68.246:30820/api/docs`。*
+OpenAPI 实时镜像：`https://lawbench.tokenvault.vip/api/docs`。*

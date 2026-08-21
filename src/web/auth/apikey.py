@@ -25,14 +25,17 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import secrets
 from typing import Any, Optional
 
 import psycopg  # for psycopg.errors.UniqueViolation
 
-from src.settings import DEFAULT_DB  # legacy default param value (sentinel)
+from src.settings import DEFAULT_DB, READONLY_REPLICA  # noqa: F401 — see verify_key
 from src.eval.db import connect, now_iso
 from src.eval.store import ensure_schema
+
+_log = logging.getLogger(__name__)
 
 # --- tuning constants ------------------------------------------------------ #
 
@@ -183,10 +186,22 @@ def verify_key(plaintext: str, db_path: Any = DEFAULT_DB) -> Optional[dict]:
         return None  # prefix matched but secret did not -> invalid
 
     # Best-effort last_used_at refresh; never let it fail the request.
-    try:
-        _touch_last_used(row["id"], db_path)
-    except Exception:  # noqa: BLE001
-        pass
+    #
+    # On a read-only replica (the China public pod), skip the UPDATE entirely:
+    # the standby rejects writes, so a per-request touch would only emit error
+    # noise. The flag is bound at import time from the ``READONLY_REPLICA`` env;
+    # tests flip it by monkeypatching this module's attribute directly.
+    if not READONLY_REPLICA:
+        try:
+            _touch_last_used(row["id"], db_path)
+        except psycopg.OperationalError as exc:
+            # Read-only standby / connection lost / transient DB error. The key
+            # already verified — a failed audit touch must not 401/500 the
+            # request. Narrowed from a bare ``except Exception`` so a real bug
+            # (e.g. a malformed UPDATE) still surfaces instead of being hidden.
+            _log.debug("last_used_at touch failed for key %s: %s", row["id"], exc)
+        except Exception as exc:  # noqa: BLE001 — safety net, never fatal
+            _log.debug("last_used_at touch raised for key %s: %s", row["id"], exc)
 
     scopes = row["scopes"]
     if isinstance(scopes, str):  # JSONB came back as text (defensive)

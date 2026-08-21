@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from src.contracts.slots import REQUIRED_SLOTS, default_slot_instructions
+from src.contracts.slot_ontology import render_body_chinese, render_instructions_chinese
 from src.contracts.templates import list_contract_types
 from src.generator import SLOT_PATTERN, ConverterNotAvailableError, create_docx, docx_to_pdf
 from src.eval.errors import NotFoundError
@@ -240,7 +241,13 @@ def generate_contract_assembled(
         contract_type, scenario, custom_clause_ids, stance, db=db
     )
     body = _assemble_body(resolved)
+    # Render Latin canonical slots -> per-type Chinese display names so every
+    # generated contract carries Chinese slots ({{甲方名称}}, {{借款金额}}, ...).
+    # Both body and instructions are rendered together so the coherence gate's
+    # name-match check (body slot == instruction name) stays consistent.
+    body = render_body_chinese(body, contract_type)
     instructions = _build_instructions(resolved, zh, contract_type)
+    instructions = render_instructions_chinese(instructions, contract_type)
     law_refs = _build_law_refs(resolved)
     slots = list(dict.fromkeys(SLOT_PATTERN.findall(body)))
 
@@ -257,17 +264,17 @@ def generate_contract_assembled(
         pass
     elif format == "docx":
         docx_path = out / f"{base_name}.docx"
-        create_docx(body, str(docx_path), title=zh)
+        create_docx(body, str(docx_path), title=zh, highlight_slots=False)
     elif format == "both":
         docx_path = out / f"{base_name}.docx"
         pdf_path = out / f"{base_name}.pdf"
-        create_docx(body, str(docx_path), title=zh)
+        create_docx(body, str(docx_path), title=zh, highlight_slots=False)
         docx_to_pdf(str(docx_path), output_path=str(pdf_path))
     else:  # pdf
         pdf_path = out / f"{base_name}.pdf"
         with tempfile.TemporaryDirectory() as tmp:
             tmp_docx = Path(tmp) / f"{base_name}.docx"
-            create_docx(body, str(tmp_docx), title=zh)
+            create_docx(body, str(tmp_docx), title=zh, highlight_slots=False)
             docx_to_pdf(str(tmp_docx), output_path=str(pdf_path))
 
     return {

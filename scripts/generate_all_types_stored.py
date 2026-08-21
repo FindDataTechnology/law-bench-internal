@@ -10,11 +10,17 @@ Content-addressed by ``md5(body_text)``: identical inputs reuse the same
 artifact (``reused=True``, no re-upload), so re-running is a no-op. Reports
 per-type progress + a final new/reused/fail summary.
 
-Re-run: ``PYTHONPATH=. python3 scripts/generate_all_types_stored.py``
+``--force`` re-uploads every docx (overwriting the MinIO object) even when the
+artifact already exists — use it to refresh formatting/visuals after a renderer
+change that does not alter ``body_text`` (e.g. the add-contract-docx-formatting
+work: new fonts/A4/signature layout, same body hash).
+
+Re-run: ``PYTHONPATH=. python3 scripts/generate_all_types_stored.py [--force]``
 """
 
 from __future__ import annotations
 
+import sys
 import time
 
 from src.contracts import list_contract_types
@@ -42,6 +48,10 @@ def _combos(scenarios: list[str], stances: list[str]) -> list[tuple[str | None, 
 
 
 def main() -> None:
+    force = "--force" in sys.argv[1:]
+    if force:
+        print("FORCE: re-uploading docx for every existing artifact "
+              "(refresh visuals, body_text unchanged)\n", flush=True)
     types = list_contract_types()
     conn = connect()
     ok = reused = fail = 0
@@ -56,7 +66,7 @@ def main() -> None:
         for s, st in combos:
             label = f"{key}|scen={s or '-'}|stance={st or '-'}"
             try:
-                r = generate_stored(key, scenario=s, stance=st, format="docx")
+                r = generate_stored(key, scenario=s, stance=st, format="docx", force=force)
                 if r["reused"]:
                     reused += 1
                     type_reused += 1
