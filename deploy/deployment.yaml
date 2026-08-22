@@ -42,7 +42,7 @@ spec:
             - lawbench.tokenvault.vip
       initContainers:
         - name: seed-db
-          image: harbor.local/law-bench/law-template:sha-2f4de5e
+          image: harbor.local/law-bench/law-template:sha-a4e917c
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsUser: 0
