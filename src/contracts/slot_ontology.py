@@ -565,6 +565,9 @@ _PARTS_CN: dict[str, str] = {
     "leveling": "平整", "retransfer": "再转让", "financing": "融资",
     "exercising": "行使", "waiving": "放弃", "cooperator": "合作方",
     "obligor": "义务人", "reforestation": "再造林",
+    # --- 5th extension: final 16 survivors ---
+    "lease": "租赁", "reasons": "原因", "excl": "不含", "incl": "含",
+    "pre": "预", "sale": "售", "co2": "二氧化碳",
 }
 
 _LATIN_CN_GLOSSARY: dict[str, str] = {
@@ -587,6 +590,15 @@ _LATIN_CN_GLOSSARY: dict[str, str] = {
     "legal_representative": "法定代表人",
     "advance_notice_days": "提前通知期限",
     "advance_booking_days": "提前预订天数",
+    # opaque compounds: numeric day-tiers + legal/odd tokens
+    "cooling_off_days": "冷静期天数",
+    "river2_fee": "水运2费用",
+    "penalty_rate_14to7": "14至7天违约金费率",
+    "penalty_rate_6to4": "6至4天违约金费率",
+    "penalty_rate_6to4_outbound": "6至4天出库违约金费率",
+    "penalty_rate_3to1": "3至1天违约金费率",
+    "penalty_rate_3to1_outbound": "3至1天出库违约金费率",
+    "penalty_rate_29to15": "29至15天违约金费率",
 }
 
 
