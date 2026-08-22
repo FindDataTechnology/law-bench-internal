@@ -20,9 +20,9 @@
 set -e
 
 if [ "${PUBLIC_API:-0}" = "1" ]; then
-    exec .venv/bin/uvicorn src.web.public_app:app --host 0.0.0.0 --port 8010
+    exec .venv/bin/uvicorn src.web.public_app:app --host 0.0.0.0 --port 8010 --proxy-headers --forwarded-allow-ips='*'
 fi
 
 .venv/bin/python -m src.eval.harbor_seed --db /app/db/evaluation_rules.db
 
-exec .venv/bin/uvicorn src.web.app:app --host 0.0.0.0 --port 8010
+exec .venv/bin/uvicorn src.web.app:app --host 0.0.0.0 --port 8010 --proxy-headers --forwarded-allow-ips='*'
