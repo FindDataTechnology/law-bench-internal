@@ -663,10 +663,14 @@ def _chinese_name(canon: str, contract_type: str | None, l2c: dict[str, str]) ->
     if rest and rest in _LATIN_CN_GLOSSARY:
         return _role_prefixed(_LATIN_CN_GLOSSARY[rest], role, contract_type)
     # compositional fallback (5th tier): translate underscore parts and join
-    # (inspection_days -> 检验天数, party_a_duty -> 甲方义务).
-    composed = _compose_cn(rest)
+    # (inspection_days -> 检验天数, party_a_duty -> 甲方义务). A bare role label
+    # (employer, consignee, buyer, seller: `rest` is empty after _strip_role)
+    # composes from the canon itself and is returned un-prefixed — the label
+    # alone is the party name (用人单位, not 甲方用人单位).
+    stem = rest or canon
+    composed = _compose_cn(stem)
     if composed:
-        return _role_prefixed(composed, role, contract_type)
+        return _role_prefixed(composed, role, contract_type) if rest else composed
     return canon
 
 
