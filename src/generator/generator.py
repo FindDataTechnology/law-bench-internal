@@ -51,7 +51,7 @@ _INLINE_RE = re.compile(
     r"\{\{\s*[\w][\w-]*\s*\}\}"  # slot
     r"|\*\*[^*]+\*\*"  # **bold**
     r"|\*[^*]+\*"  # *italic*
-    r"|_[^_]+_"  # _underline_
+    r"|(?<!_)_[^_]+_(?!_)"  # _underline_ — lookaround guards ___ blank boundaries (9.3)
 )
 
 
@@ -173,6 +173,9 @@ def _set_heading(style, name: str, size, center: bool, spacing: tuple[int, int])
     style.font.color.rgb = RGBColor(0, 0, 0)
     style.font.size = size
     _set_eastasia_font(style, name)
+    # Headings inherit Normal (which carries the 2-char firstLineChars); reset to 0
+    # so H1 centers cleanly and H2/H3 are flush-left, not indented like body text.
+    _set_first_line_chars(style, 0)
     if center:
         style.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
     before, after = spacing

@@ -87,3 +87,50 @@ def test_heading_spacing(tmp_path):
         pf = doc.styles[name].paragraph_format
         assert pf.space_before is not None and pf.space_before.pt > 0
         assert pf.space_after is not None and pf.space_after.pt > 0
+
+
+def _style_first_line_chars(doc, style_name):
+    """``w:ind/@w:firstLineChars`` on a paragraph style (None if absent)."""
+    pPr = doc.styles[style_name].element.find(qn("w:pPr"))
+    if pPr is None:
+        return None
+    ind = pPr.find(qn("w:ind"))
+    if ind is None:
+        return None
+    return ind.get(qn("w:firstLineChars"))
+
+
+def test_heading_no_first_line_indent(tmp_path):
+    # 9.1: Heading styles explicitly reset firstLineChars to 0 — they must not
+    # inherit Normal's 2-char body indent (which shifts centered H1 off-center
+    # and gives H2/H3 a spurious left indent).
+    p = create_docx("# H1\n\n## H2\n\n### H3", tmp_path / "c.docx")
+    doc = _doc(p)
+    assert _style_first_line_chars(doc, "Normal") == "200"  # body keeps 2-char indent
+    for name in ("Heading 1", "Heading 2", "Heading 3"):
+        assert _style_first_line_chars(doc, name) == "0", (
+            f"{name} leaks Normal's firstLineChars (heading indent bug)"
+        )
+
+
+def test_slot_style_literal_chinese(tmp_path):
+    # 9.2: slotted variant renders {{中文slot}} as plain text with NO highlight.
+    # Tokens stay find_slots()-fillable (literal preserves {{token}} text).
+    p = create_docx("甲方：{{甲方名称}}", tmp_path / "c.docx", slot_style="literal")
+    para = _doc(p).paragraphs[0]
+    assert "{{甲方名称}}" in para.text
+    for r in para.runs:
+        rPr = r._r.find(qn("w:rPr"))
+        assert rPr is None or rPr.find(qn("w:highlight")) is None
+    assert find_slots(p) == ["甲方名称"]
+
+
+def test_date_line_underlines(tmp_path):
+    # 9.3: 日期：______年____月____日 — the _年_/_月_ markdown-underline spans
+    # must NOT eat the boundary underscores. Result is three underlined blanks
+    # (6/4/4 spaces) and zero literal `_` characters.
+    p = create_docx("日期：______年____月____日", tmp_path / "c.docx")
+    para = _doc(p).paragraphs[0]
+    assert "_" not in para.text  # no literal underscores survived
+    blanks = [len(r.text) for r in _underlined_runs(para)]
+    assert blanks == [6, 4, 4]  # 年/月/日 are plain text, not underlined spans

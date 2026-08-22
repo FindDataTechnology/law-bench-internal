@@ -60,3 +60,71 @@
 - [ ] 8.8 HTTP route (`GET /api/contracts/artifacts/{id}/download`): accept `?variant=final|slotted` (default `final`); pass through to `download`. Add `variant` to the route's OpenAPI params.
 - [ ] 8.9 MCP tools: `contract_download` gains a `variant` arg; `contract_generate_stored` returns `docx_url_slotted`/`pdf_url_slotted`.
 - [ ] 8.10 Tests (`tests/test_contract_artifact_storage.py`): a `generate_stored` run yields a row with `docx_key` (`artifacts/...`) and `docx_key_slotted` (`artifacts-slotted/...`) both non-null; `download(..., variant="slotted")` streams the slotted docx; `download(..., variant="final")` unchanged; `download(..., variant="slotted")` on a slotted-less row → 404; same-inputs-twice → same id, `reused: true`, no re-upload.
+
+## 9. Post-deploy format fixes (from prod probe + local render)
+
+Discovered after the initial deploy (`sha-9078899`) + 1052-artifact refresh, when the
+user reported three visual bugs. All three confirmed against the live stored bodies
+(prod probe: 362 rows, 14534 slot tokens) and a local render of the current code.
+
+- [ ] 9.1 **Heading indent leak** — `src/generator/generator.py` `_set_heading` (line 171).
+  Root cause: `_set_first_line_chars(normal)` (line 197) sets `firstLineChars=200` on the
+  Normal style; Heading 1/2/3 inherit from Normal and pick up the 2-char first-line indent.
+  `_set_heading` never touches `w:ind`, so the indent leaks. Evidence: local render
+  `styles.xml` showed `Normal: ind=['<w:ind w:firstLineChars="200" w:firstLine="480"/>']`
+  but `Heading1/2/3: ind=[]` (no override → inherited). H1 is centered so the indent
+  shifts it off-center; H2/H3 render with a spurious 2-char left indent instead of
+  flush-left. Fix: in `_set_heading`, reset indent on each heading style — set
+  `firstLineChars="0"` and `firstLine="0"` (via the `w:ind` element on the style's pPr)
+  so headings don't inherit Normal's body indent. Verify: re-render and check `styles.xml`
+  shows Heading 1/2/3 with `firstLineChars="0"` (or `w:ind` absent after explicit reset).
+
+- [ ] 9.2 **Slotted variant: drop yellow highlight** — `src/contracts/artifacts.py:131`.
+  Root cause: `style = "underline" if variant == "final" else "highlight"` — the slotted
+  variant renders `{{slot}}` tokens with `WD_COLOR_INDEX.YELLOW`. User: "我不要高亮".
+  Note: the "still English" half of the complaint is already resolved at the data layer —
+  prod probe shows `LATIN_SLOT_TYPES 0 / TOTAL_LATIN_TOKENS 0` across all 362 stored rows
+  (14534 tokens, all Chinese: 甲方名称, 签署日期, 违约金, …). Commits through `9078899`
+  (bare role labels) closed the coverage gap. Only the highlight remains. Fix: change the
+  slotted branch to `slot_style="literal"` — renders `{{中文slot}}` as plain text, no yellow
+  highlight, and `find_slots` still finds the tokens (literal preserves `{{token}}` text, so
+  the fill path is unchanged). Update the docstring at line 125 (`highlight` → `literal` for
+  slotted). `ponytail: one-word change; literal keeps tokens fillable, just unhighlighted`.
+
+- [ ] 9.3 **Missing underlines in date lines** — `src/generator/generator.py:50` `_INLINE_RE`.
+  Root cause: the `_[^_]+_` alternative (markdown `_text_` underline span) matches `_年_` and
+  `_月_` inside date lines like `日期：______年____月____日`, consuming the boundary
+  underscores of adjacent `____` blank runs. Trace on `日期：______年____月____日`:
+  `_年_` eats the last `_` of the 6-run + the first `_` of the 4-run; `_月_` eats the last
+  `_` of that 4-run + the first `_` of the final 4-run. The middle 4-run is reduced to `__`
+  (2 underscores); `_UNDERLINE_RE = _{3,}` (line 49) does not match 2, so it renders as
+  literal `__` text instead of an underlined blank. Evidence: grep over stored bodies
+  confirmed `_年_` / `_月_` patterns present; the prod underline-run probe confirmed all
+  stored runs are ≥4 underscores (so the data is clean — the bug is purely the regex
+  interaction at render time). Fix: guard the markdown-underline alternative with negative
+  lookbehind/lookahead so it won't match when either side is another underscore —
+  `(?<!_)_[^_]+_(?!_)`. This preserves `_text_` spans (no adjacent underscores) while
+  leaving full `____` runs intact for `_split_underlines`. `ponytail: lookaround guard is
+  the minimal fix; the alternative — dropping `_[^_]+_` entirely — would break any legit
+  _span_ underline if one ever appears`.
+  After fix, `日期：______年____月____日` renders as: `[6-space underlined blank]年[4-space
+  underlined blank]月[4-space underlined blank]日` with zero literal `_` characters.
+
+- [ ] 9.4 **Tests for the three fixes** — `tests/test_docs_underlines.py` (extend).
+  - Heading indent: render a doc with a `## H2` heading; assert the Heading 2 style's
+    `w:ind` has `firstLineChars="0"` (or no inherited 200) — no 2-char left indent on H2/H3.
+  - Slotted literal: `create_docx("甲方：{{甲方名称}}", path, slot_style="literal")` →
+    no `<w:highlight>` in `document.xml`; `{{甲方名称}}` text present; `find_slots(path) ==
+    ["甲方名称"]`.
+  - Date-line underlines: `create_docx("日期：______年____月____日", path)` → zero literal `_`
+    characters in any run's text; three underlined blank runs (lengths 6/4/4); no `_年_` or
+    `_月_` underline-span run.
+
+- [ ] 9.5 **Re-deploy + refresh** — after 9.1–9.3 land on main and CI builds the image:
+  update `deploy/deployment.yaml` (BOTH initContainer `seed-db` AND main `law-bench` image
+  refs — the two-image-ref trap from `cf5295e`/`fa2a0fb`), let ArgoCD selfHeal, then re-run
+  the per-row refresh (query `SELECT id, contract_type, body_text FROM contract_artifacts`,
+  call `_render_upload_variant` for both `final` + `slotted` per row) to overwrite all
+  stored docx/pdf with the fixed formatting. Verify via `https://lawbench.tokenvault.vip`
+  that a sample contract's headings are flush-left, slotted variant has no yellow, and date
+  lines show continuous underlines.

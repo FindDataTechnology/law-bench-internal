@@ -122,13 +122,15 @@ def _render_upload_variant(
 
     ``variant`` selects the MinIO prefix + key column (``final`` -> ``artifacts/``
     + ``{fmt}_key``; ``slotted`` -> ``artifacts-slotted/`` + ``{fmt}_key_slotted``)
-    and the render ``slot_style`` (``underline`` for final, ``highlight`` for
+    and the render ``slot_style`` (``underline`` for final, ``literal`` for
     slotted). ``need_*`` gate uploads (false = already stored, skip); ``want_*``
     gate which formats exist at all (false = format not requested).
     """
     if not (need_docx or need_pdf):
         return
-    style = "underline" if variant == "final" else "highlight"
+    # ponytail: literal renders {{中文slot}} as plain text, no yellow highlight;
+    # tokens are still find_slots()-fillable. User: "我不要高亮，需要中文".
+    style = "underline" if variant == "final" else "literal"
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
         docx = tmp_dir / f"{contract_type}.{variant}.docx"
@@ -167,8 +169,8 @@ def generate_stored(
 
     Two variants are produced from one assembled body: the **final** render
     (``slot_style="underline"``, fill-in blanks, under ``artifacts/``) and the
-    **slotted** render (``slot_style="highlight"``, ``{{slot}}`` tokens, under
-    ``artifacts-slotted/``). Returns
+    **slotted** render (``slot_style="literal"``, ``{{中文slot}}`` tokens with no
+    highlight, under ``artifacts-slotted/``). Returns
     ``{artifact_id, docx_url, pdf_url, docx_url_slotted, pdf_url_slotted,
     body_text, slots, reused}`` where URLs are HTTP download endpoints
     (``null`` when a format was not produced).
