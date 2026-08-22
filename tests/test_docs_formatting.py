@@ -53,7 +53,7 @@ def test_heading1_is_black_cjk_centered(tmp_path):
 
 
 def test_highlight_off_removes_highlight_keeps_token(tmp_path):
-    p = create_docx("甲方：{{party_a}}", tmp_path / "c.docx", highlight_slots=False)
+    p = create_docx("甲方：{{party_a}}", tmp_path / "c.docx", slot_style="literal")
     para = _doc(p).paragraphs[0]
     assert "{{party_a}}" in para.text
     for r in para.runs:
@@ -63,7 +63,7 @@ def test_highlight_off_removes_highlight_keeps_token(tmp_path):
 
 
 def test_highlight_on_default(tmp_path):
-    p = create_docx("甲方：{{party_a}}", tmp_path / "c.docx")
+    p = create_docx("甲方：{{party_a}}", tmp_path / "c.docx", slot_style="highlight")
     para = _doc(p).paragraphs[0]
     highlighted = [
         r.text for r in para.runs

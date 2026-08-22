@@ -40,6 +40,7 @@ class _FakeResp:
 class _FakeMinio:
     def __init__(self):
         self.uploaded: dict[str, bytes] = {}
+        self.fput_calls = 0
 
     def bucket_exists(self, bucket):
         return True
@@ -48,6 +49,7 @@ class _FakeMinio:
         pass
 
     def fput_object(self, bucket, key, path):
+        self.fput_calls += 1
         with open(path, "rb") as fh:
             self.uploaded[key] = fh.read()
         return key
@@ -125,6 +127,9 @@ def test_by_type_base_only(app_client: TestClient, seeded_db, fake_minio):
     art = body["artifacts"][0]
     assert art["scenario"] is None and art["stance"] is None
     assert art["docx_url"].endswith(f"/api/contracts/artifacts/{art['artifact_id']}/download?format=docx")
+    assert art["docx_url_slotted"].endswith(
+        f"/api/contracts/artifacts/{art['artifact_id']}/download?format=docx&variant=slotted"
+    )
     assert art["pdf_url"] is None
 
 
@@ -213,7 +218,10 @@ def test_dedup_same_inputs_reuse(app_client: TestClient, seeded_db, fake_minio):
     assert first["artifact_id"] == second["artifact_id"]
     assert first["reused"] is False
     assert second["reused"] is True
-    assert len(fake_minio.uploaded) == 1  # no re-upload on the second call
+    # dual-variant: first call stored final + slotted docx (2 files); the second
+    # call reuses the row and uploads nothing.
+    assert len(fake_minio.uploaded) == 2
+    assert first["docx_url_slotted"]  # slotted URL is surfaced
 
 
 def test_dedup_fill_missing_format(app_client: TestClient, seeded_db, fake_minio):
@@ -242,13 +250,15 @@ def test_force_reuploads_existing_artifact(app_client: TestClient, seeded_db, fa
     app_client.post(
         "/api/contracts/sale/generate-stored", json={"scenario": "生鲜乳购销"}
     )
-    n_before = len(fake_minio.uploaded)
+    calls_before = fake_minio.fput_calls
     r = app_client.post(
         "/api/contracts/sale/generate-stored",
         json={"scenario": "生鲜乳购销", "force": True},
     ).json()
     assert r["reused"] is True
-    assert len(fake_minio.uploaded) == n_before + 1  # re-uploaded despite reuse
+    # dual-variant: force re-uploads both final and slotted docx (+2 calls);
+    # the dict stays the same size (same keys overwrite), so count fput calls.
+    assert fake_minio.fput_calls == calls_before + 2
 
 
 # --- list / get / download ------------------------------------------------ #
@@ -311,6 +321,54 @@ def test_download_bad_format_400(app_client: TestClient, seeded_db, fake_minio):
     aid = _store_one(app_client, seeded_db, fake_minio)
     r = app_client.get(f"/api/contracts/artifacts/{aid}/download", params={"format": "xls"})
     assert r.status_code == 400
+
+
+# --- dual-variant storage (final + slotted in one row) --------------------- #
+
+
+def test_dual_variant_keys_present(app_client: TestClient, seeded_db, fake_minio):
+    """One generate-stored (format=docx) yields both final and slotted docx keys."""
+    aid = _store_one(app_client, seeded_db, fake_minio)
+    row = app_client.get(f"/api/contracts/artifacts/{aid}").json()
+    assert row["docx_key"].startswith("artifacts/")
+    assert row["docx_key_slotted"].startswith("artifacts-slotted/")
+    assert row["pdf_key"] is None  # format=docx requested
+    assert row["pdf_key_slotted"] is None
+
+
+def test_download_slotted_variant(app_client: TestClient, seeded_db, fake_minio):
+    aid = _store_one(app_client, seeded_db, fake_minio)
+    r = app_client.get(
+        f"/api/contracts/artifacts/{aid}/download",
+        params={"format": "docx", "variant": "slotted"},
+    )
+    assert r.status_code == 200
+    assert "slotted" in r.headers["content-disposition"]
+    assert len(r.content) > 0
+
+
+def test_download_final_variant_unchanged(app_client: TestClient, seeded_db, fake_minio):
+    aid = _store_one(app_client, seeded_db, fake_minio)
+    r = app_client.get(
+        f"/api/contracts/artifacts/{aid}/download",
+        params={"format": "docx", "variant": "final"},
+    )
+    assert r.status_code == 200
+    assert "slotted" not in r.headers["content-disposition"]
+
+
+def test_download_slotted_missing_404(app_client: TestClient, seeded_db, fake_minio):
+    """A markdown-only artifact (no docx keys) -> slotted docx download 404."""
+    _seed_base(seeded_db)
+    body = app_client.post(
+        "/api/contracts/sale/generate-stored", json={"format": "markdown"}
+    ).json()
+    aid = body["artifacts"][0]["artifact_id"]
+    r = app_client.get(
+        f"/api/contracts/artifacts/{aid}/download",
+        params={"format": "docx", "variant": "slotted"},
+    )
+    assert r.status_code == 404
 
 
 # --- schema ---------------------------------------------------------------- #

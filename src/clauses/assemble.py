@@ -223,7 +223,8 @@ def generate_contract_assembled(
     under ``out_dir`` (default ``output/contracts``). Every ``{{slot}}`` is
     rendered
     as a highlighted, fillable placeholder. Returns
-    ``{docx_path, pdf_path, body_text, slots, instructions, law_refs, diagnostics}``
+    ``{docx_path, pdf_path, body_text, title, slots, instructions, law_refs,
+    diagnostics}``
     where unrequested formats map to ``None`` and ``diagnostics.heuristic_sections``
     lists sections resolved by a within-source tiebreak. Raises
     :class:`NotFoundError` for an unknown contract type and
@@ -264,22 +265,23 @@ def generate_contract_assembled(
         pass
     elif format == "docx":
         docx_path = out / f"{base_name}.docx"
-        create_docx(body, str(docx_path), title=zh, highlight_slots=False)
+        create_docx(body, str(docx_path), title=zh, slot_style="literal")
     elif format == "both":
         docx_path = out / f"{base_name}.docx"
         pdf_path = out / f"{base_name}.pdf"
-        create_docx(body, str(docx_path), title=zh, highlight_slots=False)
+        create_docx(body, str(docx_path), title=zh, slot_style="literal")
         docx_to_pdf(str(docx_path), output_path=str(pdf_path))
     else:  # pdf
         pdf_path = out / f"{base_name}.pdf"
         with tempfile.TemporaryDirectory() as tmp:
             tmp_docx = Path(tmp) / f"{base_name}.docx"
-            create_docx(body, str(tmp_docx), title=zh, highlight_slots=False)
+            create_docx(body, str(tmp_docx), title=zh, slot_style="literal")
             docx_to_pdf(str(tmp_docx), output_path=str(pdf_path))
 
     return {
         "docx_path": str(docx_path) if docx_path else None,
         "pdf_path": str(pdf_path) if pdf_path else None,
+        "title": zh,
         "body_text": body,
         "slots": slots,
         "instructions": instructions,

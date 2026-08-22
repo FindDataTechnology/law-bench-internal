@@ -230,15 +230,18 @@ def get_artifact_route(artifact_id: int, db: DbConn = Depends(get_db)) -> dict:
 
 @read_only_router.get("/artifacts/{artifact_id}/download", summary="Download a stored artifact")
 def download_artifact_route(
-    artifact_id: int, format: str = "docx", db: DbConn = Depends(get_db)
+    artifact_id: int, format: str = "docx", variant: str = "final", db: DbConn = Depends(get_db)
 ) -> StreamingResponse:
-    """Stream a stored docx/pdf from MinIO. 404 if the artifact or the requested
-    format is missing.
+    """Stream a stored docx/pdf from MinIO. ``variant`` selects the final (default)
+    or slotted (fillable template) render. 404 if the artifact or the requested
+    format/variant is missing.
     """
     if format not in ("docx", "pdf"):
         raise HTTPException(status_code=400, detail="format must be docx or pdf")
+    if variant not in ("final", "slotted"):
+        raise HTTPException(status_code=400, detail="variant must be final or slotted")
     try:
-        response, content_type, filename = download_artifact(artifact_id, format, db=db)
+        response, content_type, filename = download_artifact(artifact_id, format, variant=variant, db=db)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 

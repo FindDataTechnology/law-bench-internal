@@ -271,6 +271,8 @@ CREATE TABLE IF NOT EXISTS contract_artifacts (
     slots               JSONB NOT NULL DEFAULT '[]'::jsonb,
     docx_key            TEXT,
     pdf_key             TEXT,
+    docx_key_slotted    TEXT,
+    pdf_key_slotted     TEXT,
     minio_bucket        TEXT NOT NULL,
     created_at          TEXT NOT NULL,
     updated_at          TEXT NOT NULL
@@ -306,7 +308,11 @@ _ADDITIVE_COLUMNS = (
     "UPDATE clauses SET tags = tags - 'region' WHERE tags ? 'region'; "
     "UPDATE clauses SET tag_review = tag_review - 'region' WHERE tag_review ? 'region'; "
     # learn_applied: clauses auto-rejected by the learn node (auto-iteration pipeline)
-    "ALTER TABLE IF EXISTS pipeline_runs ADD COLUMN IF NOT EXISTS learn_applied JSONB NOT NULL DEFAULT '[]'::jsonb;"
+    "ALTER TABLE IF EXISTS pipeline_runs ADD COLUMN IF NOT EXISTS learn_applied JSONB NOT NULL DEFAULT '[]'::jsonb; "
+    # Dual-variant artifact storage: slotted (fillable {{slot}}) keys alongside
+    # the final (underline-blank) keys. Nullable; backfilled on next --force.
+    "ALTER TABLE IF EXISTS contract_artifacts ADD COLUMN IF NOT EXISTS docx_key_slotted TEXT; "
+    "ALTER TABLE IF EXISTS contract_artifacts ADD COLUMN IF NOT EXISTS pdf_key_slotted TEXT;"
 )
 
 # Self-managed long-lived API keys (Phase 2 auth). The plaintext key is never

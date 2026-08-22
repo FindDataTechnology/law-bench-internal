@@ -34,6 +34,7 @@ _BODY_FONT = "宋体"
 _HEADING_FONT = "黑体"
 _BODY_SIZE = Pt(12)  # 小四
 _HEADING_SIZES = {"Heading 1": Pt(22), "Heading 2": Pt(16), "Heading 3": Pt(14)}
+_HEADING_SPACING = {"Heading 1": (12, 6), "Heading 2": (8, 4), "Heading 3": (6, 3)}
 _LINE_SPACING = 1.5
 _FIRST_LINE_CHARS = 200  # 2 chars, in hundredths of a char
 
@@ -45,32 +46,36 @@ _NUMBERED_RE = re.compile(r"^\d+\.\s+(.*)$")
 # pattern mirrors ``SLOT_PATTERN`` (Unicode ``\w``) so CJK slots like
 # ``{{甲方名称}}`` are recognized as slots (highlighted/fillable), not just the
 # Latin ones (``{{party_a}}``).
+_UNDERLINE_RE = re.compile(r"_{3,}")  # literal ____ blanks -> real Word underline
 _INLINE_RE = re.compile(
     r"\{\{\s*[\w][\w-]*\s*\}\}"  # slot
     r"|\*\*[^*]+\*\*"  # **bold**
     r"|\*[^*]+\*"  # *italic*
+    r"|_[^_]+_"  # _underline_
 )
 
 
 def _parse_inline(text: str) -> list[dict]:
-    """Split ``text`` into ordered segments: plain, slot, bold, or italic."""
+    """Split ``text`` into ordered segments: plain, slot, bold, italic, or underline."""
     segments: list[dict] = []
     pos = 0
     for m in _INLINE_RE.finditer(text):
         if m.start() > pos:
-            segments.append({"text": text[pos:m.start()], "bold": False, "italic": False, "slot": None})
+            segments.append({"text": text[pos:m.start()], "bold": False, "italic": False, "underline": False, "slot": None})
         tok = m.group(0)
         if tok.startswith("{{"):
             segments.append(
-                {"text": tok, "bold": False, "italic": False, "slot": SLOT_PATTERN.match(tok).group(1)}
+                {"text": tok, "bold": False, "italic": False, "underline": False, "slot": SLOT_PATTERN.match(tok).group(1)}
             )
         elif tok.startswith("**"):
-            segments.append({"text": tok[2:-2], "bold": True, "italic": False, "slot": None})
+            segments.append({"text": tok[2:-2], "bold": True, "italic": False, "underline": False, "slot": None})
+        elif tok.startswith("_"):  # _underline_
+            segments.append({"text": tok[1:-1], "bold": False, "italic": False, "underline": True, "slot": None})
         else:  # *italic*
-            segments.append({"text": tok[1:-1], "bold": False, "italic": True, "slot": None})
+            segments.append({"text": tok[1:-1], "bold": False, "italic": True, "underline": False, "slot": None})
         pos = m.end()
     if pos < len(text):
-        segments.append({"text": text[pos:], "bold": False, "italic": False, "slot": None})
+        segments.append({"text": text[pos:], "bold": False, "italic": False, "underline": False, "slot": None})
     return segments
 
 
@@ -79,10 +84,31 @@ def _apply_inline(run, seg: dict) -> None:
         run.bold = True
     if seg["italic"]:
         run.italic = True
+    if seg.get("underline"):
+        run.underline = True
 
 
-def _render_inline(paragraph: Paragraph, text: str, slots, highlight_slots: bool = True) -> None:
-    """Add runs for ``text``, rendering slots as placeholders or filled values."""
+def _blank_width(name: str) -> int:
+    # ponytail: fixed multiplier; tune if blanks look too short/long.
+    return min(24, max(8, len(name) * 2))
+
+
+def _split_underlines(text: str) -> list[tuple[str, bool]]:
+    """Split plain text into ``(chunk, is_blank)`` pairs; blank runs are ``____``."""
+    parts: list[tuple[str, bool]] = []
+    pos = 0
+    for m in _UNDERLINE_RE.finditer(text):
+        if m.start() > pos:
+            parts.append((text[pos:m.start()], False))
+        parts.append((m.group(0), True))
+        pos = m.end()
+    if pos < len(text):
+        parts.append((text[pos:], False))
+    return parts
+
+
+def _render_inline(paragraph: Paragraph, text: str, slots, slot_style: str = "highlight") -> None:
+    """Add runs for ``text``, rendering slots per ``slot_style``."""
     for seg in _parse_inline(text):
         if seg["slot"] is not None:
             name = seg["slot"]
@@ -91,14 +117,21 @@ def _render_inline(paragraph: Paragraph, text: str, slots, highlight_slots: bool
                 run = paragraph.add_run()
                 _apply_inline(run, seg)
                 set_run_text(run, str(value))
+            elif slot_style == "underline":
+                run = paragraph.add_run(" " * _blank_width(name))
+                _apply_inline(run, seg)
+                run.font.underline = True
             else:
                 run = paragraph.add_run(slot_token(name))
-                if highlight_slots:
+                if slot_style == "highlight":
                     run.font.highlight_color = WD_COLOR_INDEX.YELLOW
                 _apply_inline(run, seg)
         elif seg["text"]:
-            run = paragraph.add_run(seg["text"])
-            _apply_inline(run, seg)
+            for chunk, is_blank in _split_underlines(seg["text"]):
+                run = paragraph.add_run(" " * len(chunk) if is_blank else chunk)
+                _apply_inline(run, seg)
+                if is_blank:
+                    run.font.underline = True
 
 
 def _add_horizontal_rule(document) -> None:
@@ -135,13 +168,16 @@ def _set_first_line_chars(style, chars: int = _FIRST_LINE_CHARS) -> None:
     ind.set(qn("w:firstLine"), str(chars * 240 // 100))  # twips fallback
 
 
-def _set_heading(style, name: str, size, center: bool) -> None:
+def _set_heading(style, name: str, size, center: bool, spacing: tuple[int, int]) -> None:
     style.font.bold = False  # 黑体 is already a heavy face
     style.font.color.rgb = RGBColor(0, 0, 0)
     style.font.size = size
     _set_eastasia_font(style, name)
     if center:
         style.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    before, after = spacing
+    style.paragraph_format.space_before = Pt(before)
+    style.paragraph_format.space_after = Pt(after)
 
 
 def _apply_zh_document_style(document) -> None:
@@ -161,7 +197,10 @@ def _apply_zh_document_style(document) -> None:
     _set_first_line_chars(normal)
 
     for i, heading in enumerate(("Heading 1", "Heading 2", "Heading 3"), start=1):
-        _set_heading(document.styles[heading], _HEADING_FONT, _HEADING_SIZES[heading], center=(i == 1))
+        _set_heading(
+            document.styles[heading], _HEADING_FONT, _HEADING_SIZES[heading],
+            center=(i == 1), spacing=_HEADING_SPACING[heading],
+        )
 
 
 def _set_table_borderless(table) -> None:
@@ -194,16 +233,16 @@ def _signature_cells(lines: list[str]) -> list[list[str]]:
     return cells
 
 
-def _fill_signature_cell(cell, lines, slots, highlight_slots) -> None:
+def _fill_signature_cell(cell, lines, slots, slot_style) -> None:
     first = True
     for ln in lines:
         para = cell.paragraphs[0] if first else cell.add_paragraph()
         first = False
         para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        _render_inline(para, ln, slots, highlight_slots)
+        _render_inline(para, ln, slots, slot_style)
 
 
-def _render_signature_block(document, lines, slots, highlight_slots) -> None:
+def _render_signature_block(document, lines, slots, slot_style) -> None:
     """Render trailing signature lines as a borderless 2-column, right-aligned table."""
     cells = _signature_cells(lines)
     table = document.add_table(rows=0, cols=2)
@@ -212,8 +251,8 @@ def _render_signature_block(document, lines, slots, highlight_slots) -> None:
         left = cells[k]
         right = cells[k + 1] if k + 1 < len(cells) else [""]
         row = table.add_row()
-        _fill_signature_cell(row.cells[0], left, slots, highlight_slots)
-        _fill_signature_cell(row.cells[1], right, slots, highlight_slots)
+        _fill_signature_cell(row.cells[0], left, slots, slot_style)
+        _fill_signature_cell(row.cells[1], right, slots, slot_style)
 
 
 def _collect_signature_lines(lines: list[str], start: int) -> tuple[list[str], int]:
@@ -232,7 +271,7 @@ def _collect_signature_lines(lines: list[str], start: int) -> tuple[list[str], i
     return sig, i
 
 
-def _render_markdown(document, content: str, slots, highlight_slots: bool = True) -> None:
+def _render_markdown(document, content: str, slots, slot_style: str = "highlight") -> None:
     lines = content.splitlines()
     i = 0
     n = len(lines)
@@ -247,46 +286,52 @@ def _render_markdown(document, content: str, slots, highlight_slots: bool = True
         elif m := _HEADING_RE.match(line):
             is_signature = "签署信息" in m.group(2)
             paragraph = document.add_paragraph(style=f"Heading {len(m.group(1))}")
-            _render_inline(paragraph, m.group(2), slots, highlight_slots)
+            _render_inline(paragraph, m.group(2), slots, slot_style)
             i += 1
             if is_signature:
                 sig_lines, i = _collect_signature_lines(lines, i)
                 if sig_lines:
-                    _render_signature_block(document, sig_lines, slots, highlight_slots)
+                    _render_signature_block(document, sig_lines, slots, slot_style)
         elif "签字/盖章" in line:
             sig_lines, i = _collect_signature_lines(lines, i)
-            _render_signature_block(document, sig_lines, slots, highlight_slots)
+            _render_signature_block(document, sig_lines, slots, slot_style)
         elif m := _BULLET_RE.match(line):
             paragraph = document.add_paragraph(style="List Bullet")
-            _render_inline(paragraph, m.group(1), slots, highlight_slots)
+            _render_inline(paragraph, m.group(1), slots, slot_style)
             i += 1
         elif m := _NUMBERED_RE.match(line):
             paragraph = document.add_paragraph(style="List Number")
-            _render_inline(paragraph, m.group(1), slots, highlight_slots)
+            _render_inline(paragraph, m.group(1), slots, slot_style)
             i += 1
         else:
             paragraph = document.add_paragraph()
-            _render_inline(paragraph, line, slots, highlight_slots)
+            _render_inline(paragraph, line, slots, slot_style)
             i += 1
 
 
-def create_docx(content, output_path, *, slots=None, title=None, highlight_slots: bool = True):
+def create_docx(content, output_path, *, slots=None, title=None, slot_style: str = "highlight"):
     """Render Markdown ``content`` to a ``.docx`` at ``output_path``.
 
     ``slots`` (optional) maps slot names to values: a non-None value fills the
     ``{{slot}}`` token at generation time; a missing or None entry leaves a
     placeholder. ``title`` (optional) is rendered as a Heading 1 before the
-    content. ``highlight_slots`` (default True) yellow-highlights unfilled
-    placeholders; pass False for a clean, fillable "成品" without the highlight.
+    content. ``slot_style`` controls how unfilled ``{{slot}}`` tokens render:
+    ``"highlight"`` (default) yellow-highlights the token text; ``"underline"``
+    renders an N-space underlined blank with no token text (terminal 成品);
+    ``"literal"`` renders the token text with no highlight (legacy behavior).
     Parent directories are created as needed. Returns the resolved
     :class:`~pathlib.Path` to the written file.
     """
+    if slot_style not in ("highlight", "underline", "literal"):
+        raise ValueError(
+            f"unknown slot_style: {slot_style!r}; use highlight, underline, or literal"
+        )
     document = Document()
     _apply_zh_document_style(document)
     if title:
         heading = document.add_paragraph(style="Heading 1")
-        _render_inline(heading, str(title), slots, highlight_slots)
-    _render_markdown(document, content, slots, highlight_slots)
+        _render_inline(heading, str(title), slots, slot_style)
+    _render_markdown(document, content, slots, slot_style)
 
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)

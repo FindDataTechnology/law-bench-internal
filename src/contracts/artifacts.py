@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import hashlib
 import os
+import tempfile
+from pathlib import Path
 from typing import Any
 
 # botocore/minio honor the macOS system proxy, which 502s against MinIO; bypass
@@ -29,9 +31,11 @@ from src.contracts import get_template
 from src.eval.db import connect, now_iso
 from src.eval.errors import NotFoundError
 from src.eval.store import ensure_schema
+from src.generator import create_docx, docx_to_pdf
 from src.settings import (
     MINIO_ACCESS_KEY,
     MINIO_ARTIFACTS_PREFIX,
+    MINIO_ARTIFACTS_SLOTTED_PREFIX,
     MINIO_BUCKET,
     MINIO_PUBLIC_ENDPOINT,
     MINIO_PUBLIC_SECURE,
@@ -74,21 +78,25 @@ def _ensure_bucket(client: Minio) -> None:
         pass
 
 
-def _object_key(contract_type: str, artifact_id: int, ext: str) -> str:
-    return f"{MINIO_ARTIFACTS_PREFIX}{contract_type}/{artifact_id}.{ext}"
+def _object_key(contract_type: str, artifact_id: int, ext: str, variant: str = "final") -> str:
+    prefix = MINIO_ARTIFACTS_PREFIX if variant == "final" else MINIO_ARTIFACTS_SLOTTED_PREFIX
+    return f"{prefix}{contract_type}/{artifact_id}.{ext}"
 
 
-def _upload(contract_type: str, artifact_id: int, path: str, ext: str) -> str:
+def _upload(contract_type: str, artifact_id: int, path: str, ext: str, variant: str = "final") -> str:
     """Upload a local file to MinIO; return the object key."""
     client = _client()
     _ensure_bucket(client)
-    key = _object_key(contract_type, artifact_id, ext)
+    key = _object_key(contract_type, artifact_id, ext, variant)
     client.fput_object(MINIO_BUCKET, key, path)
     return key
 
 
-def _download_url(artifact_id: int, fmt: str) -> str:
-    return f"/api/contracts/artifacts/{artifact_id}/download?format={fmt}"
+def _download_url(artifact_id: int, fmt: str, variant: str = "final") -> str:
+    url = f"/api/contracts/artifacts/{artifact_id}/download?format={fmt}"
+    if variant == "slotted":
+        url += "&variant=slotted"
+    return url
 
 
 def _select_row(conn, body_hash: str) -> dict | None:
@@ -98,12 +106,44 @@ def _select_row(conn, body_hash: str) -> dict | None:
     return dict(row) if row else None
 
 
-def _set_key(conn, artifact_id: int, fmt: str, key: str) -> None:
-    col = f"{fmt}_key"
+def _set_key(conn, artifact_id: int, fmt: str, key: str, variant: str = "final") -> None:
+    col = f"{fmt}_key" if variant == "final" else f"{fmt}_key_slotted"
     conn.execute(
         f"UPDATE contract_artifacts SET {col} = %s, updated_at = %s WHERE id = %s",
         (key, now_iso(), artifact_id),
     )
+
+
+def _render_upload_variant(
+    conn, contract_type: str, artifact_id: int, body_text: str, title: str | None,
+    want_docx: bool, want_pdf: bool, need_docx: bool, need_pdf: bool, variant: str,
+) -> None:
+    """Render one variant (final/slotted) to temp files, upload needed formats.
+
+    ``variant`` selects the MinIO prefix + key column (``final`` -> ``artifacts/``
+    + ``{fmt}_key``; ``slotted`` -> ``artifacts-slotted/`` + ``{fmt}_key_slotted``)
+    and the render ``slot_style`` (``underline`` for final, ``highlight`` for
+    slotted). ``need_*`` gate uploads (false = already stored, skip); ``want_*``
+    gate which formats exist at all (false = format not requested).
+    """
+    if not (need_docx or need_pdf):
+        return
+    style = "underline" if variant == "final" else "highlight"
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = Path(tmp)
+        docx = tmp_dir / f"{contract_type}.{variant}.docx"
+        if need_docx:
+            create_docx(body_text, str(docx), title=title, slot_style=style)
+            _set_key(conn, artifact_id, "docx",
+                     _upload(contract_type, artifact_id, str(docx), "docx", variant), variant)
+        if need_pdf:
+            # pdf-only request: build the docx transiently even if docx wasn't stored
+            if not docx.exists():
+                create_docx(body_text, str(docx), title=title, slot_style=style)
+            pdf = tmp_dir / f"{contract_type}.{variant}.pdf"
+            docx_to_pdf(str(docx), output_path=str(pdf))
+            _set_key(conn, artifact_id, "pdf",
+                     _upload(contract_type, artifact_id, str(pdf), "pdf", variant), variant)
 
 
 def generate_stored(
@@ -116,29 +156,37 @@ def generate_stored(
     db: Any = None,
     force: bool = False,
 ) -> dict:
-    """Generate a contract, upload docx/pdf to MinIO, record a DB row.
+    """Generate a contract, upload docx/pdf to MinIO (both variants), record a DB row.
 
     Content-addressed by ``md5(body_text)``: if an artifact with the same body
     already exists, it is reused (``reused: true``); only requested formats
     missing from the existing row are generated + uploaded. With ``force=True``
     the requested formats are re-uploaded (overwriting the MinIO object) even
     when the artifact already exists — use this to refresh formatting/visuals
-    whose change does not alter ``body_text``. Returns
-    ``{artifact_id, docx_url, pdf_url, body_text, slots, reused}`` where URLs
-    are the HTTP download endpoints (``null`` when a format was not produced).
+    whose change does not alter ``body_text``.
+
+    Two variants are produced from one assembled body: the **final** render
+    (``slot_style="underline"``, fill-in blanks, under ``artifacts/``) and the
+    **slotted** render (``slot_style="highlight"``, ``{{slot}}`` tokens, under
+    ``artifacts-slotted/``). Returns
+    ``{artifact_id, docx_url, pdf_url, docx_url_slotted, pdf_url_slotted,
+    body_text, slots, reused}`` where URLs are HTTP download endpoints
+    (``null`` when a format was not produced).
     """
     if format not in _FORMATS:
         raise ValueError(f"unsupported format: {format!r}; use one of {_FORMATS}")
 
+    # ponytail: assemble once, render twice; assembly is the DB-heavy step — never re-assemble per variant.
     result = generate_contract_assembled(
         contract_type,
         scenario=scenario,
         stance=stance,
         custom_clause_ids=custom_clause_ids,
-        format=format,
+        format="markdown",  # body + slots + coherence gate, no file I/O
         db=db,
     )
     body_text = result.get("body_text") or ""
+    title = result.get("title")
     body_hash = hashlib.md5(body_text.encode("utf-8")).hexdigest()
     slots = result.get("slots") or []
     want_docx = format in ("docx", "both")
@@ -152,32 +200,43 @@ def generate_stored(
         if existing:
             artifact_id = existing["id"]
             reused = True
-            need_docx = want_docx and (force or not existing.get("docx_key"))
-            need_pdf = want_pdf and (force or not existing.get("pdf_key"))
-            if need_docx and result.get("docx_path"):
-                _set_key(conn, artifact_id, "docx", _upload(contract_type, artifact_id, result["docx_path"], "docx"))
-            if need_pdf and result.get("pdf_path"):
-                _set_key(conn, artifact_id, "pdf", _upload(contract_type, artifact_id, result["pdf_path"], "pdf"))
+            _render_upload_variant(
+                conn, contract_type, artifact_id, body_text, title, want_docx, want_pdf,
+                want_docx and (force or not existing.get("docx_key")),
+                want_pdf and (force or not existing.get("pdf_key")),
+                "final",
+            )
+            _render_upload_variant(
+                conn, contract_type, artifact_id, body_text, title, want_docx, want_pdf,
+                want_docx and (force or not existing.get("docx_key_slotted")),
+                want_pdf and (force or not existing.get("pdf_key_slotted")),
+                "slotted",
+            )
             conn.commit()
         else:
             reused = False
             cur = conn.execute(
                 "INSERT INTO contract_artifacts "
                 "(contract_type, scenario, stance, custom_clause_ids, body_hash, "
-                " body_text, slots, docx_key, pdf_key, minio_bucket, created_at, updated_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                " body_text, slots, docx_key, pdf_key, docx_key_slotted, pdf_key_slotted, "
+                " minio_bucket, created_at, updated_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
                 (
                     contract_type, scenario, stance,
                     Jsonb(custom_clause_ids) if custom_clause_ids else None,
                     body_hash, body_text, Jsonb(slots),
-                    None, None, MINIO_BUCKET, now, now,
+                    None, None, None, None, MINIO_BUCKET, now, now,
                 ),
             )
             artifact_id = cur.fetchone()["id"]
-            if want_docx and result.get("docx_path"):
-                _set_key(conn, artifact_id, "docx", _upload(contract_type, artifact_id, result["docx_path"], "docx"))
-            if want_pdf and result.get("pdf_path"):
-                _set_key(conn, artifact_id, "pdf", _upload(contract_type, artifact_id, result["pdf_path"], "pdf"))
+            _render_upload_variant(
+                conn, contract_type, artifact_id, body_text, title, want_docx, want_pdf,
+                want_docx, want_pdf, "final",
+            )
+            _render_upload_variant(
+                conn, contract_type, artifact_id, body_text, title, want_docx, want_pdf,
+                want_docx, want_pdf, "slotted",
+            )
             conn.commit()
     finally:
         conn.close()
@@ -186,6 +245,8 @@ def generate_stored(
         "artifact_id": artifact_id,
         "docx_url": _download_url(artifact_id, "docx") if want_docx else None,
         "pdf_url": _download_url(artifact_id, "pdf") if want_pdf else None,
+        "docx_url_slotted": _download_url(artifact_id, "docx", "slotted") if want_docx else None,
+        "pdf_url_slotted": _download_url(artifact_id, "pdf", "slotted") if want_pdf else None,
         "body_text": body_text,
         "slots": slots,
         "reused": reused,
@@ -254,6 +315,8 @@ def generate_all_stored(
                     "stance": st,
                     "docx_url": r.get("docx_url"),
                     "pdf_url": r.get("pdf_url"),
+                    "docx_url_slotted": r.get("docx_url_slotted"),
+                    "pdf_url_slotted": r.get("pdf_url_slotted"),
                     "reused": r["reused"],
                 }
             )
@@ -312,23 +375,27 @@ def get_artifact(artifact_id: int, db: Any = None) -> dict | None:
         conn.close()
 
 
-def download(artifact_id: int, format: str, db: Any = None) -> tuple[Any, str, str]:
+def download(artifact_id: int, format: str, *, variant: str = "final", db: Any = None) -> tuple[Any, str, str]:
     """Stream a stored artifact from MinIO.
 
-    Returns ``(minio_response, content_type, filename)``. Raises
-    :class:`NotFoundError` if the artifact or the requested format is missing.
-    The caller is responsible for closing the response (see the HTTP route's
-    streaming generator).
+    Returns ``(minio_response, content_type, filename)``. ``variant`` selects
+    the final (``"final"``, default) or fillable-template (``"slotted"``) render.
+    Raises :class:`NotFoundError` if the artifact or the requested format/variant
+    is missing. The caller is responsible for closing the response (see the HTTP
+    route's streaming generator).
     """
     if format not in ("docx", "pdf"):
         raise ValueError(f"unsupported format: {format!r}; use docx or pdf")
+    if variant not in ("final", "slotted"):
+        raise ValueError(f"unsupported variant: {variant!r}; use final or slotted")
     artifact = get_artifact(artifact_id, db=db)
     if not artifact:
         raise NotFoundError(f"artifact not found: {artifact_id}")
-    key = artifact.get(f"{format}_key")
+    col = f"{format}_key" if variant == "final" else f"{format}_key_slotted"
+    key = artifact.get(col)
     if not key:
         raise NotFoundError(
-            f"artifact {artifact_id} has no stored {format} (generate it first)"
+            f"artifact {artifact_id} has no stored {format} ({variant}); generate it first"
         )
     client = _client()
     response = client.get_object(MINIO_BUCKET, key)
@@ -337,7 +404,8 @@ def download(artifact_id: int, format: str, db: Any = None) -> tuple[Any, str, s
         if format == "docx"
         else "application/pdf"
     )
-    filename = f"{artifact['contract_type']}.{format}"
+    suffix = "_slotted" if variant == "slotted" else ""
+    filename = f"{artifact['contract_type']}{suffix}.{format}"
     return response, content_type, filename
 
 

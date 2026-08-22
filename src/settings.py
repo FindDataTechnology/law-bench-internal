@@ -96,6 +96,8 @@ MINIO_TEMPLATES_PREFIX = _env("MINIO_TEMPLATES_PREFIX", "templates/")
 MINIO_DRAFTS_PREFIX = _env("MINIO_DRAFTS_PREFIX", "drafts/")
 # Generated contract docx/pdf (artifacts) are stored under this prefix.
 MINIO_ARTIFACTS_PREFIX = _env("MINIO_ARTIFACTS_PREFIX", "artifacts/")
+# Slotted variant ({{slot}} tokens, fillable) stored under this prefix.
+MINIO_ARTIFACTS_SLOTTED_PREFIX = _env("MINIO_ARTIFACTS_SLOTTED_PREFIX", "artifacts-slotted/")
 
 # Public-pod MinIO override (task 5.2). When set (a full URL, e.g.
 # ``http://china-minio:9000``), the artifact read/download path

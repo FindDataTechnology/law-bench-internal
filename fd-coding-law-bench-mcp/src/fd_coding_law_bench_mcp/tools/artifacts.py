@@ -15,11 +15,15 @@ from ..server import mcp
 
 
 def _urls(artifact_id: int, row: dict) -> dict[str, str]:
-    """Map each stored format to its HTTP download path."""
+    """Map each stored format/variant to its HTTP download path."""
     out: dict[str, str] = {}
     for fmt in ("docx", "pdf"):
         if row.get(f"{fmt}_key"):
             out[fmt] = f"/api/contracts/artifacts/{artifact_id}/download?format={fmt}"
+        if row.get(f"{fmt}_key_slotted"):
+            out[f"{fmt}_slotted"] = (
+                f"/api/contracts/artifacts/{artifact_id}/download?format={fmt}&variant=slotted"
+            )
     return out
 
 
@@ -84,7 +88,9 @@ async def contract_generate_stored(
 
 
 @mcp.tool(tags={"contracts"})
-async def contract_download(artifact_id: int, format: str | None = None) -> dict | None:
+async def contract_download(
+    artifact_id: int, format: str | None = None, variant: str = "final"
+) -> dict | None:
     """Fetch a stored contract artifact's metadata + download URL(s).
 
     Does NOT regenerate - it reads the previously-stored ``contract_artifacts``
@@ -94,10 +100,13 @@ async def contract_download(artifact_id: int, format: str | None = None) -> dict
         artifact_id: the id returned by ``contract_generate_stored``.
         format: when set (``"docx"`` or ``"pdf"``), also include a top-level
             ``download_url`` for that format (``null`` if not stored).
+        variant: ``"final"`` (default, finished 成品) or ``"slotted"``
+            (fillable template with ``{{slot}}`` tokens). Only affects the
+            top-level ``download_url`` when ``format`` is set.
 
     Returns ``{artifact_id, contract_type, scenario, stance, body_text, slots,
-    docx_key, pdf_key, created_at, download_urls, download_url?}``, or ``None``
-    if no artifact has that id.
+    docx_key, pdf_key, docx_key_slotted, pdf_key_slotted, created_at,
+    download_urls, download_url?}``, or ``None`` if no artifact has that id.
     """
     from src.contracts.artifacts import get_artifact
 
@@ -115,11 +124,14 @@ async def contract_download(artifact_id: int, format: str | None = None) -> dict
             "slots": row.get("slots"),
             "docx_key": row.get("docx_key"),
             "pdf_key": row.get("pdf_key"),
+            "docx_key_slotted": row.get("docx_key_slotted"),
+            "pdf_key_slotted": row.get("pdf_key_slotted"),
             "created_at": row.get("created_at"),
             "download_urls": urls,
         }
         if format:
-            result["download_url"] = urls.get(format)
+            key = f"{format}_slotted" if variant == "slotted" else format
+            result["download_url"] = urls.get(key)
         return result
 
     return await anyio.to_thread.run_sync(_go)
