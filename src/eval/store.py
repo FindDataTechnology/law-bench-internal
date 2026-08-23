@@ -313,7 +313,13 @@ _ADDITIVE_COLUMNS = (
     # Dual-variant artifact storage: slotted (fillable {{slot}}) keys alongside
     # the final (underline-blank) keys. Nullable; backfilled on next --force.
     "ALTER TABLE IF EXISTS contract_artifacts ADD COLUMN IF NOT EXISTS docx_key_slotted TEXT; "
-    "ALTER TABLE IF EXISTS contract_artifacts ADD COLUMN IF NOT EXISTS pdf_key_slotted TEXT;"
+    "ALTER TABLE IF EXISTS contract_artifacts ADD COLUMN IF NOT EXISTS pdf_key_slotted TEXT; "
+    # Soft-delete marker for superseded artifact versions: when generate_stored
+    # inserts a new body for an existing natural key (contract_type, scenario,
+    # stance, custom_clause_ids), the old row is stamped superseded_at = now_iso()
+    # so /samples hides it by default. NULL = current version. TEXT (not TIMESTAMPTZ)
+    # to match created_at/updated_at. Safe no-op on fresh DBs (CREATE TABLE added it).
+    "ALTER TABLE IF EXISTS contract_artifacts ADD COLUMN IF NOT EXISTS superseded_at TEXT;"
 )
 
 # Self-managed long-lived API keys (Phase 2 auth). The plaintext key is never
