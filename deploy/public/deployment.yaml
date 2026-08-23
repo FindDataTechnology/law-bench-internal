@@ -56,7 +56,7 @@ spec:
       # origin's deploy/deployment.yaml).
       containers:
         - name: law-bench-public
-          image: harbor.local/law-bench/law-template:sha-dbc2c94
+          image: harbor.local/law-bench/law-template:sha-c63bdc3
           imagePullPolicy: IfNotPresent
           # PUBLIC_API=1 selects create_public_app() in scripts/docker-entrypoint.sh
           # (read-only router subset, docs locked off, key-only auth, no Logto).
