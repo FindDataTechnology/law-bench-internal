@@ -45,6 +45,15 @@ src/contracts/data/_llm_bodies/
 # clause extraction LLM cache (regenerable; re-run `python -m src.clauses extract`)
 src/clauses/data/_extracted/
 
+# finetune data-prep: generated material is regenerable from the warehouse
+# via scripts/finetune/extract_warehouse.py (run in-pod). Schemas (*.json)
+# and docs are source and ARE committed; generated JSONL is not.
+data/finetune/warehouse/
+data/finetune/opensource/*_index.json
+data/finetune/judge-c/*.jsonl
+data/finetune/drafter-a/*.jsonl
+data/finetune/manifests/*.jsonl
+
 # Local tooling / caches (not project source)
 .deepeval/
 .claude/
@@ -54,6 +63,10 @@ src/clauses/data/_extracted/
 
 # local MCP config (contains SSH creds)
 .mcp.json
+# local SSH connection config (plaintext passwords — never commit)
+ssh-config.json
+# scratch/smoke-test scripts from finetune exploration sessions
+.firecrawl/
 fd-coding-law-bench-mcp/site/
 contract-review-agent/frontend/node_modules/
 contract-review-agent/.venv/
