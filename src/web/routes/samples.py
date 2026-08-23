@@ -58,6 +58,9 @@ def page_samples(
     stance = _clean(stance)
 
     all_types = list_contract_types()  # [{key, zh}, ...] — file-backed, no DB
+    # key -> Chinese name, so the table shows 买卖合同 instead of the raw English
+    # key "sale" (consistent with the dropdown, which already renders zh).
+    type_map = {ct["key"]: ct["zh"] for ct in all_types}
 
     scen_opts: list[str] = []
     stance_opts: list[str] = []

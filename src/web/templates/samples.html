@@ -77,7 +77,7 @@
       {% for a in artifacts %}
       <tr>
         <td class="muted">{{ offset + loop.index }}</td>
-        <td><code>{{ a.contract_type }}</code></td>
+        <td><code>{{ type_map.get(a.contract_type, a.contract_type) }}</code></td>
         <td>{% if a.scenario %}{{ a.scenario }}{% else %}<span class="muted">—</span>{% endif %}</td>
         <td>{% if a.stance %}{{ a.stance }}{% else %}<span class="muted">—</span>{% endif %}</td>
         <td>{{ a.slots|length }}</td>
