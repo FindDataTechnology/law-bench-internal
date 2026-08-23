@@ -142,7 +142,7 @@ def retag_scenarios(
                 continue
             conn.execute(
                 "UPDATE clauses SET "
-                "tags = tags || jsonb_build_object('scenario', %s), "
+                "tags = tags || jsonb_build_object('scenario', %s::text), "
                 "tag_review = tag_review || jsonb_build_object('scenario', 'pending') "
                 "WHERE id = %s",
                 (scenario, r["id"]),
