@@ -529,7 +529,6 @@ def list_samples(
             "ORDER BY id DESC LIMIT %s OFFSET %s",
             (*params, limit, offset),
         ).fetchall()
-        # Ensure each row is a dict (dict_row factory should handle this, but cast defensively)
-        return [dict(r) if hasattr(r, "keys") else {k: v for k, v in zip(_LIST_COLS.split(", "), r)} for r in rows], int(total)
+        return [dict(r) for r in rows], int(total)
     finally:
         conn.close()
