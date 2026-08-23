@@ -134,3 +134,44 @@ def test_date_line_underlines(tmp_path):
     assert "_" not in para.text  # no literal underscores survived
     blanks = [len(r.text) for r in _underlined_runs(para)]
     assert blanks == [6, 4, 4]  # 年/月/日 are plain text, not underlined spans
+
+
+def _all_paragraphs(doc):
+    # body paragraphs + every paragraph inside table cells (signature block).
+    paras = list(doc.paragraphs)
+    for tbl in doc.tables:
+        for row in tbl.rows:
+            for cell in row.cells:
+                paras.extend(cell.paragraphs)
+    return paras
+
+
+def test_signature_placeholder_dropped(tmp_path):
+    # 10: the 签署信息 placeholder sentence must not render; a default 甲方/乙方
+    # multi-line block appears in its place (the sale-base bug).
+    content = (
+        "## 签署信息\n\n"
+        "本条款为合同签署页格式元素，已移至合同签署页单独处理，此处无需保留正文内容。"
+    )
+    doc = _doc(create_docx(content, tmp_path / "c.docx"))
+    texts = [p.text for p in _all_paragraphs(doc)]
+    assert not any("本条款为合同签署页格式元素" in t for t in texts)
+    joined = "\n".join(texts)
+    assert "甲方" in joined and "乙方" in joined  # default block rendered
+
+
+def test_signature_comma_split_multiline(tmp_path):
+    # 10: a comma-separated signature line splits into one field per line
+    # (甲方：a，乙方：b，签订日期：d -> 3 separate paragraphs).
+    content = (
+        "## 签署信息\n\n"
+        "甲方（签字/盖章）：{{party_a_sign}}，乙方（签字/盖章）：{{party_b_sign}}，"
+        "签订日期：{{sign_date}}"
+    )
+    doc = _doc(create_docx(content, tmp_path / "c.docx", slot_style="literal"))
+    texts = [p.text for p in _all_paragraphs(doc)]
+    joined = "\n".join(texts)
+    assert "甲方" in joined and "乙方" in joined and "签订日期" in joined
+    # no single paragraph crams all three fields on one line (split happened)
+    for t in texts:
+        assert not ("甲方" in t and "乙方" in t and "签订日期" in t)
