@@ -4,7 +4,7 @@
 {% block content %}
 <div class="toolbar between">
   <h1>合同样本库</h1>
-  <span class="muted">共 {{ total }} 条</span>
+  <span class="muted">共 {{ total }} 条{% if include_history %}（含历史）{% endif %}</span>
 </div>
 <p class="muted">浏览已生成并上传到 MinIO 的全部合同样本（按 业务场景 × 立场 排列组合）。先选合同类型，再按场景 / 立场筛选，直接下载 DOCX / PDF。</p>
 
@@ -38,6 +38,15 @@
         <option value="{{ s }}"{% if selected_stance == s %} selected{% endif %}>{{ s }}</option>
         {% endfor %}
       </select>
+    </div>
+
+    <div class="filter-group">
+      <label class="checkbox-label">
+        <input type="checkbox" name="include_history" value="1"
+               onchange="this.form.submit()"
+               {% if include_history %}checked{% endif %}>
+        显示历史版本
+      </label>
     </div>
 
     {# Preserve limit across auto-submits; offset resets on filter change. #}
@@ -96,7 +105,7 @@
 {% if pages > 1 %}
 <div class="pagination">
   {% if has_prev %}
-  <a href="?contract_type={{ selected_ct or '' }}&amp;scenario={{ selected_scenario or '' }}&amp;stance={{ selected_stance or '' }}&amp;limit={{ limit }}&amp;offset={{ offset - limit }}" class="btn btn-sm">◀ 上一页</a>
+  <a href="?contract_type={{ selected_ct or '' }}&amp;scenario={{ selected_scenario or '' }}&amp;stance={{ selected_stance or '' }}&amp;limit={{ limit }}&amp;offset={{ offset - limit }}{% if include_history %}&amp;include_history=1{% endif %}" class="btn btn-sm">◀ 上一页</a>
   {% else %}
   <span class="btn btn-sm disabled">◀ 上一页</span>
   {% endif %}
@@ -104,7 +113,7 @@
   <span class="page-info">第 {{ page }} / {{ pages }} 页（共 {{ total }} 条）</span>
 
   {% if has_next %}
-  <a href="?contract_type={{ selected_ct or '' }}&amp;scenario={{ selected_scenario or '' }}&amp;stance={{ selected_stance or '' }}&amp;limit={{ limit }}&amp;offset={{ offset + limit }}" class="btn btn-sm">下一页 ▶</a>
+  <a href="?contract_type={{ selected_ct or '' }}&amp;scenario={{ selected_scenario or '' }}&amp;stance={{ selected_stance or '' }}&amp;limit={{ limit }}&amp;offset={{ offset + limit }}{% if include_history %}&amp;include_history=1{% endif %}" class="btn btn-sm">下一页 ▶</a>
   {% else %}
   <span class="btn btn-sm disabled">下一页 ▶</span>
   {% endif %}

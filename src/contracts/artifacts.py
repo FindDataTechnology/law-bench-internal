@@ -217,6 +217,18 @@ def generate_stored(
             conn.commit()
         else:
             reused = False
+            # ponytail: natural key (contract_type, scenario, stance,
+            # custom_clause_ids) old rows superseded by the new body.
+            # IS NOT DISTINCT FROM handles NULL=NULL.
+            conn.execute(
+                "UPDATE contract_artifacts SET superseded_at = %s "
+                "WHERE contract_type = %s AND scenario IS NOT DISTINCT FROM %s "
+                "AND stance IS NOT DISTINCT FROM %s "
+                "AND custom_clause_ids IS NOT DISTINCT FROM %s "
+                "AND superseded_at IS NULL",
+                (now, contract_type, scenario, stance,
+                 Jsonb(custom_clause_ids) if custom_clause_ids else None),
+            )
             cur = conn.execute(
                 "INSERT INTO contract_artifacts "
                 "(contract_type, scenario, stance, custom_clause_ids, body_hash, "
@@ -419,36 +431,50 @@ def download(artifact_id: int, format: str, *, variant: str = "final", db: Any =
 # user input, so there is no SQL-injection surface).
 
 
-def distinct_scenarios(contract_type: str, db: Any = None) -> list[str]:
+def distinct_scenarios(
+    contract_type: str, *, include_superseded: bool = False, db: Any = None
+) -> list[str]:
     """Distinct non-null ``scenario`` values for one contract type, ordered.
 
     Excludes base variants (NULL ``scenario``). Used to populate the scenario
-    dropdown on the samples page once a contract type is selected.
+    dropdown on the samples page once a contract type is selected. Superseded
+    rows are excluded unless ``include_superseded`` is set.
     """
     conn = connect(db)
     try:
-        rows = conn.execute(
+        sql = (
             "SELECT DISTINCT scenario FROM contract_artifacts "
-            "WHERE contract_type = %s AND scenario IS NOT NULL ORDER BY 1",
-            (contract_type,),
-        ).fetchall()
+            "WHERE contract_type = %s AND scenario IS NOT NULL"
+        )
+        params: list[Any] = [contract_type]
+        if not include_superseded:
+            sql += " AND superseded_at IS NULL"
+        sql += " ORDER BY 1"
+        rows = conn.execute(sql, params).fetchall()
         return [r["scenario"] for r in rows]
     finally:
         conn.close()
 
 
-def distinct_stances(contract_type: str, db: Any = None) -> list[str]:
+def distinct_stances(
+    contract_type: str, *, include_superseded: bool = False, db: Any = None
+) -> list[str]:
     """Distinct non-null ``stance`` values for one contract type, ordered.
 
-    Excludes base variants (NULL ``stance``).
+    Excludes base variants (NULL ``stance``). Superseded rows are excluded
+    unless ``include_superseded`` is set.
     """
     conn = connect(db)
     try:
-        rows = conn.execute(
+        sql = (
             "SELECT DISTINCT stance FROM contract_artifacts "
-            "WHERE contract_type = %s AND stance IS NOT NULL ORDER BY 1",
-            (contract_type,),
-        ).fetchall()
+            "WHERE contract_type = %s AND stance IS NOT NULL"
+        )
+        params: list[Any] = [contract_type]
+        if not include_superseded:
+            sql += " AND superseded_at IS NULL"
+        sql += " ORDER BY 1"
+        rows = conn.execute(sql, params).fetchall()
         return [r["stance"] for r in rows]
     finally:
         conn.close()
@@ -461,6 +487,7 @@ def list_samples(
     limit: int = 50,
     offset: int = 0,
     db: Any = None,
+    include_superseded: bool = False,
 ) -> tuple[list[dict], int]:
     """Filtered + paginated artifact metadata (no ``body_text``).
 
@@ -470,9 +497,13 @@ def list_samples(
     included. Returns ``(rows, total)`` where ``total`` is the *filtered* count
     (same WHERE, no LIMIT/OFFSET). Filters compose via AND. An ``offset``
     beyond the filtered total yields an empty row list with the unchanged
-    total. Rows are newest first (``ORDER BY id DESC``).
+    total. Rows are newest first (``ORDER BY id DESC``). Superseded rows are
+    excluded unless ``include_superseded`` is set — seeded unconditionally so
+    the WHERE is never empty.
     """
-    clauses: list[str] = []
+    # Seed with the superseded filter so the WHERE clause is never empty (a
+    # bare ``SELECT ... FROM t`` with no WHERE would ignore the filter).
+    clauses: list[str] = ["superseded_at IS NULL"] if not include_superseded else []
     params: list[Any] = []
     if contract_type:
         clauses.append("contract_type = %s")
@@ -483,7 +514,7 @@ def list_samples(
     if stance:
         clauses.append("stance = %s")
         params.append(stance)
-    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    where = " WHERE " + " AND ".join(clauses)
 
     conn = connect(db)
     try:

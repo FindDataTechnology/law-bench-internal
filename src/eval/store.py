@@ -275,7 +275,8 @@ CREATE TABLE IF NOT EXISTS contract_artifacts (
     pdf_key_slotted     TEXT,
     minio_bucket        TEXT NOT NULL,
     created_at          TEXT NOT NULL,
-    updated_at          TEXT NOT NULL
+    updated_at          TEXT NOT NULL,
+    superseded_at       TEXT
 );
 """
 

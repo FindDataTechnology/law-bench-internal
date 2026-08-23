@@ -38,6 +38,7 @@ def page_samples(
     contract_type: str | None = Query(None),
     scenario: str | None = Query(None),
     stance: str | None = Query(None),
+    include_history: bool = Query(False),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: DbConn = Depends(get_db),
@@ -48,6 +49,9 @@ def page_samples(
     ``list_samples`` query. ``contract_type`` is required-by-UX to populate
     the scenario/stance dropdowns; without it those dropdowns show only the
     "全部" option and the table lists artifacts across all types.
+    ``include_history`` shows superseded (old body) rows alongside current
+    ones — they are hidden by default so the page surfaces only the latest
+    body per natural key.
     """
     contract_type = _clean(contract_type)
     scenario = _clean(scenario)
@@ -58,11 +62,21 @@ def page_samples(
     scen_opts: list[str] = []
     stance_opts: list[str] = []
     if contract_type:
-        scen_opts = distinct_scenarios(contract_type, db=db)
-        stance_opts = distinct_stances(contract_type, db=db)
+        scen_opts = distinct_scenarios(
+            contract_type, include_superseded=include_history, db=db
+        )
+        stance_opts = distinct_stances(
+            contract_type, include_superseded=include_history, db=db
+        )
 
     rows, total = list_samples(
-        contract_type, scenario, stance, limit, offset, db=db
+        contract_type,
+        scenario,
+        stance,
+        limit,
+        offset,
+        db=db,
+        include_superseded=include_history,
     )
 
     page = (offset // limit) + 1
@@ -86,5 +100,6 @@ def page_samples(
             "selected_stance": stance,
             "scen_opts": scen_opts,
             "stance_opts": stance_opts,
+            "include_history": include_history,
         },
     )

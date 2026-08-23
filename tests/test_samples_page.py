@@ -192,6 +192,88 @@ def test_list_samples_unknown_type_empty(seeded_db):
     assert total == 0
 
 
+# --- service: superseded filtering ---------------------------------------- #
+
+
+def _seed_superseded(seeded_db) -> None:
+    """Add one sale artifact marked superseded alongside the six current ones."""
+    # Reuse the seed, then mark one extra row superseded. Insert directly so the
+    # superseded_at column is set explicitly (the _artifact helper omits it, so
+    # its rows default to NULL = current).
+    _seed_sale_artifacts(seeded_db)
+    seeded_db.execute(
+        f"INSERT INTO contract_artifacts ({_COLS}, superseded_at) VALUES "
+        "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        (
+            "sale", "钢材买卖", None, None, "sale-steel-v2", "body-sale-steel-v2",
+            Jsonb([{"name": "party_a"}]), "k.docx", "k.pdf",
+            "test-bucket", "2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00",
+            "2026-02-01T00:00:00+00:00",
+        ),
+    )
+    seeded_db.commit()
+
+
+def test_list_samples_hides_superseded_by_default(seeded_db):
+    _seed_superseded(seeded_db)
+    rows, total = list_samples(contract_type="sale", db=seeded_db)
+    # six current rows; the one superseded sale-steel-v2 is excluded
+    assert total == 6
+    assert all(r["body_hash"] != "sale-steel-v2" for r in rows)
+
+
+def test_list_samples_include_superseded_returns_them(seeded_db):
+    _seed_superseded(seeded_db)
+    rows, total = list_samples(
+        contract_type="sale", include_superseded=True, db=seeded_db
+    )
+    # six current + one superseded
+    assert total == 7
+    assert any(r["body_hash"] == "sale-steel-v2" for r in rows)
+
+
+def test_distinct_scenarios_hides_superseded(seeded_db):
+    _seed_superseded(seeded_db)
+    # sale-steel-v2 is superseded; "钢材买卖" still appears via the current
+    # sale-steel row, so this only confirms no crash. Add a scenario that
+    # exists ONLY on a superseded row to prove it is hidden.
+    seeded_db.execute(
+        f"INSERT INTO contract_artifacts ({_COLS}, superseded_at) VALUES "
+        "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        (
+            "sale", "废弃场景", None, None, "sale-gone", "body-gone",
+            Jsonb([{"name": "party_a"}]), "k.docx", "k.pdf",
+            "test-bucket", "2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00",
+            "2026-02-01T00:00:00+00:00",
+        ),
+    )
+    seeded_db.commit()
+    scens = distinct_scenarios("sale", db=seeded_db)
+    assert "废弃场景" not in scens
+    scens_all = distinct_scenarios("sale", include_superseded=True, db=seeded_db)
+    assert "废弃场景" in scens_all
+
+
+def test_distinct_stances_hides_superseded(seeded_db):
+    _seed_superseded(seeded_db)
+    # Add a stance that exists ONLY on a superseded row.
+    seeded_db.execute(
+        f"INSERT INTO contract_artifacts ({_COLS}, superseded_at) VALUES "
+        "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        (
+            "sale", None, "gone_stance", None, "sale-gone-stance", "body-gone-s",
+            Jsonb([{"name": "party_a"}]), "k.docx", "k.pdf",
+            "test-bucket", "2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00",
+            "2026-02-01T00:00:00+00:00",
+        ),
+    )
+    seeded_db.commit()
+    stances = distinct_stances("sale", db=seeded_db)
+    assert "gone_stance" not in stances
+    stances_all = distinct_stances("sale", include_superseded=True, db=seeded_db)
+    assert "gone_stance" in stances_all
+
+
 # --- route ----------------------------------------------------------------- #
 
 
