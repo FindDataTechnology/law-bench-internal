@@ -13,8 +13,8 @@
 
 ## 3. 银牌配对去重
 
-- [x] 3.1 在 `scripts/finetune/export_dataset.py` 的 `_build_silver_pairs` 按正文 sha256 去重（保留首条），并在去重后过槽位一致性（正文无残留 `{{slot}}`）+ `task_desc` 非空校验，丢弃残稿
-- [x] 3.2 审计：打印「去重前 N / distinct M / 校验通过 K」；实测 **356 非空 → 150 distinct → 131 校验通过**（proposal 估 363→151，数据漂移，以实测为准）；131/131 通过 `validate_pair`
+- [x] 3.1 在 `scripts/finetune/export_dataset.py` 的 `_build_silver_pairs` 按正文 sha256 去重（保留首条），并在去重**前**过槽位一致性（正文无残留 `{{slot}}`）+ `task_desc` 非空校验丢弃残稿，避免首条残稿阻塞其后合法副本
+- [x] 3.2 审计：打印「去重前 N / distinct M / 校验通过 K」；实测 **356 非空 → 残稿过滤后 131 distinct**（proposal 估 363→151，数据漂移，以实测为准）；131/131 通过 `validate_pair`
 - [x] 3.3 验证被保留配对的 `tier:silver`/`source:warehouse`/`provenance:pipeline_runs:<id>` 字段未因去重丢失
 - [x] 3.4 验证去重后银牌池仍被 `load_drafter_reward_positive` 排除（reward_positive 返回 0 条，silver 不进 gold 集，守卫未放宽）
 
@@ -38,6 +38,6 @@
 
 ## 7. 文档与校验收尾
 
-- [x] 7.1 更新 `docs/finetune-data.md`：表/分层地图扩到 11 张、银牌真实数 150、scaffold 流程、law_info bronze 告示
+- [x] 7.1 更新 `docs/finetune-data.md`：表/分层地图扩到 11 张、银牌真实数 131、scaffold 流程、law_info bronze 告示
 - [x] 7.2 `openspec validate --change expand-finetune-data-sources` 通过
 - [x] 7.3 全套脚本幂等重跑（抽取/去重/脚手架/校验），既有表与运行时零影响（extraction 字节级幂等已验证）
