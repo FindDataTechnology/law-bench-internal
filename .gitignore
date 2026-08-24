@@ -53,6 +53,10 @@ data/finetune/opensource/*_index.json
 data/finetune/judge-c/*.jsonl
 data/finetune/drafter-a/*.jsonl
 data/finetune/manifests/*.jsonl
+# review batches + manifest are regenerable via prepare_review_batches.py prepare;
+# review/done/ (human annotations) IS tracked — it is the source of truth for gold.
+data/finetune/review/inbox/
+data/finetune/review/manifest.json
 
 # Local tooling / caches (not project source)
 .deepeval/

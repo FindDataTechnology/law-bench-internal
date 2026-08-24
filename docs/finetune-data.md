@@ -83,6 +83,7 @@ data/finetune/
 | `scripts/finetune/extract_warehouse.py` | 仓内只读抽取（纯 SELECT + 落盘） | law-bench pod（kubectl-exec） |
 | `scripts/finetune/ingest_opensource.py` | 开源语料接入 + 许可证闸门 | 本地（离线） |
 | `scripts/finetune/export_dataset.py` | bronze 守卫 + 分层加载 + 四元组/配对 schema 校验 + 飞轮闸门 | 本地 |
+| `scripts/finetune/prepare_review_batches.py` | scaffold 按类型切人工核验批（prepare）+ 批准信封晋金（promote，拒绝 law_info 引用） | 本地 + pod |
 
 仓内抽取复用已验证的 kubectl-exec + `psycopg.connect(os.environ['database_url'])` 模式：在 pod 内运行，复用 pod 环境里已有的 `database_url`，凭证不外泄、不在脚本里硬编码，零写入既有表。扩展后从 6 张扩到 11 张（clauses/pipeline_runs/eval_runs/eval_criteria_results/rubrics/criteria/type_validations/law_info/contract_artifacts/core_clauses/industry_standard_references）。
 
@@ -99,6 +100,15 @@ kubectl -n law-bench exec deployment/law-bench -- \
 # 2) Judge-C scaffold 构建（本地/pod 均可）
 python scripts/finetune/export_dataset.py judge-c-scaffold
 #   → data/finetune/judge-c/judge_c_scaffold.jsonl（silver 脚手架候选，待人工核验→晋金）
+
+# 2b) 人工核验批处理：把 608 条 scaffold 按合同类型切成可审信封
+python scripts/finetune/prepare_review_batches.py prepare
+#   → data/finetune/review/inbox/p{1,2}_<type>.jsonl（39 类，按候选量排序）
+#   人工：把待审文件移入 review/done/，逐条改 review.status=approved/rejected，
+#         修正 verdict/legal_base/reasoning（权威法条来源，不得保留 law_info:*/[retrieval hint]）
+python scripts/finetune/prepare_review_batches.py promote
+#   → data/finetune/judge-c/judge_c_gold.review.jsonl（approved 信封强制 tier=gold/reviewer=human；
+#     仍引用 law_info 的候选被拒绝）；inbox/ 可由 prepare 重生成，done/ 是人工产出，纳入版本管理
 
 # 3) 开源语料接入（本地，逐语料包跑许可证闸门）
 python scripts/finetune/ingest_opensource.py <corpus_dir> --tier silver
@@ -143,7 +153,7 @@ python scripts/finetune/export_dataset.py gate
 | core_clauses / industry_standard_references (gold) | 22 / 22 | 强制条款清单 / 成文法指针 |
 | Judge-C scaffold 四元组 | — | **608**（208 规则命中 × top-3 相关条款，50 规则零重叠跳过；silver，待人工核验→晋金） |
 | rubrics/criteria (gold) | 131 / 1275 | — |
-| Judge-C gold 四元组 | — | 0（待人工标注，飞轮闸门当前关闭） |
+| Judge-C gold 四元组 | — | 0（待人工标注，飞轮闸门当前关闭）。`prepare_review_batches.py` 已把 608 条 scaffold 切成 39 类核验批（`review/inbox/`），phase-1 按实际候选量取前 5 类：employment(36)/lease(24)/will(19)/bailment(18)/brokerage(18)，共 115 条；人工批准后 `promote` 落 gold |
 | 覆盖缺口 | 24 | 23 `zero_pipeline_runs` + 1 `custom_thin`(267<500) |
 
 > 银牌暖启池实际规模 = **131**（残稿过滤 + 去重 + 槽位校验后）。设计文档里的「548」是 `pipeline_runs` 表行数；356 条有非空 `filled_text`，构建器先剔除正文含残留 `{{slot}}` 或 `task_desc` 为空的残稿（在去重之前，避免某正文的首条残稿阻塞其后的合法副本），再按正文 sha256 去重，得到 131 条 distinct 且全部 131/131 通过 `validate_pair`。Judge-C 脚手架 608 条来自 `type_validations`（258 条含 `law_ref`）与同类型 `clauses` 的 char-bigram 相关性 top-3 配对（精确 `field==section` 优先），全部 `tier:silver`/`verdict:fail`，`law_info` 仅作 300 字检索提示，仅供人工核验晋金——构建器不写 gold 文件。
