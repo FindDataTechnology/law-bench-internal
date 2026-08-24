@@ -1,6 +1,6 @@
 # 微调数据准备子系统（finetune-data-flywheel）
 
-为**判官（Judge C）+ 起草（Drafter A）双飞轮微调**产出可溯源、分层、许可证合规的训练数据。本文件是数据准备子系统的顶层说明；需求见 `openspec/changes/add-finetune-data-flywheel/specs/finetune-data-flywheel/spec.md`，设计见同目录 `design.md`。
+为**判官（Judge C）+ 起草（Drafter A）双飞轮微调**产出可溯源、分层、许可证合规的训练数据。本文件是数据准备子系统的顶层说明；需求见 `openspec/changes/add-finetune-data-flywheel/specs/finetune-data-flywheel/spec.md`，设计见同目录 `design.md`。仓内抽取从 6 张扩到 11 张表（expand-finetune-data-sources），新增 `type_validations`/`law_info`/`contract_artifacts`/`core_clauses`/`industry_standard_references`，并支持银牌配对去重与 Judge-C 脚手架候选构建。
 
 ## 一句话定位
 
@@ -60,7 +60,7 @@ data/finetune/
                   ▼                                          ▼
           Judge-C 四元组                            Drafter-A 配对
           (legal_base,clause,verdict,reasoning)     (task_desc/slots, body)
-          machine pass→fail                         silver=548 暖启
+          machine pass→fail                         silver 暖启（去重+校验后 131）
           human pass 须引≥1法条→gold                 gold=人工核验正文
                   │
                   ▼  D4 闸门：Judge-C gold 非空 ──▶ 放行 Drafter reward
@@ -84,7 +84,7 @@ data/finetune/
 | `scripts/finetune/ingest_opensource.py` | 开源语料接入 + 许可证闸门 | 本地（离线） |
 | `scripts/finetune/export_dataset.py` | bronze 守卫 + 分层加载 + 四元组/配对 schema 校验 + 飞轮闸门 | 本地 |
 
-仓内抽取复用已验证的 kubectl-exec + `psycopg.connect(os.environ['database_url'])` 模式：在 pod 内运行，复用 pod 环境里已有的 `database_url`，凭证不外泄、不在脚本里硬编码，零写入既有表。
+仓内抽取复用已验证的 kubectl-exec + `psycopg.connect(os.environ['database_url'])` 模式：在 pod 内运行，复用 pod 环境里已有的 `database_url`，凭证不外泄、不在脚本里硬编码，零写入既有表。扩展后从 6 张扩到 11 张（clauses/pipeline_runs/eval_runs/eval_criteria_results/rubrics/criteria/type_validations/law_info/contract_artifacts/core_clauses/industry_standard_references）。
 
 ## 运行方式
 
@@ -92,22 +92,26 @@ data/finetune/
 # 1) 仓内抽取（在 pod 内，只读 SELECT + 落盘；幂等可重跑）
 kubectl -n law-bench exec deployment/law-bench -- \
     python scripts/finetune/extract_warehouse.py
-#   → data/finetune/warehouse/<table>.jsonl × 6
-#   → data/finetune/manifests/warehouse_manifest.jsonl（18698 条溯源）
-#   → data/finetune/manifests/coverage_gaps.jsonl（23 零-pipeline 类型 + custom_thin）
+#   → data/finetune/warehouse/<table>.jsonl × 11（含 type_validations/law_info/contract_artifacts/core_clauses/industry_standard_references）
+#   → data/finetune/manifests/warehouse_manifest.jsonl（溯源索引，expand-finetune-data-sources）
+#   → data/finetune/manifests/coverage_gaps.jsonl（覆盖缺口）
 
-# 2) 开源语料接入（本地，逐语料包跑许可证闸门）
+# 2) Judge-C scaffold 构建（本地/pod 均可）
+python scripts/finetune/export_dataset.py judge-c-scaffold
+#   → data/finetune/judge-c/judge_c_scaffold.jsonl（silver 脚手架候选，待人工核验→晋金）
+
+# 3) 开源语料接入（本地，逐语料包跑许可证闸门）
 python scripts/finetune/ingest_opensource.py <corpus_dir> --tier silver
 #   → data/finetune/opensource/<corpus>_index.json（接受）
 #   → data/finetune/manifests/rejected_sources.jsonl（拒绝，幂等不重复）
 
-# 3) 数据集导出 + schema 校验（本地/pod 均可）
+# 4) 数据集导出 + schema 校验（本地/pod 均可）
 python scripts/finetune/export_dataset.py judge-c   [--gold <human_gold.jsonl>]
 python scripts/finetune/export_dataset.py drafter-a [--gold <human_gold.jsonl>]
 python scripts/finetune/export_dataset.py validate judge-c   --file data/finetune/judge-c/judge_c_bronze.jsonl
 python scripts/finetune/export_dataset.py validate drafter-a --file data/finetune/drafter-a/drafter_a_silver.jsonl
 
-# 4) 飞轮顺序闸门（Drafter reward/DPO 启动前必跑）
+# 5) 飞轮顺序闸门（Drafter reward/DPO 启动前必跑）
 python scripts/finetune/export_dataset.py gate
 #   Judge-C gold 空 → rc=1「未就绪」阻断；就绪 → rc=0 放行
 ```
@@ -129,12 +133,17 @@ python scripts/finetune/export_dataset.py gate
 | 物料 | 表行数 | 校验后入池 |
 |---|---|---|
 | clauses (raw) | 6686 | 6686 |
-| pipeline_runs (silver) | 548 | — |
-| Drafter-A silver 配对 | — | **306 / 356**（25 条 `{{slot}}` 未替换 + 25 条 `task_desc` 空被槽位/字段校验拒，正确剔除） |
+| pipeline_runs (silver) | 548 | 非空 filled_text 356 |
+| Drafter-A silver 配对 | — | **131**（356 非空 → 先挡下 `{{slot}}` 未替换/空 `task_desc` 残稿 → 正文 sha256 去重，131 distinct 且 131/131 通过校验） |
 | eval_criteria_results (bronze) | 9134 | 9134（全部降级 fail，机器 pass→fail） |
 | Judge-C bronze 四元组 | — | **9134/9134 校验通过** |
+| type_validations (gold scaffold) | 275（258 含 law_ref） | 脚手架规则源 |
+| law_info (bronze) | 86 | 检索提示（doubao/deepseek LLM 生成，非权威） |
+| contract_artifacts (raw) | 401 | 含 `{{slot}}` 起草骨架 |
+| core_clauses / industry_standard_references (gold) | 22 / 22 | 强制条款清单 / 成文法指针 |
+| Judge-C scaffold 四元组 | — | **608**（208 规则命中 × top-3 相关条款，50 规则零重叠跳过；silver，待人工核验→晋金） |
 | rubrics/criteria (gold) | 131 / 1275 | — |
-| Judge-C gold 四元组 | — | 0（待人工标注，task 5.4 后续运营） |
+| Judge-C gold 四元组 | — | 0（待人工标注，飞轮闸门当前关闭） |
 | 覆盖缺口 | 24 | 23 `zero_pipeline_runs` + 1 `custom_thin`(267<500) |
 
-> 设计文档里的「silver 548」是 `pipeline_runs` 表行数；能构成合法 `(task_desc, body)` 配对且通过槽位一致性的是 **306 条**——其余 50 条是 LLM 未填完槽位 / 无任务描述的残稿，被校验器正确挡下。Drafter-A 暖启池实际规模 = 306。
+> 银牌暖启池实际规模 = **131**（残稿过滤 + 去重 + 槽位校验后）。设计文档里的「548」是 `pipeline_runs` 表行数；356 条有非空 `filled_text`，构建器先剔除正文含残留 `{{slot}}` 或 `task_desc` 为空的残稿（在去重之前，避免某正文的首条残稿阻塞其后的合法副本），再按正文 sha256 去重，得到 131 条 distinct 且全部 131/131 通过 `validate_pair`。Judge-C 脚手架 608 条来自 `type_validations`（258 条含 `law_ref`）与同类型 `clauses` 的 char-bigram 相关性 top-3 配对（精确 `field==section` 优先），全部 `tier:silver`/`verdict:fail`，`law_info` 仅作 300 字检索提示，仅供人工核验晋金——构建器不写 gold 文件。

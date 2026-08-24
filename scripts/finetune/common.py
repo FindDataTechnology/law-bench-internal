@@ -51,6 +51,12 @@ TIER_BY_TABLE = {
     "eval_criteria_results": "bronze",  # machine self-eval; NEVER ground truth
     "rubrics": "gold",  # human rubric
     "criteria": "gold",  # human criteria
+    # widen: expand-finetune-data-sources §1.1
+    "type_validations": "gold",  # compliance rules w/ law_ref; judge-c criteria scaffold
+    "law_info": "bronze",  # LLM-generated law summaries; retrieval aid, never ground truth
+    "contract_artifacts": "raw",  # template bodies w/ {{slot}}; drafter skeleton, no labels
+    "core_clauses": "gold",  # mandatory-clause checklist per type
+    "industry_standard_references": "gold",  # statute pointers per type
 }
 
 # --- bronze/silver guards (single point) -----------------------------------

@@ -49,6 +49,12 @@ TABLES = (
     "eval_criteria_results",
     "rubrics",
     "criteria",
+    # widen: expand-finetune-data-sources §1.2
+    "type_validations",
+    "law_info",
+    "contract_artifacts",
+    "core_clauses",
+    "industry_standard_references",
 )
 
 # Custom-stance thinness threshold (spec: 覆盖缺口记录 — custom 偏薄, 阈值 500).
