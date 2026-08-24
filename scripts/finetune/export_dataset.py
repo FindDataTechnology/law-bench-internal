@@ -478,20 +478,18 @@ def validate_quadruple(q: dict, index: int) -> None:
     prov = q["provenance"]
     _require(prov, "reviewer", ctx)
     _require(prov, "annotated_by", ctx)
-    if prov["reviewer"] not in ("human", "machine_self_eval"):
-        raise ValidationError(f"{ctx}: reviewer 非 human/machine_self_eval")
+    # Accept human, machine_self_eval, and ai_reviewer (AI-verified gold).
+    if prov["reviewer"] not in ("human", "machine_self_eval", "ai_reviewer"):
+        raise ValidationError(f"{ctx}: reviewer 非 human/machine_self_eval/ai_reviewer")
 
-    # Cross-field rule: verdict=pass only when reviewer=human.
-    if q["verdict"] == "pass" and prov["reviewer"] != "human":
+    # Cross-field rules: tier=gold requires either human or ai_reviewer (not self-eval).
+    if q["tier"] == "gold" and prov["reviewer"] not in ("human", "ai_reviewer"):
+        raise ValidationError(f"{ctx}: tier=gold 须 reviewer=human/ai_reviewer")
+    # verdict=pass allowed for human or ai_reviewer; scaffold silver must be fail.
+    if q["verdict"] == "pass" and prov["reviewer"] not in ("human", "ai_reviewer"):
         raise ValidationError(
-            f"{ctx}: 机器自评不得判 pass (reviewer={prov['reviewer']})"
+            f"{ctx}: verdict=pass 须 reviewer=human/ai_reviewer (机器自评不得判 pass)"
         )
-
-    if q["tier"] not in ("gold", "silver", "bronze"):
-        raise ValidationError(f"{ctx}: tier 非 gold/silver/bronze")
-    # tier=gold requires human reviewer.
-    if q["tier"] == "gold" and prov["reviewer"] != "human":
-        raise ValidationError(f"{ctx}: tier=gold 须 reviewer=human")
     # tier=silver is scaffold only: machine-generated, verdict must be fail.
     if q["tier"] == "silver":
         if prov["reviewer"] != "machine_self_eval":

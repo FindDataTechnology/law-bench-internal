@@ -171,22 +171,29 @@ def _promote_envelope(env: dict, index: int) -> tuple[dict | None, str]:
     if not isinstance(q, dict):
         return None, "missing quadruple"
 
-    # Stamp gold provenance. Preserve the human's verdict/reasoning/legal_base.
+    # Stamp gold provenance. Preserve the human/AI's verdict/reasoning/legal_base.
     q["tier"] = "gold"
     prov = q.setdefault("provenance", {})
-    prov["reviewer"] = "human"
-    prov["annotated_by"] = "human_annotated"
+    # Accept both human and ai_reviewer; annotate_by reflects who actually wrote it.
+    reviewer = review.get("reviewer")
+    if reviewer in ("human", "ai_reviewer"):
+        prov["reviewer"] = reviewer
+    elif prov.get("reviewer") in ("human", "ai_reviewer"):
+        pass  # keep what the envelope already has from AI annotation
+    else:
+        prov["reviewer"] = "human"  # default for backward compat
+    prov["annotated_by"] = review.get("annotated_by") or prov.get("annotated_by", "ai_reviewed")
     if review.get("annotator"):
         prov["annotator"] = review["annotator"]
     sid = env.get("scaffold_id") or prov.get("id", "")
     try:
         rule_id, clause_id, _match = _parse_scaffold_id(sid)
-        prov["id"] = f"gold:human:{env.get('contract_type', 'unknown')}:{rule_id}:{clause_id}"
+        prov["id"] = f"gold:{reviewer}:{env.get('contract_type', 'unknown')}:{rule_id}:{clause_id}"
         prov["scaffold_ref"] = sid
     except ValueError:
         pass
 
-    # A human may judge pass or fail, but the legal basis must be authoritative:
+    # A human/AI may judge pass or fail, but the legal basis must be authoritative:
     # an LLM-generated law_info hint is never citable as gold.
     lb = q.get("legal_base") or {}
     source = (lb.get("source") or "").strip()

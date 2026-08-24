@@ -57,6 +57,7 @@ data/finetune/manifests/*.jsonl
 # review/done/ (human annotations) IS tracked — it is the source of truth for gold.
 data/finetune/review/inbox/
 data/finetune/review/manifest.json
+data/finetune/review/bootstrap_manifest.json
 
 # Local tooling / caches (not project source)
 .deepeval/
