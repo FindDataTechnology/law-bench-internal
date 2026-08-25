@@ -53,6 +53,11 @@ data/finetune/opensource/*_index.json
 data/finetune/judge-c/*.jsonl
 data/finetune/drafter-a/*.jsonl
 data/finetune/manifests/*.jsonl
+# SFT-ready export (regenerable via scripts/finetune/export_sft_dataset.py all);
+# manifest.json IS tracked (small, stable, useful in PR review).
+data/finetune/sft/*.jsonl
+# pre-bump snapshot of judge_c_gold at conf>=0.6 (kept locally as a rollback point)
+data/finetune/judge-c/judge_c_gold.0.6.jsonl
 # review batches + manifest are regenerable via prepare_review_batches.py prepare;
 # review/done/ (human annotations) IS tracked — it is the source of truth for gold.
 data/finetune/review/inbox/

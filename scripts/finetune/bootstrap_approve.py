@@ -19,8 +19,6 @@ from __future__ import annotations
 import argparse
 import pathlib
 import sys
-import termios
-import tty
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
@@ -30,6 +28,8 @@ DEFAULT_INBOX = pathlib.Path("data/finetune/review/inbox/bootstrap")
 
 
 def _cbreak() -> tuple[int, list]:
+    import termios
+    import tty
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
     tty.setcbreak(fd)
@@ -37,6 +37,7 @@ def _cbreak() -> tuple[int, list]:
 
 
 def _restore(fd: int, old: list) -> None:
+    import termios
     termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 

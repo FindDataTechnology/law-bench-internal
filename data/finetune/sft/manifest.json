@@ -1,0 +1,35 @@
+{
+  "counts": {
+    "drafter_a": {
+      "tier_breakdown": {
+        "silver": 131
+      },
+      "total": 131,
+      "train": 118,
+      "val": 13
+    },
+    "judge_c": {
+      "reviewer_breakdown": {
+        "ai_reviewer": 1969
+      },
+      "tier_breakdown": {
+        "gold": 1969
+      },
+      "total": 1969,
+      "train": 1773,
+      "val": 196,
+      "verdict_breakdown": {
+        "fail": 836,
+        "pass": 1133
+      }
+    }
+  },
+  "format": "ChatML {system, user, assistant}",
+  "generated_at": "2026-08-25T01:48:18+00:00",
+  "seed": 42,
+  "sources": {
+    "drafter_a": "data\\finetune\\drafter-a\\drafter_a_silver.jsonl",
+    "judge_c": "data\\finetune\\judge-c\\judge_c_gold.jsonl"
+  },
+  "val_fraction": 0.1
+}

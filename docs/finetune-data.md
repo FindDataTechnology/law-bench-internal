@@ -86,6 +86,7 @@ data/finetune/
 | `scripts/finetune/prepare_review_batches.py` | scaffold 按类型切人工核验批（prepare）+ 批准信封晋金（promote，拒绝 law_info 引用） | 本地 + pod |
 | `scripts/finetune/bootstrap_gold_from_evals.py` | 从历史 `eval_criteria_results` 引导出 9134 个「人类规则+机器推理」信封（信度打分），与 `prepare_review_batches.py` 共用同形 inbox | 本地 |
 | `scripts/finetune/bootstrap_approve.py` | bootstrap 信封的人机协作审批：交互式 y/n/s CLI、批量 `auto`（conf≥0.6）、进度 `summary` | 本地 |
+| `scripts/finetune/export_sft_dataset.py` | 把 M1 结构化数据（gold 四元组 / silver 配对）转 ChatML `messages` 格式，90/10 train/val 切分（seed=42），写 `data/finetune/sft/*.jsonl` + `manifest.json` | 本地 |
 
 仓内抽取复用已验证的 kubectl-exec + `psycopg.connect(os.environ['database_url'])` 模式：在 pod 内运行，复用 pod 环境里已有的 `database_url`，凭证不外泄、不在脚本里硬编码，零写入既有表。扩展后从 6 张扩到 11 张（clauses/pipeline_runs/eval_runs/eval_criteria_results/rubrics/criteria/type_validations/law_info/contract_artifacts/core_clauses/industry_standard_references）。
 
@@ -173,5 +174,55 @@ python scripts/finetune/export_dataset.py gate
 | Judge-C gold 四元组 | — | 0（待人工标注，飞轮闸门当前关闭）。`prepare_review_batches.py` 已把 608 条 scaffold 切成 39 类核验批（`review/inbox/`），phase-1 按实际候选量取前 5 类：employment(36)/lease(24)/will(19)/bailment(18)/brokerage(18)，共 115 条；人工批准后 `promote` 落 gold |
 | **Judge-C bootstrap gold**（ai_reviewer 路径） | — | **1472**（9134 历史 eval_criteria_results 中 conf≥0.6 自动晋金，全部 reviewer=ai_reviewer/tier=gold，1091 pass+381 fail，1472/1472 validate 通过）— 飞轮闸门开 |
 | 覆盖缺口 | 24 | 23 `zero_pipeline_runs` + 1 `custom_thin`(267<500) |
+
+## SFT-ready 导出
+
+M1 的结构化 JSONL 字段（`judge_c_gold.jsonl` 4 元组、`drafter_a_silver.jsonl` 配对）不是 SFT 训练器直接消费的形态。本节把它们转成 **ChatML** 格式并切 90/10 train/val：
+
+```bash
+python scripts/finetune/export_sft_dataset.py all
+#   → data/finetune/sft/judge_c_{train,val}.jsonl   (post-bump 1969 → 1773/196)
+#   → data/finetune/sft/drafter_a_{train,val}.jsonl (131 → 118/13)
+#   → data/finetune/sft/manifest.json   (committed — 小、稳定、review 有用)
+```
+
+每条记录：
+
+```json
+{
+  "_meta": {"kind": "judge-c", "tier": "gold", "split": "train", "split_seed": 42,
+            "provenance_id": "seed:bootstrap:run:596:crit:price_difference",
+            "reviewer": "ai_reviewer", "verdict": "pass", "contract_path": null},
+  "messages": [
+    {"role": "system",    "content": "你是一名合同合规审查员，…"},
+    {"role": "user",      "content": "【审查依据】\n…\n【待审条款描述】\n…\n请按 JSON 输出：{verdict, justification, citation[]}"},
+    {"role": "assistant", "content": "{\"verdict\":\"pass\",\"justification\":\"…\",\"citation\":[…]}"}
+  ]
+}
+```
+
+Drafter-A 同样形态，assistant 是一段中文合同正文。
+
+**设计决策**：
+
+- **ChatML `messages`**：Qwen3 原生 ChatML；让 `tokenizer.apply_chat_template` 包装 `<|im_start|>`/`<|im_end|>`，不在数据里硬编码。
+- **`_meta` 顶层字段**：训练器 tokenize 前会过滤；保留做 sample-weighting/debug 溯源（`tier`/`reviewer`/`provenance_id`/`contract_path`/`split_seed`/`split`/`verdict`）。
+- **语言分布保留自然形态**：Judge-C 的 `clause_text.body` 是英文（模型历史叙述），`legal_base.text` 是中文（人类 rubric guidance）。翻译会制造伪信号；下游分布本就是中英混合。
+- **Train/val split**：random 90/10，固定 seed=42。**不分层 per-rubric**：42 rubric × 1969 行，多数层 <5 条，per-rubric stratified 会让 val 极稀疏。re-runnable（同一 seed 同一输入永远同一划分）。
+- **assistant 是单行 JSON（Judge-C）/ 全文 markdown（Drafter-A）**：与原模型输出形态一致；不重新生成。
+
+**bootstrap 阈值上调**（2026-08-25）：从 conf≥0.6（1472）扩到 conf≥0.5（1969，+497 条）。
+
+- conf 双峰分布：p25=p75=0.42（短推理 + 中文 + pass 的判官历史地板），conf≥0.5 已脱离这个地板
+- 0.5-0.6 这 497 条仍过 `validate_quadruple` 严格校验：`legal_base` 必引人类 rubric+criteria（不引 `law_info:`），`reasoning.citation` 非空
+- conf<0.5 的 7660 条**不扩**：那是「短推理 + 中文 + pass」的真实噪声样本，扩进来等于把判官历史误判蒸馏进新模型
+- 0.5-0.6 段的 confidence 已记录在 `_meta.confidence`（pre-bump gold 没存 confidence，需要时按 `provenance_id` 回查 bootstrap envelope）
+- 旧 1472 快照保留在 `data/finetune/judge-c/judge_c_gold.0.6.jsonl`（gitignored，本地回滚点）
+
+**已知不做的扩展**（明确边界）：
+
+- **Drafter-A 银牌扩量**：需要 LLM 填槽（仓内 uv 项目 build broken，无 GPU 访问）。当前 131/131 通过校验，作为 SFT 暖启足够启动；后续若需扩量，调 `pipeline_runs` 重跑或加 `pipeline_runs.filled_text` 补样本。
+- **OpenSource 语料接入**：仓内无文件、无 fetcher。`scripts/finetune/ingest_opensource.py` 已就绪，缺语料包；DISC-Law-SFT（Apache-2.0）/ CAIL2018（MIT）是白名单目标。需用户手工下载到 `data/opensource/<corpus>/` 并附 `LICENSE`。
+- **实际 SFT 训练**：M1 范围仅「数据准备」；M2 才进训练器。Qwen3.8-27B 4bit QLoRA smoke 已通过（M0：18.5GB 权重，seq=512 峰值 26.6GB），训练脚本未写。`scripts/finetune/export_sft_dataset.py` 输出直接喂 `tokenizer.apply_chat_template(messages)` 即可训练。
 
 > 银牌暖启池实际规模 = **131**（残稿过滤 + 去重 + 槽位校验后）。设计文档里的「548」是 `pipeline_runs` 表行数；356 条有非空 `filled_text`，构建器先剔除正文含残留 `{{slot}}` 或 `task_desc` 为空的残稿（在去重之前，避免某正文的首条残稿阻塞其后的合法副本），再按正文 sha256 去重，得到 131 条 distinct 且全部 131/131 通过 `validate_pair`。Judge-C 脚手架 608 条来自 `type_validations`（258 条含 `law_ref`）与同类型 `clauses` 的 char-bigram 相关性 top-3 配对（精确 `field==section` 优先），全部 `tier:silver`/`verdict:fail`，`law_info` 仅作 300 字检索提示，仅供人工核验晋金——构建器不写 gold 文件。
