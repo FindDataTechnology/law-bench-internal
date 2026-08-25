@@ -185,6 +185,12 @@ def _promote_envelope(env: dict, index: int) -> tuple[dict | None, str]:
     prov["annotated_by"] = review.get("annotated_by") or prov.get("annotated_by", "ai_reviewed")
     if review.get("annotator"):
         prov["annotator"] = review["annotator"]
+    # Bootstrap envelopes carry a confidence score; keep it so downstream SFT can
+    # down-weight the weaker auto-approved band (the 0.5-0.6 rows) instead of
+    # treating every ai_reviewer row as equally trustworthy. Scaffold envelopes
+    # have no confidence (they are human-reviewed) and are left without one.
+    if env.get("confidence") is not None:
+        prov["confidence"] = env["confidence"]
     sid = env.get("scaffold_id") or prov.get("id", "")
     try:
         rule_id, clause_id, _match = _parse_scaffold_id(sid)

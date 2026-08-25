@@ -1,6 +1,55 @@
 {
   "counts": {
     "drafter_a": {
+      "contract_type_breakdown": {
+        "bailment": 2,
+        "brokerage": 2,
+        "capital_increase": 1,
+        "company_formation": 2,
+        "construction": 2,
+        "employment": 11,
+        "entrustment": 3,
+        "equity_holding_in_trust": 4,
+        "equity_incentive": 3,
+        "equity_transfer": 3,
+        "factoring": 6,
+        "film_production": 2,
+        "financing_lease": 3,
+        "franchise": 3,
+        "gift": 4,
+        "guarantee": 3,
+        "insurance": 1,
+        "intermediation": 2,
+        "ip_license": 2,
+        "labor_dispatch": 5,
+        "land_transfer": 4,
+        "lease": 2,
+        "loan": 4,
+        "merger_acquisition": 3,
+        "partnership": 4,
+        "ppp_project": 3,
+        "private_equity_fund": 3,
+        "property_service": 2,
+        "real_estate_development": 4,
+        "real_estate_lease": 1,
+        "real_estate_sale": 2,
+        "sale": 11,
+        "software_development": 2,
+        "talent_agency": 4,
+        "technology": 1,
+        "tourism_service": 4,
+        "transport": 2,
+        "trust": 2,
+        "utilities_supply": 3,
+        "vam_agreement": 2,
+        "warehousing": 2,
+        "work": 2
+      },
+      "stance_breakdown": {
+        "balanced": 114,
+        "pro_a": 10,
+        "pro_b": 7
+      },
       "tier_breakdown": {
         "silver": 131
       },
@@ -9,6 +58,11 @@
       "val": 13
     },
     "judge_c": {
+      "confidence_bands": {
+        "0.5-0.6": 497,
+        "0.6-0.8": 1390,
+        ">=0.8": 82
+      },
       "reviewer_breakdown": {
         "ai_reviewer": 1969
       },
@@ -25,7 +79,7 @@
     }
   },
   "format": "ChatML {system, user, assistant}",
-  "generated_at": "2026-08-25T01:48:18+00:00",
+  "generated_at": "2026-08-25T06:45:03+00:00",
   "seed": 42,
   "sources": {
     "drafter_a": "data\\finetune\\drafter-a\\drafter_a_silver.jsonl",

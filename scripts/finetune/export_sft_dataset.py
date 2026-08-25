@@ -169,9 +169,15 @@ def _add_meta(chatml: dict, row: dict, split: str, kind: str) -> dict:
     }
     if kind == "judge-c":
         meta["verdict"] = row.get("verdict")
+        # Present on bootstrap-derived gold only; lets the trainer down-weight the
+        # weaker auto-approved band rather than trusting all ai_reviewer rows equally.
+        if prov.get("confidence") is not None:
+            meta["confidence"] = prov["confidence"]
     else:
-        # drafter-a: record contract_type/scenario for downstream filtering
+        # drafter-a: record contract_type/scenario/stance for downstream filtering
         meta["contract_type"] = prov.get("contract_type")
+        meta["scenario"] = prov.get("scenario")
+        meta["stance"] = prov.get("stance")
     return {"_meta": meta, **chatml}
 
 
@@ -273,6 +279,7 @@ def cmd_manifest(args: argparse.Namespace) -> int:
         train = read_jsonl(jc_train)
         val = read_jsonl(jc_val)
         meta_all = [r["_meta"] for r in train + val]
+        confs = [m["confidence"] for m in meta_all if m.get("confidence") is not None]
         counts["judge_c"] = {
             "total": len(train) + len(val),
             "train": len(train),
@@ -280,6 +287,12 @@ def cmd_manifest(args: argparse.Namespace) -> int:
             "tier_breakdown": dict(Counter(m.get("tier") for m in meta_all)),
             "reviewer_breakdown": dict(Counter(m.get("reviewer") for m in meta_all)),
             "verdict_breakdown": dict(Counter(m.get("verdict") for m in meta_all)),
+            # The auto-approve floor is 0.5; the 0.5-0.6 band is the weaker tail
+            # worth down-weighting rather than dropping.
+            "confidence_bands": dict(Counter(
+                "0.5-0.6" if c < 0.6 else "0.6-0.8" if c < 0.8 else ">=0.8"
+                for c in confs
+            )) if confs else None,
         }
         sources["judge_c"] = str(JUDGE_C_DIR / "judge_c_gold.jsonl")
 
@@ -294,6 +307,14 @@ def cmd_manifest(args: argparse.Namespace) -> int:
             "train": len(train),
             "val": len(val),
             "tier_breakdown": dict(Counter(m.get("tier") for m in meta_all)),
+            # Surfaced because the skew is the main known weakness of this pool:
+            # stance=balanced dominates and pro_a/pro_b is a handful of rows.
+            "stance_breakdown": dict(Counter(
+                m.get("stance") or "(untagged)" for m in meta_all
+            )),
+            "contract_type_breakdown": dict(Counter(
+                m.get("contract_type") or "(untagged)" for m in meta_all
+            ).most_common()),
         }
         sources["drafter_a"] = str(DRAFTER_A_DIR / "drafter_a_silver.jsonl")
 

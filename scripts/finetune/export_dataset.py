@@ -397,6 +397,12 @@ def _build_silver_pairs() -> tuple[list[dict], int, int, int]:
             "provenance": {
                 "annotated_by": "machine_generated",
                 "id": f"pipeline_runs:{row.get('id')}",
+                # Carried so the pool stays filterable by type/scenario/stance.
+                # Coverage is lopsided (stance=balanced dominates, pro_a/pro_b is
+                # a handful) and that skew is invisible once these are dropped.
+                "contract_type": row.get("contract_type"),
+                "scenario": (row.get("tags") or {}).get("scenario"),
+                "stance": (row.get("tags") or {}).get("stance") or row.get("stance"),
             },
             "tier": "silver",
         })
