@@ -88,6 +88,7 @@ data/finetune/
 | `scripts/finetune/bootstrap_approve.py` | bootstrap 信封的人机协作审批：交互式 y/n/s CLI、批量 `auto`（conf≥0.6）、进度 `summary` | 本地 |
 | `scripts/finetune/export_sft_dataset.py` | 把 M1 结构化数据（gold 四元组 / silver 配对）转 ChatML `messages` 格式，90/10 train/val 切分（seed=42），写 `data/finetune/sft/*.jsonl` + `manifest.json` | 本地 |
 | `scripts/finetune/inspect_sft_lengths.py` | 用真 Qwen3 tokenizer 量 SFT 记录 token 长度分布，给出 `max_seq_len` 建议（含「prompt 已溢出→assistant 全失」的零信号计数） | 本地 |
+| `scripts/finetune/train_sft.py` | M2 QLoRA SFT 训练器（`train`）+ 免 GPU 的数据通道校验（`verify`，只需 tokenizer） | 本地校验 / A800 训练 |
 
 仓内抽取复用已验证的 kubectl-exec + `psycopg.connect(os.environ['database_url'])` 模式：在 pod 内运行，复用 pod 环境里已有的 `database_url`，凭证不外泄、不在脚本里硬编码，零写入既有表。扩展后从 6 张扩到 11 张（clauses/pipeline_runs/eval_runs/eval_criteria_results/rubrics/criteria/type_validations/law_info/contract_artifacts/core_clauses/industry_standard_references）。
 
@@ -243,7 +244,33 @@ uv run --with transformers --with tokenizers --with jinja2 \
 - 因此**分两次跑，而不是一次联合跑**：联合跑取 4096 会把只需 512 的 1969 条 judge_c 全部 pad 到 4096，约 8 倍显存/算力开销换零收益。
 - **M0 的 26.6GB@512 不能直接外推到 4096**：那 26.6GB 里 18.5GB 是 4bit 静态权重，激活只占约 8GB；激活随序列长度增长，seq=4096 必须开 gradient checkpointing 并重新 smoke 才能定 batch size。
 
-> 另注：Qwen3 的 chat template 会在 assistant 内容前注入一个空的 `<think>\n\n</think>` 块（上表 total 已含）。训练器需要明确决定保留还是剥掉——保留会教模型输出空思考块。
+> 另注：Qwen3 的 chat template 会在 assistant 内容前注入一个空的 `<think>\n\n</think>` 块（上表 total 已含），且 `enable_thinking=False` **无效**（实测输出与默认逐字节相同）。`train_sft.py` 因此不用 template 渲染整段对话，而是只渲染 prompt（`add_generation_prompt=True`）再自己拼 assistant 正文 + `<|im_end|>`，默认把空思考块**剥掉**（`--keep-think` 可保留）。
+
+## M2 训练器（train_sft.py）
+
+```bash
+# 免 GPU 校验：只需 tokenizer，把两条腿的每条记录都构造一遍并断言 loss mask
+uv run --no-project --with transformers --with tokenizers --with jinja2 \
+    python scripts/finetune/train_sft.py verify
+#   → judge_c 1773/196、drafter_a 118/13 全部 kept，mask mismatch=0 shape_bad=0
+
+# 实跑（在 A800 上，两条腿分开跑）
+python scripts/finetune/train_sft.py train --leg judge_c    # seq 512
+python scripts/finetune/train_sft.py train --leg drafter_a  # seq 4096
+```
+
+**只在 assistant 段算 loss。** prompt 位置全部置 `-100`。judge_c 一条记录 total≈225 里 assistant 只占 80，不 mask 的话约 2/3 梯度来自复述 rubric 原文——那是在背输入，不是在学判决。M0 smoke 里的 `labels = input_ids.clone()` 是探针捷径，不能带进真训练。
+
+mask 边界靠 Qwen3 chat template 的**token 级前缀性质**（实测 `full[:len(prompt)] == prompt` 成立）：prompt 与 completion 分开 tokenize 再拼接，边界必然落在真实 token 边界上，且与推理时「prompt 单独 tokenize、模型从此续写」完全一致。
+
+**`verify` 是可进 CI 的闸门**（rc=1 即失败），它守两件事：
+
+- mask 精确性：反解 `labels` 里非 `-100` 的段，必须逐字节等于原始 assistant 正文 + `<|im_end|>`；并断言 `labels` 是「一段 `-100` + 一段无 `-100`」的干净前缀形状。
+- 配置合理性：**整个 split 被丢空时报 FAIL**。否则「drafter 用 512」这种误配会因为 mask 检查在空集上平凡通过而显示 PASS——实测 `--leg drafter_a --max-seq-len 512` 正是 131/131 全丢（109+9 train / 11+2 val，其中 11 条 prompt 自身就超长），与 `lengths.json` 的独立测量完全吻合。
+
+其余与 M0 smoke 一致或按需加强：沿用 smoke 验证过的三段式 loader fallback（`AutoModelForCausalLM` → `AutoModelForImageTextToText` → `Qwen3_5ForConditionalGeneration`）与 NF4 + bf16 + double-quant 配置；补上 smoke 缺的 `prepare_model_for_kbit_training`；LoRA 从 smoke 的 `q,v`(r=8) 扩到全部 7 个投影(r=16)；collator **按 batch 内最长 padding** 而非 padding 到 `max_seq_len`（drafter p50=1912、上限 4096，差一倍算力）；只存 adapter。
+
+> ⚠️ **batch size 仍待实测。** `LEGS` 里 drafter 的 `per_device_batch=1 / grad_accum=16` 是保守初值，不是测出来的。M0 的 26.6GB@512 里 18.5GB 是静态权重、激活仅约 8GB，seq=4096 必须开 gradient checkpointing（默认已开）并重新 smoke 才能定值。
 
 
 **已知不做的扩展**（明确边界）：
@@ -251,6 +278,6 @@ uv run --with transformers --with tokenizers --with jinja2 \
 - **Drafter-A 银牌扩量**：需要 LLM 填槽，当前**无可用路径**——`fd_coding_law_bench_mcp.pipeline.graph`（`run_self_heal_pipeline`，`fill_mode="llm"`）不在 law-bench pod 的镜像里（pod 只有 `src/{clauses,eval,generator,web}`），本地 MCP 后端缺 `psycopg`/`docx` 起不来。pod 内 `generate_contract_assembled()` 可跑，但它返回的 `body_text` 仍带 `{{slot}}` 未替换，过不了 `validate_pair`；拿 `instructions[].example` 硬填能造出合法样本，但同类型样本近乎雷同（低多样性，且会教模型背示例公司名），不如不加。当前 131/131 通过校验，作为 SFT 暖启足够启动。
   - 覆盖分布已随 `provenance.{contract_type,scenario,stance}` 落进配对与 `_meta`（此前被构建器丢弃，导致下游无法按类型/立场筛）。实测 131 条覆盖 **42 个合同类型**，但立场偏斜：`balanced` 114 / `pro_a` 10 / `pro_b` 7。`manifest.json` 的 `stance_breakdown` / `contract_type_breakdown` 持续暴露这个偏斜。
 - **OpenSource 语料接入**：仓内无文件、无 fetcher。`scripts/finetune/ingest_opensource.py` 已就绪，缺语料包；DISC-Law-SFT（Apache-2.0）/ CAIL2018（MIT）是白名单目标。需用户手工下载到 `data/opensource/<corpus>/` 并附 `LICENSE`。
-- **实际 SFT 训练**：M1 范围仅「数据准备」；M2 才进训练器。Qwen3.8-27B 4bit QLoRA smoke 已通过（M0：18.5GB 权重，seq=512 峰值 26.6GB），训练脚本未写。`scripts/finetune/export_sft_dataset.py` 输出直接喂 `tokenizer.apply_chat_template(messages)` 即可训练；**但 `max_seq_len` 必须按上节实测取（judge_c 512 / drafter_a 4096，分两次跑），沿用 512 会让 drafter 那条腿全程训在截断样本上。**
+- **实际 SFT 训练**：M1 范围仅「数据准备」；M2 训练器已写在 `scripts/finetune/train_sft.py`（见上节），数据通道已免 GPU 校验通过，**但尚未在 GPU 上实跑**——A800 实例当前不可达（`ECONNREFUSED`），seq=4096 的显存 smoke 与 batch size 定值仍欠。`max_seq_len` 已按上节实测固化进 `LEGS`（judge_c 512 / drafter_a 4096，分两次跑），沿用 512 跑 drafter 会被 `verify` 直接拦下。
 
 > 银牌暖启池实际规模 = **131**（残稿过滤 + 去重 + 槽位校验后）。设计文档里的「548」是 `pipeline_runs` 表行数；356 条有非空 `filled_text`，构建器先剔除正文含残留 `{{slot}}` 或 `task_desc` 为空的残稿（在去重之前，避免某正文的首条残稿阻塞其后的合法副本），再按正文 sha256 去重，得到 131 条 distinct 且全部 131/131 通过 `validate_pair`。Judge-C 脚手架 608 条来自 `type_validations`（258 条含 `law_ref`）与同类型 `clauses` 的 char-bigram 相关性 top-3 配对（精确 `field==section` 优先），全部 `tier:silver`/`verdict:fail`，`law_info` 仅作 300 字检索提示，仅供人工核验晋金——构建器不写 gold 文件。
