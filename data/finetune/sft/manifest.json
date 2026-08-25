@@ -59,31 +59,31 @@
     },
     "judge_c": {
       "confidence_bands": {
-        "0.5-0.6": 497,
-        "0.6-0.8": 1390,
-        ">=0.8": 82
+        "0.5-0.6": 220,
+        "0.6-0.8": 801,
+        ">=0.8": 53
       },
       "reviewer_breakdown": {
-        "ai_reviewer": 1969
+        "ai_reviewer": 1074
       },
       "tier_breakdown": {
-        "gold": 1969
+        "gold": 1074
       },
-      "total": 1969,
-      "train": 1773,
-      "val": 196,
+      "total": 1074,
+      "train": 967,
+      "val": 107,
       "verdict_breakdown": {
-        "fail": 836,
-        "pass": 1133
+        "fail": 369,
+        "pass": 705
       }
     }
   },
   "format": "ChatML {system, user, assistant}",
-  "generated_at": "2026-08-25T06:45:03+00:00",
+  "generated_at": "2026-08-25T07:28:27+00:00",
   "seed": 42,
   "sources": {
     "drafter_a": "data\\finetune\\drafter-a\\drafter_a_silver.jsonl",
-    "judge_c": "data\\finetune\\judge-c\\judge_c_gold.jsonl"
+    "judge_c": "data\\finetune\\judge-c\\judge_c_gold.grounded.jsonl"
   },
   "val_fraction": 0.1
 }

@@ -70,29 +70,47 @@ check(
     silver_count == len(scaffolds) and src_tagged == len(scaffolds),
 )
 
-# §4.4 builder never writes judge_c_gold.jsonl
-check("§4.4 builder did not create judge_c_gold.jsonl", not JUDGE_C_GOLD.exists())
+# §4.4/§5.1/§5.2/§5.3 gate tests need an empty-gold starting state, and they
+# write + unlink JUDGE_C_GOLD. Both real gold files are moved aside first and
+# restored in the `finally` below — without this the run silently destroys the
+# 1074/1969-row gold sets and reports a false §4.4 failure.
+_GROUNDED = JUDGE_C_GOLD.parent / "judge_c_gold.grounded.jsonl"
+_stashed: list[tuple[pathlib.Path, pathlib.Path]] = []
+for _p in (JUDGE_C_GOLD, _GROUNDED):
+    if _p.exists():
+        _bak = _p.with_suffix(_p.suffix + ".verify-bak")
+        _p.replace(_bak)
+        _stashed.append((_p, _bak))
 
-# §5.3 flywheel_gate closed when gold empty
-gate_closed_before = not flywheel_gate()
-check("§5.3 flywheel_gate closed (gold empty)", gate_closed_before)
+try:
+    # §4.4 builder never writes judge_c_gold.jsonl
+    check("§4.4 builder did not create judge_c_gold.jsonl", not JUDGE_C_GOLD.exists())
 
-# §5.1/§5.2 promotion path: a synthetic human gold record opens the gate, then cleanup
-synthetic = [{
-    "legal_base": {"source": "民法典§509", "text": "当事人应当按照约定全面履行自己的义务。"},
-    "clause_text": {"body": "甲方应按约交付标的物。", "section": "clauses:1"},
-    "verdict": "pass",
-    "reasoning": {"justification": "条款符合全面履行原则", "citation": ["民法典§509"]},
-    "provenance": {"annotated_by": "human_annotated", "reviewer": "human", "id": "test:synthetic:1"},
-    "tier": "gold",
-}]
-write_jsonl(JUDGE_C_GOLD, synthetic)
-gate_opens_after = flywheel_gate()
-check("§5.3 flywheel_gate opens when judge_c_gold non-empty", gate_opens_after)
-# cleanup synthetic gold
-JUDGE_C_GOLD.unlink()
-gate_closed_after_cleanup = not flywheel_gate()
-check("§5.3 gate re-closes after synthetic gold removed", gate_closed_after_cleanup)
+    # §5.3 flywheel_gate closed when gold empty
+    gate_closed_before = not flywheel_gate()
+    check("§5.3 flywheel_gate closed (gold empty)", gate_closed_before)
+
+    # §5.1/§5.2 promotion path: a synthetic human gold record opens the gate, then cleanup
+    synthetic = [{
+        "legal_base": {"source": "民法典§509", "text": "当事人应当按照约定全面履行自己的义务。"},
+        "clause_text": {"body": "甲方应按约交付标的物。", "section": "clauses:1"},
+        "verdict": "pass",
+        "reasoning": {"justification": "条款符合全面履行原则", "citation": ["民法典§509"]},
+        "provenance": {"annotated_by": "human_annotated", "reviewer": "human", "id": "test:synthetic:1"},
+        "tier": "gold",
+    }]
+    write_jsonl(JUDGE_C_GOLD, synthetic)
+    gate_opens_after = flywheel_gate()
+    check("§5.3 flywheel_gate opens when judge_c_gold non-empty", gate_opens_after)
+    # cleanup synthetic gold
+    JUDGE_C_GOLD.unlink()
+    gate_closed_after_cleanup = not flywheel_gate()
+    check("§5.3 gate re-closes after synthetic gold removed", gate_closed_after_cleanup)
+finally:
+    for _p, _bak in _stashed:
+        if JUDGE_C_GOLD.exists() and _p == JUDGE_C_GOLD:
+            JUDGE_C_GOLD.unlink()
+        _bak.replace(_p)
 
 print()
 if failures:

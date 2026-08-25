@@ -9,18 +9,21 @@ Two legs, TWO SEPARATE RUNS — never one joint run
 ------------------------------------------------
 ``inspect_sft_lengths.py`` measured (exact, Qwen3 tokenizer)::
 
-    judge_c   (1969)  total p99  349, max  459   -> 512 fits, zero truncation
+    judge_c   (1074)  total p99 2784, max 2946   -> needs 4096
     drafter_a ( 131)  total p99 2660, max 4004   -> needs 4096
 
-At 512 the drafter leg truncates 131/131 and 11 records (8.4%) lose their
-assistant span entirely. A joint run at 4096 instead pads all 1969 judge_c
-records 8x for no gain. Hence per-leg ``max_seq_len`` below, run separately.
+Both legs now need 4096 — judge_c's prompt carries the full judged contract
+(p50 ~2550 chars) since regrounding, so the pre-regrounding 512 budget would
+strip the assistant span from 1063/1074 records (99.0%). The legs stay separate
+because they train two different adapters (judge and drafter are distinct
+models in the flywheel), not because their sequence budgets differ.
 
 Loss is computed on the ASSISTANT SPAN ONLY
 -------------------------------------------
-The prompt is masked to -100. Training on the prompt would mean most of the
-gradient comes from reproducing the rubric text (judge_c assistant is ~75 of
-~240 tokens), i.e. memorizing inputs rather than learning to judge.
+The prompt is masked to -100. Training on the prompt would mean nearly all of
+the gradient comes from reproducing the contract and rubric text (judge_c
+assistant is ~75 of ~1697 tokens), i.e. memorizing inputs rather than learning
+to judge.
 
 Subcommands::
 
@@ -47,11 +50,13 @@ DEFAULT_MODEL_ID = "Qwen/Qwen3.8-27B"
 # Re-run inspect_sft_lengths.py if the data or the base model changes.
 LEGS: dict[str, dict] = {
     "judge_c": {
-        "max_seq_len": 512,
-        "measured_p99": 349,
-        "measured_max": 459,
-        "per_device_batch": 4,
-        "grad_accum": 4,
+        "max_seq_len": 4096,
+        "measured_p99": 2784,
+        "measured_max": 2946,
+        # The prompt now carries the whole judged contract, so the sequence
+        # budget matches the drafter leg — batch accordingly.
+        "per_device_batch": 1,
+        "grad_accum": 16,
         "epochs": 3.0,
     },
     "drafter_a": {
@@ -376,9 +381,9 @@ def cmd_train(args: argparse.Namespace) -> int:
     max_seq_len = args.max_seq_len or cfg["max_seq_len"]
     print(f"=== leg={args.leg} max_seq_len={max_seq_len} "
           f"(measured p99={cfg['measured_p99']} max={cfg['measured_max']}) ===")
-    if args.leg == "drafter_a" and max_seq_len < cfg["measured_max"]:
+    if max_seq_len < cfg["measured_max"]:
         print(f"WARNING: max_seq_len {max_seq_len} < measured max {cfg['measured_max']}; "
-              f"records will be dropped or truncated. 512 truncates ALL 131.")
+              f"records will be dropped or truncated.")
 
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")

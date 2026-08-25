@@ -66,9 +66,16 @@ JUDGE_C_SYSTEM = (
     "输出 pass/fail 判决及法律推理。"
 )
 
+# `legal_base.source` (the criterion handle, e.g. "criteria:price_difference
+# (rubric:contract_brokerage_v2)") IS rendered. Without it the target
+# `citation` string appeared verbatim in the prompt in only 14/1773 records
+# (0.8%) — a 191-way identifier the model could only memorize, and since every
+# val citation was also seen in train, val would have measured memorization
+# rather than generalization. The caller always knows which criterion it asked
+# about, so supplying it is legitimate grounding, not leakage.
 JUDGE_C_USER_TEMPLATE = (
-    "【审查依据】\n{legal_base_text}\n\n"
-    "【待审条款描述】\n{clause_text_body}\n\n"
+    "【审查依据】{legal_base_source}\n{legal_base_text}\n\n"
+    "【待审合同正文】\n{clause_text_body}\n\n"
     "请按 JSON 输出：{{\"verdict\": \"pass|fail\", "
     "\"justification\": \"...\", \"citation\": [\"...\"]}}"
 )
@@ -122,6 +129,7 @@ def _judge_c_to_chatml(row: dict) -> dict:
     prov = row.get("provenance", {}) or {}
 
     user = JUDGE_C_USER_TEMPLATE.format(
+        legal_base_source=lb.get("source", "").strip(),
         legal_base_text=lb.get("text", "").strip(),
         clause_text_body=(ct.get("body") or "").strip(),
     )
@@ -220,7 +228,20 @@ def _write_split(
 
 
 def cmd_judge_c(args: argparse.Namespace) -> int:
-    gold_path = pathlib.Path(args.gold) if args.gold else JUDGE_C_DIR / "judge_c_gold.jsonl"
+    if args.gold:
+        gold_path = pathlib.Path(args.gold)
+    else:
+        # Default to the regrounded set. The raw judge_c_gold.jsonl has
+        # clause_text.body lifted from reasoning.justification in 96% of rows
+        # (see reground_judge_c.py), so training on it teaches paraphrasing
+        # rather than judging. Requiring an explicit --gold to reach it means
+        # nobody trains on the leaked set by accident.
+        gold_path = JUDGE_C_DIR / "judge_c_gold.grounded.jsonl"
+        if not gold_path.exists():
+            print(f"missing regrounded gold at {gold_path}\n"
+                  "run: python scripts/finetune/reground_judge_c.py build\n"
+                  "(to export the leaked set anyway, pass --gold explicitly)")
+            return 1
     rows = read_jsonl(gold_path)
     if not rows:
         print(f"no gold quadruples at {gold_path}")
@@ -294,7 +315,7 @@ def cmd_manifest(args: argparse.Namespace) -> int:
                 for c in confs
             )) if confs else None,
         }
-        sources["judge_c"] = str(JUDGE_C_DIR / "judge_c_gold.jsonl")
+        sources["judge_c"] = str(JUDGE_C_DIR / "judge_c_gold.grounded.jsonl")
 
     da_train = out_dir / "drafter_a_train.jsonl"
     da_val = out_dir / "drafter_a_val.jsonl"

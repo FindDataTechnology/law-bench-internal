@@ -568,16 +568,29 @@ def validate_file(path: pathlib.Path, kind: str) -> int:
 # ---------------------------------------------------------------------------
 
 def flywheel_gate() -> bool:
-    """Return True if Judge-C gold quadruple dataset exists and is non-empty."""
-    if not JUDGE_C_GOLD.exists():
-        print(f"❌ 飞轮闸门未通过: Judge-C gold 数据集不存在 ({JUDGE_C_GOLD})")
+    """Return True if a Judge-C gold quadruple dataset exists and is non-empty.
+
+    Prefers the regrounded set. The raw ``judge_c_gold.jsonl`` has
+    ``clause_text.body`` lifted from ``reasoning.justification`` in 96% of rows
+    (see ``reground_judge_c.py``), so opening the gate on it alone would
+    authorize Drafter reward/DPO on a judge signal that cannot generalize —
+    hence the warning rather than a silent pass.
+    """
+    grounded = JUDGE_C_DIR / "judge_c_gold.grounded.jsonl"
+    path = grounded if grounded.exists() else JUDGE_C_GOLD
+    if not path.exists():
+        print(f"❌ 飞轮闸门未通过: Judge-C gold 数据集不存在 ({path})")
         print("   先运行: python scripts/finetune/export_dataset.py judge-c --gold <human_gold.jsonl>")
         return False
-    records = read_jsonl(JUDGE_C_GOLD)
+    records = read_jsonl(path)
     if not records:
-        print(f"❌ 飞轮闸门未通过: Judge-C gold 数据集为空 ({JUDGE_C_GOLD})")
+        print(f"❌ 飞轮闸门未通过: Judge-C gold 数据集为空 ({path})")
         return False
-    print(f"✅ 飞轮闸门通过: Judge-C gold 有 {len(records)} 条四元组")
+    print(f"✅ 飞轮闸门通过: Judge-C gold 有 {len(records)} 条四元组 ({path.name})")
+    if path is not grounded:
+        print("   ⚠️  用的是未重接地的 judge_c_gold.jsonl —— 96% 的 clause_text.body "
+              "抄自 reasoning.justification（输入含答案）。")
+        print("      先跑: python scripts/finetune/reground_judge_c.py build")
     return True
 
 
