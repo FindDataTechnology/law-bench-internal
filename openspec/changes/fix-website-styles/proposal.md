@@ -1,6 +1,6 @@
 ## Why
 
-After logging in, authenticated pages on `lawbench.tokenvault.vip` render as bare HTML — no CSS/JS. Root cause: uvicorn runs behind the Caddy TLS-terminating reverse proxy **without** `--proxy-headers`, so it ignores Caddy's `X-Forwarded-Proto: https`. Starlette's `url_for('static', ...)` then builds absolute `http://lawbench.tokenvault.vip/static/...` URLs, which browsers block as Mixed Content on the HTTPS page. Every `url_for` static reference (`style.css`, `app.js`, `generation-panel.js`) is affected.
+After logging in, authenticated pages on `lawbench.token118.com` render as bare HTML — no CSS/JS. Root cause: uvicorn runs behind the Caddy TLS-terminating reverse proxy **without** `--proxy-headers`, so it ignores Caddy's `X-Forwarded-Proto: https`. Starlette's `url_for('static', ...)` then builds absolute `http://lawbench.token118.com/static/...` URLs, which browsers block as Mixed Content on the HTTPS page. Every `url_for` static reference (`style.css`, `app.js`, `generation-panel.js`) is affected.
 
 ## What Changes
 

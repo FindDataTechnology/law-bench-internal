@@ -125,6 +125,6 @@ user reported three visual bugs. All three confirmed against the live stored bod
   refs — the two-image-ref trap from `cf5295e`/`fa2a0fb`), let ArgoCD selfHeal, then re-run
   the per-row refresh (query `SELECT id, contract_type, body_text FROM contract_artifacts`,
   call `_render_upload_variant` for both `final` + `slotted` per row) to overwrite all
-  stored docx/pdf with the fixed formatting. Verify via `https://lawbench.tokenvault.vip`
+  stored docx/pdf with the fixed formatting. Verify via `https://lawbench.token118.com`
   that a sample contract's headings are flush-left, slotted variant has no yellow, and date
   lines show continuous underlines.

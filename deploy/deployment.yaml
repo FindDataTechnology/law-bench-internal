@@ -38,8 +38,8 @@ spec:
       hostAliases:
         - ip: 23.144.68.246
           hostnames:
-            - logto.tokenvault.vip
-            - lawbench.tokenvault.vip
+            - auth.token118.com
+            - lawbench.token118.com
       initContainers:
         - name: seed-db
           image: harbor.local/law-bench/law-template:sha-2e6de71

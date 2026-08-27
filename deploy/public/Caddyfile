@@ -9,7 +9,7 @@
 # across pod restarts and scales with replicas, which the in-process one does
 # not.
 #
-# This is a NEW host (not lawbench.tokenvault.vip — that is the origin). Pick a
+# This is a NEW host (not lawbench.token118.com — that is the origin). Pick a
 # China-facing domain you control DNS for and replace PUBLIC_API_DOMAIN below.
 #
 # Requires the Caddy `rate_limit` module (caddyserver/caddy-rate-limit). If your

@@ -12,4 +12,4 @@ When the app is served behind a TLS-terminating reverse proxy that forwards `X-F
 The proxy-header trust MUST be configured for the origin app (`src.web.app`) **and** the public read-only app (`src.web.public_app`), since both are served behind the same reverse-proxy posture from the same image (`scripts/docker-entrypoint.sh` selects the factory by `PUBLIC_API`).
 
 ### REQ3 No Mixed-Content static references on HTTPS pages
-After the fix, an authenticated fetch of any HTML page on `https://lawbench.tokenvault.vip` MUST contain only `https://` (or scheme-relative/relative) `src`/`href` references to `/static/*` assets — never `http://`.
+After the fix, an authenticated fetch of any HTML page on `https://lawbench.token118.com` MUST contain only `https://` (or scheme-relative/relative) `src`/`href` references to `/static/*` assets — never `http://`.

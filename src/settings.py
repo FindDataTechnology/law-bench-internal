@@ -209,7 +209,7 @@ def check_auth_config() -> None:
 # so the dormant cookie-signing path (reused by ``get_current_user``) does not
 # fail open, and ``DATABASE_URL`` is required so the local replica can be
 # reached. JWKS reachability is intentionally NOT checked: the China box cannot
-# reliably reach ``logto.tokenvault.vip`` across the border, and requiring that
+# reliably reach ``auth.token118.com`` across the border, and requiring that
 # fetch at boot would CrashLoopBackOff the pod (the fragility the DNS block was
 # added to avoid in the first place).
 PUBLIC_AUTH_REQUIRED_VARS = [

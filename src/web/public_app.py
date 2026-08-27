@@ -162,7 +162,7 @@ def create_public_app() -> FastAPI:
 
         Unlike `create_app()`, this factory MUST NOT call `logto.verify_reachable()`
         because the China box has no `LOGTO_*` env and cannot reliably reach
-        `logto.tokenvault.vip` across the border. Instead, we verify:
+        `auth.token118.com` across the border. Instead, we verify:
         - DATABASE_URL reachable (replica connection works)
         - api_keys table present (can verify keys locally)
         - AUTH_SESSION_SECRET set (so the dormant cookie path does not crash on import)

@@ -9,7 +9,7 @@ filled by later tasks.
 ## 1. Architecture at a glance
 
 The **origin** (`src/web/app.py`, `create_app()`) serves everything on
-`lawbench.tokenvault.vip`. The **public pod** (`src/web/public_app.py`,
+`lawbench.token118.com`. The **public pod** (`src/web/public_app.py`,
 `create_public_app()`) is a separate FastAPI process from the **same image**
 (selected at boot by `PUBLIC_API=1` in `scripts/docker-entrypoint.sh`) that
 mounts only the read-heavy router subset, locks the docs surface off
@@ -257,7 +257,7 @@ box, switch `type` to `NodePort` with a **new** port (do NOT reuse the origin's
 `deploy/service.yaml` (NodePort 30820) is untouched.
 
 `deploy/public/Caddyfile` — TLS + gateway `rate_limit` for the NEW China-facing
-domain (not `lawbench.tokenvault.vip`). Per-IP throttle (10 rps, burst 20 —
+domain (not `lawbench.token118.com`). Per-IP throttle (10 rps, burst 20 —
 mirrors the in-process defaults so both layers agree). `/healthz` is exempt at
 the gateway too (mirrors the in-process `_EXEMPT_PATH`). Requires the Caddy
 `rate_limit` module; if your build lacks it, drop the block and rely on the
@@ -266,8 +266,8 @@ in-process limiter (`RATE_LIMIT_ENABLED=1`).
 ### 4.1 DNS-hardening block (conditional — task 6.2)
 
 The origin's `deploy/deployment.yaml` carries `dnsPolicy: None` + kube-dns-only
-`dnsConfig` + `hostAliases` pinning `logto.tokenvault.vip`/
-`lawbench.tokenvault.vip` → `23.144.68.246`. This block is **load-bearing on a
+`dnsConfig` + `hostAliases` pinning `auth.token118.com`/
+`lawbench.token118.com` → `23.144.68.246`. This block is **load-bearing on a
 polluted node** (one whose resolv.conf inherited the wildcard
 `mesh.finddata.cn` search domain — every name resolves to `8.218.137.223`,
 so `postgres.postgres.svc.cluster.local` hangs at `connect()` →
@@ -295,7 +295,7 @@ NOT mount the `auth` router, so `/auth/*` (OIDC login) and `/api/keys`
 `tests/test_public_app.py`). The operational flow:
 
 1. **Issue (origin):** an operator browser-logs into the origin
-   (`lawbench.tokenvault.vip`) via the Logto OIDC flow, then
+   (`lawbench.token118.com`) via the Logto OIDC flow, then
    `POST /api/keys { label, scopes }`. The `api_keys` row is written to the
    origin Postgres with a salted `pbkdf2_sha256` hash; the **plaintext key
    (`lbk_…`) is shown exactly once** in the response and never persisted or

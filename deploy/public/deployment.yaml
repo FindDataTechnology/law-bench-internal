@@ -28,8 +28,8 @@ spec:
       # default dnsPolicy: ClusterFirst) — do NOT carry origin-specific pins onto
       # clean infra, and do NOT strip them blindly on a polluted node.
       #
-      # NOTE on hostAliases: the origin pins logto.tokenvault.vip +
-      # lawbench.tokenvault.vip -> 23.144.68.246 because its fail-closed auth
+      # NOTE on hostAliases: the origin pins auth.token118.com +
+      # lawbench.token118.com -> 23.144.68.246 because its fail-closed auth
       # boot path must reach Logto JWKS. The PUBLIC pod has NO Logto dependency
       # (check_public_auth_config, key-only against the replicated api_keys
       # table), so those origin hostAliases are intentionally NOT replicated here.

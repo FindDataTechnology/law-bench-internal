@@ -9,7 +9,7 @@
 - [ ] 2.2 Update both image refs in `deploy/deployment.yaml` to the new `sha-<short>`; commit + push the roll.
 - [ ] 2.3 `kubectl apply -f deploy/deployment.yaml` on the `law-bench` cluster; wait for rollout.
 
-## 3. Verify (against https://lawbench.tokenvault.vip)
+## 3. Verify (against https://lawbench.token118.com)
 
 - [ ] 3.1 Authenticated fetch of an HTML page: `<link href="...style.css">` and `<script src="...app.js">` resolve to `https://` (no `http://`).
 - [ ] 3.2 Browser check after login: pages show CSS styling, not bare HTML.
