@@ -20,6 +20,8 @@ wheels/
 .installed.cfg
 *.egg
 .env
+.env.*
+!.env.example
 .venv/
 env/
 venv/
@@ -56,6 +58,8 @@ data/finetune/manifests/*.jsonl
 # SFT-ready export (regenerable via scripts/finetune/export_sft_dataset.py all);
 # manifest.json IS tracked (small, stable, useful in PR review).
 data/finetune/sft/*.jsonl
+# trained LoRA adapters (324MB each — artifacts, not source; kept on the box)
+data/finetune/adapters/
 # pre-bump snapshot of judge_c_gold at conf>=0.6 (kept locally as a rollback point)
 data/finetune/judge-c/judge_c_gold.0.6.jsonl
 # review batches + manifest are regenerable via prepare_review_batches.py prepare;
