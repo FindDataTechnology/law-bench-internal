@@ -165,12 +165,14 @@ python scripts/finetune/export_dataset.py gate
 |---|---|---|
 | clauses (raw) | 6686 | 6686 |
 | pipeline_runs (silver) | 548 | 非空 filled_text 356 |
-| Drafter-A silver 配对 | — | **131**（356 非空 → 先挡下 `{{slot}}` 未替换/空 `task_desc` 残稿 → 正文 sha256 去重，131 distinct 且 131/131 通过校验） |
+| Drafter-A silver 配对（pipeline 源） | — | **131**（356 非空 → 先挡下 `{{slot}}` 未替换/空 `task_desc` 残稿 → 正文 sha256 分组、组内保留评分比最高 run → 131 distinct 且 131/131 通过校验，provenance 带 `score_ratio`/`all_pass` 质量元数据） |
+| contract_artifacts (raw→silver 源) | 401 | 含 `{{中文槽位}}` 母版骨架；6 superseded 跳过后 **395** 条经合成槽位实例化入银牌池（`slot_value_bank.py` 确定性填充；84 行对 129 个长尾槽位名用通用法律兜底值，审计可见） |
+| Drafter-A silver 配对（双源合计） | — | **526**（131 pipeline + 395 artifact 实例化；跨源正文哈希去重，碰撞时草稿源优先，当前快照零碰撞） |
 | eval_criteria_results (bronze) | 9134 | 9134（全部降级 fail，机器 pass→fail） |
 | Judge-C bronze 四元组 | — | **9134/9134 校验通过** |
 | type_validations (gold scaffold) | 275（258 含 law_ref） | 脚手架规则源 |
 | law_info (bronze) | 86 | 检索提示（doubao/deepseek LLM 生成，非权威） |
-| contract_artifacts (raw) | 401 | 含 `{{slot}}` 起草骨架 |
+| contract_artifacts (raw) | 401 | 含 `{{slot}}` 起草骨架（合成实例化的原料，见上） |
 | core_clauses / industry_standard_references (gold) | 22 / 22 | 强制条款清单 / 成文法指针 |
 | Judge-C scaffold 四元组 | — | **608**（208 规则命中 × top-3 相关条款，50 规则零重叠跳过；silver，待人工核验→晋金） |
 | rubrics/criteria (gold) | 131 / 1275 | — |
@@ -319,9 +321,9 @@ mask 边界靠 Qwen3 chat template 的**token 级前缀性质**（实测 `full[:
 
 **已知不做的扩展**（明确边界）：
 
-- **Drafter-A 银牌扩量**：需要 LLM 填槽，当前**无可用路径**——`fd_coding_law_bench_mcp.pipeline.graph`（`run_self_heal_pipeline`，`fill_mode="llm"`）不在 law-bench pod 的镜像里（pod 只有 `src/{clauses,eval,generator,web}`），本地 MCP 后端缺 `psycopg`/`docx` 起不来。pod 内 `generate_contract_assembled()` 可跑，但它返回的 `body_text` 仍带 `{{slot}}` 未替换，过不了 `validate_pair`；拿 `instructions[].example` 硬填能造出合法样本，但同类型样本近乎雷同（低多样性，且会教模型背示例公司名），不如不加。当前 131/131 通过校验，作为 SFT 暖启足够启动。
-  - 覆盖分布已随 `provenance.{contract_type,scenario,stance}` 落进配对与 `_meta`（此前被构建器丢弃，导致下游无法按类型/立场筛）。实测 131 条覆盖 **42 个合同类型**，但立场偏斜：`balanced` 114 / `pro_a` 10 / `pro_b` 7。`manifest.json` 的 `stance_breakdown` / `contract_type_breakdown` 持续暴露这个偏斜。
+- **Drafter-A 银牌扩量**（已由 `expand-drafter-a-silver` 变更解决大半）：LLM 填槽仍无可用路径——`fd_coding_law_bench_mcp.pipeline.graph`（`run_self_heal_pipeline`，`fill_mode="llm"`）不在 law-bench pod 的镜像里（pod 只有 `src/{clauses,eval,generator,web}`），本地 MCP 后端缺 `psycopg`/`docx` 起不来；此路留给线上飞轮运营。离线扩量已落地：`contract_artifacts` 401 份母版经 `slot_value_bank.py` 合成槽位实例化（确定性值库 + 类别规则 + 通用法律兜底），131 → **526** 条（pro_a 10→32 / pro_b 7→29 / 类型 41→66），526/526 通过校验，SFT 切分改 stance 分层。
+  - 覆盖分布随 `provenance.{contract_type,scenario,stance}` 落进配对与 `_meta`。`manifest.json` 的 `source_breakdown` / `synthetic_count` / `score_ratio_bands` / `stance_breakdown` / `contract_type_breakdown` 持续暴露构成与偏斜。
 - **OpenSource 语料接入**：仓内无文件、无 fetcher。`scripts/finetune/ingest_opensource.py` 已就绪，缺语料包；DISC-Law-SFT（Apache-2.0）/ CAIL2018（MIT）是白名单目标。需用户手工下载到 `data/opensource/<corpus>/` 并附 `LICENSE`。
 - **实际 SFT 训练**：M1 范围仅「数据准备」；M2 训练器已写在 `scripts/finetune/train_sft.py`（见上节），数据通道已免 GPU 校验通过，**但尚未在 GPU 上实跑**——A800 实例当前不可达（`ECONNREFUSED`），seq=4096 的显存 smoke 与 batch size 定值仍欠（两条腿都欠）。`max_seq_len` 已按上节实测固化进 `LEGS`（judge_c / drafter_a 均 4096，分两次跑因为是两个 adapter），沿用 512 跑任一条腿都会被 `verify` 直接拦下。
 
-> 银牌暖启池实际规模 = **131**（残稿过滤 + 去重 + 槽位校验后）。设计文档里的「548」是 `pipeline_runs` 表行数；356 条有非空 `filled_text`，构建器先剔除正文含残留 `{{slot}}` 或 `task_desc` 为空的残稿（在去重之前，避免某正文的首条残稿阻塞其后的合法副本），再按正文 sha256 去重，得到 131 条 distinct 且全部 131/131 通过 `validate_pair`。Judge-C 脚手架 608 条来自 `type_validations`（258 条含 `law_ref`）与同类型 `clauses` 的 char-bigram 相关性 top-3 配对（精确 `field==section` 优先），全部 `tier:silver`/`verdict:fail`，`law_info` 仅作 300 字检索提示，仅供人工核验晋金——构建器不写 gold 文件。
+> 银牌暖启池实际规模 = **526**（双源）。pipeline 源：`pipeline_runs` 表 548 行、356 条非空 `filled_text`，剔除残稿后按正文 sha256 分组、组内保留评分比最高 run，得 131 distinct（131/131 通过 `validate_pair`，provenance 带 `score_ratio`/`all_pass`）。artifact 源：`contract_artifacts` 401 行去 6 superseded 后 395 份母版经合成槽位实例化（2,588 个 distinct 槽位名：显式表 → 类别规则 → 通用法律兜底三层解析；84 行用了兜底值，审计计数）；跨源正文哈希去重零碰撞。Judge-C 脚手架 608 条来自 `type_validations`（258 条含 `law_ref`）与同类型 `clauses` 的 char-bigram 相关性 top-3 配对（精确 `field==section` 优先），全部 `tier:silver`/`verdict:fail`，`law_info` 仅作 300 字检索提示，仅供人工核验晋金——构建器不写 gold 文件。

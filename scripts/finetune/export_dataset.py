@@ -7,8 +7,13 @@ by ``extract_warehouse.py``) and builds the two training datasets:
 - **Judge-C quadruples** — from ``eval_criteria_results`` (bronze, machine
   self-eval) and an optional human-annotation file (gold). Machine pass is
   forced to fail (spec scenario 机器自评不产生 pass).
-- **Drafter-A pairs** — from ``pipeline_runs`` (silver, 548 warmup) and an
-  optional human-verified file (gold). Slot consistency is checked.
+- **Drafter-A pairs** — silver from two machine sources: ``pipeline_runs``
+  (best-scoring run per duplicate body, quality metadata in provenance) and
+  ``contract_artifacts`` master templates synthetically instantiated by the
+  deterministic slot-value bank (``slot_value_bank.py``). Cross-source body
+  dedup keeps the pipeline_runs draft on collision. An optional
+  human-verified file (gold) is also merged. Slot consistency is checked
+  with the CJK-aware placeholder regex.
 
 Cross-field rules JSON Schema cannot express are enforced here:
 - ``verdict=pass`` only when ``provenance.reviewer=human`` (machine → fail).
@@ -34,15 +39,17 @@ import argparse
 import hashlib
 import json
 import pathlib
-import re
 import sys
+from collections import Counter
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
+import slot_value_bank as svb  # noqa: E402
 from common import (  # noqa: E402
     BronzeGroundTruthError,
     DRAFTER_A_DIR,
     JUDGE_C_DIR,
+    SLOT_RE,
     WAREHOUSE_DIR,
     assert_not_ground_truth,
     filter_by_tier,
@@ -56,9 +63,6 @@ JUDGE_C_GOLD = JUDGE_C_DIR / "judge_c_gold.jsonl"
 JUDGE_C_BRONZE = JUDGE_C_DIR / "judge_c_bronze.jsonl"
 DRAFTER_A_SILVER = DRAFTER_A_DIR / "drafter_a_silver.jsonl"
 DRAFTER_A_GOLD = DRAFTER_A_DIR / "drafter_a_gold.jsonl"
-
-# Matches {{slot_name}} placeholders left in a filled body.
-_SLOT_RE = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
 
 
 # ---------------------------------------------------------------------------
@@ -345,69 +349,162 @@ def _fill_values_to_slots(fill_values) -> list[dict]:
 
 
 def _check_slot_consistency(body: str, slots: list[dict]) -> tuple[bool, list[str]]:
-    """Return (ok, leftover_placeholders). Body must have no unreplaced {{slot}}."""
-    leftover = _SLOT_RE.findall(body or "")
+    """Return (ok, leftover_placeholders). Body must have no unreplaced {{slot}}.
+
+    Uses the CJK-aware shared regex (common.SLOT_RE): the old ASCII-only
+    pattern silently passed {{甲方名称}} placeholders through as "filled".
+    """
+    leftover = SLOT_RE.findall(body or "")
     return (len(leftover) == 0, leftover)
 
 
-def _build_silver_pairs() -> tuple[list[dict], int, int, int]:
-    """Build silver Drafter-A pairs from pipeline_runs.filled_text with dedup.
+def _body_hash(body: str) -> str:
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
-    Deduplicates by filled_text body (spec: 银牌配对去重): when multiple
-    pipeline_runs have byte-identical bodies, only one pair is retained.
-    Distinct bodies that fail slot-consistency (leftover {{slot}}) or have an
-    empty task_desc are dropped, matching validate_pair (spec §6.3).
-    Returns (valid_pairs, pre_dedup_count, distinct_count, valid_count).
+
+def _run_quality(row: dict) -> tuple[float, int, str]:
+    """Dedup sort key: score ratio desc, then all_pass, then later created_at."""
+    score = row.get("score") or 0
+    max_score = row.get("max_score") or 0
+    ratio = round(score / max_score, 4) if max_score > 0 else 0.0
+    return (ratio, 1 if row.get("all_pass") else 0, row.get("created_at") or "")
+
+
+def _score_ratio(row: dict) -> float:
+    score = row.get("score") or 0
+    max_score = row.get("max_score") or 0
+    return round(score / max_score, 2) if max_score > 0 else 0.0
+
+
+def _build_silver_pairs() -> dict:
+    """Build silver Drafter-A pairs from pipeline_runs.filled_text (LLM drafts).
+
+    Groups rows by body hash; each duplicate group keeps its best run —
+    score ratio desc, then all_pass, then the later created_at — whose row
+    still passes the slot-consistency and task_desc checks. The retained
+    pair's provenance carries ``score_ratio`` and ``all_pass`` so the trainer
+    can down-weight weak drafts (in the 2026-08 snapshot only 2/150 distinct
+    bodies reach ratio >= 0.8, so the metadata is load-bearing).
     """
     runs = _load_warehouse_table("pipeline_runs")
-    pairs: list[dict] = []
-    seen_hashes: set[str] = set()
-
-    # Pre-dedup count: non-null filled_text rows
-    pre_count = sum(1 for r in runs if r["row"].get("filled_text"))
-
+    groups: dict[str, list[dict]] = {}
+    pre_count = 0
     for run in runs:
         row = run["row"]
         body = row.get("filled_text")
         if not body:
             continue
+        pre_count += 1
+        groups.setdefault(_body_hash(body), []).append(row)
 
-        task_desc = row.get("task_desc") or ""
-        slots = _fill_values_to_slots(row.get("fill_values"))
-
-        # Spec §6.3: body must have no unreplaced {{slot}}; task_desc non-empty.
-        # Check BEFORE dedup so the first occurrence retained for a duplicated
-        # body is always a valid pair (not a 残稿 that blocks a valid later row).
-        ok, _leftover = _check_slot_consistency(body, slots)
-        if not ok or not task_desc:
+    pairs: list[dict] = []
+    invalid_groups = 0
+    for group in groups.values():
+        group.sort(key=_run_quality, reverse=True)
+        chosen = None
+        for row in group:
+            ok, _leftover = _check_slot_consistency(row["filled_text"], None)
+            if ok and (row.get("task_desc") or ""):
+                chosen = row
+                break
+        if chosen is None:
+            invalid_groups += 1
             continue
-
-        # Compute byte-level hash of body for dedup
-        body_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()
-
-        # Skip duplicate bodies (keep first valid occurrence)
-        if body_hash in seen_hashes:
-            continue
-        seen_hashes.add(body_hash)
-
         pairs.append({
-            "task_desc": task_desc,
-            "slots": slots,
-            "body": body,
+            "task_desc": chosen["task_desc"],
+            "slots": _fill_values_to_slots(chosen.get("fill_values")),
+            "body": chosen["filled_text"],
             "provenance": {
                 "annotated_by": "machine_generated",
-                "id": f"pipeline_runs:{row.get('id')}",
+                "id": f"pipeline_runs:{chosen.get('id')}",
                 # Carried so the pool stays filterable by type/scenario/stance.
-                # Coverage is lopsided (stance=balanced dominates, pro_a/pro_b is
-                # a handful) and that skew is invisible once these are dropped.
-                "contract_type": row.get("contract_type"),
-                "scenario": (row.get("tags") or {}).get("scenario"),
-                "stance": (row.get("tags") or {}).get("stance") or row.get("stance"),
+                # Coverage is lopsided (stance=balanced dominates) and that
+                # skew is invisible once these are dropped.
+                "contract_type": chosen.get("contract_type"),
+                "scenario": (chosen.get("tags") or {}).get("scenario"),
+                "stance": (chosen.get("tags") or {}).get("stance") or chosen.get("stance"),
+                # Quality metadata for downstream down-weighting (design D4).
+                "score_ratio": _score_ratio(chosen),
+                "all_pass": bool(chosen.get("all_pass")),
             },
             "tier": "silver",
         })
 
-    return pairs, pre_count, len(seen_hashes), len(pairs)
+    return {
+        "pairs": pairs,
+        "pre_count": pre_count,
+        "distinct": len(groups),
+        "valid": len(pairs),
+        "invalid_groups": invalid_groups,
+    }
+
+
+def _build_synth_pairs() -> dict:
+    """Build silver pairs from contract_artifacts master templates.
+
+    Synthetic slot instantiation (design D1/D2): skips superseded rows, drops
+    rows whose placeholders are not covered by the row's ``slots`` list
+    (structural mismatch — never partially filled), and fills every
+    ``{{槽位名}}`` with deterministic bank values. Unclassifiable long-tail
+    names draw generic legal fillers; usage is counted for audit. task_desc
+    is synthesized from the type zh-name, scenario, and stance.
+    """
+    rows = _load_warehouse_table("contract_artifacts")
+    pairs: list[dict] = []
+    skipped_superseded = 0
+    skipped_empty = 0
+    dropped_mismatch = 0
+    fallback_rows = 0
+    fallback_names: Counter = Counter()
+
+    for rec in rows:
+        row = rec["row"]
+        if row.get("superseded_at"):
+            skipped_superseded += 1
+            continue
+        body = row.get("body_text")
+        if not body:
+            skipped_empty += 1
+            continue
+        declared = set(row.get("slots") or [])
+        placeholders = set(SLOT_RE.findall(body))
+        if placeholders - declared:
+            dropped_mismatch += 1
+            continue
+
+        filled, values, fallback = svb.instantiate(body)
+        if SLOT_RE.search(filled):  # safety net; instantiate() guarantees this
+            dropped_mismatch += 1
+            continue
+
+        pairs.append({
+            "task_desc": svb.synth_task_desc(
+                row.get("contract_type"), row.get("scenario"), row.get("stance")),
+            "slots": [{"name": n, "value": values[n]} for n in sorted(values)],
+            "body": filled,
+            "provenance": {
+                "annotated_by": "machine_generated",
+                "id": f"contract_artifacts:{row.get('id')}",
+                "contract_type": row.get("contract_type"),
+                "scenario": row.get("scenario"),
+                "stance": row.get("stance"),
+                "synthetic_slots": True,
+            },
+            "tier": "silver",
+        })
+        if fallback:
+            fallback_rows += 1
+            fallback_names.update(fallback)
+
+    return {
+        "pairs": pairs,
+        "rows_total": len(rows),
+        "skipped_superseded": skipped_superseded,
+        "skipped_empty": skipped_empty,
+        "dropped_mismatch": dropped_mismatch,
+        "fallback_rows": fallback_rows,
+        "fallback_names": dict(fallback_names),
+    }
 
 
 def _load_gold_pairs(gold_path: pathlib.Path | None) -> list[dict]:
@@ -416,23 +513,54 @@ def _load_gold_pairs(gold_path: pathlib.Path | None) -> list[dict]:
 
 
 def export_drafter_a(gold_path: pathlib.Path | None = None) -> dict:
-    """Export Drafter-A silver + gold pair datasets."""
-    silver, pre_count, distinct_count, valid_count = _build_silver_pairs()
+    """Export Drafter-A silver + gold pair datasets (dual-source, spec delta)."""
+    pipe = _build_silver_pairs()
+    synth = _build_synth_pairs()
 
-    print(
-        f"  银牌池：去重前 {pre_count} / distinct {distinct_count} / "
-        f"槽位&字段校验通过 {valid_count}"
-    )
+    # Cross-source dedup: pipeline drafts enter first and win collisions
+    # (spec: 跨源碰撞保留草稿源).
+    seen = {_body_hash(p["body"]) for p in pipe["pairs"]}
+    synth_pairs: list[dict] = []
+    cross_dropped = 0
+    for p in synth["pairs"]:
+        h = _body_hash(p["body"])
+        if h in seen:
+            cross_dropped += 1
+            continue
+        seen.add(h)
+        synth_pairs.append(p)
 
+    silver = pipe["pairs"] + synth_pairs
     write_jsonl(DRAFTER_A_SILVER, silver)
 
     gold = _load_gold_pairs(gold_path)
     if gold:
         write_jsonl(DRAFTER_A_GOLD, gold)
 
+    print(
+        f"  银牌池：pipeline_runs 去重前 {pipe['pre_count']} / distinct "
+        f"{pipe['distinct']} / 有效 {pipe['valid']}（无效组 {pipe['invalid_groups']}）"
+    )
+    print(
+        f"           contract_artifacts {synth['rows_total']} 行"
+        f"（superseded {synth['skipped_superseded']}，错配丢弃 {synth['dropped_mismatch']}）"
+        f" → 实例化 {len(synth['pairs'])} 条"
+    )
+    print(
+        f"           跨源碰撞丢弃 {cross_dropped}；兜底值行 {synth['fallback_rows']}"
+        f"（{len(synth['fallback_names'])} 个长尾槽位名）"
+    )
+    print(f"           合计 silver {len(silver)} 条")
+
     return {
         "silver": len(silver),
         "gold": len(gold),
+        "pipeline": {k: pipe[k] for k in
+                     ("pre_count", "distinct", "valid", "invalid_groups")},
+        "artifacts": {k: synth[k] for k in
+                      ("rows_total", "skipped_superseded", "skipped_empty",
+                       "dropped_mismatch", "fallback_rows")},
+        "cross_source_dropped": cross_dropped,
         "silver_path": str(DRAFTER_A_SILVER),
         "gold_path": str(DRAFTER_A_GOLD),
     }

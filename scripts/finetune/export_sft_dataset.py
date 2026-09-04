@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import math
 import pathlib
 import random
 import sys
@@ -105,6 +106,37 @@ def _split_indices(n: int, seed: int, val_frac: float) -> tuple[set[int], set[in
     cut = int(n * val_frac)
     val = set(idx[:cut])
     train = set(idx[cut:])
+    return train, val
+
+
+def _split_indices_stratified(
+    rows: list[dict], seed: int, val_frac: float, group_key
+) -> tuple[set[int], set[int]]:
+    """Stance-stratified split (spec delta: 验证集按立场分层).
+
+    Each group contributes ``ceil(n*val_frac)`` val rows (at least 1 when the
+    group has >=2 rows, never all of them), so a minority stance never lands
+    entirely on one side. Per-group RNG is seeded from ``(seed, group)`` —
+    ``random.Random`` hashes str seeds via sha512, stable across runs and
+    platforms. Groups with a single row go to train (learning signal wins
+    over val coverage when both are impossible).
+    """
+    groups: dict[str, list[int]] = {}
+    for i, row in enumerate(rows):
+        groups.setdefault(group_key(row), []).append(i)
+    train: set[int] = set()
+    val: set[int] = set()
+    for group in sorted(groups):
+        idx = list(groups[group])
+        if len(idx) == 1:
+            train.update(idx)
+            continue
+        rng = random.Random(f"{seed}:{group}")
+        rng.shuffle(idx)
+        cut = max(1, math.ceil(len(idx) * val_frac))
+        cut = min(cut, len(idx) - 1)  # train side keeps >=1 row per group
+        val.update(idx[:cut])
+        train.update(idx[cut:])
     return train, val
 
 
@@ -186,6 +218,13 @@ def _add_meta(chatml: dict, row: dict, split: str, kind: str) -> dict:
         meta["contract_type"] = prov.get("contract_type")
         meta["scenario"] = prov.get("scenario")
         meta["stance"] = prov.get("stance")
+        # Dual-source bookkeeping (spec delta: 清单按源分计): source from the
+        # provenance id table prefix (pipeline_runs / contract_artifacts).
+        meta["source"] = (prov.get("id") or "").split(":", 1)[0] or None
+        meta["synthetic_slots"] = bool(prov.get("synthetic_slots"))
+        # Quality metadata on pipeline-sourced pairs only (design D4).
+        if prov.get("score_ratio") is not None:
+            meta["score_ratio"] = prov["score_ratio"]
     return {"_meta": meta, **chatml}
 
 
@@ -264,11 +303,16 @@ def cmd_drafter_a(args: argparse.Namespace) -> int:
     if not rows:
         print(f"no silver pairs at {silver_path}")
         return 1
-    train_idx, val_idx = _split_indices(len(rows), SPLIT_SEED, VAL_FRACTION)
+    # Stance-stratified split (spec delta): minority stances must appear on
+    # both sides. Judge-C keeps the plain random split above.
+    train_idx, val_idx = _split_indices_stratified(
+        rows, SPLIT_SEED, VAL_FRACTION,
+        group_key=lambda r: (r.get("provenance") or {}).get("stance") or "(untagged)",
+    )
     counts = _write_split(rows, train_idx, val_idx,
                           pathlib.Path(args.out_dir), "drafter_a", _drafter_a_to_chatml)
     print(f"drafter-a: {counts['total']} -> train {counts['train']} + val {counts['val']} "
-          f"(seed={SPLIT_SEED}, val_frac={VAL_FRACTION})")
+          f"(seed={SPLIT_SEED}, val_frac={VAL_FRACTION}, stance-stratified)")
     print(f"  tier: {counts['tier_breakdown']}")
     print(f"  out: {counts['train_path']}\n       {counts['val_path']}")
     return 0
@@ -323,11 +367,22 @@ def cmd_manifest(args: argparse.Namespace) -> int:
         train = read_jsonl(da_train)
         val = read_jsonl(da_val)
         meta_all = [r["_meta"] for r in train + val]
+        # Dual-source bookkeeping (spec delta: 清单按源分计 + 质量元数据可见).
+        src_names = [m.get("source") or "(unknown)" for m in meta_all]
+        ratios = [m["score_ratio"] for m in meta_all if m.get("score_ratio") is not None]
         counts["drafter_a"] = {
             "total": len(train) + len(val),
             "train": len(train),
             "val": len(val),
             "tier_breakdown": dict(Counter(m.get("tier") for m in meta_all)),
+            "source_breakdown": dict(Counter(src_names)),
+            "synthetic_count": sum(1 for m in meta_all if m.get("synthetic_slots")),
+            # Eval-score bands of the pipeline-sourced drafts: the trainer can
+            # down-weight the weak tail instead of trusting all silver equally.
+            "score_ratio_bands": dict(Counter(
+                ">=0.8" if r >= 0.8 else "0.5-0.8" if r >= 0.5 else "<0.5"
+                for r in ratios
+            )) if ratios else None,
             # Surfaced because the skew is the main known weakness of this pool:
             # stance=balanced dominates and pro_a/pro_b is a handful of rows.
             "stance_breakdown": dict(Counter(

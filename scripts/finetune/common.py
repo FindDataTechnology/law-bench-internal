@@ -19,7 +19,16 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 from typing import Any, Iterable
+
+# --- slot placeholder syntax (single point for the scripts layer) -----------
+# Mirrors src/generator/slots.py SLOT_PATTERN: {{name}} with optional inner
+# whitespace; the name is CJK/ASCII word chars plus '-'. The scripts layer
+# cannot import src.* (project venv may be unavailable), so the pattern is
+# restated here and kept in sync manually. The old ASCII-only regex missed
+# {{甲方名称}} placeholders entirely.
+SLOT_RE = re.compile(r"\{\{\s*([\w][\w-]*)\s*\}\}")
 
 # --- layout -----------------------------------------------------------------
 FINETUNE_ROOT = pathlib.Path("data/finetune")

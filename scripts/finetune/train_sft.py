@@ -340,18 +340,22 @@ def _resolve_model(args) -> str:
     )
 
 
-def _load_4bit(model_path: str):
-    """4bit NF4 load, trying the auto-classes M0 proved work on this arch."""
+def _load_base(model_path: str, base_dtype: str):
+    """Load the frozen backbone. 4bit keeps the M0-proven QLoRA path; bf16
+    needs ~54GB weights (86GB card: fits, and skips quantization entirely)."""
     import torch
     import transformers
     from transformers import BitsAndBytesConfig
 
-    bnb_cfg = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.bfloat16,
-        bnb_4bit_use_double_quant=True,
-    )
+    load_kwargs: dict = {"torch_dtype": torch.bfloat16}
+    if base_dtype == "4bit":
+        load_kwargs["quantization_config"] = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_use_double_quant=True,
+        )
+
     errs = []
     for cls_name in ("AutoModelForCausalLM", "AutoModelForImageTextToText",
                      "Qwen3_5ForConditionalGeneration"):
@@ -359,10 +363,10 @@ def _load_4bit(model_path: str):
         if cls is None:
             continue
         try:
-            print(f"[load] trying {cls_name} ...")
+            print(f"[load] trying {cls_name} (base_dtype={base_dtype}) ...")
             model = cls.from_pretrained(
-                model_path, quantization_config=bnb_cfg, device_map="auto",
-                trust_remote_code=True, torch_dtype=torch.bfloat16,
+                model_path, device_map="auto",
+                trust_remote_code=True, **load_kwargs,
             )
             model.config.use_cache = False
             print(f"[load] OK via {cls_name}")
@@ -398,15 +402,19 @@ def cmd_train(args: argparse.Namespace) -> int:
                                    args.keep_think, args.on_overflow, args.sft_dir)
     print(f"[data] train {tr_stats}\n[data] val   {va_stats}")
 
-    model = _load_4bit(model_path)
+    model = _load_base(model_path, args.base_dtype)
 
     from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 
     # M0's smoke used r=8 on q+v only, which was enough to prove a grad path
     # exists. A real run needs every projection or the adapter underfits.
-    model = prepare_model_for_kbit_training(
-        model, use_gradient_checkpointing=args.grad_checkpointing
-    )
+    if args.base_dtype == "4bit":
+        model = prepare_model_for_kbit_training(
+            model, use_gradient_checkpointing=args.grad_checkpointing
+        )
+    elif args.grad_checkpointing:
+        model.gradient_checkpointing_enable()
+        model.enable_input_require_grads()
     lora = LoraConfig(
         r=args.lora_r, lora_alpha=args.lora_r * 2, lora_dropout=0.05,
         bias="none", task_type="CAUSAL_LM",
@@ -417,6 +425,10 @@ def cmd_train(args: argparse.Namespace) -> int:
     model.print_trainable_parameters()
 
     out_dir = pathlib.Path(args.out_dir) / args.leg
+    # transformers 5.x dropped warmup_ratio; keep the same 3% intent in steps.
+    steps_per_epoch = max(1, len(train_ds) // (args.batch_size or cfg["per_device_batch"]
+                                               * (args.grad_accum or cfg["grad_accum"])))
+    warmup_steps = max(1, int(steps_per_epoch * cfg["epochs"] * 0.03))
     targs = TrainingArguments(
         output_dir=str(out_dir),
         per_device_train_batch_size=args.batch_size or cfg["per_device_batch"],
@@ -425,8 +437,12 @@ def cmd_train(args: argparse.Namespace) -> int:
         num_train_epochs=args.epochs or cfg["epochs"],
         learning_rate=args.lr,
         lr_scheduler_type="cosine",
-        warmup_ratio=0.03,
+        warmup_steps=warmup_steps,
         logging_steps=5,
+        logging_first_step=True,
+        # log dicts are printed to stdout; when stdout is a redirected file Python
+        # block-buffers them and they never appear until flush. Force line mode.
+        disable_tqdm=False,
         eval_strategy="epoch",
         save_strategy="epoch",
         save_total_limit=2,
@@ -452,6 +468,7 @@ def cmd_train(args: argparse.Namespace) -> int:
         json.dumps({
             "leg": args.leg,
             "max_seq_len": max_seq_len,
+            "base_dtype": args.base_dtype,
             "keep_think": args.keep_think,
             "on_overflow": args.on_overflow,
             "lora_r": args.lora_r,
@@ -494,6 +511,9 @@ def main(argv: list[str] | None = None) -> int:
     t.add_argument("--model-path", help="skip download, use this local snapshot")
     t.add_argument("--cache-dir", default="/dev/shm/ms_cache")
     t.add_argument("--out-dir", default="/root/autodl-tmp/sft_out")
+    t.add_argument("--base-dtype", choices=["4bit", "bf16"], default="4bit",
+                   help="frozen backbone storage; bf16 needs ~54GB weights "
+                        "(86GB card) but skips quantization")
     t.add_argument("--lora-r", type=int, default=16)
     t.add_argument("--lr", type=float, default=1e-4)
     t.add_argument("--epochs", type=float)
