@@ -1,0 +1,125 @@
+# law-bench MCP server (fd-coding-law-bench-mcp) — streamable-HTTP deployment.
+#
+# Change: expose-lawbench-mcp-via-gateway. Serves the MCP tool set over HTTP so
+# the AI Gateway & Registry (mcp.finddatatech.cloud) can proxy it. Same image as
+# the origin web app; the container command is overridden — the shared
+# docker-entrypoint.sh is untouched (origin/public pod behavior unchanged).
+#
+# The gateway reaches this NodePort over tailscale at http://100.64.0.8:30840/mcp,
+# which its SSRF guard blocks by default (CGNAT 100.64.0.0/10); see
+# deploy/cheap-box/README.md for the allowlist entry that path requires.
+#
+# Auth: the gateway forwards its registered backend credential (api_key scheme)
+# and direct clients use a bearer header; both are checked against
+# MCP_HTTP_TOKEN (secret law-bench-mcp). The server refuses to bind without it.
+#
+# Probes use tcpSocket: every HTTP path requires the token, so an httpGet probe
+# would always see 401 and never pass.
+#
+# Verify 30840 is unused before applying: kubectl get svc -A -o jsonpath
+# (2026-08: unused; origin web = 30820, review-agent = 30830/30831).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: law-bench-mcp
+  namespace: law-bench
+  labels:
+    app: law-bench-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: law-bench-mcp
+  template:
+    metadata:
+      labels:
+        app: law-bench-mcp
+    spec:
+      # See deploy/deployment.yaml: node-pinned because the image and the
+      # site-packages overlay below both live on that node's disk.
+      nodeSelector:
+        kubernetes.io/hostname: cheap-4
+      # Same node resolv.conf pollution as the origin pod (see
+      # deploy/deployment.yaml): pin kube-dns + the clean search list so
+      # cluster-internal names (postgres, minio) resolve. No hostAliases here —
+      # the MCP server has no Logto/lawbench-domain dependency.
+      dnsPolicy: None
+      dnsConfig:
+        nameservers:
+          - 10.43.0.10
+        searches:
+          - law-bench.svc.cluster.local
+          - svc.cluster.local
+          - cluster.local
+        options:
+          - name: ndots
+            value: "5"
+      containers:
+        - name: law-bench-mcp
+          image: 100.64.0.8:30880/law-bench/law-template:sha-2c502d7
+          imagePullPolicy: IfNotPresent
+          command: ["/app/.venv/bin/python", "-m", "fd_coding_law_bench_mcp"]
+          env:
+            # sha-2c502d7 was built without the fd-coding-law-bench-mcp context, so
+            # /app/.venv has no MCP package. Rather than rebuild, the deps were
+            # installed to the node path mounted below and prepended here.
+            - name: PYTHONPATH
+              value: "/opt/mcp/lib/pkgs:/app"
+            - name: MCP_HTTP_TRANSPORT
+              value: "http"
+            - name: MCP_HTTP_HOST
+              value: "0.0.0.0"
+            - name: MCP_HTTP_PORT
+              value: "8080"
+            - name: MCP_HTTP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: law-bench-mcp
+                  key: MCP_HTTP_TOKEN
+          envFrom:
+            - secretRef:
+                name: law-bench-db
+            - secretRef:
+                name: law-bench-minio
+            - secretRef:
+                name: law-bench-judge
+          ports:
+            - containerPort: 8080
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - mountPath: /opt/mcp/lib/pkgs
+              name: mcp-pkgs
+              readOnly: true
+      volumes:
+        # Populated on the node with:
+        #   uv pip install --target /opt/lawbench-mcp-pkgs \
+        #       /root/fd-coding-law-bench-mcp
+        - name: mcp-pkgs
+          hostPath:
+            path: /opt/lawbench-mcp-pkgs
+            type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: law-bench-mcp
+  namespace: law-bench
+  labels:
+    app: law-bench-mcp
+spec:
+  type: NodePort
+  selector:
+    app: law-bench-mcp
+  ports:
+    - port: 80
+      targetPort: 8080
+      nodePort: 30840

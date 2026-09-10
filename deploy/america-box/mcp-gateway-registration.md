@@ -126,10 +126,14 @@ with the shared backend token as `X-API-Key`.
 ## Deployment shape (k8s, ns law-bench)
 
 - `deploy/mcp-deployment.yaml` (repo): Deployment `law-bench-mcp` + NodePort
-  Service `30840`. Same image as the origin web pod — the MCP package is baked
-  into `/app/.venv` by the Dockerfile (`uv pip install /deps/lawbench-mcp`);
-  the container command is overridden to `python -m fd_coding_law_bench_mcp`
-  with `MCP_HTTP_TRANSPORT=http` (port 8080). `docker-entrypoint.sh` untouched.
+  Service `30840`. Same image as the origin web pod; the container command is
+  overridden to `python -m fd_coding_law_bench_mcp` with `MCP_HTTP_TRANSPORT=http`
+  (port 8080). `docker-entrypoint.sh` untouched.
+  The MCP package reaches the interpreter one of two ways: baked into `/app/.venv`
+  by the Dockerfile (`uv pip install /deps/lawbench-mcp`) when the image was built
+  with that context, or — as on the cheap cluster, where `sha-2c502d7` was not —
+  via a node-local `--target` install mounted in and prepended to `PYTHONPATH`
+  (see `deploy/cheap-box/README.md`).
 - Probes are `tcpSocket` (every HTTP path requires the token, so httpGet would
   always 401).
 - Secrets: `law-bench-mcp` (`MCP_HTTP_TOKEN`), plus the origin's

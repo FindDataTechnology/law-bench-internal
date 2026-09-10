@@ -22,12 +22,18 @@ from __future__ import annotations
 
 import argparse
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
 from src.settings import DEFAULT_DB, TEMPLATES_DIR
 
 from .errors import ValidationError
 from .store import get_compare, list_compares
+
+# Draft-generation concurrency bound (design D2): worst case a compare runs
+# 8 drafts + 8 judges in flight, matching the judge ceiling (16) the relay
+# tolerated at the 429-incident-adjacent default.
+_DRAFT_CONCURRENCY_CEILING = 8
 
 
 # --- generation ------------------------------------------------------------ #
@@ -91,6 +97,7 @@ def run_compare(
     prompts: list[dict],
     mode: str = "drafter-only",
     n_drafts: int = 1,
+    concurrency: int = 1,
     *,
     judge=None,
     draft_fn=None,
@@ -104,8 +111,15 @@ def run_compare(
     ``content`` (and optionally ``prompt_type``). ``draft_fn`` and ``judge`` are
     injectable so tests run offline (no DRAFTER LLM, no judge endpoint).
 
+    ``concurrency`` bounds how many drafts are generated simultaneously across
+    the prompt × draft matrix (clamped to [1, 8], default 1 = sequential).
+    Drafts are generated in a bounded pool first, then evaluated and persisted
+    in the sequential path's deterministic order (prompt-major, draft-minor),
+    so a compare at any concurrency stores the same rows in the same order as
+    a concurrency-1 run of the same inputs.
+
     Returns the ``get_compare(compare_id)`` grouped result (runs + per-criterion
-    verdicts, no ``draft_text``).
+    verdicts, no ``draft_text``) with ``effective_concurrency`` added.
     """
     from .rubric import load_criteria
     from .scoring import evaluate_contract
@@ -119,6 +133,7 @@ def run_compare(
         )
     if n_drafts < 1:
         raise ValidationError("n_drafts must be >= 1.")
+    effective_concurrency = max(1, min(concurrency, _DRAFT_CONCURRENCY_CEILING))
 
     # Fail fast if the rubric is unknown/empty before spending any LLM calls.
     load_criteria(rubric_name, db_path=db_path)
@@ -131,12 +146,31 @@ def run_compare(
         label, contract_type, rubric_name, task_desc, mode, n_drafts, db_path=db_path
     )
 
+    # Phase 1 - drafts: generate the prompt × draft matrix through a bounded
+    # pool. ``pool.map`` (and the plain loop at concurrency 1) yield results in
+    # job order, so phase 2 consumes them positionally.
+    draft_jobs = [(p, draft_idx) for p in prompts for draft_idx in range(n_drafts)]
+
+    def _draft_one(job: tuple[dict, int]) -> str:
+        p, _draft_idx = job
+        return draft_fn(task_desc, p["content"], templates_ref)
+
+    if effective_concurrency == 1:
+        draft_texts = [_draft_one(job) for job in draft_jobs]
+    else:
+        with ThreadPoolExecutor(max_workers=effective_concurrency) as pool:
+            draft_texts = list(pool.map(_draft_one, draft_jobs))
+
+    # Phase 2 - evaluate + persist: the pre-change sequential loop, unchanged
+    # except that ``draft_text`` arrives precomputed (prompt-major order).
+    idx = 0
     for p in prompts:
         pname = p["name"]
         ptype = p.get("prompt_type")
         variant_label = ptype or pname
         for _ in range(n_drafts):
-            draft_text = draft_fn(task_desc, p["content"], templates_ref)
+            draft_text = draft_texts[idx]
+            idx += 1
             result = evaluate_contract(
                 contract_text=draft_text,
                 rubric_name=rubric_name,
@@ -156,7 +190,9 @@ def run_compare(
                 draft_text=draft_text,
             )
 
-    return get_compare(compare_id, db_path=db_path)
+    grouped = get_compare(compare_id, db_path=db_path)
+    grouped["effective_concurrency"] = effective_concurrency
+    return grouped
 
 
 # --- matrix aggregation ---------------------------------------------------- #

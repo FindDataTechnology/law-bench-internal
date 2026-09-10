@@ -75,6 +75,9 @@ class CompareCreate(BaseModel):
     prompts: list[str]
     mode: str = "drafter-only"
     n_drafts: int = 1
+    # Max drafts generated simultaneously (handler clamps to [1, 8]; the
+    # service layer owns the bound).
+    concurrency: int = Field(default=1, ge=1)
     label: Optional[str] = None
 
 

@@ -86,7 +86,30 @@ SEARCH_INDEX_NAME = _env("SEARCH_INDEX_NAME", "contracts")
 
 # MinIO document source (S3-compatible). minio_host is a full URL; the reader
 # wants host:port + a secure flag.
-_minio_host_full = _env("minio_host", "http://localhost:9000")
+def _validated_minio_url(name: str, value: str) -> str:
+    """Reject a non-empty MinIO endpoint that is not a full http(s) URL.
+
+    urlparse("host.example.com") — no scheme — yields an EMPTY netloc, so an
+    unvalidated value silently produced MINIO_ENDPOINT="" and every artifact
+    upload/download failed per-request with RuntimeError instead of failing at
+    boot (the 2026-08 file.token118.com incident). Empty passes through: an
+    unset/empty minio_host falls back to the localhost default, and an empty
+    MINIO_PUBLIC_HOST means "no public override".
+    """
+    if not value:
+        return value
+    parsed = _urlparse(value)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ConfigError(
+            f"{name} must be a full URL with an http:// or https:// scheme "
+            f"(e.g. https://file.example.com), got: {value!r}"
+        )
+    return value
+
+
+_minio_host_full = _validated_minio_url(
+    "minio_host", _env("minio_host", "") or "http://localhost:9000"
+)
 MINIO_SECURE = _minio_host_full.startswith("https")
 MINIO_ENDPOINT = _urlparse(_minio_host_full).netloc  # host:port
 MINIO_ACCESS_KEY = _env("minio_root_user", "")
@@ -109,7 +132,7 @@ MINIO_ARTIFACTS_SLOTTED_PREFIX = _env("MINIO_ARTIFACTS_SLOTTED_PREFIX", "artifac
 # creds), so only the endpoint host is overridden. When unset (origin), the
 # public-host vars fall back to the origin ``MINIO_*`` values below so origin
 # behavior is byte-for-byte unchanged.
-_public_minio_host = _env("MINIO_PUBLIC_HOST", "")
+_public_minio_host = _validated_minio_url("MINIO_PUBLIC_HOST", _env("MINIO_PUBLIC_HOST", ""))
 MINIO_PUBLIC_ENDPOINT = (
     _urlparse(_public_minio_host).netloc if _public_minio_host else MINIO_ENDPOINT
 )
@@ -209,7 +232,7 @@ def check_auth_config() -> None:
 # so the dormant cookie-signing path (reused by ``get_current_user``) does not
 # fail open, and ``DATABASE_URL`` is required so the local replica can be
 # reached. JWKS reachability is intentionally NOT checked: the China box cannot
-# reliably reach ``auth.token118.com`` across the border, and requiring that
+# reliably reach ``auth.finddatatech.cloud`` across the border, and requiring that
 # fetch at boot would CrashLoopBackOff the pod (the fragility the DNS block was
 # added to avoid in the first place).
 PUBLIC_AUTH_REQUIRED_VARS = [

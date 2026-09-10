@@ -180,10 +180,33 @@ textarea { min-height: 4.5rem; resize: vertical; }
   padding: 0.6rem;
   background: #fbfcfd;
 }
+fieldset.checklist { margin: 0; min-width: 0; }
+fieldset.checklist legend { font-size: 0.8rem; color: var(--muted); padding: 0 0.3rem; }
+.checklist-filter { margin-bottom: 0.5rem; }
+.checklist-filter label { margin: 0; }
+.checklist-filter select { width: auto; }
+/* Rubric/type mismatch: the flash-error tint pair (fail tint + deep objection
+   text + the established #fecaca border), scaled down to an inline strip. */
+.rubric-warning {
+  margin-top: 0.3rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius);
+  background: #fef2f2;
+  color: var(--danger-hover);
+  font-size: 0.85rem;
+}
 .check { display: flex; align-items: center; gap: 0.4rem; }
 .check input { margin: 0; }
 
-table.matrix { border-collapse: collapse; width: 100%; }
+table.matrix { border-collapse: collapse; width: 100%; min-width: 40rem; }
+/* Wide matrices scroll inside the panel instead of breaking the layout. */
+.matrix-scroll { overflow-x: auto; }
+table.matrix thead th span.muted { white-space: normal; overflow-wrap: anywhere; }
+table.matrix caption.matrix-caption {
+  caption-side: top; text-align: left;
+  font-size: 0.78rem; color: var(--muted); padding-bottom: 0.4rem;
+}
 table.matrix th, table.matrix td {
   border: 1px solid var(--border);
   padding: 0.4rem 0.55rem;
@@ -191,10 +214,19 @@ table.matrix th, table.matrix td {
   vertical-align: top;
   font-size: 0.85rem;
 }
-table.matrix thead th { background: #f5f7fa; white-space: nowrap; }
-table.matrix td.cell { text-align: center; font-weight: 600; white-space: nowrap; }
+table.matrix thead th { background: #f5f7fa; white-space: nowrap; color: var(--text); }
+table.matrix td.cell { text-align: center; font-weight: 600; white-space: nowrap; padding: 0; }
+/* The verdict trigger is a real button so cells are keyboard-operable;
+   the tinted cell stays the visual grammar (flat, no shadow). */
+.matrix .cell-btn {
+  display: block; width: 100%; margin: 0; padding: 0.4rem 0.55rem;
+  background: transparent; border: 0; border-radius: inherit;
+  color: inherit; font: inherit; font-weight: 600; cursor: pointer;
+  text-align: center; white-space: nowrap;
+}
+.matrix .cell-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 table.matrix td.cell.pass { color: var(--ok); background: #ecfdf5; }
-table.matrix td.cell.fail { color: var(--danger); background: #fef2f2; }
+table.matrix td.cell.fail { color: var(--danger-hover); background: #fef2f2; }
 table.matrix td.cell.rate { color: var(--accent); background: #eff6ff; }
 
 /* law-info side-by-side detail + rendered markdown */

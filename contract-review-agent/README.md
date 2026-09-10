@@ -101,7 +101,7 @@ OPENAI_API_KEY=sk-your-api-key            # 你的 API Key
 OPENAI_API_BASE=https://www.linjie.love/v1
 
 # === PostgreSQL 数据库（law-bench 共用）===
-DATABASE_URL=postgresql://app:change-me-please@postgres.postgres.svc.cluster.local:5432/law_bench
+DATABASE_URL=postgresql://app:CHANGEME@postgres.postgres.svc.cluster.local:5432/law_bench
 
 # === 服务器配置 ===
 HOST=0.0.0.0

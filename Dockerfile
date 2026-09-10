@@ -46,8 +46,20 @@ COPY templates ./templates
 COPY db ./db
 COPY scripts ./scripts
 
-# Run the server as a non-root user.
+# MCP server package (fd-coding-law-bench-mcp) into the same venv. Only its
+# build inputs are staged (pyproject + src) — not the dev tree (tests/.venv).
+# Its declared deps (fastmcp, langgraph, langchain-core) resolve on top of the
+# locked env above and must not disturb those versions.
+COPY fd-coding-law-bench-mcp/pyproject.toml /deps/lawbench-mcp/pyproject.toml
+COPY fd-coding-law-bench-mcp/src /deps/lawbench-mcp/src
+RUN uv pip install --python .venv /deps/lawbench-mcp \
+    && rm -rf /deps
+
+# Run the server as a non-root user. Strip CR from shell scripts first: checkouts
+# on Windows carry CRLF, which breaks the `#!/bin/sh` shebang ("no such file or
+# directory" at exec).
 RUN useradd --create-home --uid 1001 appuser \
+    && find scripts -name '*.sh' -exec sed -i 's/\r$//' {} + \
     && chmod +x scripts/docker-entrypoint.sh \
     && chown -R appuser:appuser /app
 USER appuser

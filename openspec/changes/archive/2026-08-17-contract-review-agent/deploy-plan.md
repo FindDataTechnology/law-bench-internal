@@ -85,7 +85,7 @@ docker push 23.144.68.246:30880/law-bench/review-agent-frontend:latest
 ### Step 4: Create secrets + apply manifests
 ```bash
 kubectl -n law-bench create secret generic review-agent-secrets \
-  --from-literal=database_url='postgresql://app:change-me-please@postgres.postgres.svc.cluster.local:5432/law_bench' \
+  --from-literal=database_url='postgresql://app:CHANGEME@postgres.postgres.svc.cluster.local:5432/law_bench' \
   --from-literal=OPENAI_API_KEY='<from .env>' \
   --from-literal=OPENAI_API_BASE='https://www.linjie.love/v1' \
   --from-literal=REVIEWER_1_MODEL='openai/kimi-k3' \

@@ -15,8 +15,12 @@ spec:
       labels:
         app: law-bench
     spec:
-      imagePullSecrets:
-        - name: harbor-pull
+      # Images now live durably in the in-cluster Harbor (S3-backed, see
+      # deploy/cheap-box/README.md "Harbor"). Pin to cheap-4: the image is
+      # pre-imported into that node's containerd and the law-bench-db PVC
+      # (local-path) is bound there too.
+      nodeSelector:
+        kubernetes.io/hostname: cheap-4
       # Node resolv.conf picked up a wildcard `mesh.finddata.cn` search domain
       # (returns 8.218.137.223 for everything). ClusterFirst inherits it, so new
       # pods resolve postgres.postgres.svc.cluster.local -> 8.218.137.223 (black
@@ -35,14 +39,21 @@ spec:
         options:
           - name: ndots
             value: "5"
+      # token118.com is retired (foreign domain, no longer manageable) — the IdP
+      # now lives on auth.finddatatech.cloud (nginx on chengsi 124.220.7.175 →
+      # tailscale 100.64.0.3:3001 fd-logto), and cheap1 (public 103.236.89.212)
+      # fronts the web origin. These pins keep the fail-closed auth path off
+      # upstream DNS; if an IP changes, update the alias first.
       hostAliases:
-        - ip: 23.144.68.246
+        - ip: 124.220.7.175
           hostnames:
-            - auth.token118.com
-            - lawbench.token118.com
+            - auth.finddatatech.cloud
+        - ip: 103.236.89.212
+          hostnames:
+            - lawbench.finddatatech.cloud
       initContainers:
         - name: seed-db
-          image: harbor.local/law-bench/law-template:sha-2c502d7
+          image: 100.64.0.8:30880/law-bench/law-template:sha-2c502d7
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsUser: 0
@@ -64,7 +75,7 @@ spec:
               ls -la /data
       containers:
         - name: law-bench
-          image: harbor.local/law-bench/law-template:sha-2c502d7
+          image: 100.64.0.8:30880/law-bench/law-template:sha-2c502d7
           imagePullPolicy: IfNotPresent
           envFrom:
             - secretRef:

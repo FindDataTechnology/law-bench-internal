@@ -19,6 +19,7 @@ deepeval mapping (no hand-rolled prompt; uses deepeval's base GEval ability):
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -32,6 +33,42 @@ from src.settings import DEFAULT_DB
 
 from .judge import get_judge
 from .rubric import load_criteria
+
+_log = logging.getLogger(__name__)
+
+# Judge worker bounds (design D2): the Ark relay saturates — the 429 backoff in
+# _score_one is load-bearing and must survive any pool size. Ceiling 16 matches
+# worst-case compare load (8 drafts + 8 judges).
+_JUDGE_WORKERS_DEFAULT = 8
+_JUDGE_WORKERS_CEILING = 16
+
+
+def _resolve_judge_workers() -> int:
+    """Resolve the default judge worker-pool size from ``EVAL_MAX_WORKERS``.
+
+    Unset / non-integer / non-positive fall back to 8; values above 16 clamp
+    to 16. Read at call time (not import time) so tests and long-running
+    processes pick up changes. Fallback/clamp is logged with the effective
+    value so operators see what actually ran.
+    """
+    raw = os.environ.get("EVAL_MAX_WORKERS")
+    if raw is None or not raw.strip():
+        return _JUDGE_WORKERS_DEFAULT
+    try:
+        value = int(raw)
+    except ValueError:
+        _log.warning("EVAL_MAX_WORKERS=%r is not an integer; using default %d",
+                     raw, _JUDGE_WORKERS_DEFAULT)
+        return _JUDGE_WORKERS_DEFAULT
+    if value < 1:
+        _log.warning("EVAL_MAX_WORKERS=%d is not positive; using default %d",
+                     value, _JUDGE_WORKERS_DEFAULT)
+        return _JUDGE_WORKERS_DEFAULT
+    if value > _JUDGE_WORKERS_CEILING:
+        _log.warning("EVAL_MAX_WORKERS=%d exceeds ceiling %d; clamped to %d",
+                     value, _JUDGE_WORKERS_CEILING, _JUDGE_WORKERS_CEILING)
+        return _JUDGE_WORKERS_CEILING
+    return value
 
 
 def _build_metrics(criteria: list[dict], judge, include_input: bool) -> list[GEval]:
@@ -61,7 +98,7 @@ def evaluate_contract(
     task_desc: Optional[str] = None,
     judge=None,
     verbose: bool = False,
-    max_workers: int = 8,
+    max_workers: Optional[int] = None,
     db_path=DEFAULT_DB,
 ) -> dict:
     """Score a drafted contract against a named rubric; return a scores dict.
@@ -70,9 +107,13 @@ def evaluate_contract(
     n_criteria, n_passed, criteria_results, judge_model, scored_at) so output
     stays comparable to a harvey-labs run.
 
+    ``max_workers`` left as ``None`` resolves from ``EVAL_MAX_WORKERS`` at call
+    time (default 8, clamped to [1, 16]); an explicit integer takes precedence.
     ``db_path`` defaults to the project DB; tests pass a throwaway DB so they do
     not touch the development database.
     """
+    if max_workers is None:
+        max_workers = _resolve_judge_workers()
     criteria = load_criteria(rubric_name, db_path=db_path)  # raises KeyError / ValueError if bad
     judge = judge or get_judge()
 
@@ -149,7 +190,7 @@ def evaluate_with_multi_judge(
     task_desc: Optional[str] = None,
     judge_models: Optional[list[str]] = None,
     verbose: bool = False,
-    max_workers: int = 8,
+    max_workers: Optional[int] = None,
     db_path=DEFAULT_DB,
 ) -> dict:
     """Multi-judge evaluation with majority voting.
@@ -163,7 +204,7 @@ def evaluate_with_multi_judge(
         task_desc: Original user request (optional context)
         judge_models: List of model names (default: ["kimi-k3", "glm-5", "deepseek"])
         verbose: Show detailed judge output
-        max_workers: Max parallel workers
+        max_workers: Max parallel workers per judge (None -> EVAL_MAX_WORKERS)
         db_path: Database path
 
     Returns:

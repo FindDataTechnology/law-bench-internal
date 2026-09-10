@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from itertools import product
 from pathlib import Path
 from typing import Any
@@ -140,10 +141,14 @@ def generate_batch(
     """Assemble the contract across the requested (or enumerated) tag combinations.
 
     Runs synchronously: assembly is local DB+template work (no LLM call), so even
-    dozens of combos finish in seconds. Per-combo coherence-gate failures are
-    reported in the item's ``error`` (not a 422) so one bad combo doesn't sink the
-    batch. Returns ``{contract_type, total_requested, success_count,
-    failure_count, results}`` where each result carries ``docx_url``/``pdf_url``.
+    dozens of combos finish in seconds. ``max_concurrent`` (default 5, clamped
+    to [1, 16]) bounds assembly parallelism; combos assemble through a bounded
+    pool with per-combo connections, results stay in combination order. At 1
+    the batch assembles sequentially on the borrowed request connection.
+    Per-combo coherence-gate failures are reported in the item's ``error``
+    (not a 422) so one bad combo doesn't sink the batch. Returns
+    ``{contract_type, total_requested, success_count, failure_count, results}``
+    where each result carries ``docx_url``/``pdf_url``.
     """
     _require_type(contract_type)
     _check_mode(body, "D")
@@ -167,8 +172,10 @@ def generate_batch(
         )
 
     fmt = body.format
+    # Clamp the request's declared (previously ignored) concurrency field.
+    max_concurrent = max(1, min(body.max_concurrent, 16))
 
-    def _gen_one(tc: dict) -> dict:
+    def _gen_one(tc: dict, conn) -> dict:
         try:
             result = generate_contract_assembled(
                 contract_type,
@@ -176,7 +183,7 @@ def generate_batch(
                 stance=tc.get("stance"),
                 custom_clause_ids=body.custom_clause_ids,
                 format=fmt,
-                db=db,
+                db=conn,
             )
         except CoherenceError as exc:
             return {"success": False, "tags": tc, "error": str(exc)}
@@ -191,9 +198,25 @@ def generate_batch(
             "diagnostics": result.get("diagnostics"),
         }
 
-    # Sequential: assembly is local and fast; sharing the borrowed connection
-    # across threads would be unsafe (psycopg connections are not thread-safe).
-    results = [_gen_one(tc) for tc in combos]
+    if max_concurrent == 1:
+        # Fast path: assemble on the borrowed request-scoped connection.
+        results = [_gen_one(tc, db) for tc in combos]
+    else:
+        # Parallel path: each combo opens its own connection - the borrowed
+        # request connection (and the process-wide shared connection) must not
+        # cross threads. pool.map preserves combination order; per-combo
+        # failures stay isolated in that combo's result.
+        from src.eval.db import open_fresh_conn
+
+        def _gen_isolated(tc: dict) -> dict:
+            conn = open_fresh_conn()
+            try:
+                return _gen_one(tc, conn)
+            finally:
+                conn.close()
+
+        with ThreadPoolExecutor(max_workers=max_concurrent) as pool:
+            results = list(pool.map(_gen_isolated, combos))
     successes = sum(1 for r in results if r.get("success"))
     return {
         "contract_type": contract_type,

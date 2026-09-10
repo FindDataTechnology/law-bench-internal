@@ -31,17 +31,20 @@
 
 **远端（已部署，直接用这个）**：
 
-- Base URL：`https://lawbench.token118.com`
-- 交互式文档：`https://lawbench.token118.com/api/docs`（Swagger UI，可直接试调）
-- OpenAPI JSON：`https://lawbench.token118.com/openapi.json`
-- 健康检查：`GET https://lawbench.token118.com/healthz`
+- Base URL：`https://lawbench.finddatatech.cloud`
+- 交互式文档：`https://lawbench.finddatatech.cloud/api/docs`（Swagger UI，可直接试调）
+- OpenAPI JSON：`https://lawbench.finddatatech.cloud/openapi.json`
+- 健康检查：`GET https://lawbench.finddatatech.cloud/healthz`
 
-部署在 k3s 集群 `23.144.68.246`，NodePort `30820`（容器端口 8010），由 ArgoCD 管理。
+部署在 cheap k3s 集群（公网 `103.236.89.212` 由 Caddy 终结 TLS），NodePort `30820`
+（容器端口 8010）。旧域名 `https://lawbench.token118.com` 随 america 机器
+（`23.144.68.246`）一并下线（2026-09-09 起 america 已退役，不可访问），
+对接一律用上面的新域名。
 后端连的是生产 PostgreSQL（条款库 / rubric / 产物元数据都在库里），生成的 docx/pdf 产物
 落 MinIO。日常对接**直接用这个远端地址**，不必本地跑。
 
 - **强制鉴权**：所有 `/api/*` 与页面路由都要身份凭证，无凭证一律 `401`（例外：`/healthz`、`/auth/*`）。对外调用用 `X-API-Key`，详见 §2.1。
-- **HTTPS**：走 TLS 域名 `https://lawbench.token118.com`（Caddy 终结 TLS）。集群另有 NodePort `30820` 明文直连，仅作内部/调试备用，鉴权同样生效。
+- **HTTPS**：走 TLS 域名 `https://lawbench.finddatatech.cloud`（Caddy 终结 TLS）。集群另有 NodePort `30820` 明文直连，仅作内部/调试备用，鉴权同样生效。
 
 **本地开发（可选）**：
 
@@ -71,16 +74,16 @@ PostgreSQL，文件产物默认写到 `output/contracts/`。
 export LBK_KEY='lbk_你的key'
 
 # 带头调用 —— 列合同类型
-curl -H "X-API-Key: $LBK_KEY" https://lawbench.token118.com/api/contracts
+curl -H "X-API-Key: $LBK_KEY" https://lawbench.finddatatech.cloud/api/contracts
 
 # 带头组装合同（POST 也要带）
-curl -X POST https://lawbench.token118.com/api/contracts/sale/generate \
+curl -X POST https://lawbench.finddatatech.cloud/api/contracts/sale/generate \
   -H "X-API-Key: $LBK_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"scenario":"农产品买卖","stance":"balanced","format":"markdown"}'
 
 # 不带 key / key 无效 / key 已吊销 → 一律 401
-curl https://lawbench.token118.com/api/contracts   # → 401
+curl https://lawbench.finddatatech.cloud/api/contracts   # → 401
 ```
 
 **key 的形态与安全**：
@@ -92,11 +95,11 @@ curl https://lawbench.token118.com/api/contracts   # → 401
 **管理员发 key 的操作步骤**（你需要一个能登录 Web 的管理员账号）：
 
 ```bash
-# 1. 浏览器打开 https://lawbench.token118.com ，点登录走 Logto OIDC 完成登录
+# 1. 浏览器打开 https://lawbench.finddatatech.cloud ，点登录走 Logto OIDC 完成登录
 #    （登录回调依赖 /auth/callback 已在 Logto 控制台登记，见文末「前置条件」）
 
 # 2. 登录态下创建一个 key（label 标注用途，scopes 暂留空）
-curl -X POST https://lawbench.token118.com/api/keys \
+curl -X POST https://lawbench.finddatatech.cloud/api/keys \
   -H 'Content-Type: application/json' \
   -b 'lawbench_session=<你的会话cookie>' \
   -d '{"label":"外部-A公司","scopes":[]}'
@@ -104,18 +107,18 @@ curl -X POST https://lawbench.token118.com/api/keys \
 #    ↑ key 明文只此一次返回，立刻复制发给对方
 
 # 3. 列出已发的 key（只看前缀 + 审计列，绝不返回明文/哈希）
-curl -b 'lawbench_session=<你的会话cookie>' https://lawbench.token118.com/api/keys
+curl -b 'lawbench_session=<你的会话cookie>' https://lawbench.finddatatech.cloud/api/keys
 
 # 4. 吊销（软删，行留存审计但立即失效）；非本人 key / 不存在 id 都返回 404
 curl -X DELETE -b 'lawbench_session=<你的会话cookie>' \
-  https://lawbench.token118.com/api/keys/42
+  https://lawbench.finddatatech.cloud/api/keys/42
 # → 204
 ```
 
 > **前置条件（管理员一次性操作）**：浏览器登录流程要求在 Logto 控制台的**现有应用**
-> `5kw4u6c25rd9ucabf67cx` 里登记回调地址——Redirect URIs 增加
-> `https://lawbench.token118.com/auth/callback`，Post sign-out redirect URIs 增加
-> `https://lawbench.token118.com/`。**未登记则登录回调 400，无法登录也就无法发 key。**
+> law-bench-web（app id `swfyk5leftdv3p6kaefxk`）里登记回调地址——Redirect URIs 增加
+> `https://lawbench.finddatatech.cloud/auth/callback`，Post sign-out redirect URIs 增加
+> `https://lawbench.finddatatech.cloud/`。**未登记则登录回调 400，无法登录也就无法发 key。**
 > 这一步必须在 Logto 控制台手动完成，代码侧已就绪。
 
 ## 3. 核心概念（先看这个，再看接口）
@@ -217,7 +220,7 @@ custom  >  tagged  >  base
 ### 5.1 `GET /api/contracts` — 列出合同类型
 
 ```bash
-curl https://lawbench.token118.com/api/contracts
+curl https://lawbench.finddatatech.cloud/api/contracts
 ```
 
 响应（43 项，仅示两条）：
@@ -235,7 +238,7 @@ curl https://lawbench.token118.com/api/contracts
 + 条款可用量统计 + 该类型的 rubric / prompts 指针。Agent 冷启动时调这一个就够。
 
 ```bash
-curl https://lawbench.token118.com/api/contracts/sale
+curl https://lawbench.finddatatech.cloud/api/contracts/sale
 ```
 
 响应：
@@ -287,7 +290,7 @@ curl https://lawbench.token118.com/api/contracts/sale
 等价于 bundle 里的 `slot_instructions`，单独取更轻量。
 
 ```bash
-curl https://lawbench.token118.com/api/contracts/sale/slots
+curl https://lawbench.finddatatech.cloud/api/contracts/sale/slots
 ```
 
 响应：`[{name, label, description, example, required, source}, ...]`，覆盖模板里的每一个 slot。
@@ -295,7 +298,7 @@ curl https://lawbench.token118.com/api/contracts/sale/slots
 ### 5.4 `GET /api/contracts/{type}/laws` — 法律法规
 
 ```bash
-curl https://lawbench.token118.com/api/contracts/sale/laws
+curl https://lawbench.finddatatech.cloud/api/contracts/sale/laws
 ```
 
 响应：
@@ -317,7 +320,7 @@ curl https://lawbench.token118.com/api/contracts/sale/laws
 ### 5.5 `GET /api/contracts/{type}/tags` — 标签词表
 
 ```bash
-curl https://lawbench.token118.com/api/contracts/sale/tags
+curl https://lawbench.finddatatech.cloud/api/contracts/sale/tags
 ```
 
 响应：`{dim: [合法值]}`。调用 `generate` 前，用这个确认你传的 `scenario` / `stance` 是否合法。
@@ -328,7 +331,7 @@ curl https://lawbench.token118.com/api/contracts/sale/tags
 支持按 `scenario` / `stance` / `source` 过滤 + 分页。
 
 ```bash
-curl 'https://lawbench.token118.com/api/contracts/sale/clauses?scenario=农产品买卖&source=tagged&limit=20&offset=0'
+curl 'https://lawbench.finddatatech.cloud/api/contracts/sale/clauses?scenario=农产品买卖&source=tagged&limit=20&offset=0'
 ```
 
 | 参数 | 默认 | 说明 |
@@ -374,7 +377,7 @@ curl 'https://lawbench.token118.com/api/contracts/sale/clauses?scenario=农产�
 
 ```bash
 # 最快路径：只拿正文文本，不落地文件
-curl -X POST https://lawbench.token118.com/api/contracts/sale/generate \
+curl -X POST https://lawbench.finddatatech.cloud/api/contracts/sale/generate \
   -H 'Content-Type: application/json' \
   -d '{"scenario": "农产品买卖", "stance": "balanced", "format": "markdown"}'
 ```
@@ -423,7 +426,7 @@ curl -X POST https://lawbench.token118.com/api/contracts/sale/generate \
 **A. 指定 tag（生成单个变体）**：传了 `scenario` / `stance` / `custom_clause_ids` 任一。
 
 ```bash
-curl -X POST https://lawbench.token118.com/api/contracts/sale/generate-stored \
+curl -X POST https://lawbench.finddatatech.cloud/api/contracts/sale/generate-stored \
   -H 'Content-Type: application/json' \
   -d '{"scenario": "农产品买卖", "stance": "balanced", "format": "both"}'
 ```
@@ -448,7 +451,7 @@ curl -X POST https://lawbench.token118.com/api/contracts/sale/generate-stored \
 并逐个落库。
 
 ```bash
-curl -X POST https://lawbench.token118.com/api/contracts/sale/generate-stored \
+curl -X POST https://lawbench.finddatatech.cloud/api/contracts/sale/generate-stored \
   -H 'Content-Type: application/json' \
   -d '{"format": "docx"}'
 ```
@@ -474,7 +477,7 @@ curl -X POST https://lawbench.token118.com/api/contracts/sale/generate-stored \
 ### 5.9 `GET /api/contracts/artifacts` — 列出已落库产物
 
 ```bash
-curl 'https://lawbench.token118.com/api/contracts/artifacts?contract_type=sale'
+curl 'https://lawbench.finddatatech.cloud/api/contracts/artifacts?contract_type=sale'
 ```
 
 响应（**不含 `body_text`**，按 id 倒序）：
@@ -503,7 +506,7 @@ curl 'https://lawbench.token118.com/api/contracts/artifacts?contract_type=sale'
 ### 5.10 `GET /api/contracts/artifacts/{id}` — 产物详情
 
 ```bash
-curl https://lawbench.token118.com/api/contracts/artifacts/42
+curl https://lawbench.finddatatech.cloud/api/contracts/artifacts/42
 ```
 
 返回完整行（**含 `body_text`**）。id 不存在 → `404`。
@@ -511,7 +514,7 @@ curl https://lawbench.token118.com/api/contracts/artifacts/42
 ### 5.11 `GET /api/contracts/artifacts/{id}/download` — 下载已落库文件
 
 ```bash
-curl -OJ 'https://lawbench.token118.com/api/contracts/artifacts/42/download?format=docx'
+curl -OJ 'https://lawbench.finddatatech.cloud/api/contracts/artifacts/42/download?format=docx'
 ```
 
 - `format` 仅支持 `docx` / `pdf`，传别的 → `400`。
@@ -523,7 +526,7 @@ curl -OJ 'https://lawbench.token118.com/api/contracts/artifacts/42/download?form
 `generate`（非 stored）返回的 `docx_url` / `pdf_url` 指向这里。**内部接口，不在 OpenAPI 里**。
 
 ```bash
-curl -OJ https://lawbench.token118.com/api/contracts/sale/files/sale.docx
+curl -OJ https://lawbench.finddatatech.cloud/api/contracts/sale/files/sale.docx
 ```
 
 - 路径穿越安全：文件名含 `..` / `/` / `\` 一律 `404`。
@@ -562,12 +565,12 @@ curl -OJ https://lawbench.token118.com/api/contracts/sale/files/sale.docx
 > `validate_tags` 校验，非法值丢弃；全被丢弃 → `400`。
 
 ```bash
-curl -X POST https://lawbench.token118.com/api/contracts/sale/generate-batch \
+curl -X POST https://lawbench.finddatatech.cloud/api/contracts/sale/generate-batch \
   -H 'Content-Type: application/json' \
   -d '{"tag_combinations":[{"scenario":"农产品买卖","stance":"pro_a"},{"scenario":"农产品买卖","stance":"pro_b"}],"format":"docx"}'
 
 # 或枚举全部组合
-curl -X POST https://lawbench.token118.com/api/contracts/sale/generate-batch \
+curl -X POST https://lawbench.finddatatech.cloud/api/contracts/sale/generate-batch \
   -H 'Content-Type: application/json' -d '{"enumerate_all":true,"format":"pdf"}'
 ```
 
@@ -613,7 +616,7 @@ curl -X POST https://lawbench.token118.com/api/contracts/sale/generate-batch \
 | `mode` | string? | null | 须为 `"E"` |
 
 ```bash
-curl -X POST https://lawbench.token118.com/api/contracts/sale/pipeline \
+curl -X POST https://lawbench.finddatatech.cloud/api/contracts/sale/pipeline \
   -H 'Content-Type: application/json' \
   -d '{"stance":"balanced","scenario":"农产品买卖","max_iterations":3,"rubric":"contract_sale_v3","task_desc":"偏买方的农产品采购合同"}'
 ```
@@ -649,7 +652,7 @@ curl -X POST https://lawbench.token118.com/api/contracts/sale/pipeline \
 请求体同 5.13.2（`mode` 须为 `"F"`）。
 
 ```bash
-curl -X POST https://lawbench.token118.com/api/contracts/sale/auto-reject \
+curl -X POST https://lawbench.finddatatech.cloud/api/contracts/sale/auto-reject \
   -H 'Content-Type: application/json' -d '{"stance":"balanced","max_iterations":3}'
 ```
 
@@ -667,7 +670,7 @@ curl -X POST https://lawbench.token118.com/api/contracts/sale/auto-reject \
 请求体只需 `mode:"G"`（其余字段被忽略，类型由路径决定）：
 
 ```bash
-curl -X POST https://lawbench.token118.com/api/contracts/sale/regenerate-template \
+curl -X POST https://lawbench.finddatatech.cloud/api/contracts/sale/regenerate-template \
   -H 'Content-Type: application/json' -d '{"mode":"G"}'
 ```
 
@@ -687,13 +690,13 @@ curl -X POST https://lawbench.token118.com/api/contracts/sale/regenerate-templat
 **列出最近任务**（`limit` 默认 20，按时间倒序）：
 
 ```bash
-curl 'https://lawbench.token118.com/api/generation-jobs?limit=20'
+curl 'https://lawbench.finddatatech.cloud/api/generation-jobs?limit=20'
 ```
 
 **轮询单个任务**（`id` 不存在 → `404`）：
 
 ```bash
-curl https://lawbench.token118.com/api/generation-jobs/17
+curl https://lawbench.finddatatech.cloud/api/generation-jobs/17
 ```
 
 响应（`GenerationJobDetail`）：
@@ -835,7 +838,7 @@ class GenerateRequest(BaseModel):
 ```bash
 # 先导出（一次性）
 export LAWBENCH_KEY=lbk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-export BASE=https://lawbench.token118.com
+export BASE=https://lawbench.finddatatech.cloud
 H="-H X-API-Key:$LAWBENCH_KEY"   # 给 curl 复用的头（注意空格处理）
 
 # 0. 健康检查（免鉴权）
@@ -912,7 +915,7 @@ uvicorn fd_coding_law_bench_mcp.api.main:app --port 8000
 
 另外 `src/web/routes/api.py` 下还有一套 `/api/rubrics`、`/api/prompts`、`/api/compare`
 **评测管理**接口（rubric / criterion / prompt 的 CRUD + prompt 对比评测），与「生成」关系不大，
-属于评测侧，需要时再看 `https://lawbench.token118.com/api/docs`。
+属于评测侧，需要时再看 `https://lawbench.finddatatech.cloud/api/docs`。
 
 ## 12. 附：规范章节顺序
 
@@ -946,4 +949,4 @@ uvicorn fd_coding_law_bench_mcp.api.main:app --port 8000
 
 *接口源码：`src/web/routes/contract_context.py`。所有路由都是对 `src.contracts` /
 `src.clauses` / `src.eval` 既有服务函数的薄封装，没有独立业务逻辑，出问题查对应服务层即可。
-OpenAPI 实时镜像：`https://lawbench.token118.com/api/docs`。*
+OpenAPI 实时镜像：`https://lawbench.finddatatech.cloud/api/docs`。*

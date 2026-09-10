@@ -23,6 +23,7 @@ async def compare_run(
     prompt_names: list[str],
     n_drafts: int = 1,
     label: str | None = None,
+    concurrency: int = 1,
 ) -> dict:
     """Draft + evaluate each named prompt against ``rubric_name``; persist grouped.
 
@@ -38,11 +39,15 @@ async def compare_run(
         prompt_names: two or more prompt names to compare.
         n_drafts: drafts per prompt (default 1).
         label: optional label for the compare run.
+        concurrency: max drafts generated simultaneously across the
+            prompt x draft matrix (default 1 = sequential; clamped to
+            [1, 8] by the service, effective value in the result).
 
     Returns the grouped compare (runs + per-criterion verdicts, no
-    ``draft_text``). Fewer than two prompt names, an unknown rubric/prompt, or
-    ``n_drafts < 1`` raises a tool error. Note: this is an expensive tool - it
-    makes one LLM draft call per draft plus one judge call per draft.
+    ``draft_text``) with ``effective_concurrency``. Fewer than two prompt
+    names, an unknown rubric/prompt, or ``n_drafts < 1`` raises a tool error.
+    Note: this is an expensive tool - it makes one LLM draft call per draft
+    plus one judge call per draft.
     """
     from src.eval.compare import load_prompts, run_compare as _run
 
@@ -56,6 +61,7 @@ async def compare_run(
             mode="drafter-only",
             n_drafts=n_drafts,
             label=label,
+            concurrency=concurrency,
         )
 
     return await anyio.to_thread.run_sync(_go)

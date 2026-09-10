@@ -57,6 +57,9 @@ def _client() -> Minio:
     generate routes mounted — so routing them through the public endpoint is a
     no-op there (the fallback is the origin MinIO).
     """
+    # Defensive guard only: settings import already rejects scheme-less
+    # minio_host / MINIO_PUBLIC_HOST values (ConfigError at boot), so this is
+    # unreachable unless a test monkeypatches MINIO_PUBLIC_ENDPOINT to "".
     if not MINIO_PUBLIC_ENDPOINT:
         raise RuntimeError("minio_host is not set (MinIO unreachable).")
     return Minio(

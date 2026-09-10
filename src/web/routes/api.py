@@ -207,7 +207,8 @@ def create_compare(body: CompareCreate, db: DbConn = Depends(get_db)) -> dict:
     Runs the drafter-only generation + the real judge for each prompt/draft.
     Large compares (many prompts × high ``n_drafts``) can take minutes; for
     those prefer the CLI (``python -m src.eval.compare``). Async-with-progress
-    is a tracked follow-up.
+    is a tracked follow-up. ``concurrency`` bounds parallel draft generation
+    (clamped to [1, 8]; default 1 = sequential).
     """
     prompts = load_prompts(body.prompts, db_path=db)  # raises NotFoundError -> 404
     compare = run_compare(
@@ -217,6 +218,7 @@ def create_compare(body: CompareCreate, db: DbConn = Depends(get_db)) -> dict:
         prompts,
         mode=body.mode,
         n_drafts=body.n_drafts,
+        concurrency=max(1, min(body.concurrency, 8)),
         label=body.label,
         db_path=db,
     )

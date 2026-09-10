@@ -79,7 +79,7 @@ def _base_dsn() -> str:
     return (
         os.environ.get("database_url")
         or os.environ.get("DATABASE_URL")
-        or "postgresql://app:change-me-please@localhost:5432/law_bench"
+        or "postgresql://app:CHANGEME@localhost:5432/law_bench"
     )
 
 

@@ -7,8 +7,9 @@ name: build-and-push
 # `docker login`) and in a buildkit config (for the buildx push).
 #
 # Required repository SECRETS (Settings -> Secrets and variables -> Actions):
-#   LAW_BENCH_HARBOR_REGISTRY  Harbor host, e.g. http://23.144.68.246:30880
-#                              (a leading http(s):// and a trailing / are stripped)
+#   LAW_BENCH_HARBOR_REGISTRY  Harbor host, e.g. http://harbor.finddatatech.cloud:8080
+#                              (the cheap-cluster Harbor; a leading http(s):// and
+#                              a trailing / are stripped)
 #   LAW_BENCH_HARBOR_USER      Harbor robot username, e.g. robot$law-bench+law-bench
 #   LAW_BENCH_HARBOR_PASS      Harbor robot password / token
 #
@@ -40,7 +41,7 @@ jobs:
           reg="${reg#http://}"
           reg="${reg%/}"
           if [ -z "$reg" ]; then
-            echo "::error::Secret LAW_BENCH_HARBOR_REGISTRY is empty. Set it to your Harbor host (e.g. http://23.144.68.246:30880)." >&2
+            echo "::error::Secret LAW_BENCH_HARBOR_REGISTRY is empty. Set it to your Harbor host (e.g. http://harbor.finddatatech.cloud:8080)." >&2
             exit 1
           fi
           project="${{ vars.LAW_BENCH_HARBOR_PROJECT || 'law-bench' }}"

@@ -71,6 +71,32 @@ def _dsn() -> str:
     return dsn
 
 
+def _open_fresh() -> Any:
+    """Open a brand-new psycopg connection from the DSN (keepalives enabled).
+
+    Shared by :func:`connect`'s non-cached path and :func:`open_fresh_conn`.
+    """
+    import psycopg  # local import keeps module import light
+    from psycopg.rows import dict_row
+
+    # Add TCP keepalive parameters to prevent connection timeout during long LLM calls
+    dsn = _dsn()
+    if 'keepalives=' not in dsn:
+        separator = '&' if '?' in dsn else '?'
+        dsn = f"{dsn}{separator}keepalives=1&keepalives_idle=60&keepalives_interval=10&keepalives_count=5"
+    return psycopg.connect(dsn, row_factory=dict_row)
+
+
+def open_fresh_conn() -> Any:
+    """Open a new connection the caller owns (no caching, no borrowing).
+
+    For worker threads that need an isolated connection - e.g. the web batch
+    pool, where the request-scoped connection (and the process-wide shared
+    connection) must not cross threads. Caller closes it.
+    """
+    return _open_fresh()
+
+
 def connect(db: Any = None) -> Any:
     """Return a psycopg connection (or a borrowed-connection wrapper).
 
@@ -83,9 +109,6 @@ def connect(db: Any = None) -> Any:
     per call. Any other non-connection ``db`` value is ignored and a fresh
     connection is opened from the DSN.
     """
-    import psycopg  # local import keeps module import light
-    from psycopg.rows import dict_row
-
     if is_connection(db):
         return _BorrowedConn(db)
     # ponytail: default-arg path routes through the cached connection. Callers
@@ -99,14 +122,7 @@ def connect(db: Any = None) -> Any:
             return _BorrowedConn(get_shared_conn())
     except Exception:  # noqa: BLE001 - settings import failure -> fall through to fresh conn
         pass
-    # Add TCP keepalive parameters to prevent connection timeout during long LLM calls
-    dsn = _dsn()
-    if 'keepalives=' not in dsn:
-        separator = '&' if '?' in dsn else '?'
-        dsn = f"{dsn}{separator}keepalives=1&keepalives_idle=60&keepalives_interval=10&keepalives_count=5"
-    conn = psycopg.connect(dsn, row_factory=dict_row)
-    # Foreign keys are enforced by default in PostgreSQL (no PRAGMA needed).
-    return conn
+    return _open_fresh()
 
 
 # --- Process-wide cached connection (ponytail: global conn, reopen on failure) ---

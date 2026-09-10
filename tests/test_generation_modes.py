@@ -293,3 +293,145 @@ def test_batch_missing_combos_400(app_client: TestClient, seeded_db):
     )
     assert r.status_code == 400
     assert "tag_combinations" in r.json()["detail"]
+
+
+# --- mode D: batch concurrency --------------------------------------------- #
+
+
+_STANCES = ["balanced", "pro_a", "pro_b", "balanced", "pro_a", "pro_b"]
+
+
+def _fake_assembler(state=None, fail_stance=None, window_s: float = 0.1):
+    """Assembler double: counts in-flight calls, optionally fails one stance."""
+    import threading
+    import time as _time
+
+    from src.clauses.coherence import CoherenceError
+
+    lock = threading.Lock() if state is not None else None
+
+    def fake(contract_type, *, scenario=None, stance=None, custom_clause_ids=None,
+             format="docx", out_dir=None, db=None):
+        if state is not None:
+            with lock:
+                state["current"] += 1
+                state["max"] = max(state["max"], state["current"])
+        _time.sleep(window_s)
+        if state is not None:
+            with lock:
+                state["current"] -= 1
+        if fail_stance is not None and stance == fail_stance:
+            raise CoherenceError(f"coherence gate failed for stance={stance}")
+        return {"body_text": f"BODY {stance}", "docx_path": None, "pdf_path": None,
+                "diagnostics": None}
+
+    return fake
+
+
+def _no_conn():
+    """Stand-in for open_fresh_conn (the faked assembler ignores the conn)."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(close=lambda: None)
+
+
+def test_batch_honors_max_concurrent_and_order(app_client, seeded_db, monkeypatch):
+    """6 combos at max_concurrent 3: in-flight never exceeds 3; results stay
+    in submitted combination order."""
+    state = {"current": 0, "max": 0}
+    monkeypatch.setattr(
+        "src.web.routes.generation.generate_contract_assembled",
+        _fake_assembler(state=state),
+    )
+    monkeypatch.setattr("src.eval.db.open_fresh_conn", _no_conn)
+
+    combos = [{"stance": s} for s in _STANCES]
+    r = app_client.post(
+        "/api/contracts/sale/generate-batch",
+        json={"mode": "D", "tag_combinations": combos, "format": "markdown",
+              "max_concurrent": 3},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["total_requested"] == 6
+    assert body["success_count"] == 6
+    assert state["max"] <= 3  # spec guarantee: never exceed the bound
+    assert state["max"] >= 2  # real overlap between pool workers
+    # results ordered identically to the submitted combinations
+    assert [res["tags"]["stance"] for res in body["results"]] == _STANCES
+
+
+def test_batch_one_failing_combo_stays_isolated(app_client, seeded_db, monkeypatch):
+    monkeypatch.setattr(
+        "src.web.routes.generation.generate_contract_assembled",
+        _fake_assembler(fail_stance="pro_b"),
+    )
+    monkeypatch.setattr("src.eval.db.open_fresh_conn", _no_conn)
+
+    combos = [{"stance": s} for s in _STANCES]
+    r = app_client.post(
+        "/api/contracts/sale/generate-batch",
+        json={"mode": "D", "tag_combinations": combos, "format": "markdown",
+              "max_concurrent": 4},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["success_count"] == 4
+    assert body["failure_count"] == 2  # pro_b appears twice in _STANCES
+    errors = [res for res in body["results"] if not res["success"]]
+    assert all("coherence" in res["error"] for res in errors)
+
+
+def test_batch_clamps_oversized_max_concurrent(app_client, seeded_db, monkeypatch):
+    """max_concurrent 64 clamps to 16 (observed on the pool, not an error)."""
+    import src.web.routes.generation as gen_mod
+
+    sizes = []
+    real_pool = gen_mod.ThreadPoolExecutor
+
+    class _Recording(real_pool):
+        def __init__(self, max_workers=None, **kw):
+            sizes.append(max_workers)
+            super().__init__(max_workers=max_workers, **kw)
+
+    monkeypatch.setattr(gen_mod, "ThreadPoolExecutor", _Recording)
+    monkeypatch.setattr(
+        "src.web.routes.generation.generate_contract_assembled", _fake_assembler()
+    )
+    monkeypatch.setattr("src.eval.db.open_fresh_conn", _no_conn)
+
+    r = app_client.post(
+        "/api/contracts/sale/generate-batch",
+        json={"mode": "D", "tag_combinations": [{"stance": "balanced"}],
+              "format": "markdown", "max_concurrent": 64},
+    )
+    assert r.status_code == 200, r.text
+    assert sizes == [16]
+
+
+def test_batch_sequential_path_uses_borrowed_connection(app_client, seeded_db, monkeypatch):
+    """max_concurrent 1 keeps the pre-change fast path: no fresh connections."""
+    seen_conns = []
+
+    def fake(contract_type, *, scenario=None, stance=None, custom_clause_ids=None,
+             format="docx", out_dir=None, db=None):
+        seen_conns.append(db)
+        return {"body_text": "B", "docx_path": None, "pdf_path": None, "diagnostics": None}
+
+    monkeypatch.setattr(
+        "src.web.routes.generation.generate_contract_assembled", fake
+    )
+
+    def _boom():
+        raise AssertionError("sequential path must not open fresh connections")
+
+    monkeypatch.setattr("src.eval.db.open_fresh_conn", _boom)
+
+    r = app_client.post(
+        "/api/contracts/sale/generate-batch",
+        json={"mode": "D", "tag_combinations": [{"stance": "balanced"}],
+              "format": "markdown", "max_concurrent": 1},
+    )
+    assert r.status_code == 200
+    assert len(seen_conns) == 1
+    assert seen_conns[0] is seeded_db  # the borrowed request connection

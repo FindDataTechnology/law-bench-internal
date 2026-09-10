@@ -9,7 +9,7 @@ filled by later tasks.
 ## 1. Architecture at a glance
 
 The **origin** (`src/web/app.py`, `create_app()`) serves everything on
-`lawbench.token118.com`. The **public pod** (`src/web/public_app.py`,
+`lawbench.finddatatech.cloud`. The **public pod** (`src/web/public_app.py`,
 `create_public_app()`) is a separate FastAPI process from the **same image**
 (selected at boot by `PUBLIC_API=1` in `scripts/docker-entrypoint.sh`) that
 mounts only the read-heavy router subset, locks the docs surface off
@@ -171,6 +171,22 @@ per-request border crossing happens, the public pod reads from a
    object already present with matching size is skipped, so a cron tick that
    finds nothing new is a handful of `HEAD` requests, not a full re-copy.
 
+### Endpoint posture (who uses which MinIO endpoint)
+
+| Consumer | Endpoint | Why |
+|---|---|---|
+| origin app pod | `http://minio.minio.svc.cluster.local:9000` (k8s secret `law-bench-minio`) | in-cluster service URL — no TLS hop, no Caddy/ACME dependency in the app's own data path |
+| external tools / China mirror sync | `https://file.token118.com` (US-box Caddy → `127.0.0.1:30900`) | S3 API over TLS for cross-border consumers; anonymous listing is correctly `AccessDenied` |
+| browser file browsing | `https://file-console.token118.com` (US-box Caddy → `127.0.0.1:30901`, needs a DNS A record → `23.144.68.246`) or directly `http://23.144.68.246:30901` | the MinIO **console** (web UI) is a separate service from the S3 API; `file.token118.com` serves XML S3 responses, not a page |
+
+The MinIO deployment carries
+`MINIO_SERVER_URL=https://file.token118.com` and
+`MINIO_BROWSER_REDIRECT_URL=https://file-console.token118.com` so the console's
+login/redirect flow works behind the domain. `src/settings.py` rejects a
+scheme-less `minio_host` / `MINIO_PUBLIC_HOST` at boot (`ConfigError`), so a
+value like `file.token118.com` (no `https://`) fails fast instead of
+producing an empty endpoint that 500s per request.
+
 ### 3.1 Run the mirror (hourly cron)
 
 ```sh
@@ -257,7 +273,7 @@ box, switch `type` to `NodePort` with a **new** port (do NOT reuse the origin's
 `deploy/service.yaml` (NodePort 30820) is untouched.
 
 `deploy/public/Caddyfile` — TLS + gateway `rate_limit` for the NEW China-facing
-domain (not `lawbench.token118.com`). Per-IP throttle (10 rps, burst 20 —
+domain (not `lawbench.finddatatech.cloud`). Per-IP throttle (10 rps, burst 20 —
 mirrors the in-process defaults so both layers agree). `/healthz` is exempt at
 the gateway too (mirrors the in-process `_EXEMPT_PATH`). Requires the Caddy
 `rate_limit` module; if your build lacks it, drop the block and rely on the
@@ -266,8 +282,10 @@ in-process limiter (`RATE_LIMIT_ENABLED=1`).
 ### 4.1 DNS-hardening block (conditional — task 6.2)
 
 The origin's `deploy/deployment.yaml` carries `dnsPolicy: None` + kube-dns-only
-`dnsConfig` + `hostAliases` pinning `auth.token118.com`/
-`lawbench.token118.com` → `23.144.68.246`. This block is **load-bearing on a
+`dnsConfig` + `hostAliases` pinning `auth.finddatatech.cloud` →
+`124.220.7.175` (chengsi nginx → xinru fd-logto) and
+`lawbench.finddatatech.cloud` → `103.236.89.212` (cheap1's Caddy edge; the origin
+moved to the cheap cluster on 2026-08-31). This block is **load-bearing on a
 polluted node** (one whose resolv.conf inherited the wildcard
 `mesh.finddata.cn` search domain — every name resolves to `8.218.137.223`,
 so `postgres.postgres.svc.cluster.local` hangs at `connect()` →
@@ -295,7 +313,7 @@ NOT mount the `auth` router, so `/auth/*` (OIDC login) and `/api/keys`
 `tests/test_public_app.py`). The operational flow:
 
 1. **Issue (origin):** an operator browser-logs into the origin
-   (`lawbench.token118.com`) via the Logto OIDC flow, then
+   (`lawbench.finddatatech.cloud`) via the Logto OIDC flow, then
    `POST /api/keys { label, scopes }`. The `api_keys` row is written to the
    origin Postgres with a salted `pbkdf2_sha256` hash; the **plaintext key
    (`lbk_…`) is shown exactly once** in the response and never persisted or

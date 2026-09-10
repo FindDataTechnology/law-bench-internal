@@ -306,12 +306,18 @@ def list_compares_page(request: Request, db: DbConn = Depends(get_db)):
 @router.get("/compare/new", include_in_schema=False, name="page_new_compare")
 def new_compare(request: Request, db: DbConn = Depends(get_db)):
     # Defined before /compare/{id} so "new" is not captured as an id.
+    prompts = M.list_prompts(db_path=db)
     return _templates.TemplateResponse(
         request,
         "compare_form.html",
         {
-            "prompts": M.list_prompts(db_path=db),
+            "prompts": prompts,
             "rubrics": M.list_rubrics_with_counts(db_path=db),
+            # Known contract types (from prompts that exist) feed the
+            # contract_type datalist suggestions on the build form.
+            "contract_types": sorted(
+                {p["contract_type"] for p in prompts if p.get("contract_type")}
+            ),
         },
     )
 

@@ -45,9 +45,10 @@ async def test_run_compare_resolves_names_and_delegates(monkeypatch):
         return [_prompt("draft_sale"), _prompt("draft_sale_v2")]
 
     def fake_run(contract_type, rubric_name, task_desc, prompts, mode="drafter-only",
-                 n_drafts=1, label=None):
+                 n_drafts=1, concurrency=1, label=None):
         seen.update(contract_type=contract_type, rubric=rubric_name, task=task_desc,
-                    prompts=prompts, mode=mode, n_drafts=n_drafts, label=label)
+                    prompts=prompts, mode=mode, n_drafts=n_drafts, label=label,
+                    concurrency=concurrency)
         return _compare()
 
     monkeypatch.setattr(cmp, "load_prompts", fake_load)
@@ -61,8 +62,59 @@ async def test_run_compare_resolves_names_and_delegates(monkeypatch):
     assert seen["mode"] == "drafter-only"
     assert seen["n_drafts"] == 2
     assert seen["label"] == "lbl"
+    assert seen["concurrency"] == 1  # default passes through
     assert [p["name"] for p in seen["prompts"]] == ["draft_sale", "draft_sale_v2"]
     assert out["id"] == 7
+
+
+async def test_run_compare_passes_concurrency_through(monkeypatch):
+    """An explicit concurrency reaches run_compare; the result (with the
+    service-computed effective_concurrency) is returned to the caller."""
+    import src.eval.compare as cmp
+
+    seen = {}
+
+    def fake_load(names):
+        return [_prompt("a"), _prompt("b")]
+
+    def fake_run(contract_type, rubric_name, task_desc, prompts, mode="drafter-only",
+                 n_drafts=1, concurrency=1, label=None):
+        seen["concurrency"] = concurrency
+        # mirrors the real clamp: 20 -> 8
+        return _compare(effective_concurrency=max(1, min(concurrency, 8)))
+
+    monkeypatch.setattr(cmp, "load_prompts", fake_load)
+    monkeypatch.setattr(cmp, "run_compare", fake_run)
+
+    from fd_coding_law_bench_mcp.tools.compare import compare_run
+
+    out = await compare_run("sale", "contract_sale_v1", "task",
+                            ["a", "b"], n_drafts=2, concurrency=4)
+    assert seen["concurrency"] == 4
+    assert out["effective_concurrency"] == 4
+
+
+async def test_run_compare_oversized_concurrency_still_succeeds(monkeypatch):
+    """The tool does not validate the bound - the service clamp keeps the call
+    succeeding, with the effective value surfaced in the result."""
+    import src.eval.compare as cmp
+
+    def fake_load(names):
+        return [_prompt("a"), _prompt("b")]
+
+    def fake_run(contract_type, rubric_name, task_desc, prompts, mode="drafter-only",
+                 n_drafts=1, concurrency=1, label=None):
+        return _compare(effective_concurrency=max(1, min(concurrency, 8)))
+
+    monkeypatch.setattr(cmp, "load_prompts", fake_load)
+    monkeypatch.setattr(cmp, "run_compare", fake_run)
+
+    from fd_coding_law_bench_mcp.tools.compare import compare_run
+
+    out = await compare_run("sale", "contract_sale_v1", "task",
+                            ["a", "b"], concurrency=50)
+    assert out["id"] == 7  # succeeded, not an error
+    assert out["effective_concurrency"] == 8
 
 
 async def test_run_compare_fewer_than_two_prompts_raises(monkeypatch):

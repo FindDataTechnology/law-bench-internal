@@ -324,6 +324,64 @@ mask 边界靠 Qwen3 chat template 的**token 级前缀性质**（实测 `full[:
 - **Drafter-A 银牌扩量**（已由 `expand-drafter-a-silver` 变更解决大半）：LLM 填槽仍无可用路径——`fd_coding_law_bench_mcp.pipeline.graph`（`run_self_heal_pipeline`，`fill_mode="llm"`）不在 law-bench pod 的镜像里（pod 只有 `src/{clauses,eval,generator,web}`），本地 MCP 后端缺 `psycopg`/`docx` 起不来；此路留给线上飞轮运营。离线扩量已落地：`contract_artifacts` 401 份母版经 `slot_value_bank.py` 合成槽位实例化（确定性值库 + 类别规则 + 通用法律兜底），131 → **526** 条（pro_a 10→32 / pro_b 7→29 / 类型 41→66），526/526 通过校验，SFT 切分改 stance 分层。
   - 覆盖分布随 `provenance.{contract_type,scenario,stance}` 落进配对与 `_meta`。`manifest.json` 的 `source_breakdown` / `synthetic_count` / `score_ratio_bands` / `stance_breakdown` / `contract_type_breakdown` 持续暴露构成与偏斜。
 - **OpenSource 语料接入**：仓内无文件、无 fetcher。`scripts/finetune/ingest_opensource.py` 已就绪，缺语料包；DISC-Law-SFT（Apache-2.0）/ CAIL2018（MIT）是白名单目标。需用户手工下载到 `data/opensource/<corpus>/` 并附 `LICENSE`。
-- **实际 SFT 训练**：M1 范围仅「数据准备」；M2 训练器已写在 `scripts/finetune/train_sft.py`（见上节），数据通道已免 GPU 校验通过，**但尚未在 GPU 上实跑**——A800 实例当前不可达（`ECONNREFUSED`），seq=4096 的显存 smoke 与 batch size 定值仍欠（两条腿都欠）。`max_seq_len` 已按上节实测固化进 `LEGS`（judge_c / drafter_a 均 4096，分两次跑因为是两个 adapter），沿用 512 跑任一条腿都会被 `verify` 直接拦下。
+- **实际 SFT 训练**：已于 2026-09-04→05 在 seetacloud **RTX6000D**（86GB VRAM，替换不可达的 A800）实跑完成，两条腿各训出一个独立 adapter。结果、A/B 评测与 4bit 底座验证见文末「M2 训练结果（RTX6000D，已完成）」。`max_seq_len` 已按上节实测固化进 `LEGS`（judge_c / drafter_a 均 4096，分两次跑因为是两个 adapter），沿用 512 跑任一条腿都会被 `verify` 直接拦下。
 
 > 银牌暖启池实际规模 = **526**（双源）。pipeline 源：`pipeline_runs` 表 548 行、356 条非空 `filled_text`，剔除残稿后按正文 sha256 分组、组内保留评分比最高 run，得 131 distinct（131/131 通过 `validate_pair`，provenance 带 `score_ratio`/`all_pass`）。artifact 源：`contract_artifacts` 401 行去 6 superseded 后 395 份母版经合成槽位实例化（2,588 个 distinct 槽位名：显式表 → 类别规则 → 通用法律兜底三层解析；84 行用了兜底值，审计计数）；跨源正文哈希去重零碰撞。Judge-C 脚手架 608 条来自 `type_validations`（258 条含 `law_ref`）与同类型 `clauses` 的 char-bigram 相关性 top-3 配对（精确 `field==section` 优先），全部 `tier:silver`/`verdict:fail`，`law_info` 仅作 300 字检索提示，仅供人工核验晋金——构建器不写 gold 文件。
+
+---
+
+# M2 训练结果（RTX6000D，已完成）
+
+2026-09-04 09:54 → 2026-09-05 00:30，seetacloud RTX6000D（86GB VRAM，单卡）。**bf16 底座 + LoRA**（不是 4bit QLoRA）：54GB 底座权重直接以 bf16 加载，LoRA r=16/alpha=32 覆盖全部 7 个投影（q/k/v/o/gate/up/down），79.7M 可训练参数（0.30%），`paged_adamw_8bit`、gradient checkpointing、assistant-span-only loss（prompt 全部 `-100`）、seq 4096、lr 1e-4 cosine、eff.batch 16（1×accum）。
+
+| 腿 | steps / 时间 | train loss | eval loss（单调性） | VRAM 峰值 |
+|---|---|---|---|---|
+| judge_c | 435 / 11.1h | 0.596 | 0.664(ep1) → 0.608(ep2) | 65.6GB |
+| drafter_a | 116 / 3.2h | 0.4793 | 0.593 → 0.363 → 0.306（无过拟合） | 68.9GB |
+
+**产物**：两个独立 adapter（各 324MB，`adapter_model.safetensors` 79.7M 参数 + tokenizer）。已打包 `data/finetune/adapters/adapters_0905.tar.gz`（571MB，md5 校验过）；训练所用原始数据 + run_meta + 完整 loss 曲线归档在 `data/finetune/box_rescue/`。
+
+> ⚠️ **数据 lineage 待审计**：box 上实际训练用的是机上导出的 SFT 集 **judge_c 2314 train / 257 val、drafter_a 471/55**——大于「输入泄露与重接地」一节里重接地后的 **967/107**。机上这份导出早于/绕过了 `reground_judge_c.py` 的泄露修复，provenance 未重新审计。若判官 adapter 在真实条款上表现不佳，先怀疑训练数据 lineage，再怀疑 adapter。
+
+## A/B 评测：base vs base+adapter
+
+同批验证集、byte 级一致的提示词、相同解码参数（贪心，`max_new_tokens` judge 512 / drafter 1400），唯一变量是挂不挂 adapter。
+
+**judge_c（257 val，gold=`_meta.verdict`）**
+
+| arm | 准确率 | pass-F1 | JSON 解析率 | 平均耗时 |
+|---|---|---|---|---|
+| base | 0.109 | 0.276 | 38.5% | 27.3s |
+| **ft** | **0.844** | **0.855** | **100%** | 10.2s |
+
+- ft 修复 189 行、回归 0 行；base 失效模式是输出通用思维链、从不产出合法 JSON、耗尽 512 上限。
+
+**drafter_a（55 val，metric=chrF vs gold 正文）**
+
+| arm | 平均 chrF | 中位数 | 长度比 | 撞 1400 上限 |
+|---|---|---|---|---|
+| base | 19.51 | 18.99 | 1.131 | 55/55 |
+| **ft** | **51.03** | **42.92** | 1.087 | 31/55 |
+
+- base 55 条全部写满 1400 仍未收尾；ft 有 24 条在上限内自然收束。仍有 31 条撞上限被截断，这些行的 chrF 被截断压低，真实水平略高于 51。
+- **记忆化提示**：ft 侧 3/55 行 chrF>90，idx0 达 100.0（1023 token、长度比 1.0，近似逐字复现 gold）——验证集与训练分布存在近重复样本，中位数 42.9 比均值 51.0 更能代表真实泛化水平。
+
+逐行结果归档：`data/finetune/eval_out/{judge_c,drafter_a}_{base,ft}.jsonl` + `eval_report.md`。
+
+## 4bit 底座验证（量化损失）
+
+适配器是精度无关的（LoRA 权重独立于底座精度）。用 NF4（+ bf16 compute + double-quant）底座挂同一个 adapter，跑全量 judge_c 257 行，与 bf16 底座 ft 对比：
+
+| 指标 | bf16 底座 | 4bit 底座 |
+|---|---|---|
+| 准确率 | 0.844 | **0.860** |
+| pass-F1 | 0.855 | **0.865** |
+| JSON 解析率 | 100% | 100% |
+| 平均耗时 | 10.2s | 13.3s |
+| 显存占用 | ~54GB | ~18.5GB |
+
+**结论：适配器跨精度无损**，4bit 底座可直接使用、无需任何额外工作——加载时加 `--base-dtype 4bit`（`train_sft.py` 已有该 flag）即可，同一 adapter 直接挂载。唯一代价是每行慢约 24%（NF4 反量化开销），换来显存 54GB → 18.5GB。
+
+> 若要产出**部署用量化模型**（vLLM/AWQ/GGUF），不能直接在 4bit 底座上 merge：正确路径是 bf16 底座 → 挂 adapter → `merge_and_unload()` → 对合并后完整模型做量化。bnb 4bit 本就从 bf16 权重现场量化，ModelScope 重下 52GB bf16 快照后两条路通吃，无需单独 4bit 权重包。
+
+结果归档：`data/finetune/eval_out/judge_c_ft_4bit.jsonl`（199KB）。

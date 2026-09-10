@@ -178,6 +178,22 @@ python -m fd_coding_law_bench_mcp        # stdio server (default)
 fastmcp run fd-coding-law-bench-mcp/src/fd_coding_law_bench_mcp/server.py
 ```
 
+### HTTP mode
+
+The same server can serve streamable HTTP (e.g. for a remote MCP client or the
+AI Gateway & Registry — see `deploy/america-box/mcp-gateway-registration.md`):
+
+```bash
+MCP_HTTP_TRANSPORT=http \
+MCP_HTTP_TOKEN=<shared-secret> \
+MCP_HTTP_HOST=0.0.0.0 MCP_HTTP_PORT=8080 \
+python -m fd_coding_law_bench_mcp
+```
+
+HTTP mode is fail-closed: without a non-empty `MCP_HTTP_TOKEN` the server
+refuses to start. Clients authenticate with `Authorization: Bearer <token>` or
+`X-API-Key: <token>`. The tool set over HTTP is identical to stdio.
+
 ## Wire into a client (Claude Code)
 
 Copy the relevant entry from `mcp-config.example.json` into your project's

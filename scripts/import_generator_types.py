@@ -5,7 +5,7 @@ re-runs update in place (or insert a new row only if the generator YAML body
 drifted — Task 6 formalizes drift tracking).
 
 Run from law-template root with database_url exported:
-    database_url=postgresql://app:change-me-please@localhost:15432/law_bench \
+    database_url=postgresql://app:CHANGEME@localhost:15432/law_bench \
         python scripts/import_generator_types.py
 """
 from __future__ import annotations

@@ -16,7 +16,7 @@ sys.path.insert(0, "/Users/chengsishi/law-template")
 
 os.environ.setdefault(
     "database_url",
-    "postgresql://app:change-me-please@localhost:15432/law_bench",
+    "postgresql://app:CHANGEME@localhost:15432/law_bench",
 )
 
 from src.clauses.generator_import import (  # noqa: E402

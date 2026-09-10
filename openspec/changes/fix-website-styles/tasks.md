@@ -6,8 +6,8 @@
 ## 2. Build & deploy
 
 - [x] 2.1 Push to `main` → CI (`.github/workflows/build-and-push.yml`) builds + pushes image tagged `sha-<short>` to Harbor.
-- [ ] 2.2 Update both image refs in `deploy/deployment.yaml` to the new `sha-<short>`; commit + push the roll.
-- [ ] 2.3 `kubectl apply -f deploy/deployment.yaml` on the `law-bench` cluster; wait for rollout.
+- [x] 2.2 Update both image refs in `deploy/deployment.yaml` to the new `sha-<short>`; commit + push the roll.
+- [x] 2.3 `kubectl apply -f deploy/deployment.yaml` on the `law-bench` cluster; wait for rollout.
 
 ## 3. Verify (against https://lawbench.token118.com)
 

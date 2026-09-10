@@ -38,5 +38,8 @@
   <script>window.__LOCALE__ = {{ t_json|safe }}; window.__LABELS__ = {{ labels_json|safe }}; window.__LANG__ = "{{ lang }}";</script>
   <script src="{{ url_for('static', path='app.js') }}"></script>
   {% block scripts %}{% endblock %}
+<!-- impeccable-live-start -->
+<script src="http://localhost:8400/live.js?token=7412bfa7-231e-48a1-be56-02135326050e"></script>
+<!-- impeccable-live-end -->
 </body>
 </html>
