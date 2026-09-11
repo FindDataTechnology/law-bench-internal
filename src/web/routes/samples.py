@@ -90,6 +90,7 @@ def page_samples(
         "samples.html",
         {
             "all_types": all_types,
+            "type_map": type_map,
             "artifacts": rows,
             "total": total,
             "limit": limit,
