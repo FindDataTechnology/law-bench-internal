@@ -7,11 +7,15 @@
     <a href="{{ url_for('page_list_prompts') }}">{{ t.detail.back_to_prompts }}</a>
   </div>
   <div class="toolbar">
-    <a class="btn" href="{{ url_for('page_edit_prompt', name=prompt.name) }}">{{ t.detail.edit_prompt }}</a>
-    <form method="post" action="{{ url_for('page_delete_prompt', name=prompt.name) }}"
-          data-confirm="{{ tr('detail.delete_prompt_confirm', name=prompt.name) }}">
-      <button type="submit" class="btn btn-danger">{{ t.detail.delete_prompt }}</button>
-    </form>
+    {% if has_scope('content:write') %}
+      <a class="btn" href="{{ url_for('page_edit_prompt', name=prompt.name) }}">{{ t.detail.edit_prompt }}</a>
+    {% endif %}
+    {% if has_scope('admin') %}
+      <form method="post" action="{{ url_for('page_delete_prompt', name=prompt.name) }}"
+            data-confirm="{{ tr('detail.delete_prompt_confirm', name=prompt.name) }}">
+        <button type="submit" class="btn btn-danger">{{ t.detail.delete_prompt }}</button>
+      </form>
+    {% endif %}
   </div>
 </div>
 

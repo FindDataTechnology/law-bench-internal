@@ -51,6 +51,19 @@ a:hover { text-decoration: underline; }
 }
 .topbar nav .lang-switch a[aria-current="true"] { font-weight: 700; color: var(--text); }
 .topbar nav .lang-switch a:not([aria-current="true"]) { opacity: 0.6; }
+/* Signed-in identity: divided from the language switch by the same 1px rule,
+   flat per the design system (no shadows/gradients). Doubles as the login
+   affordance for a rendered-but-anonymous chrome. */
+.topbar nav .identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-left: 0.85rem;
+  margin-left: 0.25rem;
+  border-left: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+.topbar nav .identity .identity-name { color: var(--text); }
 
 .container { max-width: 980px; margin: 1.5rem auto; padding: 0 1.25rem; }
 

@@ -10,8 +10,10 @@
     <a href="{{ url_for('page_list_rubrics') }}">{{ t.detail.back_to_rubrics }}</a>
   </div>
   <div class="toolbar">
-    {% if not rubric.is_harbor %}
+    {% if not rubric.is_harbor and has_scope('content:write') %}
       <a class="btn" href="{{ url_for('page_edit_rubric', name=rubric.name) }}">{{ t.detail.edit_rubric }}</a>
+    {% endif %}
+    {% if not rubric.is_harbor and has_scope('admin') %}
       <form method="post" action="{{ url_for('page_delete_rubric', name=rubric.name) }}"
             data-confirm="{{ tr('detail.delete_rubric_confirm', name=rubric.name, count=rubric.criterion_count) }}">
         <button type="submit" class="btn btn-danger">{{ t.detail.delete_rubric }}</button>
@@ -43,7 +45,7 @@
   <div class="criterion-row">
     <div class="crow-head">
       <strong>{{ loop.index }}. {{ criterion_for(c.name, 'title', c.name) }}</strong>
-      {% if not rubric.is_harbor %}
+      {% if not rubric.is_harbor and has_scope('content:write') %}
       <div class="crit-actions">
         <form method="post" action="{{ url_for('page_move_criterion', name=rubric.name, cid=c.id) }}">
           <input type="hidden" name="direction" value="up">
@@ -54,17 +56,19 @@
           <button type="submit" class="btn btn-sm" {{ 'disabled' if loop.last else '' }}>▼</button>
         </form>
         <button type="button" class="btn btn-sm" data-toggle-edit>{{ t.detail.edit_btn }}</button>
+        {% if has_scope('admin') %}
         <form method="post" action="{{ url_for('page_delete_criterion', name=rubric.name, cid=c.id) }}"
               data-confirm="{{ tr('detail.delete_criterion_confirm', name=c.name) }}">
           <button type="submit" class="btn btn-sm btn-danger">✗</button>
         </form>
+        {% endif %}
       </div>
       {% endif %}
     </div>
     <div><strong>{{ t.detail.description_label }}</strong> {{ criterion_for(c.name, 'description', c.description) }}</div>
     <div class="muted"><strong>{{ t.detail.guidance_label }}</strong> {{ criterion_for(c.name, 'guidance', c.guidance) }}</div>
 
-    {% if not rubric.is_harbor %}
+    {% if not rubric.is_harbor and has_scope('content:write') %}
     <form method="post" class="crit-edit"
           action="{{ url_for('page_update_criterion', name=rubric.name, cid=c.id) }}">
       <div class="grid2">
@@ -89,7 +93,7 @@
   <p class="muted">{{ t.detail.no_criteria }}</p>
   {% endfor %}
 
-  {% if not rubric.is_harbor %}
+  {% if not rubric.is_harbor and has_scope('content:write') %}
   <h3>{{ t.detail.add_criterion }}</h3>
   <form method="post" action="{{ url_for('page_add_criterion', name=rubric.name) }}">
     <div class="grid2">

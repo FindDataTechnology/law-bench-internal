@@ -43,6 +43,15 @@ LOCALES: dict[str, dict[str, Any]] = {
             "re_extract_harbor": "↻ 重新提取 harbor",
             "re_extract_confirm": "重新运行 harbor 提取？本地规则将保留。",
         },
+        "auth": {
+            "login": "登录",
+            "logout": "退出",
+            "signed_in_as": "已登录：",
+            "denied_title": "无法登录",
+            "denied_h1": "无权访问",
+            "denied_body": "您的账号尚未获得本工作台的访问权限。请联系管理员在 Logto 中为您授予 content:read / content:write / admin 权限后重试。",
+            "denied_login_again": "换一个账号登录",
+        },
         "law_info": {
             "h1": "法律法规参考",
             "detail_h1": "{zh} 法律法规",
@@ -233,6 +242,15 @@ LOCALES: dict[str, dict[str, Any]] = {
             "new_local_rubric": "+ New local rubric",
             "re_extract_harbor": "↻ Re-extract harbor",
             "re_extract_confirm": "Re-run harbor extraction? Local rubrics are preserved.",
+        },
+        "auth": {
+            "login": "Sign in",
+            "logout": "Sign out",
+            "signed_in_as": "Signed in as",
+            "denied_title": "Sign-in denied",
+            "denied_h1": "Access denied",
+            "denied_body": "Your account has not been granted access to this workbench. Ask an administrator to grant you the content:read / content:write / admin permission in Logto, then try again.",
+            "denied_login_again": "Sign in with another account",
         },
         "law_info": {
             "h1": "Law & Regulations",

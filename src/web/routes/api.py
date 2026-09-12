@@ -30,6 +30,7 @@ from src.eval.store import (
 )
 from src.settings import DEFAULT_DB, EXTRACT_SCRIPT, REPO_ROOT
 
+from ..auth.deps import require_scope
 from ..deps import DbConn, get_db
 from ..models import (
     CompareCreate,
@@ -70,7 +71,11 @@ def get_rubric(name: str, db: DbConn = Depends(get_db)) -> dict:
 # --- rubric writes --------------------------------------------------------- #
 
 
-@router.post("/rubrics", status_code=201)
+@router.post(
+    "/rubrics",
+    status_code=201,
+    dependencies=[Depends(require_scope("content:write"))],
+)
 def create_rubric(body: RubricCreate, db: DbConn = Depends(get_db)) -> dict:
     return M.create_rubric(
         body.name,
@@ -81,7 +86,9 @@ def create_rubric(body: RubricCreate, db: DbConn = Depends(get_db)) -> dict:
     )
 
 
-@router.patch("/rubrics/{name}")
+@router.patch(
+    "/rubrics/{name}", dependencies=[Depends(require_scope("content:write"))]
+)
 def update_rubric(name: str, body: RubricUpdate, db: DbConn = Depends(get_db)) -> dict:
     detail = M.get_rubric_detail(name, db_path=db)  # raises NotFoundError if missing
     return M.update_rubric(
@@ -89,7 +96,9 @@ def update_rubric(name: str, body: RubricUpdate, db: DbConn = Depends(get_db)) -
     )
 
 
-@router.delete("/rubrics/{name}")
+@router.delete(
+    "/rubrics/{name}", dependencies=[Depends(require_scope("admin"))]
+)
 def delete_rubric(name: str, db: DbConn = Depends(get_db)) -> dict:
     detail = M.get_rubric_detail(name, db_path=db)
     M.delete_rubric(detail["id"], db_path=db)
@@ -99,7 +108,11 @@ def delete_rubric(name: str, db: DbConn = Depends(get_db)) -> dict:
 # --- criterion writes ------------------------------------------------------ #
 
 
-@router.post("/rubrics/{name}/criteria", status_code=201)
+@router.post(
+    "/rubrics/{name}/criteria",
+    status_code=201,
+    dependencies=[Depends(require_scope("content:write"))],
+)
 def add_criterion(name: str, body: CriterionCreate, db: DbConn = Depends(get_db)) -> dict:
     detail = M.get_rubric_detail(name, db_path=db)
     return M.add_criterion(
@@ -108,21 +121,30 @@ def add_criterion(name: str, body: CriterionCreate, db: DbConn = Depends(get_db)
 
 
 # Defined before the {cid} routes so "/criteria/reorder" is not matched as an int cid.
-@router.post("/rubrics/{name}/criteria/reorder")
+@router.post(
+    "/rubrics/{name}/criteria/reorder",
+    dependencies=[Depends(require_scope("content:write"))],
+)
 def reorder_criteria(name: str, body: ReorderRequest, db: DbConn = Depends(get_db)) -> dict:
     detail = M.get_rubric_detail(name, db_path=db)
     ordered = M.reorder_criteria(detail["id"], body.ordered_criterion_ids, db_path=db)
     return {"ordered_criterion_ids": ordered}
 
 
-@router.patch("/rubrics/{name}/criteria/{cid}")
+@router.patch(
+    "/rubrics/{name}/criteria/{cid}",
+    dependencies=[Depends(require_scope("content:write"))],
+)
 def update_criterion(
     name: str, cid: int, body: CriterionUpdate, db: DbConn = Depends(get_db)
 ) -> dict:
     return M.update_criterion(cid, body.name, body.description, body.guidance, db_path=db)
 
 
-@router.delete("/rubrics/{name}/criteria/{cid}")
+@router.delete(
+    "/rubrics/{name}/criteria/{cid}",
+    dependencies=[Depends(require_scope("admin"))],
+)
 def delete_criterion(name: str, cid: int, db: DbConn = Depends(get_db)) -> dict:
     M.delete_criterion(cid, db_path=db)
     return {"deleted": cid}
@@ -143,7 +165,11 @@ def get_prompt(name: str, db: DbConn = Depends(get_db)) -> dict:
     return M.get_prompt(name, db_path=db)
 
 
-@router.post("/prompts", status_code=201)
+@router.post(
+    "/prompts",
+    status_code=201,
+    dependencies=[Depends(require_scope("content:write"))],
+)
 def create_prompt(body: PromptCreate, db: DbConn = Depends(get_db)) -> dict:
     return M.create_prompt(
         body.name,
@@ -156,7 +182,9 @@ def create_prompt(body: PromptCreate, db: DbConn = Depends(get_db)) -> dict:
     )
 
 
-@router.patch("/prompts/{name}")
+@router.patch(
+    "/prompts/{name}", dependencies=[Depends(require_scope("content:write"))]
+)
 def update_prompt(name: str, body: PromptUpdate, db: DbConn = Depends(get_db)) -> dict:
     detail = M.get_prompt(name, db_path=db)  # raises NotFoundError if missing
     return M.update_prompt(
@@ -171,7 +199,9 @@ def update_prompt(name: str, body: PromptUpdate, db: DbConn = Depends(get_db)) -
     )
 
 
-@router.delete("/prompts/{name}")
+@router.delete(
+    "/prompts/{name}", dependencies=[Depends(require_scope("admin"))]
+)
 def delete_prompt(name: str, db: DbConn = Depends(get_db)) -> dict:
     detail = M.get_prompt(name, db_path=db)
     M.delete_prompt(detail["id"], db_path=db)
@@ -200,7 +230,11 @@ def get_compare_route(compare_id: int, db: DbConn = Depends(get_db)) -> dict:
     return {**compare, "matrix": build_matrix(compare)}
 
 
-@router.post("/compare", status_code=201)
+@router.post(
+    "/compare",
+    status_code=201,
+    dependencies=[Depends(require_scope("content:write"))],
+)
 def create_compare(body: CompareCreate, db: DbConn = Depends(get_db)) -> dict:
     """Create and run a compare synchronously.
 
@@ -252,7 +286,9 @@ def run_harbor_extraction(db_path: Path = DEFAULT_DB) -> tuple[int, str, str]:
     return proc.returncode, proc.stdout, proc.stderr
 
 
-@router.post("/harbor/extract")
+@router.post(
+    "/harbor/extract", dependencies=[Depends(require_scope("admin"))]
+)
 def harbor_extract(db: DbConn = Depends(get_db)) -> JSONResponse:
     """Re-run the harbor extraction script; return its summary + refreshed rubrics.
 
@@ -296,7 +332,12 @@ def _run_evaluation_background(run_id: int, rubric_name: str, contract_text: str
         )
 
 
-@router.post("/evaluate", status_code=202, response_model=EvaluateSubmitResponse)
+@router.post(
+    "/evaluate",
+    status_code=202,
+    response_model=EvaluateSubmitResponse,
+    dependencies=[Depends(require_scope("content:write"))],
+)
 async def submit_evaluation(
     background_tasks: BackgroundTasks,
     rubric: str = Form(...),

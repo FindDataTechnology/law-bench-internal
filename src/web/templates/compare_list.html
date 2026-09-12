@@ -3,7 +3,7 @@
 {% block content %}
 <div class="toolbar between">
   <h1>{{ t.h1.prompt_compares }}</h1>
-  <a class="btn btn-primary" href="{{ url_for('page_new_compare') }}">{{ t.btn.new_compare }}</a>
+  {% if has_scope('content:write') %}<a class="btn btn-primary" href="{{ url_for('page_new_compare') }}">{{ t.btn.new_compare }}</a>{% endif %}
 </div>
 
 <div class="panel">
@@ -34,7 +34,9 @@
       </tr>
       {% endfor %}
       {% if not compares %}
-      <tr><td colspan="7" class="muted">{{ t.empty.compares }} <a href="{{ url_for('page_new_compare') }}">{{ t.btn.new_compare }}</a>.</td></tr>
+      <tr><td colspan="7" class="muted">{{ t.empty.compares }}
+        {% if has_scope('content:write') %}<a href="{{ url_for('page_new_compare') }}">{{ t.btn.new_compare }}</a>{% endif %}
+      </td></tr>
       {% endif %}
     </tbody>
   </table>

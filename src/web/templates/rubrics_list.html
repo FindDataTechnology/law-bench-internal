@@ -3,7 +3,7 @@
 {% block content %}
 <div class="toolbar between">
   <h1>{{ t.h1.evaluation_rubrics }}</h1>
-  <a class="btn btn-primary" href="{{ url_for('page_new_rubric') }}">{{ t.nav.new_local_rubric }}</a>
+  {% if has_scope('content:write') %}<a class="btn btn-primary" href="{{ url_for('page_new_rubric') }}">{{ t.nav.new_local_rubric }}</a>{% endif %}
 </div>
 
 <div class="panel">

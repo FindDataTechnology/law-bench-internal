@@ -52,6 +52,7 @@ from src.eval.store import (
 )
 from src.settings import GENERATE_TEMPLATES_SCRIPT, REPO_ROOT
 
+from ..auth.deps import require_scope
 from ..deps import DbConn, get_db
 from ..models import GenerationJobDetail, GenerationJobSubmit, GenerationRequest
 
@@ -134,6 +135,7 @@ def _enumerate_combinations(contract_type: str) -> list[dict]:
 @router.post(
     "/contracts/{contract_type}/generate-batch",
     summary="Batch-assemble contracts across tag combinations (mode D, sync)",
+    dependencies=[Depends(require_scope("content:write"))],
 )
 def generate_batch(
     contract_type: str, body: GenerationRequest, db: DbConn = Depends(get_db)
@@ -373,6 +375,7 @@ def _run_regenerate(
     status_code=202,
     response_model=GenerationJobSubmit,
     summary="Submit a self-heal pipeline job (mode E, async)",
+    dependencies=[Depends(require_scope("content:write"))],
 )
 def submit_pipeline(
     contract_type: str,
@@ -396,6 +399,7 @@ def submit_pipeline(
     status_code=202,
     response_model=GenerationJobSubmit,
     summary="Submit an auto-reject pipeline job (mode F, async)",
+    dependencies=[Depends(require_scope("content:write"))],
 )
 def submit_auto_reject(
     contract_type: str,
@@ -419,6 +423,7 @@ def submit_auto_reject(
     status_code=202,
     response_model=GenerationJobSubmit,
     summary="Submit a 母版 regeneration job (mode G, async)",
+    dependencies=[Depends(require_scope("admin"))],
 )
 def submit_regenerate(
     contract_type: str,

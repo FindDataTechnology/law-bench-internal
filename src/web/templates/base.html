@@ -10,6 +10,7 @@
   <header class="topbar">
     <a class="brand" href="{{ url_for('page_list_rubrics') }}">{{ t.nav.brand }}</a>
     <nav>
+      {% if has_scope('content:read') %}
       <a href="{{ url_for('page_list_rubrics') }}">{{ t.nav.rubrics }}</a>
       <a href="{{ url_for('page_list_prompts') }}">{{ t.nav.prompts }}</a>
       <a href="{{ url_for('page_list_compares') }}">{{ t.nav.compare }}</a>
@@ -20,11 +21,23 @@
       <a href="{{ url_for('page_clauses') }}">条款库</a>
       <a href="/dashboard">仪表板</a>
       <a href="{{ url_for('page_search') }}">搜索</a>
+      {% endif %}
       <span class="lang-switch">
         <a href="{{ request.url.path }}?lang=en"{% if lang == 'en' %} aria-current="true"{% endif %}>{{ t.switch.en }}</a>
         <span class="muted">|</span>
         <a href="{{ request.url.path }}?lang=zh"{% if lang == 'zh' %} aria-current="true"{% endif %}>{{ t.switch.zh }}</a>
       </span>
+      {% if user and user.sub %}
+      <span class="identity">
+        <span class="muted">{{ t.auth.signed_in_as }}</span>
+        <span class="identity-name">{{ user.name or user.email or user.sub }}</span>
+        <a href="/auth/logout">{{ t.auth.logout }}</a>
+      </span>
+      {% else %}
+      <span class="identity">
+        <a href="/auth/login">{{ t.auth.login }}</a>
+      </span>
+      {% endif %}
     </nav>
   </header>
   <main class="container">

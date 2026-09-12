@@ -51,6 +51,7 @@ from src.eval.errors import NotFoundError
 from src.eval.law_info import get_law_info
 from src.eval.manage import list_prompts, list_rubrics_with_counts
 
+from ..auth.deps import require_scope
 from ..deps import DbConn, get_db
 
 # src/web/routes/contract_context.py -> routes -> web -> src -> repo root
@@ -63,7 +64,11 @@ _OUTPUT_DIR = _REPO_ROOT / "output" / "contracts"
 # includes both). Both routers share the ``/api/contracts`` prefix and the
 # ``contract-context`` tag so the origin's OpenAPI shape is unchanged.
 read_only_router = APIRouter(prefix="/api/contracts", tags=["contract-context"])
-write_router = APIRouter(prefix="/api/contracts", tags=["contract-context"])
+write_router = APIRouter(
+    prefix="/api/contracts",
+    tags=["contract-context"],
+    dependencies=[Depends(require_scope("content:write"))],
+)
 
 # Backward-compat alias ``router`` is assembled at the END of this module:
 # ``include_router`` copies the sub-routers' routes at call time, so the parent

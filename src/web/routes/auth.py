@@ -3,7 +3,8 @@
 Browser login is the OIDC authorization-code flow with PKCE S256::
 
     GET /auth/login     -> 302 to Logto /authorize (state + code_challenge)
-    GET /auth/callback  -> exchange code for tokens, validate id_token,
+    GET /auth/callback  -> exchange code for tokens, validate the id_token
+                           (identity) AND the access_token (permission scopes),
                            set signed session cookie, 302 to the ``next``
                            path (or ``/``). 400 on invalid/expired state
                            or a failed exchange.
@@ -37,10 +38,10 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import logging
 import secrets
-from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from src.settings import (
@@ -49,13 +50,18 @@ from src.settings import (
     AUTH_SESSION_SECRET,
     LOGTO_REDIRECT_URI,
     ConfigError,
+    admission_mode,
 )
 
 from ..auth import apikey, logto, session
 from ..auth.deps import User, get_current_user
+from ..auth.scopes import is_admitted, scopes_from_claims
 from ..models import ApiKeyCreate, ApiKeyCreated, ApiKeyOut
+from ..templating import templates as _templates
 
 router = APIRouter(tags=["auth"])
+
+_log = logging.getLogger(__name__)
 
 
 # --- PKCE + state cookie (single-use, signed, short-lived) ------------------ #
@@ -147,16 +153,6 @@ def _post_logout_uri() -> str | None:
     return f"{APP_BASE_URL.rstrip('/')}/"
 
 
-def _extract_scopes(claims: dict[str, Any]) -> list[str]:
-    """Pull scopes from a JWT (Logto uses ``scope`` str or ``scp`` list)."""
-    raw = claims.get("scope") or claims.get("scp") or []
-    if isinstance(raw, str):
-        return [s for s in raw.split() if s]
-    if isinstance(raw, list):
-        return [str(s) for s in raw if s]
-    return []
-
-
 # --- OIDC login / callback / logout ---------------------------------------- #
 
 
@@ -194,13 +190,15 @@ def callback(
     state: str = "",
     error: str = "",
     error_description: str = "",
-) -> RedirectResponse:
-    """Complete the OIDC flow: exchange code, validate id_token, set cookie.
+) -> Response:
+    """Complete the OIDC flow: exchange code, validate tokens, set cookie.
 
     400 on a missing/expired PKCE cookie, a state mismatch (CSRF), or a failed
     token exchange. 503 if the IdP is unreachable mid-flow. 401 if the id_token
-    fails validation. On success: 302 to the ``next`` path with a fresh session
-    cookie; the PKCE cookie is deleted (single-use).
+    or access_token fails validation. 403 (login-denied page, no session
+    cookie) if the identity holds no admitted permission scope. On success: 302
+    to the ``next`` path with a fresh session cookie; the PKCE cookie is deleted
+    (single-use).
     """
     # The IdP may return an error inline (e.g. user denied consent / access_denied).
     if error:
@@ -235,15 +233,55 @@ def callback(
     except logto.LogtoUnreachable as exc:
         raise HTTPException(503, "IdP unreachable during id_token validation") from exc
 
+    # The access token is minted for the configured API Resource; its ``scope``
+    # claim is the user's granted permission subset — the authorization truth.
+    # The id_token above proves *identity*; this proves *authorization*.
+    access_token = tokens.get("access_token", "")
+    if not access_token:
+        raise HTTPException(400, "no access_token in token response")
+    try:
+        access_claims = logto.validate_jwt(access_token)
+    except logto.InvalidToken as exc:
+        raise HTTPException(401, "invalid access_token") from exc
+    except logto.LogtoUnreachable as exc:
+        raise HTTPException(
+            503, "IdP unreachable during access_token validation"
+        ) from exc
+
+    granted_scopes = scopes_from_claims(access_claims)
+
     # Best-effort profile enrichment (access_token -> userinfo). A failure here
     # must not break login — the id_token already carries sub/name/email.
-    userinfo: dict[str, Any] = {}
-    access_token = tokens.get("access_token", "")
-    if access_token:
-        try:
-            userinfo = logto.fetch_userinfo(access_token)
-        except logto.LogtoError:
-            userinfo = {}
+    try:
+        userinfo = logto.fetch_userinfo(access_token)
+    except logto.LogtoError:
+        userinfo = {}
+
+    # Admission gate (fail closed). An identity that authenticates but holds no
+    # admitted permission scope is NOT given a session. ``warn`` mode logs the
+    # granted scopes and admits anyway so the Logto permissions can be verified
+    # during a staged rollout without locking everyone out.
+    if not is_admitted(granted_scopes):
+        if admission_mode() == "warn":
+            _log.warning(
+                "admission gate (warn): sub=%s scopes=%s not admitted — admitting",
+                claims.get("sub", ""),
+                granted_scopes,
+            )
+        else:
+            _log.info(
+                "login denied: sub=%s scopes=%s (no admitted scope)",
+                claims.get("sub", ""),
+                granted_scopes,
+            )
+            denied = _templates.TemplateResponse(
+                request,
+                "login_denied.html",
+                {"email": str(claims.get("email") or userinfo.get("email") or "")},
+                status_code=403,
+            )
+            _clear_pkce_cookie(denied)
+            return denied
 
     payload = {
         "sub": str(claims.get("sub", "")),
@@ -254,7 +292,7 @@ def callback(
             or claims.get("preferred_username")
             or ""
         ),
-        "scopes": _extract_scopes(claims),
+        "scopes": granted_scopes,
     }
 
     next_url = _safe_next(pkce.get("n", "/"))

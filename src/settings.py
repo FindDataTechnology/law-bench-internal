@@ -175,16 +175,22 @@ LOGTO_REDIRECT_URI = _env("LOGTO_REDIRECT_URI", "")
 # after ending its session. When empty, logout clears the cookie locally and
 # redirects to "/" without calling the IdP end-session endpoint.
 APP_BASE_URL = _env("APP_BASE_URL", "").rstrip("/")
-# OIDC scopes requested at the authorize step.
-LOGTO_SCOPES = _env("LOGTO_SCOPES", "openid profile email").split()
+# OIDC + API scopes requested at the authorize step. The API Resource permission
+# scopes (``content:read``/``content:write``/``admin``) are required for RBAC —
+# Logto returns only the subset the user's roles grant, and that intersection is
+# the access token's ``scope`` claim the app authorizes on. Without requesting
+# them, every token carries only identity scopes and the admission gate denies
+# everyone in ``enforce`` mode.
+LOGTO_SCOPES = _env(
+    "LOGTO_SCOPES", "openid profile email content:read content:write admin"
+).split()
 
-# Optional: the Logto API-resource indicator that Bearer access-token JWTs are
-# minted for. When set, Bearer JWTs are audience-checked against it. When empty,
-# audience verification is skipped (issuer + signature + exp still enforced) —
-# acceptable only for a single-resource self-deploy; set it in prod to bind
-# tokens to this API. Defaults to the client_id so ID-token-style bearers also
-# validate.
-LOGTO_API_AUDIENCE = _env("LOGTO_API_AUDIENCE", LOGTO_CLIENT_ID)
+# The Logto API Resource this app requests (the authorize ``resource=`` param and
+# the audience the access token is minted for). Roles in Logto bundle this
+# resource's permission scopes; the access token's ``scope`` claim is the app's
+# authorization truth. When empty, no resource is requested and access-token
+# audience falls back to the client_id (single-resource self-deploy only).
+LOGTO_API_RESOURCE = _env("LOGTO_API_RESOURCE", "")
 
 # Session cookie signing secret. MUST be a stable deploy secret — never
 # auto-generated per restart; rotating it invalidates every live session and
@@ -196,6 +202,39 @@ AUTH_SESSION_TTL = int(_env("AUTH_SESSION_TTL", str(7 * 24 * 3600)))
 # leave 1 in prod (Secure requires https). httpOnly + SameSite=Lax are fixed.
 AUTH_COOKIE_NAME = _env("AUTH_COOKIE_NAME", "lawbench_session")
 AUTH_COOKIE_SECURE = _env("AUTH_COOKIE_SECURE", "1") == "1"
+
+# --- RBAC: permission scopes and login admission --------------------------- #
+# Authorization is expressed as *scopes*, taken directly from the Logto access
+# token's ``scope`` claim for the configured API Resource. There is no app-side
+# role->scope table — Logto roles are permission bundles, so the Logto console is
+# the single source of truth. These env vars configure who may sign in and the
+# rollout mode. Read live (mirroring the DSN read in
+# ``check_public_auth_config``) so tests and a rolling deploy can change them
+# without an import-time rebind.
+
+
+def admitted_scope_set() -> frozenset[str]:
+    """Scopes that qualify an identity to hold a workbench session.
+
+    A token whose ``scope`` claim intersects this set is admitted at
+    ``/auth/callback``; otherwise it is denied (fail closed). Comma-separated
+    env, defaulting to the full API Resource permission set.
+    """
+    raw = _env(
+        "AUTH_ADMITTED_SCOPES",
+        "content:read,content:write,admin",
+    )
+    return frozenset(p.strip() for p in raw.split(",") if p.strip())
+
+
+def admission_mode() -> str:
+    """``enforce`` (default) applies the admission gate; ``warn`` logs + admits.
+
+    Anything other than ``warn`` is coerced to ``enforce`` — a typo must fail
+    closed, never silently disable the gate.
+    """
+    mode = _env("AUTH_ADMISSION_MODE", "enforce").strip().lower()
+    return "warn" if mode == "warn" else "enforce"
 
 # Env vars that MUST be populated before the app serves any traffic. Checked
 # fail-fast at startup in create_app() — a missing value means the process

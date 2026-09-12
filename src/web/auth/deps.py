@@ -22,6 +22,13 @@ Exempt paths (``/healthz``, ``/auth/*``) get an anonymous sentinel so the
 constructor-level ``Depends(get_current_user)`` wired in Task 8.1 does not 401
 the login flow or the liveness probe.
 
+Authorization is scope-based: every channel carries the same Logto permission
+vocabulary (``content:read`` / ``content:write`` / ``admin``). The cookie and
+Bearer channels read it from the access token's ``scope`` claim (the cookie
+persists the resolved scopes at ``/auth/callback``); the API-key channel carries
+explicit scopes set at key creation. An identity with no recognized scope gets
+no usable scope — fail closed. See :func:`require_scope`.
+
 A JWKS network failure during Bearer validation is NOT swallowed into a 401:
 ``LogtoUnreachable`` propagates so the route layer maps it to 503 — 401 would
 claim the token was *rejected* when it was merely *unverifiable*.
@@ -36,6 +43,7 @@ from fastapi import Depends, HTTPException, Request
 from src.settings import AUTH_COOKIE_NAME
 
 from . import apikey, logto, session
+from .scopes import scopes_from_claims
 
 
 @dataclass
@@ -46,6 +54,14 @@ class User:
     (``"cookie"`` | ``"bearer"`` | ``"apikey"`` | ``"anonymous"``) so logging
     and tests can tell them apart. ``anonymous`` marks an exempt path where auth
     was deliberately skipped; such routes must not consume the user.
+
+    ``scopes`` is what authorization checks. For the cookie channel it is the
+    scope set persisted at ``/auth/callback``; for the Bearer channel it is parsed
+    directly from the access token's ``scope`` claim; for the API-key channel it is
+    the key's stored scopes. All three are the same Logto permission vocabulary
+    (``content:read`` / ``content:write`` / ``admin``), so the three channels
+    enforce consistently. The app keeps no role table — roles are permission
+    bundles that live in Logto.
     """
 
     sub: str
@@ -67,16 +83,6 @@ _EXEMPT_PREFIXES: tuple[str, ...] = ("/auth/",)
 
 def _is_exempt(path: str) -> bool:
     return path in _EXEMPT_PATHS or path.startswith(_EXEMPT_PREFIXES)
-
-
-def _bearer_scopes(claims: dict) -> list[str]:
-    """Extract scopes from a JWT (Logto uses ``scope`` str or ``scp`` list)."""
-    raw = claims.get("scope") or claims.get("scp") or []
-    if isinstance(raw, str):
-        return [s for s in raw.split() if s]
-    if isinstance(raw, list):
-        return [str(s) for s in raw if s]
-    return []
 
 
 async def get_current_user(request: Request) -> User:
@@ -102,7 +108,7 @@ async def get_current_user(request: Request) -> User:
                 sub=payload["sub"],
                 name=payload.get("name", ""),
                 email=payload.get("email", ""),
-                scopes=list(payload.get("scopes", [])),
+                scopes=[str(s) for s in payload.get("scopes", [])],
                 channel="cookie",
             )
             request.state.user = user
@@ -123,6 +129,9 @@ async def get_current_user(request: Request) -> User:
             # Present-but-invalid Bearer -> 401, do NOT fall through to API key.
             raise HTTPException(status_code=401, detail="invalid bearer token") from exc
         # logto.LogtoUnreachable propagates -> 503 (unverifiable, not rejected).
+        # A Logto Bearer IS an access token, so its ``scope`` claim is the granted
+        # permission set directly. A token with no admitted scope resolves to no
+        # usable scopes (managed routes 403) — consistent with the cookie channel.
         user = User(
             sub=str(claims.get("sub", "")),
             name=str(claims.get("name", "") or ""),
@@ -131,7 +140,7 @@ async def get_current_user(request: Request) -> User:
                 or claims.get("preferred_username", "")
                 or ""
             ),
-            scopes=_bearer_scopes(claims),
+            scopes=scopes_from_claims(claims),
             channel="bearer",
         )
         request.state.user = user

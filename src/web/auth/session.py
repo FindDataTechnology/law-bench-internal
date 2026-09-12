@@ -1,11 +1,13 @@
 """Signed session cookie for browser sessions (Phase 2 auth).
 
 The browser channel authenticates via the OIDC authorization-code flow: Logto
-issues an id/access token at ``/auth/callback``; this module persists the
+issues id/access tokens at ``/auth/callback``; this module persists the
 *resolved* identity (``sub``/``name``/``email``/``scopes``) into a signed,
 timestamped cookie so subsequent requests don't re-hit the IdP. The cookie's
 signature is the trust root — the JWT is validated once at callback time, then
-the signed cookie stands for the session lifetime.
+the signed cookie stands for the session lifetime. The resolved permission
+``scopes`` are persisted verbatim; authorization checks them directly, so a
+stale or tampered cookie cannot widen access beyond the scopes it carries.
 
 Cookie attributes are fixed to the security-required set:
 - ``httpOnly=True`` — no JS access (defeats token exfil via XSS),
@@ -71,9 +73,10 @@ def _normalize(payload: dict[str, Any]) -> dict[str, Any]:
     """Coerce a session payload to the canonical shape (all keys present).
 
     ``sub`` must be a non-empty string (the stable Logto user id); the rest
-    default to empty values when the IdP didn't supply them. Scopes is forced
-    to a list of strings so downstream ``require_scope`` membership checks are
-    safe regardless of what was persisted.
+    default to empty values when the IdP didn't supply them. ``scopes`` is forced
+    to a list of strings; the resolver checks it directly on every request (see
+    :mod:`scopes`), so a stale or tampered cookie cannot widen access beyond the
+    scopes it carries.
     """
     sub = payload.get("sub")
     if not isinstance(sub, str) or not sub:

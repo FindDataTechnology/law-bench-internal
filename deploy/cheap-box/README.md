@@ -6,6 +6,8 @@ law-bench and a second copy of the mcp-gateway-registry stack now run on the
 cheap cluster. This file is the cheap-side runbook; see
 `deploy/america-box/*.md` for the retired original stack and for anything
 auth-related that is shared (Logto app registrations, group→scope mapping).
+For the **law-bench web workbench's own** RBAC (login admission + per-route
+scopes), see `deploy/cheap-box/web-rbac-logto.md`.
 
 ## Public names
 

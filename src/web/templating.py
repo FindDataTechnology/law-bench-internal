@@ -28,6 +28,21 @@ from .i18n import (
 from .paths import TEMPLATES_DIR
 
 
+def _has_scope(user: object, scope: str) -> bool:
+    """True iff ``user`` holds ``scope`` (``*`` is a wildcard).
+
+    ``user`` is ``None`` whenever auth was bypassed — e.g. a test that overrides
+    ``get_current_user`` without also setting ``request.state.user`` — so an
+    unknown identity resolves to *no* scopes and the chrome hides
+    permission-gated actions instead of guessing. Usability only; ``require_scope``
+    on the route remains the authoritative check.
+    """
+    if user is None:
+        return False
+    scopes = getattr(user, "scopes", None) or []
+    return "*" in scopes or scope in scopes
+
+
 def _locale_context(request: Request) -> dict:
     """Per-request Jinja context: active locale + catalog + a bound translator.
 
@@ -36,6 +51,9 @@ def _locale_context(request: Request) -> dict:
     helper for flash key lookup with interpolation) to every template render.
     """
     lang = getattr(request.state, "lang", DEFAULT)
+    # The resolved identity (set by ``get_current_user``); ``None`` on exempt or
+    # auth-bypassed renders. Drives the topbar login/logout affordance + scopes.
+    user = getattr(request.state, "user", None)
     t = getattr(request.state, "t", None) or LOCALES[DEFAULT]
     labels = LABELS.get(lang) or LABELS[DEFAULT]
     return {
@@ -56,6 +74,10 @@ def _locale_context(request: Request) -> dict:
         "title_for_rubric": lambda name: title_for_rubric(name, lang),
         "source_label": lambda source: source_label(source, lang),
         "criterion_for": lambda name, field, fallback="": criterion_for(name, field, lang, fallback),
+        # Auth identity (change `add-web-rbac-and-login-ui`): who's signed in,
+        # plus a scope predicate the chrome uses to show/hide permission-gated actions.
+        "user": user,
+        "has_scope": lambda scope: _has_scope(user, scope),
     }
 
 

@@ -20,6 +20,7 @@ from src.eval.manage import ManageError
 from src.eval.store import list_compares
 
 from ..templating import templates as _templates
+from ..auth.deps import require_scope
 from ..deps import DbConn, get_db
 from .api import run_harbor_extraction
 
@@ -86,7 +87,12 @@ def edit_rubric(request: Request, name: str, db: DbConn = Depends(get_db)):
 # --- rubric writes --------------------------------------------------------- #
 
 
-@router.post("/rubrics", include_in_schema=False, name="page_create_rubric")
+@router.post(
+    "/rubrics",
+    include_in_schema=False,
+    name="page_create_rubric",
+    dependencies=[Depends(require_scope("content:write"))],
+)
 async def create_rubric(request: Request, db: DbConn = Depends(get_db)):
     form = await request.form()
     name = form.get("name", "")
@@ -100,7 +106,12 @@ async def create_rubric(request: Request, db: DbConn = Depends(get_db)):
     return _flash(f"/rubrics/{quote(created['name'])}", "flash.rubric_created")
 
 
-@router.post("/rubrics/{name}", include_in_schema=False, name="page_update_rubric")
+@router.post(
+    "/rubrics/{name}",
+    include_in_schema=False,
+    name="page_update_rubric",
+    dependencies=[Depends(require_scope("content:write"))],
+)
 async def update_rubric(request: Request, name: str, db: DbConn = Depends(get_db)):
     form = await request.form()
     try:
@@ -117,7 +128,12 @@ async def update_rubric(request: Request, name: str, db: DbConn = Depends(get_db
     return _flash(f"/rubrics/{quote(updated['name'])}", "flash.rubric_updated")
 
 
-@router.post("/rubrics/{name}/delete", include_in_schema=False, name="page_delete_rubric")
+@router.post(
+    "/rubrics/{name}/delete",
+    include_in_schema=False,
+    name="page_delete_rubric",
+    dependencies=[Depends(require_scope("admin"))],
+)
 async def delete_rubric(request: Request, name: str, db: DbConn = Depends(get_db)):
     try:
         detail = M.get_rubric_detail(name, db_path=db)
@@ -131,7 +147,10 @@ async def delete_rubric(request: Request, name: str, db: DbConn = Depends(get_db
 
 
 @router.post(
-    "/rubrics/{name}/criteria", include_in_schema=False, name="page_add_criterion"
+    "/rubrics/{name}/criteria",
+    include_in_schema=False,
+    name="page_add_criterion",
+    dependencies=[Depends(require_scope("content:write"))],
 )
 async def add_criterion(request: Request, name: str, db: DbConn = Depends(get_db)):
     form = await request.form()
@@ -147,7 +166,10 @@ async def add_criterion(request: Request, name: str, db: DbConn = Depends(get_db
 
 
 @router.post(
-    "/rubrics/{name}/criteria/{cid}", include_in_schema=False, name="page_update_criterion"
+    "/rubrics/{name}/criteria/{cid}",
+    include_in_schema=False,
+    name="page_update_criterion",
+    dependencies=[Depends(require_scope("content:write"))],
 )
 async def update_criterion(request: Request, name: str, cid: int, db: DbConn = Depends(get_db)):
     form = await request.form()
@@ -165,6 +187,7 @@ async def update_criterion(request: Request, name: str, cid: int, db: DbConn = D
     "/rubrics/{name}/criteria/{cid}/delete",
     include_in_schema=False,
     name="page_delete_criterion",
+    dependencies=[Depends(require_scope("admin"))],
 )
 async def delete_criterion(request: Request, name: str, cid: int, db: DbConn = Depends(get_db)):
     try:
@@ -175,7 +198,10 @@ async def delete_criterion(request: Request, name: str, cid: int, db: DbConn = D
 
 
 @router.post(
-    "/rubrics/{name}/criteria/{cid}/move", include_in_schema=False, name="page_move_criterion"
+    "/rubrics/{name}/criteria/{cid}/move",
+    include_in_schema=False,
+    name="page_move_criterion",
+    dependencies=[Depends(require_scope("content:write"))],
 )
 async def move_criterion(request: Request, name: str, cid: int, db: DbConn = Depends(get_db)):
     form = await request.form()
@@ -229,7 +255,12 @@ def edit_prompt(request: Request, name: str, db: DbConn = Depends(get_db)):
 # --- prompts (writes) ------------------------------------------------------ #
 
 
-@router.post("/prompts", include_in_schema=False, name="page_create_prompt")
+@router.post(
+    "/prompts",
+    include_in_schema=False,
+    name="page_create_prompt",
+    dependencies=[Depends(require_scope("content:write"))],
+)
 async def create_prompt(request: Request, db: DbConn = Depends(get_db)):
     form = await request.form()
     try:
@@ -247,7 +278,12 @@ async def create_prompt(request: Request, db: DbConn = Depends(get_db)):
     return _flash(f"/prompts/{quote(created['name'])}", "flash.prompt_created")
 
 
-@router.post("/prompts/{name}", include_in_schema=False, name="page_update_prompt")
+@router.post(
+    "/prompts/{name}",
+    include_in_schema=False,
+    name="page_update_prompt",
+    dependencies=[Depends(require_scope("content:write"))],
+)
 async def update_prompt(request: Request, name: str, db: DbConn = Depends(get_db)):
     form = await request.form()
     try:
@@ -268,7 +304,10 @@ async def update_prompt(request: Request, name: str, db: DbConn = Depends(get_db
 
 
 @router.post(
-    "/prompts/{name}/delete", include_in_schema=False, name="page_delete_prompt"
+    "/prompts/{name}/delete",
+    include_in_schema=False,
+    name="page_delete_prompt",
+    dependencies=[Depends(require_scope("admin"))],
 )
 async def delete_prompt(request: Request, name: str, db: DbConn = Depends(get_db)):
     try:
@@ -282,7 +321,12 @@ async def delete_prompt(request: Request, name: str, db: DbConn = Depends(get_db
 # --- harbor re-extraction -------------------------------------------------- #
 
 
-@router.post("/harbor/extract", include_in_schema=False, name="page_harbor_extract")
+@router.post(
+    "/harbor/extract",
+    include_in_schema=False,
+    name="page_harbor_extract",
+    dependencies=[Depends(require_scope("admin"))],
+)
 async def harbor_extract(request: Request):
     # ``run_harbor_extraction`` shells out to the harbor script with a ``--db``
     # file path; it must NOT receive the borrowed Postgres connection (str() of

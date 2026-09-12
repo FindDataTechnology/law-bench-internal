@@ -24,6 +24,7 @@ uv run pytest tests                        # run tests
 uv run pytest tests/test_store.py -k name  # single test
 uv run pytest fd-coding-law-bench-mcp/tests  # MCP tests (hermetic, monkeypatched)
 bash scripts/serve_web.sh                  # run the web app on :8010 (uvicorn --reload)
+bash scripts/smoke_prod.sh [BASE_URL]      # post-deploy smoke against a live instance (prod by default)
 uv pip install -e ./fd-coding-law-bench-mcp  # editable-install MCP package into root venv
 python -m fd_coding_law_bench_mcp          # run MCP stdio server (HTTP mode: see its README)
 ```
@@ -51,5 +52,6 @@ This project uses OpenSpec for change management (`AGENTS.md`). When asked to bu
 ## Operations notes
 
 - Deploys go to the cheap k3s cluster (manifests in `deploy/`); everything public lives under `*.finddatatech.cloud` (`docs/public-api-deploy.md`, runbook `deploy/cheap-box/README.md`). The token118.com domain family and the america box are **retired** (2026-09-09) — the shared Logto IdP is `https://auth.finddatatech.cloud`, object storage is RustFS (S3-compatible; the app still reads `minio_*`/`MINIO_*` env names).
+- **Definition of done:** local tests green **and** `scripts/smoke_prod.sh` green against the deployed instance. Local tests run against fakes, so they prove the logic, not the deployment — never call a change shipped on local tests alone. High-risk changes (auth/RBAC, DB schema, PVC/persistence) add a prerequisite stage: satisfy the deploy prerequisites first, then ship in a reversible/degraded mode (e.g. `AUTH_ADMISSION_MODE=warn`) and only then flip to enforcing. Worked example: `deploy/cheap-box/web-rbac-logto.md`.
 - Finetuning (`scripts/finetune/`, notes in `微调说明.md` and `docs/finetune-data.md`): SFT data exported to ChatML, LoRA adapters for judge and drafter legs; a known data-lineage caveat exists for the M2 adapters — if judge-adapter quality looks off, suspect training data provenance first.
 - Git: remote `origin` points to Gitee (FindDataTehnology/law-bench); GitHub is secondary with Actions disabled.

@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
 
 from ..templating import templates as _templates
+from ..auth.deps import require_scope
 from ..deps import DbConn, get_db
 from ..markdown_render import render_markdown
 from ...clauses import TAG_VOCAB, generate_contract_assembled, list_clauses, tag_vocab_for_type
@@ -121,7 +122,12 @@ def clauses_list(request: Request, q: str = "", db: DbConn = Depends(get_db)):
     )
 
 
-@write_router.post("/clauses/extract", include_in_schema=False, name="page_clauses_extract")
+@write_router.post(
+    "/clauses/extract",
+    include_in_schema=False,
+    name="page_clauses_extract",
+    dependencies=[Depends(require_scope("admin"))],
+)
 def clauses_extract(request: Request, limit: int = 5):
     """Trigger a small resumable extraction batch (full runs use the CLI)."""
     from src.clauses.cli import run_extraction
@@ -210,7 +216,11 @@ def clauses_new(request: Request, contract_type: str):
     )
 
 
-@write_router.post("/clauses/{contract_type}/new", include_in_schema=False)
+@write_router.post(
+    "/clauses/{contract_type}/new",
+    include_in_schema=False,
+    dependencies=[Depends(require_scope("content:write"))],
+)
 async def clauses_create(request: Request, contract_type: str, db: DbConn = Depends(get_db)):
     form = await request.form()
     category = form.get("category", "custom") or "custom"
@@ -259,7 +269,11 @@ def clauses_edit(request: Request, contract_type: str, clause_id: int, db: DbCon
     )
 
 
-@write_router.post("/clauses/{contract_type}/clauses/{clause_id}", include_in_schema=False)
+@write_router.post(
+    "/clauses/{contract_type}/clauses/{clause_id}",
+    include_in_schema=False,
+    dependencies=[Depends(require_scope("content:write"))],
+)
 async def clauses_update(request: Request, contract_type: str, clause_id: int, db: DbConn = Depends(get_db)):
     form = await request.form()
     category = form.get("category") or "custom"
@@ -287,6 +301,7 @@ async def clauses_update(request: Request, contract_type: str, clause_id: int, d
     "/clauses/{contract_type}/clauses/{clause_id}/delete",
     include_in_schema=False,
     name="page_clauses_delete",
+    dependencies=[Depends(require_scope("admin"))],
 )
 async def clauses_delete_route(contract_type: str, clause_id: int, db: DbConn = Depends(get_db)):
     try:
@@ -314,6 +329,7 @@ def clauses_review(request: Request, db: DbConn = Depends(get_db)):
 @write_router.post(
     "/clauses/{contract_type}/clauses/{clause_id}/review",
     include_in_schema=False,
+    dependencies=[Depends(require_scope("content:write"))],
 )
 async def clauses_review_tag_route(
     request: Request, contract_type: str, clause_id: int, db: DbConn = Depends(get_db)
@@ -335,6 +351,7 @@ async def clauses_review_tag_route(
 @write_router.post(
     "/clauses/{contract_type}/clauses/{clause_id}/review-all",
     include_in_schema=False,
+    dependencies=[Depends(require_scope("content:write"))],
 )
 async def clauses_review_all_route(
     request: Request, contract_type: str, clause_id: int, db: DbConn = Depends(get_db)

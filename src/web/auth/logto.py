@@ -5,8 +5,9 @@ The ONLY module that talks to the Logto IdP. It owns:
 - the OIDC discovery-document fetch + cache,
 - the JWKS fetch + cache with refetch-on-unknown-``kid`` (Logto rotates signing
   keys; a stale cache misses the new ``kid`` -> one refetch resolves it),
-- access-token JWT validation — signature (RS256 via JWKS), ``iss`` (the
-  discovery issuer), ``exp``, and ``aud`` (when ``LOGTO_API_AUDIENCE`` is set),
+- access-token JWT validation — signature (ES384 via JWKS), ``iss`` (the
+  discovery issuer), ``exp``, and ``aud`` (the ``LOGTO_API_RESOURCE`` audience
+  when configured),
 - the authorization-code token exchange (PKCE S256),
 - the authorize / end-session URL builders.
 
@@ -33,7 +34,7 @@ import jwt
 from jwt import InvalidTokenError as _PyJwtError
 
 from src.settings import (
-    LOGTO_API_AUDIENCE,
+    LOGTO_API_RESOURCE,
     LOGTO_CLIENT_ID,
     LOGTO_CLIENT_SECRET,
     LOGTO_ENDPOINT,
@@ -188,7 +189,8 @@ def validate_jwt(token: str) -> dict[str, Any]:
     """Validate a Logto-issued Bearer JWT and return its claims.
 
     Verifies the ES384 signature via the IdP JWKS, the ``iss`` (the discovery
-    issuer), ``exp``, and (when ``LOGTO_API_AUDIENCE`` is set) ``aud``. Raises
+    issuer), ``exp``, and ``aud`` (the ``LOGTO_API_RESOURCE`` identifier, falling
+    back to the client id when no API Resource is configured). Raises
     :class:`InvalidToken` (-> 401) on any structural/crypto failure; lets
     :class:`LogtoUnreachable` (-> 503) propagate from a JWKS network failure so
     the cause is reported honestly rather than masked as a bad token.
@@ -208,10 +210,9 @@ def validate_jwt(token: str) -> dict[str, Any]:
     decode_kwargs: dict[str, Any] = {
         "algorithms": ["ES384"],
         "issuer": issuer,
+        "audience": LOGTO_API_RESOURCE or LOGTO_CLIENT_ID,
         "options": options,
     }
-    if LOGTO_API_AUDIENCE:
-        decode_kwargs["audience"] = LOGTO_API_AUDIENCE
 
     try:
         return jwt.decode(token, signing_key, **decode_kwargs)
@@ -223,7 +224,7 @@ def validate_id_token(token: str) -> dict[str, Any]:
     """Validate a Logto-issued ``id_token`` and return its claims.
 
     The id_token's audience is always the client (per OIDC core), so this
-    checks ``aud == LOGTO_CLIENT_ID`` *regardless* of ``LOGTO_API_AUDIENCE``
+    checks ``aud == LOGTO_CLIENT_ID`` *regardless* of ``LOGTO_API_RESOURCE``
     (which governs Bearer access-token validation in :func:`validate_jwt`).
     The ``/auth/callback`` uses this to securely extract the user's identity
     rather than trusting the token-response JSON, which is unverified payload.
@@ -276,7 +277,13 @@ def fetch_userinfo(access_token: str) -> dict[str, Any]:
 
 
 def build_authorize_url(state: str, code_challenge: str, redirect_uri: str) -> str:
-    """Construct the Logto ``/authorize`` URL (response_type=code, PKCE S256)."""
+    """Construct the Logto ``/authorize`` URL (response_type=code, PKCE S256).
+
+    When an API Resource is configured, ``resource=<LOGTO_API_RESOURCE>`` is
+    included so Logto mints an access token for that resource; its ``scope``
+    claim is then the user's granted permission subset (the app's authorization
+    truth). Without it, only identity scopes are returned.
+    """
     disc = fetch_discovery()
     params = {
         "client_id": LOGTO_CLIENT_ID,
@@ -287,15 +294,19 @@ def build_authorize_url(state: str, code_challenge: str, redirect_uri: str) -> s
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
     }
+    if LOGTO_API_RESOURCE:
+        params["resource"] = LOGTO_API_RESOURCE
     return f"{disc['authorization_endpoint']}?{urlencode(params)}"
 
 
 def exchange_code(code: str, code_verifier: str, redirect_uri: str) -> dict[str, Any]:
     """Exchange an authorization code + PKCE verifier for a token response.
 
-    Sends ``client_secret`` when configured (confidential client). Raises
-    :class:`LogtoUnreachable` on a transport failure, :class:`LogtoError` on a
-    non-200 token endpoint (bad code/verifier/state -> route maps to 400).
+    Sends ``client_secret`` when configured (confidential client) and repeats the
+    ``resource`` indicator when an API Resource is configured, so the returned
+    access token is minted for that audience. Raises :class:`LogtoUnreachable` on
+    a transport failure, :class:`LogtoError` on a non-200 token endpoint (bad
+    code/verifier/state -> route maps to 400).
     """
     disc = fetch_discovery()
     data: dict[str, str] = {
@@ -305,6 +316,8 @@ def exchange_code(code: str, code_verifier: str, redirect_uri: str) -> dict[str,
         "client_id": LOGTO_CLIENT_ID,
         "code_verifier": code_verifier,
     }
+    if LOGTO_API_RESOURCE:
+        data["resource"] = LOGTO_API_RESOURCE
     if LOGTO_CLIENT_SECRET:
         data["client_secret"] = LOGTO_CLIENT_SECRET
     try:

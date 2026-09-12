@@ -24,6 +24,7 @@ from urllib.parse import urlparse, urlunparse
 import psycopg
 import pytest
 from dotenv import load_dotenv
+from fastapi import Request
 from fastapi.testclient import TestClient
 from psycopg.rows import dict_row
 
@@ -208,21 +209,26 @@ def empty_db(monkeypatch) -> "psycopg.Connection":
     _drop_db(name)
 
 
-def _test_user() -> User:
+def _test_user(request: Request) -> User:
     """Stub authenticated user for the non-auth test suite.
 
     Installed as a dependency_overrides replacement for get_current_user so
     every protected route sees an authenticated caller without per-test
-    tokens. Auth behavior itself is exercised in tests/test_web_auth.py via a
-    separate fixture that does NOT override get_current_user.
+    tokens. Mirrors the real dependency's contract by setting
+    ``request.state.user``, which the ``has_scope`` template helper reads to
+    render the chrome. Auth behavior itself is exercised in
+    tests/test_web_auth.py via a separate fixture that does NOT override
+    get_current_user.
     """
-    return User(
+    user = User(
         sub="test-user",
         name="Test User",
         email="test@example.com",
         scopes=["*"],
         channel="test",
     )
+    request.state.user = user
+    return user
 
 
 @pytest.fixture
