@@ -1,0 +1,182 @@
+# TEMPORARY overlay: bakes the samples.py `type_map` context fix (live /samples 500)
+# into the running sha-2c502d7 image by mounting the fixed file over
+# /app/src/web/routes/samples.py. Remove this file and re-apply
+# deploy/deployment.yaml once a rebuilt image carrying the fix is rolled out.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: law-bench-samples-fix
+  namespace: law-bench
+data:
+  samples.py: "\"\"\"``/samples`` — browse-and-download UI over the MinIO artifact\
+    \ corpus.\n\nServer-rendered HTML page (Jinja2) listing every stored\n``contract_artifacts``\
+    \ row in a paginated table with type -> scenario ->\nstance cascading filters\
+    \ and direct DOCX/PDF download anchors. No slot\nfilling, no generation triggers\
+    \ — this is a thin read layer over\n:mod:`src.contracts.artifacts`.\n\nMirrors\
+    \ the conventions in :mod:`src.web.routes.pages` /\n:mod:`src.web.routes.contracts`:\
+    \ ``Request``-based handler,\n``_templates.TemplateResponse``, ``DbConn = Depends(get_db)``.\n\
+    \"\"\"\n\nfrom __future__ import annotations\n\nfrom fastapi import APIRouter,\
+    \ Depends, Query, Request\n\nfrom ..deps import DbConn, get_db\nfrom ..templating\
+    \ import templates as _templates\nfrom ...contracts import list_contract_types\n\
+    from ...contracts.artifacts import (\n    distinct_scenarios,\n    distinct_stances,\n\
+    \    list_samples,\n)\n\nrouter = APIRouter(tags=[\"samples\"])\n\n\ndef _clean(value:\
+    \ str | None) -> str | None:\n    \"\"\"Treat an empty string (the \"全部\" option)\
+    \ as no filter.\"\"\"\n    return value or None\n\n\n@router.get(\"/samples\"\
+    , include_in_schema=False, name=\"page_samples\")\ndef page_samples(\n    request:\
+    \ Request,\n    contract_type: str | None = Query(None),\n    scenario: str |\
+    \ None = Query(None),\n    stance: str | None = Query(None),\n    include_history:\
+    \ bool = Query(False),\n    limit: int = Query(50, ge=1, le=100),\n    offset:\
+    \ int = Query(0, ge=0),\n    db: DbConn = Depends(get_db),\n):\n    \"\"\"Render\
+    \ the samples library page.\n\n    Query params drive both the filter form's selected\
+    \ state and the\n    ``list_samples`` query. ``contract_type`` is required-by-UX\
+    \ to populate\n    the scenario/stance dropdowns; without it those dropdowns show\
+    \ only the\n    \"全部\" option and the table lists artifacts across all types.\n\
+    \    ``include_history`` shows superseded (old body) rows alongside current\n\
+    \    ones — they are hidden by default so the page surfaces only the latest\n\
+    \    body per natural key.\n    \"\"\"\n    contract_type = _clean(contract_type)\n\
+    \    scenario = _clean(scenario)\n    stance = _clean(stance)\n\n    all_types\
+    \ = list_contract_types()  # [{key, zh}, ...] — file-backed, no DB\n    # key\
+    \ -> Chinese name, so the table shows 买卖合同 instead of the raw English\n    # key\
+    \ \"sale\" (consistent with the dropdown, which already renders zh).\n    type_map\
+    \ = {ct[\"key\"]: ct[\"zh\"] for ct in all_types}\n\n    scen_opts: list[str]\
+    \ = []\n    stance_opts: list[str] = []\n    if contract_type:\n        scen_opts\
+    \ = distinct_scenarios(\n            contract_type, include_superseded=include_history,\
+    \ db=db\n        )\n        stance_opts = distinct_stances(\n            contract_type,\
+    \ include_superseded=include_history, db=db\n        )\n\n    rows, total = list_samples(\n\
+    \        contract_type,\n        scenario,\n        stance,\n        limit,\n\
+    \        offset,\n        db=db,\n        include_superseded=include_history,\n\
+    \    )\n\n    page = (offset // limit) + 1\n    pages = (total + limit - 1) //\
+    \ limit if total else 1\n\n    return _templates.TemplateResponse(\n        request,\n\
+    \        \"samples.html\",\n        {\n            \"all_types\": all_types,\n\
+    \            \"type_map\": type_map,\n            \"artifacts\": rows,\n     \
+    \       \"total\": total,\n            \"limit\": limit,\n            \"offset\"\
+    : offset,\n            \"page\": page,\n            \"pages\": pages,\n      \
+    \      \"has_next\": offset + limit < total,\n            \"has_prev\": offset\
+    \ > 0,\n            \"selected_ct\": contract_type,\n            \"selected_scenario\"\
+    : scenario,\n            \"selected_stance\": stance,\n            \"scen_opts\"\
+    : scen_opts,\n            \"stance_opts\": stance_opts,\n            \"include_history\"\
+    : include_history,\n        },\n    )\n"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: law-bench
+  name: law-bench
+  namespace: law-bench
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: law-bench
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/restartedAt: '2026-09-11T00:48:26+08:00'
+      labels:
+        app: law-bench
+    spec:
+      containers:
+      - envFrom:
+        - secretRef:
+            name: law-bench-db
+        - secretRef:
+            name: law-bench-minio
+        - secretRef:
+            name: law-bench-judge
+        - secretRef:
+            name: law-bench-auth
+        image: 100.64.0.8:30880/law-bench/law-template:sha-2c502d7
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 8010
+            scheme: HTTP
+          initialDelaySeconds: 15
+          periodSeconds: 15
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: law-bench
+        ports:
+        - containerPort: 8010
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 8010
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /app/db
+          name: db
+        - name: samples-fix
+          mountPath: /app/src/web/routes/samples.py
+          subPath: samples.py
+          readOnly: true
+      dnsConfig:
+        nameservers:
+        - 10.43.0.10
+        options:
+        - name: ndots
+          value: '5'
+        searches:
+        - law-bench.svc.cluster.local
+        - svc.cluster.local
+        - cluster.local
+      dnsPolicy: None
+      hostAliases:
+      - hostnames:
+        - auth.finddatatech.cloud
+        ip: 124.220.7.175
+      - hostnames:
+        - lawbench.finddatatech.cloud
+        ip: 103.236.89.212
+      initContainers:
+      - command:
+        - sh
+        - -c
+        - "set -e\nif [ -f /data/evaluation_rules.db ]; then\n  echo \"evaluation_rules.db\
+          \ already present in PVC, skipping seed.\"\nelse\n  echo \"seeding evaluation_rules.db\
+          \ from image into PVC...\"\n  cp /app/db/evaluation_rules.db /data/evaluation_rules.db\n\
+          fi\nchown -R 1001:1001 /data\nls -la /data\n"
+        image: 100.64.0.8:30880/law-bench/law-template:sha-2c502d7
+        imagePullPolicy: IfNotPresent
+        name: seed-db
+        resources: {}
+        securityContext:
+          runAsUser: 0
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /data
+          name: db
+      nodeSelector:
+        kubernetes.io/hostname: cheap-4
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: db
+        persistentVolumeClaim:
+          claimName: law-bench-db
+      - name: samples-fix
+        configMap:
+          name: law-bench-samples-fix
