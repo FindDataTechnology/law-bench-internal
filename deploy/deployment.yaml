@@ -55,7 +55,7 @@ spec:
             - lawbench.finddatatech.cloud
       initContainers:
         - name: seed-db
-          image: 100.64.0.8:30880/law-bench/law-template:sha-5f8041a
+          image: 100.64.0.8:30880/law-bench/law-template:sha-3b6502b
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsUser: 0
@@ -77,7 +77,7 @@ spec:
               ls -la /data
       containers:
         - name: law-bench
-          image: 100.64.0.8:30880/law-bench/law-template:sha-5f8041a
+          image: 100.64.0.8:30880/law-bench/law-template:sha-3b6502b
           imagePullPolicy: IfNotPresent
           envFrom:
             - secretRef:
