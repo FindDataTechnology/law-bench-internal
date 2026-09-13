@@ -21,6 +21,7 @@ from src.settings import AUTH_COOKIE_NAME
 from src.web.app import create_app
 from src.web.auth import apikey, logto, session
 from src.web.deps import get_db
+from src.web.routes import auth as auth_routes
 
 
 @pytest.fixture
@@ -252,3 +253,56 @@ def test_cross_user_revoke_returns_404(auth_client: TestClient, monkeypatch):
     # the key was NOT revoked by B — it still authenticates as user-a
     r = auth_client.get("/api/rubrics", headers={"X-API-Key": plaintext})
     assert r.status_code == 200
+
+
+# --- logout: end-session URL must name the client -------------------------- #
+
+
+def _patch_end_session(monkeypatch) -> None:
+    monkeypatch.setattr(
+        logto,
+        "fetch_discovery",
+        lambda: {"end_session_endpoint": "https://idp.test/oidc/session/end"},
+    )
+    monkeypatch.setattr(logto, "LOGTO_CLIENT_ID", "test-client-id")
+
+
+def test_end_session_url_includes_client_id(monkeypatch):
+    """``end_session_url`` must send ``client_id``.
+
+    Logto's upstream (node-oidc-provider) resolves the client from
+    ``id_token_hint`` or ``client_id``; with neither it **silently drops**
+    ``post_logout_redirect_uri``, so the user lands on the generic end-session
+    success page instead of back in the app. Regression for that observed bug.
+    """
+    _patch_end_session(monkeypatch)
+    url = logto.end_session_url(
+        id_token_hint=None, post_logout_redirect_uri="https://app.test/"
+    )
+    assert url is not None
+    assert "client_id=test-client-id" in url
+    assert "post_logout_redirect_uri=https%3A%2F%2Fapp.test%2F" in url
+
+
+def test_logout_redirects_to_end_session_with_client_id(
+    auth_client: TestClient, monkeypatch
+):
+    """``/auth/logout`` -> 302 to the IdP end-session URL carrying our client.
+
+    Regression: without ``client_id`` Logto ignores ``post_logout_redirect_uri``
+    and the user never returns to the app after signing out.
+    """
+    _patch_end_session(monkeypatch)
+    monkeypatch.setattr(auth_routes, "APP_BASE_URL", "https://app.test")
+    cookie = _session_cookie(
+        {"sub": "u1", "name": "U", "email": "u@test", "scopes": ["content:read"]}
+    )
+    auth_client.cookies.set(AUTH_COOKIE_NAME, cookie)
+    r = auth_client.get("/auth/logout", follow_redirects=False)
+    assert r.status_code == 302
+    loc = r.headers["location"]
+    assert loc.startswith("https://idp.test/oidc/session/end?")
+    assert "client_id=test-client-id" in loc
+    assert "post_logout_redirect_uri=https%3A%2F%2Fapp.test%2F" in loc
+    # the local session cookie is cleared on the way out
+    assert AUTH_COOKIE_NAME in r.headers.get("set-cookie", "")

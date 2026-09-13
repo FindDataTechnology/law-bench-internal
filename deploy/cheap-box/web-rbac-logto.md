@@ -70,8 +70,8 @@ scope later.
 5. **Configure the app** (step 2 below) with the resource indicator, then
    **verify**: log in and decode the returned **access token** (browser dev
    tools, or `jwt.io`) — confirm a `scope` claim listing the expected
-   permission names. `/auth/callback` also logs the granted scopes — see step 2
-   of the runbook.
+   permission names. (The callback does not log scopes for admitted users; see
+   runbook step 3.)
 
 > Reference: [Logto — RBAC](https://docs.logto.io/docs/recipes/rbac/) and
 > [Protect your API](https://docs.logto.io/docs/recipes/protect-your-api/).
@@ -123,11 +123,14 @@ must be green against prod before it counts as complete.
    must go green here before you proceed. (The smoke asserts the authorize
    URL's wiring; it needs no credentials, so per-identity behavior is checked by
    the manual walkthrough in step 5.)
-3. **Verify scopes in logs.** Log in once per role; the callback logs
-   `admission gate (warn): sub=… scopes=…`. Confirm each user's granted scopes
-   match the intended role bundle. Empty/short scopes here means step 1.1–1.3
-   (resource / permissions / role attachments) is not satisfied — fix before
-   proceeding.
+3. **Verify scopes in logs (negative check only).** The callback logs
+   `admission gate (warn): sub=… scopes=…` **only for identities the gate would
+   reject** — an admitted user produces no log line. A quiet log is therefore
+   the healthy outcome for a correctly-provisioned user; a logged line names the
+   identity and scopes that step 1.1–1.3 (resource / permissions / role
+   attachments) failed to grant — fix before proceeding. To read the granted
+   scopes for an *admitted* user, decode the access token in browser dev tools
+   (or `jwt.io`) as in §1.5.
 4. **Bootstrap an admin.** Confirm at least one user holds `admin` and can log
    in. Existing pre-cutover sessions carry no scopes and will be denied after
    enforcement — users simply re-login.

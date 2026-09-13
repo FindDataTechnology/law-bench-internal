@@ -309,7 +309,8 @@ def logout() -> RedirectResponse:
     If Logto advertises no end-session endpoint, redirect to ``/`` (the local
     session is cleared either way). The IdP session is ended best-effort; we
     pass no ``id_token_hint`` (the id_token isn't kept in the session cookie,
-    only the resolved identity is).
+    only the resolved identity is) — ``end_session_url`` supplies ``client_id``
+    instead so Logto honours the post-logout redirect.
     """
     try:
         end = logto.end_session_url(

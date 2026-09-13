@@ -337,11 +337,19 @@ def exchange_code(code: str, code_verifier: str, redirect_uri: str) -> dict[str,
 def end_session_url(
     id_token_hint: str | None, post_logout_redirect_uri: str | None
 ) -> str | None:
-    """Build the Logto end-session URL, or ``None`` if discovery has none."""
+    """Build the Logto end-session URL, or ``None`` if discovery has none.
+
+    ``client_id`` is always sent: Logto's upstream (node-oidc-provider) resolves
+    the client from ``id_token_hint`` or ``client_id``, and if neither is present
+    it **silently drops** ``post_logout_redirect_uri`` — sending the user to the
+    generic end-session success page instead of back to the app.
+    """
     endpoint = fetch_discovery().get("end_session_endpoint")
     if not endpoint:
         return None
     params: dict[str, str] = {}
+    if LOGTO_CLIENT_ID:
+        params["client_id"] = LOGTO_CLIENT_ID
     if id_token_hint:
         params["id_token_hint"] = id_token_hint
     if post_logout_redirect_uri:

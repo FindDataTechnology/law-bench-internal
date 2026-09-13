@@ -47,6 +47,7 @@ The workbench SHALL make authentication state visible in its chrome. When the cu
 
 - **WHEN** an authenticated user activates the logout control
 - **THEN** the browser is sent to `/auth/logout`, the session cookie is cleared, and the user is redirected to the IdP end-session endpoint (or `/` when none is configured)
+- **AND** the end-session URL identifies the client (`client_id`) so the IdP honours the post-logout redirect and returns the user to the application base URL, rather than a generic IdP end-session page
 
 #### Scenario: Unauthenticated visitor sees a login affordance
 
