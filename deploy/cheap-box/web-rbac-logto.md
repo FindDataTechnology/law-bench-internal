@@ -58,7 +58,7 @@ scope later.
 1. **Register the API Resource.**
    Logto Console → *API Resources* → create a resource with the indicator
    exactly matching `LOGTO_API_RESOURCE` (default
-   `https://lawbench.finddatatech.cloud/api`). The indicator is the access
+   `https://lawbench-api.finddatatech.cloud`). The indicator is the access
    token's `aud`, so it must match the env value byte-for-byte.
 2. **Define the permission scopes** on that resource: `content:read`,
    `content:write`, `admin` (name only; a description is optional).
@@ -114,7 +114,7 @@ must be green against prod before it counts as complete.
    ```sh
    scripts/smoke_prod.sh
    # or against any base URL / with an expected indicator:
-   SMOKE_EXPECT_RESOURCE=https://lawbench.finddatatech.cloud/api \
+   SMOKE_EXPECT_RESOURCE=https://lawbench-api.finddatatech.cloud \
      scripts/smoke_prod.sh https://lawbench.finddatatech.cloud
    ```
    Before this change is deployed the run reports

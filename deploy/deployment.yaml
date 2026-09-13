@@ -15,12 +15,12 @@ spec:
       labels:
         app: law-bench
     spec:
-      # Images now live durably in the in-cluster Harbor (S3-backed, see
-      # deploy/cheap-box/README.md "Harbor"). Pin to cheap-4: the image is
-      # pre-imported into that node's containerd and the law-bench-db PVC
-      # (local-path) is bound there too.
+      # Images live in the in-cluster Harbor (S3-backed, see
+      # deploy/cheap-box/README.md "Harbor"). Pin to cheap-2 by hostname: the
+      # law-bench-db PVC (local-path) carries node affinity to that node, so the
+      # pod must schedule there.
       nodeSelector:
-        kubernetes.io/hostname: cheap-4
+        kubernetes.io/hostname: liuliangdmh1xr0w9ryu
       # Node resolv.conf picked up a wildcard `mesh.finddata.cn` search domain
       # (returns 8.218.137.223 for everything). ClusterFirst inherits it, so new
       # pods resolve postgres.postgres.svc.cluster.local -> 8.218.137.223 (black
@@ -53,7 +53,7 @@ spec:
             - lawbench.finddatatech.cloud
       initContainers:
         - name: seed-db
-          image: 100.64.0.8:30880/law-bench/law-template:sha-2c502d7
+          image: 100.64.0.8:30880/law-bench/law-template:sha-5f8041a
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsUser: 0
@@ -75,7 +75,7 @@ spec:
               ls -la /data
       containers:
         - name: law-bench
-          image: 100.64.0.8:30880/law-bench/law-template:sha-2c502d7
+          image: 100.64.0.8:30880/law-bench/law-template:sha-5f8041a
           imagePullPolicy: IfNotPresent
           envFrom:
             - secretRef:
