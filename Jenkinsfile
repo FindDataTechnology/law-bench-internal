@@ -10,8 +10,11 @@
 // Tags  : sha-<short-git>  and  latest
 // Cred  : Jenkins credential `harbor-law-bench` (Harbor robot robot$law-bench+ci)
 //
-// Note the push is slow (~1.4 MiB/s to the S3-backed registry): a full image
-// takes ~15 min. The generous timeout below accounts for that.
+// The push is the slow part (blobs land in the S3-backed RustFS registry at low
+// throughput); the 60-min timeout below covers it. The image is ~2.3 GB — the
+// Dockerfile avoids a ~1.2 GB duplicate chown layer (COPY --chown onto a
+// pre-created user) and keeps uv's ~1.2 GB wheel cache out of the image, so the
+// largest blob is ~350 MB where it used to be ~720 MB.
 
 pipeline {
   agent any

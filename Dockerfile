@@ -30,6 +30,14 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     PYTHONPATH=/app
 
+# The runtime user is created up front, so every COPY below lands already owned
+# by it and every uv invocation runs as it. Doing it this way — rather than a
+# trailing `chown -R appuser:appuser /app` — matters: Docker materialises an
+# ownership change as a full second copy of the affected tree, so that trailing
+# chown added a ~1.2 GB duplicate of the venv to the image.
+RUN useradd --create-home --uid 1001 appuser \
+    && chown appuser:appuser /app
+
 # Headless LibreOffice for DOCX -> PDF conversion (src.docs.converter). Only
 # the writer module is needed; it pulls in `soffice` via libreoffice-core.
 # fonts-noto-cjk: the DOCX declares 宋体/黑体 (SimSun/SimHei, proprietary, not
@@ -46,38 +54,47 @@ RUN apt-get update \
 ARG UV_INDEX_URL=https://pypi.org/simple
 ENV UV_DEFAULT_INDEX=${UV_INDEX_URL}
 
+# Keep uv's wheel cache out of the image. By default uv caches downloads under
+# ~/.cache/uv, which lands in the layer and (for this dependency set) added
+# ~1.2 GB. Point it at a scratch dir and drop it in the same RUN that populates
+# it, so it never becomes part of an image layer. HOME is set so uv/tools resolve
+# the appuser home rather than a stale /root inherited from the build stage.
+ENV UV_CACHE_DIR=/tmp/uv-cache \
+    HOME=/home/appuser
+
 # Install dependencies first (cacheable layer). --no-install-project avoids
 # needing a [build-system]: only the locked third-party deps are installed.
 # Deliberately NOT --frozen: --frozen installs from the lockfile's recorded
 # registry (pypi.org) and would ignore UV_DEFAULT_INDEX, whereas a plain sync
 # resolves against the configured index while preferring the locked versions.
-COPY pyproject.toml uv.lock ./
-RUN uv sync --no-install-project --no-dev
+COPY --chown=appuser:appuser pyproject.toml uv.lock ./
+
+USER appuser
+
+RUN uv sync --no-install-project --no-dev \
+    && rm -rf "$UV_CACHE_DIR"
 
 # Application sources + seed data.
-COPY src ./src
-COPY main.py ./
-COPY templates ./templates
-COPY db ./db
-COPY scripts ./scripts
+COPY --chown=appuser:appuser src ./src
+COPY --chown=appuser:appuser main.py ./
+COPY --chown=appuser:appuser templates ./templates
+COPY --chown=appuser:appuser db ./db
+COPY --chown=appuser:appuser scripts ./scripts
 
 # MCP server package (fd-coding-law-bench-mcp) into the same venv. Only its
 # build inputs are staged (pyproject + src) — not the dev tree (tests/.venv).
 # Its declared deps (fastmcp, langgraph, langchain-core) resolve on top of the
-# locked env above and must not disturb those versions.
-COPY fd-coding-law-bench-mcp/pyproject.toml /deps/lawbench-mcp/pyproject.toml
-COPY fd-coding-law-bench-mcp/src /deps/lawbench-mcp/src
-RUN uv pip install --python .venv /deps/lawbench-mcp \
-    && rm -rf /deps
+# locked env above and must not disturb those versions. Staged under /app
+# (appuser-owned) so the cleanup can unlink it.
+COPY --chown=appuser:appuser fd-coding-law-bench-mcp/pyproject.toml ./deps/lawbench-mcp/pyproject.toml
+COPY --chown=appuser:appuser fd-coding-law-bench-mcp/src ./deps/lawbench-mcp/src
+RUN uv pip install --python .venv ./deps/lawbench-mcp \
+    && rm -rf ./deps "$UV_CACHE_DIR"
 
-# Run the server as a non-root user. Strip CR from shell scripts first: checkouts
-# on Windows carry CRLF, which breaks the `#!/bin/sh` shebang ("no such file or
-# directory" at exec).
-RUN useradd --create-home --uid 1001 appuser \
-    && find scripts -name '*.sh' -exec sed -i 's/\r$//' {} + \
-    && chmod +x scripts/docker-entrypoint.sh \
-    && chown -R appuser:appuser /app
-USER appuser
+# Strip CR from shell scripts: checkouts on Windows carry CRLF, which breaks
+# the `#!/bin/sh` shebang ("no such file or directory" at exec).
+RUN find scripts -name '*.sh' -exec sed -i 's/\r$//' {} + \
+    && chmod +x scripts/docker-entrypoint.sh
 
 ENV PATH="/app/.venv/bin:$PATH"
 EXPOSE 8010
