@@ -38,6 +38,12 @@ pipeline {
     // network (transfers hang or arrive truncated), so uv is pointed here via
     // the Dockerfile's UV_INDEX_URL build arg. Swap if the mirror is down.
     UV_INDEX_URL = 'https://pypi.tuna.tsinghua.edu.cn/simple'
+    // Domestic Debian mirrors. deb.debian.org is ~460x slower from the builder
+    // (measured 20 KB/s vs 9.6 MB/s) and a stalled fonts-noto-cjk download once
+    // burned the entire 60-min timeout, so apt is pointed at tuna via the
+    // Dockerfile's DEBIAN_MIRROR / DEBIAN_SECURITY_MIRROR build args.
+    DEBIAN_MIRROR          = 'https://mirrors.tuna.tsinghua.edu.cn/debian'
+    DEBIAN_SECURITY_MIRROR = 'https://mirrors.tuna.tsinghua.edu.cn/debian-security'
   }
 
   stages {
@@ -53,7 +59,7 @@ pipeline {
 
     stage('Build') {
       steps {
-        sh 'docker build --build-arg BASE_IMAGE="$BASE_IMAGE_MIRROR" --build-arg UV_INDEX_URL="$UV_INDEX_URL" -t "$IMAGE:$TAG" -t "$IMAGE:latest" -f Dockerfile .'
+        sh 'docker build --build-arg BASE_IMAGE="$BASE_IMAGE_MIRROR" --build-arg UV_INDEX_URL="$UV_INDEX_URL" --build-arg DEBIAN_MIRROR="$DEBIAN_MIRROR" --build-arg DEBIAN_SECURITY_MIRROR="$DEBIAN_SECURITY_MIRROR" -t "$IMAGE:$TAG" -t "$IMAGE:latest" -f Dockerfile .'
       }
     }
 
