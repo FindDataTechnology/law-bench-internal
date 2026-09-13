@@ -26,6 +26,11 @@ pipeline {
   environment {
     REGISTRY = '100.64.0.8:30880'
     IMAGE    = '100.64.0.8:30880/law-bench/law-template'
+    // ghcr.io's blob CDN is unreachable from the in-cluster builder (metadata
+    // resolves, layer downloads stall forever), so the base image is pulled
+    // through a mirror. The Dockerfile keeps ghcr.io as its BASE_IMAGE default
+    // for other environments. Swap here if the mirror is unavailable.
+    BASE_IMAGE_MIRROR = 'ghcr.nju.edu.cn/astral-sh/uv:python3.12-bookworm-slim'
   }
 
   stages {
@@ -41,7 +46,7 @@ pipeline {
 
     stage('Build') {
       steps {
-        sh 'docker build -t "$IMAGE:$TAG" -t "$IMAGE:latest" -f Dockerfile .'
+        sh 'docker build --build-arg BASE_IMAGE="$BASE_IMAGE_MIRROR" -t "$IMAGE:$TAG" -t "$IMAGE:latest" -f Dockerfile .'
       }
     }
 

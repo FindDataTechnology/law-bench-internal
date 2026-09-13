@@ -17,7 +17,12 @@
 #     -e OPENAI_API_KEY=... -e OPENAI_API_BASE=... \
 #     -e INTAKE_MODEL=... -e DRAFTER_MODEL=... -e AUDITOR_MODEL=... law-template
 
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+# Base image. Default is the upstream ghcr.io image; the in-cluster CI builder
+# overrides BASE_IMAGE with a ghcr.io mirror because the ghcr.io blob CDN is
+# unreachable from that network (its metadata endpoints resolve, but layer
+# downloads stall indefinitely). See Jenkinsfile "Build".
+ARG BASE_IMAGE=ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+FROM ${BASE_IMAGE}
 
 WORKDIR /app
 
