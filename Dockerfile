@@ -39,10 +39,20 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends libreoffice-writer fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
+# Package index for resolving locked deps. Default is PyPI; the in-cluster CI
+# builder overrides UV_INDEX_URL with a domestic mirror because direct PyPI is
+# unreachable from that network (pypi.org connections hang; a partial transfer
+# once surfaced as "deflate decompression error: invalid stored block lengths").
+ARG UV_INDEX_URL=https://pypi.org/simple
+ENV UV_DEFAULT_INDEX=${UV_INDEX_URL}
+
 # Install dependencies first (cacheable layer). --no-install-project avoids
 # needing a [build-system]: only the locked third-party deps are installed.
+# Deliberately NOT --frozen: --frozen installs from the lockfile's recorded
+# registry (pypi.org) and would ignore UV_DEFAULT_INDEX, whereas a plain sync
+# resolves against the configured index while preferring the locked versions.
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-install-project --no-dev
+RUN uv sync --no-install-project --no-dev
 
 # Application sources + seed data.
 COPY src ./src

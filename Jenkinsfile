@@ -31,6 +31,10 @@ pipeline {
     // through a mirror. The Dockerfile keeps ghcr.io as its BASE_IMAGE default
     // for other environments. Swap here if the mirror is unavailable.
     BASE_IMAGE_MIRROR = 'ghcr.nju.edu.cn/astral-sh/uv:python3.12-bookworm-slim'
+    // Domestic PyPI mirror. Direct pypi.org is unreachable from the builder
+    // network (transfers hang or arrive truncated), so uv is pointed here via
+    // the Dockerfile's UV_INDEX_URL build arg. Swap if the mirror is down.
+    UV_INDEX_URL = 'https://pypi.tuna.tsinghua.edu.cn/simple'
   }
 
   stages {
@@ -46,7 +50,7 @@ pipeline {
 
     stage('Build') {
       steps {
-        sh 'docker build --build-arg BASE_IMAGE="$BASE_IMAGE_MIRROR" -t "$IMAGE:$TAG" -t "$IMAGE:latest" -f Dockerfile .'
+        sh 'docker build --build-arg BASE_IMAGE="$BASE_IMAGE_MIRROR" --build-arg UV_INDEX_URL="$UV_INDEX_URL" -t "$IMAGE:$TAG" -t "$IMAGE:latest" -f Dockerfile .'
       }
     }
 
