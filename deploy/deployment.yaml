@@ -16,11 +16,13 @@ spec:
         app: law-bench
     spec:
       # Images live in the in-cluster Harbor (S3-backed, see
-      # deploy/cheap-box/README.md "Harbor"). Pin to cheap-2 by hostname: the
-      # law-bench-db PVC (local-path) carries node affinity to that node, so the
-      # pod must schedule there.
+      # deploy/cheap-box/README.md "Harbor"). Pin to cheap-4 by hostname: the
+      # law-bench-db PVC is local-path, so its PV is bound to one node and
+      # carries node affinity there — rescheduling elsewhere forces a PVC
+      # recreate (empty volume). The image is also pre-imported on cheap-4.
+      # Keep this in lockstep with the node the PVC is bound to.
       nodeSelector:
-        kubernetes.io/hostname: liuliangdmh1xr0w9ryu
+        kubernetes.io/hostname: cheap-4
       # Node resolv.conf picked up a wildcard `mesh.finddata.cn` search domain
       # (returns 8.218.137.223 for everything). ClusterFirst inherits it, so new
       # pods resolve postgres.postgres.svc.cluster.local -> 8.218.137.223 (black
