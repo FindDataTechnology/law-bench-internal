@@ -485,8 +485,8 @@ def list_batches(clauses: list[dict]) -> None:
     )
     print(f"b0-data: {b0} clauses with `_` metadata keys in tag_review")
     print(f"b1:      {b1} duplicate victims (tagged body_hash groups)")
-    print(f"b2:      {len(B2_IDS) - len(B2_EXEMPT_IDS)} region targets "
-          f"({len(B2_EXEMPT_IDS)} exempt), needs --drafts")
+    print(f"b2:      {len(B2_IDS)} region targets "
+          f"({len([i for i in B2_EXEMPT_IDS if i in B2_IDS])} exempt), needs --drafts")
     print(f"b3:      {b3} clauses with strippable artifacts")
     print("b4:      curated set, needs --drafts")
 
