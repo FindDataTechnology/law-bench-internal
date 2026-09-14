@@ -58,6 +58,7 @@ from psycopg.types.json import Jsonb  # noqa: E402
 from src.clauses.audit import region_lint  # noqa: E402
 from src.clauses.content_checks import (  # noqa: E402
     HEADER_RE,
+    TINY_BODY,
     UNDERSCORE_RE,
 )
 from src.clauses.store import _row_to_dict, update_clause  # noqa: E402
@@ -166,6 +167,7 @@ def load_manifest(batch: str) -> dict:
 _SHELL_KEYWORD = (
     r"签字|签章|盖章|签订地点|签订日期|签署地点|签署日期|签订时间|签署时间"
     r"|身份证号|联系电话|电子邮箱|邮政编码|邮编|委托代理人|经办人|传真"
+    r"|单位联系人|联系人|开户银行|帐号|账号"
 )
 # A shell FIELD line: keyword + colon + blank/placeholder value, no sentence
 # punctuation anywhere in the line. Value tail tolerates only filler chars
@@ -179,6 +181,19 @@ _SHELL_LINE_RE = re.compile(
 _NOPROSE_RE = re.compile(r"（以下无正文[^）]*）")
 _DATE_BLANK_RE = re.compile(r"[_＿]{2,}\s*年\s*[_＿]{1,}\s*月\s*[_＿]{1,}\s*日")
 _COPIES_RE = re.compile(r"一式\s*[_＿]{2,}\s*份")
+_HOLD_RE = re.compile(r"各执\s*[_＿]{2,}\s*份")
+
+
+# Sections whose purpose IS the signature block: stripping there produces
+# incoherent fragments — leave whole-block clauses alone (template-shell
+# question, handled outside this batch).
+SIGN_SECTION_WHITELIST = {"签署信息", "签署", "签字盖章", "签署页", "签章"}
+
+
+def _is_shell_line(line: str) -> bool:
+    """Shell FIELD line, whitespace-insensitive (matches 经 办 人, 签 约 时 间)."""
+    norm = re.sub(r"[\s\u3000]+", "", line)
+    return bool(_SHELL_LINE_RE.search(norm))
 
 
 def _clean_body(body: str) -> tuple[str, list[str]]:
@@ -204,7 +219,7 @@ def _clean_body(body: str) -> tuple[str, list[str]]:
 
     result = []
     for line in out:
-        if _SHELL_LINE_RE.search(line):
+        if _is_shell_line(line):
             rules.append("shell_line")
             continue
         if _NOPROSE_RE.fullmatch(line.strip()):
@@ -218,6 +233,12 @@ def _clean_body(body: str) -> tuple[str, list[str]]:
         return "一式{{contract_copies}}份"
 
     new = _COPIES_RE.sub(_sub_copies, new)
+
+    def _sub_hold(m: re.Match) -> str:
+        rules.append("underscore_blanks")
+        return "各执{{party_hold_count}}份"
+
+    new = _HOLD_RE.sub(_sub_hold, new)
 
     def _sub_date(m: re.Match) -> str:
         rules.append("underscore_blanks")
@@ -235,8 +256,8 @@ def strip_artifacts(clause: dict) -> tuple[str | None, list[str]]:
     new, rules = _clean_body(body)
     if not rules or new == body.strip():
         return None, []
-    if not new:
-        return None, []  # would-empty: skip entirely
+    if len(new) < TINY_BODY:
+        return None, []  # stripped body would be a useless remnant — keep original
     return new, rules
 
 
@@ -367,8 +388,8 @@ def run_b3(clauses: list[dict], dry_run: bool, limit: int) -> dict:
     stats = {"selected": 0, "applied": 0, "skipped": 0}
     for clause in clauses:
         body = clause.get("body") or ""
-        if not (HEADER_RE.search(body) or UNDERSCORE_RE.search(body)
-                or "\n|" in body or body.lstrip().startswith("|")):
+        if (clause.get("section") or "") in SIGN_SECTION_WHITELIST:
+            stats["skipped"] += 1
             continue
         new, rules = strip_artifacts(clause)
         if new is None:
@@ -439,7 +460,9 @@ def run_b4(drafts: dict, clauses_by_id: dict, dry_run: bool) -> dict:
 def run_rollback(batch: str, dry_run: bool) -> int:
     manifest = load_manifest(batch)
     before_dir = REMEDIATION_DIR / batch / "before"
-    snaps = sorted(before_dir.glob("*.json"))
+    applied_ids = set(manifest.get("applied_ids") or [])
+    snaps = sorted(p for p in before_dir.glob("*.json")
+                   if p.stem in applied_ids or not applied_ids)
     if not snaps:
         raise SystemExit(f"no before-snapshots under {before_dir}")
     print(f"rollback {batch}: {len(snaps)} snapshots "
@@ -481,13 +504,15 @@ def list_batches(clauses: list[dict]) -> None:
     b3 = sum(
         1 for c in clauses
         if (c.get("body") or "")
+        and (c.get("section") or "") not in SIGN_SECTION_WHITELIST
         and strip_artifacts(c)[0] is not None
     )
     print(f"b0-data: {b0} clauses with `_` metadata keys in tag_review")
     print(f"b1:      {b1} duplicate victims (tagged body_hash groups)")
     print(f"b2:      {len(B2_IDS)} region targets "
           f"({len([i for i in B2_EXEMPT_IDS if i in B2_IDS])} exempt), needs --drafts")
-    print(f"b3:      {b3} clauses with strippable artifacts")
+    print(f"b3:      {b3} clauses with strippable artifacts "
+          f"(sign-section whole-block clauses excluded)")
     print("b4:      curated set, needs --drafts")
 
 
