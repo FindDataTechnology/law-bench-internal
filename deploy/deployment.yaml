@@ -79,13 +79,6 @@ spec:
         - name: law-bench
           image: 100.64.0.8:30880/law-bench/law-template:sha-f8bb681
           imagePullPolicy: IfNotPresent
-          env:
-            # Admin-assistant runtime (add-admin-copilot-assistant). Non-secret
-            # config: the /copilotkit proxy target inside the cluster. Removing
-            # this var disables the assistant entirely (proxy 503s, island is
-            # not served).
-            - name: COPILOT_RUNTIME_URL
-              value: "http://copilot-runtime.law-bench.svc.cluster.local:3111"
           envFrom:
             - secretRef:
                 name: law-bench-db
