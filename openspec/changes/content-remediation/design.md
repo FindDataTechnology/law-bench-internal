@@ -21,7 +21,7 @@
 ## Decisions
 
 ### D1. 新增独立治理驱动，不复用 audit_clauses.py 的批处理
-新写 `scripts/content_remediation.py`（检测逻辑复用 `scripts/content_check_offline.py` 的规则函数，抽取为共享模块），修复动作复用 `src/clauses/store.py:update_clause`、`src/clauses/tag_review.py:bulk_review`、`src/clauses/audit.py:region_lint`。
+新写 `scripts/content_remediation.py`（检测逻辑复用 `scripts/content_check_offline.py` 的规则函数，抽取为共享模块），修复动作复用 `src/clauses/store.py:update_clause`、`src/clauses/tag_review.py:bulk_review`、`src/clauses/audit.py:region_lint`；tag_review 的清除/回滚走窄口径单列 UPDATE（`update_clause` 不支持 tag_review 字段）。
 理由：audit_clauses.py 与三模型 LLM 流水线强耦合（分类→改写→验证三段都走中继），现在中继两只模型已死；治理是 id 清单驱动、确定性优先，混在一起会把两类回滚路径搅在一起。代价：多一个脚本，但它读的就是同一套 store/审核 API，没有第二套写入路径。
 
 ### D2. 生产库访问：SSH 隧道 + kubectl port-forward，不改部署
