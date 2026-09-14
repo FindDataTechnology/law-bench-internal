@@ -19,18 +19,33 @@ from src.eval.store import ensure_schema
 
 _REVIEW_STATUSES = ("pending", "approved", "rejected")
 
+# Keys with this prefix inside tags/tag_review are importer provenance
+# (_imported_at, _source_hash, _note), never review dimensions. Gating and
+# bulk writes must skip them, and they must survive bulk writes.
+METADATA_PREFIX = "_"
+
+
+def _review_dims(tags: dict | None) -> list[str]:
+    """Genuine review dims from ``tags`` (metadata-prefixed keys excluded)."""
+    return [k for k in (tags or {}) if not k.startswith(METADATA_PREFIX)]
+
 
 def is_assembly_ready(clause: dict) -> bool:
-    """True when every set tag dim has ``tag_review[dim] == 'approved'``."""
-    tags = clause.get("tags") or {}
+    """True when every set tag dim has ``tag_review[dim] == 'approved'``.
+
+    ``_``-prefixed keys are importer metadata, not review dims: they are
+    skipped on the tags side and ignored on the review side.
+    """
     review = clause.get("tag_review") or {}
-    return all(review.get(dim) == "approved" for dim in tags)
+    return all(review.get(dim) == "approved" for dim in _review_dims(clause.get("tags")))
 
 
 def review_tag(clause_id: int, dim: str, status: str, db: Any = None) -> None:
     """Set ``tag_review[dim] = status`` for one clause (per-dim review)."""
     if status not in _REVIEW_STATUSES:
         raise ValueError(f"invalid status: {status!r}; use one of {_REVIEW_STATUSES}")
+    if dim.startswith(METADATA_PREFIX):
+        raise ValueError(f"metadata key {dim!r} is not a review dimension")
     ensure_schema(db)
     conn = connect(db)
     try:
@@ -47,7 +62,11 @@ def review_tag(clause_id: int, dim: str, status: str, db: Any = None) -> None:
 
 
 def bulk_review(clause_id: int, status: str, db: Any = None) -> None:
-    """Set ALL of a clause's tag dims to ``status`` (bulk approve/reject)."""
+    """Set all of a clause's tag dims to ``status`` (bulk approve/reject).
+
+    Merge-write: genuine dims are set to ``status``, everything else already
+    in ``tag_review`` (e.g. importer ``_``-prefixed provenance keys) is kept.
+    """
     if status not in _REVIEW_STATUSES:
         raise ValueError(f"invalid status: {status!r}; use one of {_REVIEW_STATUSES}")
     from psycopg.types.json import Jsonb
@@ -55,10 +74,14 @@ def bulk_review(clause_id: int, status: str, db: Any = None) -> None:
     ensure_schema(db)
     conn = connect(db)
     try:
-        r = conn.execute("SELECT tags FROM clauses WHERE id = %s", (clause_id,)).fetchone()
+        r = conn.execute(
+            "SELECT tags, tag_review FROM clauses WHERE id = %s", (clause_id,)
+        ).fetchone()
         if r is None:
             raise NotFoundError(f"clause not found: {clause_id}")
-        new_review = {k: status for k in (r["tags"] or {})}
+        new_review = dict(r["tag_review"] or {})
+        for dim in _review_dims(r["tags"]):
+            new_review[dim] = status
         conn.execute(
             "UPDATE clauses SET tag_review = %s WHERE id = %s",
             (Jsonb(new_review), clause_id),
