@@ -13,7 +13,15 @@ import { createRoot } from "react-dom/client";
 
 function AssistantIsland() {
   return (
-    <CopilotKit runtimeUrl="/copilotkit">
+    // useSingleEndpoint pins the {method, params, body} envelope: the runtime
+    // is mounted single-route, and the default "auto" transport negotiation
+    // kept re-probing /info without ever issuing the agent run. The
+    // single-route transport resolves its endpoints with new URL(...), so the
+    // runtime URL must be absolute — a bare "/copilotkit" throws Invalid URL.
+    <CopilotKit
+      runtimeUrl={new URL("/copilotkit", window.location.origin).href}
+      useSingleEndpoint
+    >
       <CopilotPopup
         instructions={
           "You are the law-bench workbench assistant for an administrator. " +
