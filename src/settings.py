@@ -203,6 +203,15 @@ AUTH_SESSION_TTL = int(_env("AUTH_SESSION_TTL", str(7 * 24 * 3600)))
 AUTH_COOKIE_NAME = _env("AUTH_COOKIE_NAME", "lawbench_session")
 AUTH_COOKIE_SECURE = _env("AUTH_COOKIE_SECURE", "1") == "1"
 
+# --- Admin assistant (CopilotKit runtime) ---------------------------------- #
+# Base URL of the CopilotKit runtime the /copilotkit proxy forwards to
+# (add-admin-copilot-assistant). In-cluster default target is
+# http://copilot-runtime.law-bench.svc.cluster.local:3111. Unset = the
+# assistant is disabled: the proxy answers 503 and the island is not served,
+# instead of guessing a default that only resolves inside the cluster.
+COPILOT_RUNTIME_URL = _env("COPILOT_RUNTIME_URL", "").rstrip("/")
+
+
 # --- RBAC: permission scopes and login admission --------------------------- #
 # Authorization is expressed as *scopes*, taken directly from the Logto access
 # token's ``scope`` claim for the configured API Resource. There is no app-side

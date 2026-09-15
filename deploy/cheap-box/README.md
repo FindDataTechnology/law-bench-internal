@@ -137,6 +137,70 @@ baked into those manifests:
 `kubectl set image` is not used here (it was refused as an opaque mutation) —
 patch the manifest and `kubectl apply -f`.
 
+### Admin-assistant MCP instance (`deploy/assistant-mcp-deployment.yaml`)
+
+A dedicated streamable-HTTP instance of `fd-coding-law-bench_mcp` for the
+CopilotKit chat runtime (change `add-admin-copilot-assistant`). Differences
+from the gateway instance (`law-bench-mcp`, NodePort 30840):
+
+- **Denylist env** `MCP_TOOL_DENYLIST=clause_delete,rubric_delete,criterion_delete,prompt_delete`
+  — the destructive tools are never advertised on this instance (spec:
+  `add-admin-copilot-assistant/specs/law-bench-mcp`). If a tool gets renamed,
+  the server refuses to start rather than serve with a stale denylist.
+- **Own token**: k8s secret `law-bench-mcp-assistant`, key `MCP_HTTP_TOKEN`
+  (rotate independently of `law-bench-mcp`):
+  `kubectl -n law-bench create secret generic law-bench-mcp-assistant --from-literal=MCP_HTTP_TOKEN=<secret>`
+- **ClusterIP only** (`law-bench-mcp-assistant.law-bench.svc.cluster.local/mcp`)
+  — no NodePort, no Ingress. The only intended client is the
+  `copilot-runtime` pod; the sole public path to assistant functionality is
+  the law-bench web `/copilotkit` proxy (admin-scope gated).
+
+### Admin assistant topology (`add-admin-copilot-assistant`)
+
+```
+浏览器（admin session cookie）
+  └─ base.html 仅 admin 且配置了 runtime 时注入 CopilotKit island
+       (src/web/static/assistant/{assistant.js,style.css}，主镜像 node 阶段构建)
+       ↓ 同源 POST /copilotkit/*（session cookie）
+law-bench web pod  ·  require_scope("admin")，流式反代（httpx）
+  ↓ COPILOT_RUNTIME_URL（deployment.yaml env）
+copilot-runtime pod  ·  ClusterIP，/health 是唯一无鉴权路径
+  ├─ OpenAI adapter → GLM/DeepSeek 兼容端点（secret copilot-runtime）
+  └─ MCP (X-API-Key) → law-bench-mcp-assistant.law-bench.svc/mcp
+       └─ MCP_TOOL_DENYLIST：delete 类工具结构性不下发
+```
+
+One-time secrets:
+
+```sh
+kubectl -n law-bench create secret generic copilot-runtime \
+  --from-literal=OPENAI_API_KEY=<llm-key> \
+  --from-literal=OPENAI_BASE_URL=<openai-compatible endpoint> \
+  --from-literal=COPILOT_MODEL=<model id> \
+  --from-literal=COPILOT_MCP_TOKEN=<same as law-bench-mcp-assistant/MCP_HTTP_TOKEN>
+```
+
+Rollout order matters (denylist before anything can chat):
+1. Apply `deploy/assistant-mcp-deployment.yaml` (denylisted MCP instance).
+2. Build + push the runtime image (`docker build -f copilot-runtime/Dockerfile copilot-runtime/`,
+   tag `law-bench/copilot-runtime:sha-<sha>`), import to cheap-4's containerd
+   store (or push to Harbor), then apply `deploy/copilot-runtime-deployment.yaml`
+   (fill the image tag).
+3. Roll the web image (island is built in-stage; `COPILOT_RUNTIME_URL` already
+   in `deploy/deployment.yaml`).
+
+Verify (from cheap4, in-cluster):
+
+```sh
+kubectl -n law-bench exec deploy/copilot-runtime -- wget -qO- localhost:3111/health
+node copilot-runtime/scripts/mcp-smoke.mjs   # with COPILOT_MCP_URL/TOKEN pointed at the svc
+```
+
+Rollback (no data migration involved): comment out `COPILOT_RUNTIME_URL` in
+`deploy/deployment.yaml` and re-roll the web pod — the proxy 503s and the
+island stops being served, nothing else changes. The runtime and assistant-MCP
+deployments can then be scaled to 0 / deleted.
+
 ## Gateway compose on cheap1
 
 Lift-and-shift of the america compose stack into `/opt/mcp-gateway-registry`

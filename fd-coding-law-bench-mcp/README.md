@@ -194,6 +194,18 @@ HTTP mode is fail-closed: without a non-empty `MCP_HTTP_TOKEN` the server
 refuses to start. Clients authenticate with `Authorization: Bearer <token>` or
 `X-API-Key: <token>`. The tool set over HTTP is identical to stdio.
 
+### Tool denylist
+
+Either transport can exclude tools entirely via a comma-separated
+`MCP_TOOL_DENYLIST` (whitespace tolerated). Denylisted tools are neither
+advertised nor invocable, and a name that matches no registered tool refuses
+to start (a stale denylist must not silently re-advertise a tool the operator
+believes excluded). The admin-assistant deployment runs with:
+
+```bash
+MCP_TOOL_DENYLIST=clause_delete,rubric_delete,criterion_delete,prompt_delete
+```
+
 ## Wire into a client (Claude Code)
 
 Copy the relevant entry from `mcp-config.example.json` into your project's

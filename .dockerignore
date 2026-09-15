@@ -24,3 +24,12 @@ openspec/
 tests/
 .DS_Store
 **/.DS_Store
+
+# Node islands' deps (rebuilt inside the image; never sent as context)
+assistant-ui/node_modules/
+copilot-runtime/node_modules/
+.tmp-ck-inspect/
+nul
+
+# node islands stray artifacts
+src/web/static/assistant/

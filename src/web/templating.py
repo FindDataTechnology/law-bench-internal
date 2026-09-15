@@ -14,6 +14,7 @@ import json
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
 
+from ..settings import COPILOT_RUNTIME_URL
 from .i18n import (
     DEFAULT,
     LABELS,
@@ -78,6 +79,10 @@ def _locale_context(request: Request) -> dict:
         # plus a scope predicate the chrome uses to show/hide permission-gated actions.
         "user": user,
         "has_scope": lambda scope: _has_scope(user, scope),
+        # Admin assistant (change `add-admin-copilot-assistant`): the island is
+        # served only to admin sessions AND only when a runtime is configured;
+        # unset COPILOT_RUNTIME_URL means the assistant is disabled outright.
+        "assistant_enabled": bool(COPILOT_RUNTIME_URL) and _has_scope(user, "admin"),
     }
 
 

@@ -17,6 +17,24 @@
 #     -e OPENAI_API_KEY=... -e OPENAI_API_BASE=... \
 #     -e INTAKE_MODEL=... -e DRAFTER_MODEL=... -e AUDITOR_MODEL=... law-template
 
+# Admin-assistant island (CopilotKit CopilotPopup, change
+# add-admin-copilot-assistant): built in a throwaway node stage and copied into
+# the runtime image's static dir below, so node never ships in the runtime.
+# The island bundle is ~17 MB minified (~3.8 MB gzip) — one cached download for
+# admin sessions only.
+ARG NODE_IMAGE=node:22-slim
+FROM ${NODE_IMAGE} AS assistant-ui
+# Default is upstream npm; the in-cluster CI builder overrides with a domestic
+# mirror, same rationale as UV_INDEX_URL below.
+ARG NPM_REGISTRY=https://registry.npmjs.org
+RUN npm config set registry ${NPM_REGISTRY}
+WORKDIR /build
+COPY assistant-ui/package.json assistant-ui/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY assistant-ui/ ./
+# Vite emits to ../src/web/static/assistant per vite.config.ts → /src/... here.
+RUN npm run build
+
 # Base image. Default is the upstream ghcr.io image; the in-cluster CI builder
 # overrides BASE_IMAGE with a ghcr.io mirror because the ghcr.io blob CDN is
 # unreachable from that network (its metadata endpoints resolve, but layer
@@ -105,6 +123,10 @@ COPY --chown=appuser:appuser fd-coding-law-bench-mcp/pyproject.toml ./deps/lawbe
 COPY --chown=appuser:appuser fd-coding-law-bench-mcp/src ./deps/lawbench-mcp/src
 RUN uv pip install --python .venv ./deps/lawbench-mcp \
     && rm -rf ./deps "$UV_CACHE_DIR"
+
+# Admin-assistant island built in the node stage above; overwrites any stale
+# locally-built bundle so the shipped assets are always the image's own build.
+COPY --from=assistant-ui --chown=appuser:appuser /src/web/static/assistant ./src/web/static/assistant
 
 # Strip CR from shell scripts: checkouts on Windows carry CRLF, which breaks
 # the `#!/bin/sh` shebang ("no such file or directory" at exec).

@@ -80,14 +80,61 @@ class _TokenGuard:
         )
 
 
+def apply_tool_denylist(server: FastMCP | None = None) -> set[str]:
+    """Remove tools named in ``MCP_TOOL_DENYLIST`` from *server*'s registry.
+
+    The env var holds a comma-separated list of tool names (whitespace
+    tolerated). Removed tools are neither advertised nor invocable — clients
+    naming one get an unknown-tool error. Unset or empty means no exclusion.
+    A name that matches no registered tool exits loudly: a stale denylist
+    entry means the safety guard no longer matches the toolset, and serving
+    anyway would silently re-advertise a tool the operator believes excluded.
+
+    Returns the set of names actually removed.
+    """
+    target = server if server is not None else mcp
+    deny = {
+        part.strip()
+        for part in (os.environ.get("MCP_TOOL_DENYLIST") or "").split(",")
+        if part.strip()
+    }
+    if not deny:
+        return set()
+
+    from fastmcp.exceptions import NotFoundError
+
+    provider = getattr(target, "local_provider", None)
+    removed: set[str] = set()
+    unknown: list[str] = []
+    for name in sorted(deny):
+        try:
+            if provider is not None:
+                provider.remove_tool(name)
+            else:  # pragma: no cover - older fastmcp without local_provider
+                target.remove_tool(name)
+            removed.add(name)
+        except (KeyError, NotFoundError):
+            unknown.append(name)
+    if unknown:
+        raise SystemExit(
+            "MCP_TOOL_DENYLIST names unknown tools: "
+            + ", ".join(sorted(unknown))
+            + " - refusing to start with a stale safety denylist"
+        )
+    return removed
+
+
 def main() -> None:
     """Run the MCP server: stdio by default, streamable HTTP when
     ``MCP_HTTP_TRANSPORT=http``.
 
-    The HTTP mode is fail-closed: without a non-empty ``MCP_HTTP_TOKEN`` the
-    server exits before binding instead of serving an unauthenticated
-    endpoint. Host/port come from ``MCP_HTTP_HOST`` / ``MCP_HTTP_PORT``.
+    ``MCP_TOOL_DENYLIST`` tools are dropped before serving on either
+    transport. The HTTP mode is fail-closed: without a non-empty
+    ``MCP_HTTP_TOKEN`` the server exits before binding instead of serving an
+    unauthenticated endpoint. Host/port come from ``MCP_HTTP_HOST`` /
+    ``MCP_HTTP_PORT``.
     """
+    apply_tool_denylist()
     transport = (os.environ.get("MCP_HTTP_TRANSPORT") or "stdio").strip().lower()
     if transport in ("", "stdio"):
         mcp.run()

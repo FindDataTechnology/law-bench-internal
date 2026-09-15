@@ -44,6 +44,11 @@ pipeline {
     // Dockerfile's DEBIAN_MIRROR / DEBIAN_SECURITY_MIRROR build args.
     DEBIAN_MIRROR          = 'https://mirrors.tuna.tsinghua.edu.cn/debian'
     DEBIAN_SECURITY_MIRROR = 'https://mirrors.tuna.tsinghua.edu.cn/debian-security'
+    // Admin-assistant island stage: node base image via a docker-hub mirror and
+    // npm via a domestic registry, same builder-network rationale as above.
+    // Swap here if a mirror is unavailable.
+    NODE_IMAGE_MIRROR = 'docker.m.daocloud.io/library/node:22-slim'
+    NPM_REGISTRY      = 'https://registry.npmmirror.com'
   }
 
   stages {
@@ -59,7 +64,7 @@ pipeline {
 
     stage('Build') {
       steps {
-        sh 'docker build --build-arg BASE_IMAGE="$BASE_IMAGE_MIRROR" --build-arg UV_INDEX_URL="$UV_INDEX_URL" --build-arg DEBIAN_MIRROR="$DEBIAN_MIRROR" --build-arg DEBIAN_SECURITY_MIRROR="$DEBIAN_SECURITY_MIRROR" -t "$IMAGE:$TAG" -t "$IMAGE:latest" -f Dockerfile .'
+        sh 'docker build --build-arg BASE_IMAGE="$BASE_IMAGE_MIRROR" --build-arg UV_INDEX_URL="$UV_INDEX_URL" --build-arg DEBIAN_MIRROR="$DEBIAN_MIRROR" --build-arg DEBIAN_SECURITY_MIRROR="$DEBIAN_SECURITY_MIRROR" --build-arg NODE_IMAGE="$NODE_IMAGE_MIRROR" --build-arg NPM_REGISTRY="$NPM_REGISTRY" -t "$IMAGE:$TAG" -t "$IMAGE:latest" -f Dockerfile .'
       }
     }
 
