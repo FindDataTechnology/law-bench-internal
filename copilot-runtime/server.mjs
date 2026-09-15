@@ -148,12 +148,14 @@ const runtime = new CopilotRuntime({
   agents: { copilotkit: agent, default: agent },
 });
 
-// Node listener: basePath strips /copilotkit so both the multi-route paths
-// (/agent/:id/run) and the single-route JSON envelope ({method, params, body}
-// posted at the base) resolve.
+// Node listener: basePath strips /copilotkit; single-route mode serves the
+// JSON envelope ({method, params, body} posted at the base) that the island's
+// v1 React provider speaks (multi-route mode would 404 it with
+// single_route_envelope_against_multi_route_runtime).
 const copilotHandler = createCopilotNodeListener({
   runtime,
   basePath: ENDPOINT,
+  mode: "single-route",
 });
 
 createServer((req, res) => {
