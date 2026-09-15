@@ -191,6 +191,14 @@ deploy/copilot-runtime` — nothing else changes.
 
 ### Image delivery on the cheap cluster (2026-09-15 state)
 
+Frontend-island notes (all three fixed in 4618fc0, verified live with an admin
+browser session): CopilotKit's v1 island needs (a) vite `define` replacing
+`process.env` (its client reads it at module top level), (b) an ES-module
+build — the 17 MB single-file IIFE died silently mid-execution as a classic
+script, and (c) `useSingleEndpoint` + an ABSOLUTE runtimeUrl — the default
+"auto" transport re-probes /info forever, and the single-route transport
+resolves endpoints with `new URL(...)`, which throws on a relative path.
+
 Jenkins (pod on node `liuliangjkiimypbdzxa`, 100.64.0.12) was unreachable
 (node half-open: kubelet reports, but SSH/exec/NodePort into it fail), and
 Harbor pull auth is currently broken (the `100.64.0.8:30880` robot in
