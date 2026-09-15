@@ -136,7 +136,10 @@ const provider = createOpenAI({
 });
 
 const agent = new BuiltInAgent({
-  model: provider(MODEL),
+  // .chat() pins the chat-completions endpoint: the provider default targets
+  // OpenAI's /responses API, which the Ark-compatible endpoint does not serve
+  // (404).
+  model: provider.chat(MODEL),
   mcpClients: [lawbenchMcp],
   prompt: ASSISTANT_PROMPT,
   maxSteps: 10,
