@@ -17,12 +17,17 @@
 #     -e OPENAI_API_KEY=... -e OPENAI_API_BASE=... \
 #     -e INTAKE_MODEL=... -e DRAFTER_MODEL=... -e AUDITOR_MODEL=... law-template
 
+# Global build args. Both MUST sit before the first FROM: with the legacy
+# (non-BuildKit) builder an ARG only feeds a FROM line if it is declared
+# before any FROM — declaring BASE_IMAGE after the node stage left it blank
+# and failed the build with "base name (${BASE_IMAGE}) should not be blank".
 # Admin-assistant island (CopilotKit CopilotPopup, change
 # add-admin-copilot-assistant): built in a throwaway node stage and copied into
 # the runtime image's static dir below, so node never ships in the runtime.
 # The island bundle is ~17 MB minified (~3.8 MB gzip) — one cached download for
 # admin sessions only.
 ARG NODE_IMAGE=node:22-slim
+ARG BASE_IMAGE=ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 FROM ${NODE_IMAGE} AS assistant-ui
 # Default is upstream npm; the in-cluster CI builder overrides with a domestic
 # mirror, same rationale as UV_INDEX_URL below.
@@ -35,11 +40,10 @@ COPY assistant-ui/ ./
 # Vite emits to ../src/web/static/assistant per vite.config.ts → /src/... here.
 RUN npm run build
 
-# Base image. Default is the upstream ghcr.io image; the in-cluster CI builder
-# overrides BASE_IMAGE with a ghcr.io mirror because the ghcr.io blob CDN is
-# unreachable from that network (its metadata endpoints resolve, but layer
-# downloads stall indefinitely). See Jenkinsfile "Build".
-ARG BASE_IMAGE=ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+# Base image default lives in the global ARG block above; the in-cluster CI
+# builder overrides BASE_IMAGE with a ghcr.io mirror because the ghcr.io blob
+# CDN is unreachable from that network (its metadata endpoints resolve, but
+# layer downloads stall indefinitely). See Jenkinsfile "Build".
 FROM ${BASE_IMAGE}
 
 WORKDIR /app
