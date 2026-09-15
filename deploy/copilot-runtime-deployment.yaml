@@ -52,7 +52,7 @@ spec:
             value: "5"
       containers:
         - name: copilot-runtime
-          image: 100.64.0.8:30880/law-bench/copilot-runtime:sha-ROLLSHA
+          image: 100.64.0.8:30880/law-bench/copilot-runtime:sha-12eadca
           imagePullPolicy: IfNotPresent
           env:
             - name: PORT

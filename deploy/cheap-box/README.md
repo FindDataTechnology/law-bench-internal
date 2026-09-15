@@ -180,7 +180,46 @@ kubectl -n law-bench create secret generic copilot-runtime \
   --from-literal=COPILOT_MCP_TOKEN=<same as law-bench-mcp-assistant/MCP_HTTP_TOKEN>
 ```
 
-Rollout order matters (denylist before anything can chat):
+**Deployed values (2026-09-15):** `OPENAI_BASE_URL=https://ark.cn-beijing.volces.com/api/plan/v1`,
+`COPILOT_MODEL=glm-5.2`, key `ark-eb94c9a5-…` borrowed from the gpt-load
+`volcano-agent-plan-all` pool (group 17). The `law-bench-judge` secret's own
+Ark key is DEAD (`InvalidSubscription` on /api/plan/v3) — prod eval is broken
+independently of this change until that subscription is renewed or the secret
+is repointed. When a better LLM path exists (e.g. gpt-load reachable from this
+cluster), swap the secret and `kubectl -n law-bench rollout restart
+deploy/copilot-runtime` — nothing else changes.
+
+### Image delivery on the cheap cluster (2026-09-15 state)
+
+Jenkins (pod on node `liuliangjkiimypbdzxa`, 100.64.0.12) was unreachable
+(node half-open: kubelet reports, but SSH/exec/NodePort into it fail), and
+Harbor pull auth is currently broken (the `100.64.0.8:30880` robot in
+registries.yaml gets 401 from the v2 API; containerd sends no auth — likely
+needs a k3s restart to re-apply registries.yaml). Both images were therefore
+built on cheap-4 and imported into the k3s containerd directly:
+
+```sh
+# base images: ghcr.nju.edu.cn works from cheap-4 (daocloud times out)
+docker pull ghcr.nju.edu.cn/astral-sh/uv:python3.12-bookworm-slim
+# containerd already had node:22-bookworm-slim (ctr images export → docker load)
+docker build -f Dockerfile --build-arg BASE_IMAGE=<local uv base> \
+  --build-arg NODE_IMAGE=node:22-slim --build-arg UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+  --build-arg DEBIAN_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian \
+  --build-arg DEBIAN_SECURITY_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian-security \
+  --build-arg NPM_REGISTRY=https://registry.npmmirror.com \
+  -t 100.64.0.8:30880/law-bench/law-template:sha-<sha> .
+docker build -t 100.64.0.8:30880/law-bench/copilot-runtime:sha-<sha> copilot-runtime/
+# CRITICAL: k3s containerd is a SEPARATE daemon — import with its socket,
+# and mind kubelet image-GC pruning unused images (re-import if pruned):
+docker save <image> -o /tmp/i.tar
+ctr --address /run/k3s/containerd/containerd.sock -n k8s.io images import /tmp/i.tar
+```
+
+Long tasks over the SSH MCP die with the session — run them under
+`systemd-run --unit=<name> --collect sh -c '…'` (survives disconnect; check
+`systemctl is-active <name>` / the log file it writes).
+
+### Rollout order matters (denylist before anything can chat):
 1. Apply `deploy/assistant-mcp-deployment.yaml` (denylisted MCP instance).
 2. Build + push the runtime image (`docker build -f copilot-runtime/Dockerfile copilot-runtime/`,
    tag `law-bench/copilot-runtime:sha-<sha>`), import to cheap-4's containerd

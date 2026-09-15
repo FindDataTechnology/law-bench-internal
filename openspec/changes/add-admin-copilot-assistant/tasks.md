@@ -16,7 +16,7 @@
 - [x] 3.1 Create `Dockerfile.copilot-runtime` (Node slim, pinned `@copilotkit/runtime`) with a `/health` endpoint check
 - [x] 3.2 Implement the runtime entrypoint: `CopilotRuntime` with `OpenAIAdapter` (base URL/model/key from env) and `createMCPClient` connecting to the assistant MCP instance over streamable HTTP with the shared token header, denylist re-checked client-side as defense in depth
 - [x] 3.3 Add k3s manifests (Deployment + ClusterIP Service, no Ingress) with env for LLM endpoint/key/model, MCP URL, MCP token
-- [ ] 3.4 Smoke-test in-cluster: health check, one MCP tool round-trip through the runtime with a test prompt
+- [x] 3.4 Smoke-test in-cluster: health check, one MCP tool round-trip through the runtime with a test prompt
 
 ## 4. FastAPI proxy route
 
@@ -37,7 +37,7 @@
 
 ## 7. End-to-end verification
 
-- [ ] 7.1 E2E as admin: expand bubble, run a read (search clauses), a generation, and an evaluation through chat; replies stream in the panel
+- [x] 7.1 E2E as admin: expand bubble, run a read (search clauses), a generation, and an evaluation through chat; replies stream in the panel
 - [x] 7.2 E2E denial: anonymous and non-admin sessions get no entry point and are rejected at `/copilotkit/*`
 - [x] 7.3 E2E destructive-tool exclusion: ask the assistant to delete a rubric/clause and confirm nothing is deleted and the tool is unavailable
 - [x] 7.4 Failure drills: stop the runtime / MCP instance and confirm the panel shows an error and the rest of the site works
