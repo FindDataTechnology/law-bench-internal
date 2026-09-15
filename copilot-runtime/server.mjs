@@ -1,11 +1,15 @@
 // law-bench admin-assistant CopilotKit runtime.
 //
 // Sits entirely inside the k3s cluster: the FastAPI /copilotkit proxy (the only
-// public path, admin-scope gated) forwards here. Two jobs:
-//   1. chat completion via the OpenAI adapter pointed at the GLM/DeepSeek
-//      OpenAI-compatible endpoint (OPENAI_BASE_URL + OPENAI_API_KEY);
-//   2. MCP tool access to the dedicated law-bench-mcp-assistant instance over
-//      streamable HTTP with the shared token (X-API-Key).
+// public path, admin-scope gated) forwards here. The node-http endpoint speaks
+// CopilotKit's single-route JSON protocol (POST {method, params, body}; the
+// chat method is "agent/run" streaming AG-UI events over SSE), routed to a
+// registered BuiltInAgent:
+//   - model via @ai-sdk/openai pointed at the GLM/DeepSeek OpenAI-compatible
+//     endpoint (OPENAI_BASE_URL + OPENAI_API_KEY from the copilot-runtime
+//     secret);
+//   - tools from the dedicated law-bench-mcp-assistant instance over
+//     streamable HTTP with the shared token (X-API-Key).
 //
 // Defense in depth: the server-side MCP instance runs with MCP_TOOL_DENYLIST
 // (destructive tools never advertised), and this client filters the same names
@@ -16,22 +20,19 @@ import { createServer } from "node:http";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import {
-  CopilotRuntime,
-  OpenAIAdapter,
-  copilotRuntimeNodeHttpEndpoint,
-} from "@copilotkit/runtime";
-import OpenAI from "openai";
+import { createOpenAI } from "@ai-sdk/openai";
+import { BuiltInAgent, CopilotRuntime } from "@copilotkit/runtime/v2";
+import { createCopilotNodeListener } from "@copilotkit/runtime/v2/node";
 
 const PORT = Number(process.env.PORT || 3111);
 const ENDPOINT = process.env.COPILOT_ENDPOINT || "/copilotkit";
-const MODEL = process.env.COPILOT_MODEL || "glm-4.7";
+const MODEL = process.env.COPILOT_MODEL || "glm-5.2";
 const MCP_URL =
   process.env.COPILOT_MCP_URL ||
   "http://law-bench-mcp-assistant.law-bench.svc.cluster.local/mcp";
 const MCP_TOKEN = process.env.COPILOT_MCP_TOKEN || "";
 // Same list as the MCP instance's MCP_TOOL_DENYLIST; names here are dropped
-// from what the runtime hands the model even if the server did not filter.
+// from what the agent hands the model even if the server did not filter.
 const TOOL_DENYLIST = new Set(
   (
     process.env.COPILOT_TOOL_DENYLIST ||
@@ -41,6 +42,15 @@ const TOOL_DENYLIST = new Set(
     .map((s) => s.trim())
     .filter(Boolean),
 );
+
+const ASSISTANT_PROMPT =
+  "You are the law-bench workbench assistant for an administrator. " +
+  "Use the available tools to answer questions about contracts, rubrics, " +
+  "prompts, evaluations and clauses: search clauses, generate contracts, " +
+  "evaluate drafts, inspect runs and law references. Deletion tools are " +
+  "not available by design — if asked to delete something, explain that " +
+  "deletion must be done from the regular workbench pages. Reply in the " +
+  "language the user writes in (usually Chinese).";
 
 if (!process.env.OPENAI_API_KEY) {
   console.error("OPENAI_API_KEY is required; refusing to start");
@@ -52,106 +62,98 @@ if (!MCP_TOKEN) {
 }
 
 // ---------------------------------------------------------------------------
-// MCP client (one cached connection per endpoint, reconnected on failure)
-//
-// Implements CopilotKit's MCPClient contract: { tools(): Record<name, tool>;
-// close() }. Tool schemas are re-listed on demand; the underlying MCP session
-// is kept alive between chat turns to avoid a connect/list/close round trip
-// per request.
+// Lazy MCP client (user-managed): connects on first tools() call and
+// reconnects once on a stale session. CopilotKit's BuiltInAgent accepts it
+// via mcpClients and deliberately does not close user-managed clients.
 
 let mcpClient = null;
-let mcpConnectPromise = null;
 
 async function getMcpClient() {
   if (mcpClient) return mcpClient;
-  if (!mcpConnectPromise) {
-    mcpConnectPromise = (async () => {
-      const client = new Client({ name: "lawbench-copilot-runtime", version: "0.1.0" });
-      const transport = new StreamableHTTPClientTransport(MCP_URL, {
-        requestInit: { headers: { "X-API-Key": MCP_TOKEN } },
-      });
-      await client.connect(transport);
-      return client;
-    })();
+  const client = new Client({ name: "lawbench-copilot-runtime", version: "0.1.0" });
+  const transport = new StreamableHTTPClientTransport(MCP_URL, {
+    requestInit: { headers: { "X-API-Key": MCP_TOKEN } },
+  });
+  await client.connect(transport);
+  mcpClient = client;
+  return client;
+}
+
+const lawbenchMcp = {
+  async tools() {
+    let client;
     try {
-      mcpClient = await mcpConnectPromise;
+      client = await getMcpClient();
     } catch (err) {
       console.error(`MCP connect to ${MCP_URL} failed:`, err.message);
       throw err;
-    } finally {
-      mcpConnectPromise = null;
     }
-  }
-  return mcpConnectPromise;
-}
-
-async function createLawbenchMcpClient(/* config: { endpoint, apiKey? } */) {
-  // CopilotKit passes the mcpServers entry here; we deliberately ignore it and
-  // use the env-pinned URL/token so the runtime cannot be redirected by
-  // request data.
-  const client = await getMcpClient();
-  return {
-    async tools() {
-      let listed;
-      try {
-        listed = await client.listTools();
-      } catch (err) {
-        // Stale session (restart of the MCP pod, idle timeout) — reconnect
-        // once and retry before surfacing the error to the chat.
-        mcpClient = null;
-        const fresh = await getMcpClient();
-        listed = await fresh.listTools();
-      }
-      const tools = {};
-      for (const t of listed.tools) {
-        if (TOOL_DENYLIST.has(t.name)) continue;
-        const inputSchema = t.inputSchema || {};
-        tools[t.name] = {
-          description: t.description,
-          schema: {
-            parameters: {
-              properties: inputSchema.properties || {},
-              required: inputSchema.required || [],
-            },
+    let listed;
+    try {
+      listed = await client.listTools();
+    } catch (err) {
+      // Stale session (restart of the MCP pod, idle timeout) — drop the
+      // cached client and reconnect once before surfacing the error.
+      mcpClient = null;
+      client = await getMcpClient();
+      listed = await client.listTools();
+    }
+    const tools = {};
+    for (const t of listed.tools) {
+      if (TOOL_DENYLIST.has(t.name)) continue;
+      const inputSchema = t.inputSchema || {};
+      tools[t.name] = {
+        description: t.description,
+        schema: {
+          parameters: {
+            properties: inputSchema.properties || {},
+            required: inputSchema.required || [],
           },
-          execute: async (params) => {
-            const result = await client.callTool({ name: t.name, arguments: params || {} });
-            // Flatten MCP content blocks to text so the model sees strings.
-            if (Array.isArray(result?.content)) {
-              return result.content
-                .map((block) =>
-                  block.type === "text" ? block.text : JSON.stringify(block),
-                )
-                .join("\n");
-            }
-            return result;
-          },
-        };
-      }
-      return tools;
-    },
-  };
-}
+        },
+        execute: async (params) => {
+          const result = await client.callTool({ name: t.name, arguments: params || {} });
+          // Flatten MCP content blocks to text so the model sees strings.
+          if (Array.isArray(result?.content)) {
+            return result.content
+              .map((block) =>
+                block.type === "text" ? block.text : JSON.stringify(block),
+              )
+              .join("\n");
+          }
+          return result;
+        },
+      };
+    }
+    return tools;
+  },
+};
 
 // ---------------------------------------------------------------------------
 
-const serviceAdapter = new OpenAIAdapter({
-  // The openai SDK honors OPENAI_BASE_URL for the GLM/DeepSeek-compatible
-  // endpoint; the adapter model must be an identifier that endpoint serves.
-  openai: new OpenAI({ apiKey: process.env.OPENAI_API_KEY }),
-  model: MODEL,
-  keepSystemRole: true,
+const provider = createOpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  baseURL: process.env.OPENAI_BASE_URL || undefined,
 });
 
+const agent = new BuiltInAgent({
+  model: provider(MODEL),
+  mcpClients: [lawbenchMcp],
+  prompt: ASSISTANT_PROMPT,
+  maxSteps: 10,
+});
+
+// Register under both ids: "copilotkit" is the classic default the v1 React
+// provider sends, "default" is a common fallback.
 const runtime = new CopilotRuntime({
-  mcpServers: [{ endpoint: MCP_URL, apiKey: MCP_TOKEN }],
-  createMCPClient: createLawbenchMcpClient,
+  agents: { copilotkit: agent, default: agent },
 });
 
-const copilotHandler = copilotRuntimeNodeHttpEndpoint({
-  endpoint: ENDPOINT,
+// Node listener: basePath strips /copilotkit so both the multi-route paths
+// (/agent/:id/run) and the single-route JSON envelope ({method, params, body}
+// posted at the base) resolve.
+const copilotHandler = createCopilotNodeListener({
   runtime,
-  serviceAdapter,
+  basePath: ENDPOINT,
 });
 
 createServer((req, res) => {
