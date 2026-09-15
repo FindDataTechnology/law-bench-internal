@@ -26,7 +26,10 @@ import { createCopilotNodeListener } from "@copilotkit/runtime/v2/node";
 
 const PORT = Number(process.env.PORT || 3111);
 const ENDPOINT = process.env.COPILOT_ENDPOINT || "/copilotkit";
-const MODEL = process.env.COPILOT_MODEL || "glm-5.2";
+// LLM defaults: the shared token-vault gateway (OpenRouter-compatible API —
+// sk-or keys, "vendor/model" ids, plain OpenAI chat-completions protocol).
+const LLM_BASE_URL = process.env.OPENAI_BASE_URL || "https://token.finddatatech.cloud/v1";
+const MODEL = process.env.COPILOT_MODEL || "deepseek/deepseek-v4.1-flash";
 const MCP_URL =
   process.env.COPILOT_MCP_URL ||
   "http://law-bench-mcp-assistant.law-bench.svc.cluster.local/mcp";
@@ -132,7 +135,7 @@ const lawbenchMcp = {
 
 const provider = createOpenAI({
   apiKey: process.env.OPENAI_API_KEY,
-  baseURL: process.env.OPENAI_BASE_URL || undefined,
+  baseURL: LLM_BASE_URL,
 });
 
 const agent = new BuiltInAgent({
