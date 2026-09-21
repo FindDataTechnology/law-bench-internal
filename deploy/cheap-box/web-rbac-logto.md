@@ -91,6 +91,25 @@ The **API-key channel is exempt** from the admission gate: keys are
 admin-provisioned with explicit scopes, so automation keeps working across the
 cutover.
 
+### Requesting a scope that does not exist yet
+
+Measured 2026-09-21 with a probe against the live tenant (`GET /oidc/auth` with
+`client_id` + `redirect_uri` + `resource`, no credentials): Logto does **not**
+validate whether a requested scope exists at the authorize step. Asking for
+`openid totally:bogus-scope` and asking for `openid content:read` produce the
+identical response (`303 → /sign-in?app_id=…`); there is no `invalid_scope`
+error. So appending a not-yet-created permission to `LOGTO_SCOPES` will not
+break the authorize leg — the scope simply is never granted, because a token's
+`scope` claim is the intersection of the requested scopes and what the user's
+roles grant.
+
+**Not measured: the token-exchange leg.** Only the authorize response was
+probed; whether `/oidc/token` tolerates a requested scope with no matching
+permission was not exercised (that needs a real account). The safe order is
+therefore unchanged: **create the permission on the API Resource first, then
+append it to `LOGTO_SCOPES`** — one restart, no window where every login depends
+on unverified behaviour.
+
 ## 3. Rollout runbook
 
 Cutover order matters — `enforce` before the tenant is ready locks every human
