@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}判定 · {{ t.nav.brand }}{% endblock %}
+{% block content %}
+{% if request.query_params.get('flash') %}
+  <div class="flash error">{{ request.query_params.get('flash') }}</div>
+{% endif %}
+
+{% if not task %}
+  <div class="toolbar between">
+    <h1>条目不存在</h1>
+    <a class="btn btn-sm btn-ghost" href="{{ url_for('page_review') }}">返回列表</a>
+  </div>
+  <p class="muted">任务 #{{ task_id }} 不存在，或其引用的评估记录已被删除。</p>
+{% else %}
+<div class="toolbar between">
+  <h1>审查条目 #{{ task.id }}</h1>
+  <a class="btn btn-sm btn-ghost" href="{{ url_for('page_review') }}?batch={{ task.batch_id }}">返回列表</a>
+</div>
+
+<p class="muted small">
+  批次 <code>{{ task.batch_id }}</code> ·
+  {{ '效度验证（盲评）' if task.batch_type == 'validity' else 'gold 标注' }} ·
+  槽位 {{ task.slot }} ·
+  合同类别 {{ task.contract_type or '—' }} ·
+  规则集 <code>{{ task.rubric_name }}</code> ·
+  判官 {{ task.judge_model or '—' }}
+</p>
+
+<div class="panel">
+  <h3 style="margin-top:0">评审项：{{ task.criterion_title or task.criterion_id }}</h3>
+  {% if task.criterion_description %}
+    <p class="muted small">{{ task.criterion_description }}</p>
+  {% endif %}
+  {% if task.criterion_guidance %}
+    <p><strong>判定标准</strong>：{{ task.criterion_guidance }}</p>
+  {% else %}
+    <p class="muted small">未取到该评审项的判定标准（规则集或评审项可能已变更）。</p>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h3 style="margin-top:0">待审合同文本</h3>
+  <pre style="max-height:24em;overflow:auto;white-space:pre-wrap">{{ task.draft_text or '（无草稿文本）' }}</pre>
+</div>
+
+{% if task.blind %}
+  <div class="panel">
+    <p class="muted" style="margin:0">
+      盲评：本条为效度验证，提交前不显示模型判定与理由。请依据上方合同文本与判定标准独立判断。
+    </p>
+  </div>
+{% elif task.status == 'pending' %}
+  <div class="panel">
+    <h3 style="margin-top:0">模型判定</h3>
+    <p>判定：<code>{{ task.model_verdict }}</code></p>
+    {% if task.model_reasoning %}
+      <p class="muted small">理由：{{ task.model_reasoning }}</p>
+    {% endif %}
+  </div>
+{% endif %}
+
+{% if task.status == 'decided' %}
+  <div class="panel">
+    <h3 style="margin-top:0">已判定</h3>
+    <p>标注员：{{ task.annotator }} · 判定：<code>{{ task.annotator_verdict }}</code> ·
+       <span class="muted small">{{ task.reviewed_at }}</span></p>
+    {% if task.note %}<p class="muted small">备注：{{ task.note }}</p>{% endif %}
+    <p class="muted small">模型判定：<code>{{ task.model_verdict }}</code>
+      {% if task.model_verdict and task.annotator_verdict %}
+        — {{ '一致' if (task.model_verdict == 'pass' and task.annotator_verdict == 'pass')
+                      or (task.model_verdict == 'fail' and task.annotator_verdict == 'fail')
+                      or (task.model_verdict == 'pass' and task.annotator_verdict == 'approved')
+                      or (task.model_verdict == 'fail' and task.annotator_verdict == 'rejected')
+             else '不一致' }}
+      {% endif %}
+    </p>
+    {% if task.model_reasoning %}<p class="muted small">模型理由：{{ task.model_reasoning }}</p>{% endif %}
+  </div>
+{% else %}
+<form method="post" action="{{ url_for('page_review_decide', task_id=task.id) }}">
+  <div class="panel">
+    <h3 style="margin-top:0">你的判定</h3>
+    <div class="inline">
+      {% for value in task.allowed_verdicts %}
+        <label class="inline" style="margin-right:1.2em">
+          <input type="radio" name="verdict" value="{{ value }}" required>
+          {{ verdict_labels.get(value, value) }}
+        </label>
+      {% endfor %}
+    </div>
+    <p><textarea name="note" rows="3" placeholder="备注（可选）：判断依据、存疑之处"></textarea></p>
+    <button type="submit" class="btn">提交判定</button>
+    <span class="muted small">提交后记录你的登录身份，不可修改。</span>
+  </div>
+</form>
+{% endif %}
+{% endif %}
+{% endblock %}

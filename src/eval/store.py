@@ -347,6 +347,32 @@ CREATE TABLE IF NOT EXISTS api_keys (
 """
 
 
+# Human-review annotation slots on eval verdicts (change add-web-human-review).
+# One row = one annotator slot on one eval_criteria_results row within a batch;
+# double annotation is two slot rows, not two columns. `annotator` is stamped
+# from the authenticated web session (never a free-text form field) and stays
+# NULL until a decision lands. Owned by src/eval/review, but the DDL lives here
+# so ensure_schema establishes it on any database the app touches — same
+# convention as api_keys.
+REVIEW_TASKS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS review_tasks (
+    id                      BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    batch_id                TEXT NOT NULL,
+    batch_type              TEXT NOT NULL,
+    eval_criteria_result_id BIGINT NOT NULL REFERENCES eval_criteria_results(id) ON DELETE CASCADE,
+    slot                    INTEGER NOT NULL,
+    status                  TEXT NOT NULL DEFAULT 'pending',
+    annotator_verdict       TEXT,
+    annotator               TEXT,
+    note                    TEXT,
+    reviewed_at             TIMESTAMPTZ,
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (batch_id, eval_criteria_result_id, slot)
+);
+CREATE INDEX IF NOT EXISTS review_tasks_batch_idx ON review_tasks (batch_id, status);
+"""
+
+
 # The DDL is fully idempotent, so ensure_schema is memoized per database (keyed
 # by dbname): the first call on a given DB creates/migrates; subsequent calls
 # (every store/list/compare) are a cheap no-op. This matters because the store
@@ -382,6 +408,7 @@ def ensure_schema(db_path=DEFAULT_DB) -> None:
             conn.execute(API_EVAL_SCHEMA)
             conn.execute(GENERATION_JOBS_SCHEMA)
             conn.execute(API_KEYS_SCHEMA)
+            conn.execute(REVIEW_TASKS_SCHEMA)
             conn.execute(_ADDITIVE_COLUMNS)
             conn.commit()
             _ensured_dbs.add(key)

@@ -131,6 +131,25 @@ python scripts/finetune/prepare_review_batches.py promote \
 #   → validate_quadruple 接受 reviewer=ai_reviewer（tier=gold/verdict=pass 同时放行）
 #   → 1472 条 ai_reviewer 晋金四元组，可直接汇入总 gold 训练集
 
+# 2d) Web 人工审查（远程标注员，add-web-human-review）：不落文件信封，直接判库内评测条目
+python scripts/finetune/web_review_seed.py --list-runs 20
+#   → 列出候选评测运行（按 rubric/时间），据此钉住 --run-ids
+python scripts/finetune/web_review_seed.py \
+    --batch-id v4-validity-2026q3 --batch-type validity \
+    --run-ids 101,102,103 --per-type 3 --annotators 2
+#   → review_tasks 表建批（幂等：同 batch_id 重跑不重复）
+#   标注员：登录 web → /review → 逐条判定（validity 盲评 pass/fail；gold_curation 见模型判定后 approved/rejected/skipped）
+python scripts/finetune/web_review_export.py --batch-id v4-validity-2026q3
+#   → 每人决策数、双人吻合率与 Cohen's κ、人-判官一致率；一致率≥0.98 且 n≥5 报"疑似机器代打"
+python scripts/finetune/web_review_export.py --batch-id v4-gold-2026q3 --export
+#   → data/finetune/judge-c/judge_c_gold.web.jsonl（仅 approved 且通过 validate_quadruple 的条目；
+#     tier=gold/reviewer=human，provenance 指回 review_tasks 与源行，与 2b/2c 的 gold 同格式可合并）
+#   → 评测侧表（criteria 只有 name/description/guidance）不带法条引用，故 legal_base/citation
+#     组装为空：这类条目写入 judge_c_gold.web.jsonl.incomplete.jsonl 工作清单，gold 文件保持
+#     不写（空的 gold 文件会误放行飞轮闸门），人工补齐法条后再晋金
+#   部署前置（Logto 角色 lawbench-annotator 与 review:annotate scope、LOGTO_SCOPES 追加）见
+#   deploy/cheap-box/web-rbac-logto.md §Scope vocabulary / §2
+
 # 3) 开源语料接入（本地，逐语料包跑许可证闸门）
 python scripts/finetune/ingest_opensource.py <corpus_dir> --tier silver
 #   → data/finetune/opensource/<corpus>_index.json（接受）

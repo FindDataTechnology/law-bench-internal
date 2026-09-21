@@ -38,6 +38,7 @@ scope the token lacks gets `403`. Do the Logto work below **before** flipping
 | `content:read` | read routes (list rubrics, view a draft, …) |
 | `content:write` | content mutations: create/update/delete rubrics, prompts, clauses; generation kicks |
 | `admin` | destructive / configuration routes (hard deletes, harbor extract, key management) |
+| `review:annotate` | submit a human-review verdict (`POST /review/{task_id}/decide`, add-web-human-review). Viewing `/review` needs only a session. |
 
 `admin` is normalized in-app to also carry the `"*"` wildcard, so one `admin`
 grant satisfies every scope check — including routes that start requiring a new
@@ -48,6 +49,7 @@ scope later.
 | `lawbench-admin` | 管理员 | `content:read`, `content:write`, `admin` |
 | `lawbench-editor` | 业务编辑 | `content:read`, `content:write` |
 | `lawbench-viewer` | 只读 | `content:read` |
+| `lawbench-annotator` | 远程标注员 | `content:read`, `review:annotate` |
 
 > The role **names** are a convention for operators reading the Logto Console.
 > The app maps nothing by role name — only the resulting permission scopes
@@ -81,8 +83,8 @@ scope later.
 | Var | Default | Meaning |
 |---|---|---|
 | `LOGTO_API_RESOURCE` | (empty) | API Resource indicator (audience). Empty ⇒ no `resource=` requested; access-token `aud` falls back to the client id and **nobody is admitted**. |
-| `LOGTO_SCOPES` | `openid profile email content:read content:write admin` | OIDC + API scopes requested at `/authorize`. |
-| `AUTH_ADMITTED_SCOPES` | `content:read,content:write,admin` | Scopes that qualify an identity for a session (comma-separated). |
+| `LOGTO_SCOPES` | `openid profile email content:read content:write admin` | OIDC + API scopes requested at `/authorize`. **Append `review:annotate` to enable remote annotation** — a scope that is not requested never reaches the token, so the decision POST would 403 no matter what the role grants. Read at import time: changing it needs a pod restart. |
+| `AUTH_ADMITTED_SCOPES` | `content:read,content:write,admin` | Scopes that qualify an identity for a session (comma-separated). An annotator who holds `content:read` is admitted without touching this; an annotator holding *only* `review:annotate` needs it added here. Read live per request. |
 | `AUTH_ADMISSION_MODE` | `enforce` | `enforce` applies the gate; `warn` logs granted scopes and admits. |
 
 The **API-key channel is exempt** from the admission gate: keys are

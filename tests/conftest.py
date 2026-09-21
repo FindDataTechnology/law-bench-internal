@@ -62,6 +62,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # All tables that may hold seed/test rows - truncated between tests for isolation.
 _ALL_TABLES = (
+    "review_tasks",
     "eval_criteria_results",
     "eval_runs",
     "compare_runs",

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}人工审查 · {{ t.nav.brand }}{% endblock %}
+{% block content %}
+<div class="toolbar between">
+  <h1>人工审查</h1>
+  <span class="muted small">标注身份：{{ me }}</span>
+</div>
+
+{% if request.query_params.get('flash') %}
+  <div class="flash ok">{{ request.query_params.get('flash') }}</div>
+{% endif %}
+
+<p class="muted">
+  对评估判定的逐条人工审查。<strong>效度验证（validity）</strong>为盲评：提交前不显示模型判定，用于计算人工-判官一致率；
+  <strong>gold 标注（gold_curation）</strong>显示模型判定与理由，人工认可后作为判官训练数据。
+  同一条目的多个槽位请由不同标注员独立完成。
+</p>
+
+<h2>批次</h2>
+{% if batches %}
+<table>
+  <thead>
+    <tr><th>批次</th><th>类型</th><th>总数</th><th>已判定</th><th>待判定</th><th>标注员数</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for b in batches %}
+    <tr{% if b.batch_id == selected %} style="font-weight:600"{% endif %}>
+      <td><code>{{ b.batch_id }}</code></td>
+      <td>{{ '效度验证' if b.batch_type == 'validity' else 'gold 标注' }}</td>
+      <td>{{ b.total }}</td>
+      <td>{{ b.decided }}</td>
+      <td>{{ b.pending }}</td>
+      <td>{{ b.annotators }}</td>
+      <td><a href="{{ url_for('page_review') }}?batch={{ b.batch_id }}">查看</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">暂无批次。抽样脚本 <code>scripts/finetune/web_review_seed.py</code> 建批后在此出现。</p>
+{% endif %}
+
+{% if selected %}
+<h2>待我审查（批次 <code>{{ selected }}</code>）</h2>
+{% if tasks %}
+<table>
+  <thead>
+    <tr><th>#</th><th>合同类别</th><th>评审项</th><th>槽位</th><th>评分时间</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for task in tasks %}
+    <tr>
+      <td>{{ task.id }}</td>
+      <td>{{ task.contract_type or '—' }}</td>
+      <td>{{ task.criterion_title or task.criterion_id }}</td>
+      <td>{{ task.slot }}</td>
+      <td class="muted small">{{ task.scored_at }}</td>
+      <td><a class="btn btn-sm" href="{{ url_for('page_review_task', task_id=task.id) }}">去判定</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">该批次没有分配给你的待审条目（可能已完成，或同一条目你已判定过一个槽位）。</p>
+{% endif %}
+{% endif %}
+{% endblock %}
