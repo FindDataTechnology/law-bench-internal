@@ -15,10 +15,12 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  description: Chinese contract drafter + evaluation rules manager (github.com/scs001/law-bench).
-  # Only this repo may be deployed under this project.
+  description: Chinese contract drafter + evaluation rules manager (gitee.com/FindDataTechnology/law-bench).
+  # Only this repo may be deployed under this project. The old
+  # github.com/scs001/law-bench URL is retired — the deployed repo is the Gitee
+  # one (the ArgoCD repository credential `gitee-law-bench` covers it).
   sourceRepos:
-    - https://github.com/scs001/law-bench.git
+    - https://gitee.com/FindDataTechnology/law-bench.git
   # Applications in this project may target the in-cluster server, in the
   # law-bench namespace (and default for ad-hoc resources).
   destinations:
