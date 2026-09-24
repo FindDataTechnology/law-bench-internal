@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}引法审计 · {{ t.nav.brand }}{% endblock %}
+{% block content %}
+<div class="toolbar between">
+  <h1>条款引法审计</h1>
+  <a class="btn btn-sm btn-ghost" href="{{ url_for('page_law_catalog_review') }}">未解析复核队列</a>
+</div>
+<p class="muted">
+  法规目录快照：{{ result.snapshot.rows }} 部法规（max_id={{ result.snapshot.max_id }}，导入 {{ result.snapshot.imported_at or '—' }}）。
+  引用分类仅依据法规 status；expiry（施行日期）不参与判定。
+</p>
+
+<div class="panel">
+  <h3 style="margin-top:0">总览（共 {{ result.total }} 条引用）</h3>
+  <ul>
+    <li><strong style="color:#c0392b">引用已废法律</strong>：{{ result.summary.repealed }} 条</li>
+    <li><strong>已修改（多数仍有效，仅被修正）</strong>：{{ result.summary.amended }} 条</li>
+    <li><strong>兜底清单（未解析或状态缺失/脏值）</strong>：{{ result.summary.fallback }} 条</li>
+    <li>正常：{{ result.summary.ok }} 条</li>
+  </ul>
+</div>
+
+{% set sections = [
+  ('repealed', '引用已废法律'),
+  ('amended', '已修改（多数仍有效，仅被修正）')
+] %}
+{% for cat, label in sections %}
+<div class="panel">
+  <h3 style="margin-top:0">{{ label }}（{{ result.summary[cat] }}）</h3>
+  {% if result.findings[cat] %}
+  <table>
+    <thead>
+      <tr><th>合同类型</th><th>条款</th><th>引用名</th><th>目录法规</th><th>状态</th><th>解析方式</th></tr>
+    </thead>
+    <tbody>
+      {% for it in result.findings[cat] %}
+      <tr>
+        <td>{{ zh.get(it.contract_type, it.contract_type or '—') }}</td>
+        <td><a href="{{ url_for('page_clauses_edit', contract_type=it.contract_type, clause_id=it.clause_id) }}">#{{ it.clause_id }} {{ it.section or '' }}</a></td>
+        <td>《{{ it.cited_name }}》</td>
+        <td>{{ it.title or '—' }}</td>
+        <td>{{ it.law_status or '—' }}</td>
+        <td><code>{{ it.resolved_via }}</code></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">（无）</p>
+  {% endif %}
+</div>
+{% endfor %}
+{% endblock %}

@@ -61,6 +61,7 @@ from _fakes import FakeJudge  # noqa: E402  (tests/ is on sys.path via conftest)
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # All tables that may hold seed/test rows - truncated between tests for isolation.
+# law_catalog.* tables are created during session setup (see _session_db_name).
 _ALL_TABLES = (
     "review_tasks",
     "eval_criteria_results",
@@ -74,6 +75,9 @@ _ALL_TABLES = (
     "contract_artifacts",
     "generation_jobs",
     "api_keys",
+    "law_catalog.laws",
+    "law_catalog.aliases",
+    "law_catalog.clause_law_refs",
 )
 
 
@@ -166,6 +170,12 @@ def _session_db_name() -> str:
     finally:
         conn.close()
     ensure_schema()  # eval_runs / eval_criteria_results / compare_runs (opens from env)
+    # law_catalog schema (法规目录副本) - created up front so the per-test
+    # TRUNCATE of _ALL_TABLES (which includes law_catalog.*) never hits a
+    # missing table in a fresh session DB.
+    from src.law_catalog.store import ensure_schema as ensure_law_catalog_schema
+
+    ensure_law_catalog_schema()
     # Seed the tag_dims vocabulary (from the manifests) into the session DB and
     # load it into the in-memory TAG_VOCAB, so tag tests see the full vocab.
     # tag_dims is intentionally NOT in _ALL_TABLES - it is read-only reference

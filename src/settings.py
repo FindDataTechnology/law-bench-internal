@@ -84,6 +84,12 @@ ES_USER = _env("elastic_search_user", "elastic")
 ES_PASSWORD = _env("elastic_search_pass", "")
 SEARCH_INDEX_NAME = _env("SEARCH_INDEX_NAME", "contracts")
 
+# 法规目录副本（law_catalog schema）名称解析的 trigram 相似度阈值。低于阈值
+# 的模糊候选不自动命中，进人工复核队列（link-law-catalog-audit）。
+# 0.65 按生产库首跑校准：≥1.0 是书名号变体（〈〉/<> vs 《》）的高价值命中；
+# 0.45–0.63 区间全部是全国名→省级条例 / 实施细则→本体条例的假阳性。
+LAW_TRGM_THRESHOLD = float(_env("LAW_TRGM_THRESHOLD", "0.65"))
+
 # MinIO document source (S3-compatible). minio_host is a full URL; the reader
 # wants host:port + a secure flag.
 def _validated_minio_url(name: str, value: str) -> str:

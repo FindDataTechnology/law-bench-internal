@@ -48,6 +48,7 @@ from .routes import (
     copilot,
     dashboard,
     generation,
+    law_catalog,
     law_info,
     pages,
     review,
@@ -114,6 +115,7 @@ def create_app() -> FastAPI:
     app.include_router(pages.router)
     app.include_router(samples.router)
     app.include_router(law_info.router)
+    app.include_router(law_catalog.router)
     app.include_router(search.router)
     app.include_router(contracts.router)
     app.include_router(clauses.router)
