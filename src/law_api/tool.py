@@ -27,6 +27,8 @@ class LawSearchTool(BaseTool):
     def _run(self, query: str) -> str:
         if not client.enabled():
             return ""
+        if not client.first_use_smoke():
+            return ""  # degraded for this process after a failed smoke
         hits = client.search(query, top_k=5)
         if not hits:
             return ""

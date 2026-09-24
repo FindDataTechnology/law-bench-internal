@@ -118,3 +118,27 @@ def test_smoke_pass_and_fail(enabled, caplog):
     assert law_api.smoke(client=_mock(good)) is True
     assert law_api.smoke(client=_mock(empty)) is False
     assert any("smoke check failed" in r.message for r in caplog.records)
+
+
+def test_first_use_smoke_runs_once_and_caches(enabled, monkeypatch):
+    law_api.reset_first_use_smoke()
+    calls = []
+
+    def fake_smoke():
+        calls.append(1)
+        return True
+
+    monkeypatch.setattr(law_api, "smoke", fake_smoke)
+    assert law_api.first_use_smoke() is True
+    assert law_api.first_use_smoke() is True
+    assert calls == [1]  # second call served from the cached verdict
+
+    law_api.reset_first_use_smoke()
+
+    def failing_smoke():
+        calls.append(2)
+        return False
+
+    monkeypatch.setattr(law_api, "smoke", failing_smoke)
+    assert law_api.first_use_smoke() is False
+    law_api.reset_first_use_smoke()

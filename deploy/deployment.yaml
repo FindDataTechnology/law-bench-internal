@@ -95,6 +95,10 @@ spec:
                 name: law-bench-judge
             - secretRef:
                 name: law-bench-auth
+            # 法规语义检索（integrate-law-semantic-search）：LAW_API_KEY 为空时
+            # 功能整体关闭、零请求。集群侧 kubectl 建的 secret，与上面四个同管理模式。
+            - secretRef:
+                name: law-bench-law-api
           ports:
             - containerPort: 8010
           livenessProbe:

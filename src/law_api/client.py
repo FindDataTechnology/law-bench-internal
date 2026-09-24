@@ -183,3 +183,27 @@ def smoke(client: Optional[httpx.Client] = None) -> bool:
     else:
         logger.info("law-api smoke check passed (%d hits)", len(hits))
     return ok
+
+
+# Process-wide first-use smoke (design D6): the crew tool calls this before its
+# first real query. A failed check degrades law search for the whole process —
+# better "" than silently-wrong statute context. Thread-safe: crew agents can
+# run concurrently. Kept here (not in tool.py) so it is testable without the
+# crewai dependency.
+_smoke_lock = threading.Lock()
+_smoke_state = {"done": False, "ok": False}
+
+
+def reset_first_use_smoke() -> None:
+    """Test hook: forget the cached verdict so the next call re-smokes."""
+    with _smoke_lock:
+        _smoke_state.update(done=False, ok=False)
+
+
+def first_use_smoke() -> bool:
+    """Run :func:`smoke` once per process; cache the verdict."""
+    with _smoke_lock:
+        if not _smoke_state["done"]:
+            _smoke_state["ok"] = smoke()
+            _smoke_state["done"] = True
+        return _smoke_state["ok"]
