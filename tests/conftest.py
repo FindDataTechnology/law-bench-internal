@@ -78,6 +78,7 @@ _ALL_TABLES = (
     "law_catalog.laws",
     "law_catalog.aliases",
     "law_catalog.clause_law_refs",
+    "law_catalog.clause_article_refs",
 )
 
 

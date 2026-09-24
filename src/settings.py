@@ -90,6 +90,15 @@ SEARCH_INDEX_NAME = _env("SEARCH_INDEX_NAME", "contracts")
 # 0.45–0.63 区间全部是全国名→省级条例 / 实施细则→本体条例的假阳性。
 LAW_TRGM_THRESHOLD = float(_env("LAW_TRGM_THRESHOLD", "0.65"))
 
+# 法规库计量 API（law-api，APISIX key-auth + Lago 计量；integrate-law-semantic-search）。
+# law-bench 保持"无向量"：模型/维度/Qdrant 全部在网关后面，这里只配端点与 key。
+# key 为空或 LAW_SEARCH_ENABLED=false 时法规检索整体不启用、零请求。
+LAW_API_BASE_URL = _env("LAW_API_BASE_URL", "https://law-api.finddatatech.cloud/v1")
+LAW_API_KEY = _env("LAW_API_KEY", "")
+LAW_SEARCH_ENABLED = _env("LAW_SEARCH_ENABLED", "").lower() in ("1", "true", "yes", "on")
+# 相邻两次 law-api 请求的最小间隔（秒）：网关 10 r/s 限流，批量解析主动礼让。
+LAW_API_MIN_INTERVAL = float(_env("LAW_API_MIN_INTERVAL", "0.12"))
+
 # MinIO document source (S3-compatible). minio_host is a full URL; the reader
 # wants host:port + a secure flag.
 def _validated_minio_url(name: str, value: str) -> str:

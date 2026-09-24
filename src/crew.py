@@ -54,6 +54,16 @@ class ContractDraftingCrew:
             # Search deps unavailable or RAG disabled -> drafter proceeds
             # without retrieval (graceful degradation).
             pass
+        try:
+            from src.law_api.tool import get_law_search_tool
+
+            law_tool = get_law_search_tool()
+            if law_tool is not None:
+                tools.append(law_tool)
+        except Exception:
+            # law-api deps/config unavailable -> drafting proceeds without
+            # statute retrieval (same degradation contract).
+            pass
         return Agent(
             config=self.agents_config["drafter"],
             llm=get_llm("DRAFTER"),
