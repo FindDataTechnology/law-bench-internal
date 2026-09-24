@@ -78,3 +78,28 @@ python scripts/law_citation_audit.py --report-only
 - 别名表冷启动：内置种子（`src/law_catalog/alias_seed.py`，九民纪要、各司法解释简称等）只兜常见写法；目录里不存在的目标标题会落到复核队列，不猜测。
 - pg_trgm 缺失时 trigram 档降级为未解析（全部进复核队列），exact/alias 档不受影响。
 - `law_catalog.laws` 是只读镜像，与法规库的同步是上面的人工刷新流程，不做自动同步。
+
+## 法语义检索（第二批 integrate-law-semantic-search）
+
+law-bench 通过法规库计量 API 获取法规语义检索与全文，自身**零向量配置**（模型/维度/Qdrant 全在网关后）。
+
+### 配置面（三个环境变量）
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `LAW_API_BASE_URL` | `https://law-api.finddatatech.cloud/v1` | 网关入口 |
+| `LAW_API_KEY` | 空 | APISIX key-auth 的 key；**空 = 功能整体关闭、零请求** |
+| `LAW_SEARCH_ENABLED` | false | 总开关，与 key 双重门控 |
+
+可选 `LAW_API_MIN_INTERVAL`（默认 0.12s）：批量解析时对 10 r/s 限流的主动礼让。
+
+### 开通三步（法规库项目侧）
+
+Lago 建客户 → APISIX 发 key → meter-map 加映射（见法规库项目 `cluster/consumer-onboarding.md`）。key 回填到 law-bench 的部署 secret 后生效。
+
+### 冒烟与使用
+
+- 进程启用后首次调用前自动跑一次固定查询冒烟（`民法典 离婚后子女抚养费`），失败记 ERROR 并本进程降级，不阻断起草。
+- 任何网关故障（网络/超时/401/429）一律静默降级为空结果，起草/评测永不被法规检索拖垮。
+- 条文级解析：`python scripts/resolve_article_citations.py`（`--dry-run` 只看不写；需 key）。
+  结果入 `law_catalog.clause_article_refs`，outcome 四类分开：resolved / unresolved_name / fetch_failed / out_of_range。
