@@ -94,6 +94,10 @@ _CITE_RE = re.compile(
     r"(第[0-9零一二三四五六七八九十百千]+[款项])?"
 )
 _LEADING_VERBS = re.compile(r".*(查询|看看|找|搜|检索)")
+# Contract self-references ("本合同第十条", "如违反本协议第七条") cite the
+# contract's own clauses, not a statute — they must never reach the law
+# resolution ladder.
+_SELF_REF = re.compile(r"(本合同|本协议|本合同条款|本细则|本办法)")
 # leading prepositions ("根据民法典" → "民法典") — the JS original relied on the
 # semantic-search fallback to absorb these; our hint goes straight to the name
 # ladder, so they must be stripped here.
@@ -136,6 +140,8 @@ def parse_citations(text: str) -> list[ArticleCite]:
         hint = _clean_hint(m.group(1))
         if len(hint) < 2:
             continue
+        if _SELF_REF.search(m.group(1)):
+            continue  # the contract citing its own clauses, not a statute
         raw = m.group(0)
         key = (hint, article)
         if key in seen:
@@ -187,6 +193,25 @@ def _hint_candidates(hint: str) -> list[str]:
         if len(out) >= 6:
             break
     return out
+
+
+class CachedIndex:
+    """Name-resolution cache around :class:`LawCatalogIndex`.
+
+    A corpus pass resolves the same handful of law names (民法典, 劳动合同法…)
+    hundreds of times; every miss would otherwise re-run the trigram query.
+    Cache key: normalized cited name.
+    """
+
+    def __init__(self, index: LawCatalogIndex) -> None:
+        self._index = index
+        self._cache: dict[str, dict] = {}
+
+    def resolve(self, name: str, db=None) -> dict:
+        key = normalize_name(name)
+        if key not in self._cache:
+            self._cache[key] = self._index.resolve(name, db=db)
+        return self._cache[key]
 
 
 # --- end-to-end resolution ----------------------------------------------------
@@ -249,7 +274,7 @@ def resolve_all_article_citations(db=None, client=None) -> dict:
     finally:
         conn.close()
 
-    index = LawCatalogIndex(db=db)
+    index = CachedIndex(LawCatalogIndex(db=db))
     fetch_cache: dict[str, Optional[dict]] = {}
     rows: list[tuple] = []
     current: set[tuple] = set()

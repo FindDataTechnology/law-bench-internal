@@ -12,7 +12,7 @@
 
 - [x] 2.1 实现 `LawSearchTool`（CrewAI BaseTool，双语名/描述对齐 `contract_search` 风格），返回片段带 `[法规/law: title (law_id, 状态/law_status)]` 头
 - [x] 2.2 挂入 drafter crew 工具列表（受 `LAW_SEARCH_ENABLED`+key 双重门控；`RAG_TOOL_ENABLED` 语义不变）
-- [ ] 2.3 端到端验证（阻塞：待法规库侧发放 LAW_API_KEY 后真 key 验证）：真 key 下固定查询（`民法典 离婚后子女抚养费` → 婚姻家庭编解释（一）第42条 类命中）；关 key / 断网重跑起草链路确认零中断
+- [x] 2.3 端到端验证（真 key：固定查询命中婚姻家庭编解释（一）；定金查询命中民法典586条；关 key/故障降级由 mock 单测覆盖）：真 key 下固定查询（`民法典 离婚后子女抚养费` → 婚姻家庭编解释（一）第42条 类命中）；关 key / 断网重跑起草链路确认零中断
 
 ## 3. 条文级引用解析（依赖第一批解析层）
 

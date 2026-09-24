@@ -221,3 +221,9 @@ def test_corpus_pass_resolves_and_prunes(catalog, monkeypatch):
     after_refs = catalog.execute(
         "SELECT law_refs FROM clauses WHERE id = 701").fetchone()["law_refs"]
     assert before_refs == after_refs  # derived column untouched by the pass
+
+
+def test_parse_skips_contract_self_references():
+    text = "甲方如违反本合同第十条第6款应承担违约责任。乙方有权按本协议第七条处理。但《民法典》第595条仍适用。"
+    cites = art.parse_citations(text)
+    assert [(c.law_hint, c.article) for c in cites] == [("民法典", 595)]
