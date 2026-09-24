@@ -227,3 +227,16 @@ def test_parse_skips_contract_self_references():
     text = "甲方如违反本合同第十条第6款应承担违约责任。乙方有权按本协议第七条处理。但《民法典》第595条仍适用。"
     cites = art.parse_citations(text)
     assert [(c.law_hint, c.article) for c in cites] == [("民法典", 595)]
+
+
+def test_find_article_tolerates_page_footer_dash():
+    # extracted texts run "—７９—\n—第六百七十三条" (footer dash on the anchor line)
+    text = (
+        "第六百七十二条　借款人应当按照约定提供资料。\n"
+        "—７９—\n"
+        "—第六百七十三条　借款人未按照约定的借款用途使用借款的，贷款人可以停止发放借款。\n"
+        "第六百七十四条　借款人应当按照约定支付利息。\n"
+    )
+    hit = art.find_article(text, 673)
+    assert hit is not None and hit.startswith("第六百七十三条")
+    assert art.find_article(text, 672).startswith("第六百七十二条")

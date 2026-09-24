@@ -164,11 +164,15 @@ def _article_anchor_re(article: int) -> re.Pattern:
 def find_article(full_text: str, article: int) -> Optional[str]:
     """Locate 第<article>条 in the assembled law text (arabic or chinese anchor).
 
-    Returns the article's text (from its anchor to the next anchor / end) or
-    None when the number is beyond the statute's length.
+    Anchors must sit at a line start so mid-sentence references ("本法第X条")
+    don't match; a leading page-footer dash is tolerated (extracted texts run
+    "—７９—\\n—第六百七十三条", the footer dash landing on the anchor line).
+    Returns the article's text (anchor → next anchor / end) or None when the
+    number is beyond the statute's length (or the article is missing from the
+    assembled text).
     """
     anchors = []
-    for m in re.finditer(r"^\s*(第[0-9零一二三四五六七八九十百千]+条)", full_text, re.M):
+    for m in re.finditer(r"^\s*[—\-]?\s*(第[0-9零一二三四五六七八九十百千]+条)", full_text, re.M):
         anchors.append((m.start(1), m.group(1)))
     for i, (pos, label) in enumerate(anchors):
         num = cn_to_int(label[1:-1])
