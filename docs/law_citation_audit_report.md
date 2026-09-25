@@ -7,8 +7,8 @@
 | --- | ---: |
 | 引用已废法律 | 297 |
 | 已修改（多数仍有效，仅被修正） | 17 |
-| 兜底清单（未解析或状态缺失/脏值） | 845 |
-| 正常 | 1029 |
+| 兜底清单（未解析或状态缺失/脏值） | 830 |
+| 正常 | 1044 |
 
 ## 引用已废法律（297）
 
@@ -334,7 +334,7 @@
 | utilities_supply | #2185 鉴于 | 《四川省城市供水条例》 | 四川省城市供水条例 | 已修改 | exact |
 | utilities_supply | #7687 鉴于 | 《江苏省城乡供水管理条例》 | 江苏省城乡供水管理条例 | 已修改 | exact |
 
-## 兜底清单（未解析或状态缺失/脏值）（845）
+## 兜底清单（未解析或状态缺失/脏值）（830）
 
 | 合同类型 | 条款 | 引用名 | 目录法规 | 状态 | 解析方式 |
 | --- | --- | --- | --- | --- | --- |
@@ -345,12 +345,6 @@
 | bailment | #8807 权利义务 | 《保管凭证》 | — | — | unresolved |
 | capital_increase | #294 违约责任 | 《全国法院民商事审判工作会议纪要》 | — | — | unresolved |
 | capital_increase | #8526 当事人 | 《外商投资准入特别管理措施（负面清单）》 | — | — | unresolved |
-| company_formation | #295 权利义务 | 《中华人民共和国公司法（2023修订）》 | — | — | unresolved |
-| company_formation | #298 权利义务 | 《中华人民共和国公司法（2023修订）》 | — | — | unresolved |
-| company_formation | #6899 鉴于 | 《中华人民共和国公司法（2023修订）》 | — | — | unresolved |
-| company_formation | #6901 价款及支付 | 《中华人民共和国公司法（2023修订）》 | — | — | unresolved |
-| company_formation | #8173 价款及支付 | 《中华人民共和国公司法（2023修订）》 | — | — | unresolved |
-| construction | #301 违约责任 | 《建工司法解释（一）》 | — | — | unresolved |
 | construction | #1802 合同标的 | 《委托设计项目表》 | — | — | unresolved |
 | construction | #1811 鉴于 | 《陕西省室内装饰管理规定》 | — | — | unresolved |
 | construction | #1812 合同标的 | 《室内空气质量标准》 | — | — | unresolved |
@@ -428,7 +422,6 @@
 | entrustment | #4015 附则 | 《杭州市老旧小区住宅加装电梯管理办法》 | — | — | unresolved |
 | entrustment | #4016 保修责任及维保条款 | 《电梯使用管理与维护保养规则》 | — | — | unresolved |
 | entrustment | #4434 权利义务 | 《监理日志》 | — | — | unresolved |
-| entrustment | #4666 鉴于 | 《中华人民共和国招投标法》 | — | — | unresolved |
 | entrustment | #4666 鉴于 | 《辽宁省招标投标管理办法》 | — | — | unresolved |
 | entrustment | #4666 鉴于 | 《辽宁省政府采购管理规定》 | — | — | unresolved |
 | entrustment | #4696 鉴于 | 《施工合同》 | — | — | unresolved |
@@ -447,15 +440,12 @@
 | entrustment | #4941 权利义务 | 《风险告知书》 | — | — | unresolved |
 | entrustment | #5609 合同标的 | 《委托流转土地经营权基本情况表》 | — | — | unresolved |
 | entrustment | #5899 权利义务 | 《农作物种子经营许可证》 | — | — | unresolved |
-| entrustment | #6059 价款及支付 | 《中华人民共和国招投标法》 | — | — | unresolved |
 | entrustment | #6063 权利义务 | 《食品经营许可证》 | — | — | unresolved |
-| entrustment | #6064 违约责任 | 《消防安全法》 | — | — | unresolved |
 | entrustment | #6064 违约责任 | 《食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | entrustment | #6134 合同标的 | 《车辆基本情况表》 | — | — | unresolved |
 | entrustment | #6140 附则 | 《二手车流通管理办法》 | — | — | unresolved |
 | entrustment | #7458 附则 | 《二手车流通管理办法》 | — | — | unresolved |
 | entrustment | #7677 权利义务 | 《中华人民共和国食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
-| equity_incentive | #6939 鉴于 | 《中华人民共和国公司法（2023修订）》 | — | — | unresolved |
 | equity_incentive | #6939 鉴于 | 《财政部 国家税务总局关于完善股权激励和技术入股有关所得税政策的通知》 | — | — | unresolved |
 | equity_incentive | #6941 价款及支付 | 《上市公司股权激励管理办法》 | — | — | unresolved |
 | equity_transfer | #320 权利义务 | 《放弃优先购买权声明函》 | — | — | unresolved |
@@ -609,7 +599,6 @@
 | loan | #1687 鉴于 | 《典当管理办法》 | — | — | unresolved |
 | loan | #1695 违约责任 | 《典当管理办法》 | — | — | unresolved |
 | merger_acquisition | #6928 当事人 | 《上市公司收购管理办法》 | — | — | unresolved |
-| merger_acquisition | #6929 鉴于 | 《中华人民共和国公司法（2024修正）》 | — | — | unresolved |
 | merger_acquisition | #6930 合同标的 | 《中华人民共和国外商投资准入特别管理措施（负面清单）》 | — | — | unresolved |
 | merger_acquisition | #6930 合同标的 | 《企业国有资产交易监督管理办法》 | — | — | unresolved |
 | merger_acquisition | #6931 价款及支付 | 《企业国有资产交易监督管理办法》 | — | — | unresolved |
@@ -645,7 +634,6 @@
 | property_service | #3680 权利义务 | 《学生餐营养指南》 | — | — | unresolved |
 | property_service | #3680 权利义务 | 《食品经营许可证》 | — | — | unresolved |
 | property_service | #3681 违约责任 | 《餐饮服务食品安全操作规范》 | — | — | unresolved |
-| property_service | #3682 违约责任 | 《消防安全法》 | — | — | unresolved |
 | property_service | #3682 违约责任 | 《食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | property_service | #4212 鉴于 | 《电梯使用管理与维护保养规则》 | — | — | unresolved |
 | property_service | #4213 合同标的 | 《电梯使用管理与维护保养规则》 | — | — | unresolved |
@@ -693,7 +681,6 @@
 | property_service | #6002 权利义务 | 《学生餐营养指南》 | — | — | unresolved |
 | property_service | #6002 权利义务 | 《营养与健康学校建设指南》 | — | — | unresolved |
 | property_service | #6002 权利义务 | 《餐饮服务食品安全操作规范》 | — | — | unresolved |
-| property_service | #6004 违约责任 | 《消防安全法》 | — | — | unresolved |
 | property_service | #6004 违约责任 | 《食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | property_service | #7167 价款及支付 | 《物业服务收费管理办法》 | — | — | unresolved |
 | property_service | #7787 鉴于 | 《新疆维吾尔自治区物业服务收费管理办法》 | — | — | unresolved |
@@ -867,7 +854,6 @@
 | service | #6227 权利义务 | 《学生餐营养指南》 | — | — | unresolved |
 | service | #6227 权利义务 | 《食品经营许可证》 | — | — | unresolved |
 | service | #6228 违约责任 | 《餐饮服务食品安全操作规范》 | — | — | unresolved |
-| service | #6229 违约责任 | 《消防安全法》 | — | — | unresolved |
 | service | #6229 违约责任 | 《食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | service | #6237 权利义务 | 《校外培训机构从业人员管理办法（试行）》 | — | — | unresolved |
 | service | #6237 权利义务 | 《校外培训机构培训材料管理办法（试行）》 | — | — | unresolved |
@@ -1176,7 +1162,6 @@
 | work | #5362 合同标的 | 《全屋定制内容表》 | — | — | unresolved |
 | work | #5505 违约责任 | 《农作物种子生产技术操作规程》 | — | — | unresolved |
 | work | #5505 违约责任 | 《种子生产技术操作方案》 | — | — | unresolved |
-| work | #5571 当事人 | 《中华人民共和国转基因生物安全管理条例》 | — | — | unresolved |
 | work | #5574 合同标的 | 《{{local_standard_name}}》 | — | — | unresolved |
 | work | #5574 合同标的 | 《{{national_standard_name}}》 | — | — | unresolved |
 | work | #5580 权利义务 | 《种子生产许可证》 | — | — | unresolved |
