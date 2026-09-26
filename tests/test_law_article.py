@@ -240,3 +240,19 @@ def test_find_article_tolerates_page_footer_dash():
     hit = art.find_article(text, 673)
     assert hit is not None and hit.startswith("第六百七十三条")
     assert art.find_article(text, 672).startswith("第六百七十二条")
+
+
+def test_find_article_tolerates_chapter_heading_prefix():
+    # extraction drops the blank line after a chapter heading: the chapter's
+    # first article shares the heading's line
+    text = (
+        "第一章 总则\n第一条 为了规范建筑垃圾处置。\n"
+        "第二章 一般处置要求 第十条 居民装饰装修房屋产生的建筑垃圾应当单独堆放。\n"
+        "第十一条 装修垃圾由责任人清运。\n"
+    )
+    hit = art.find_article(text, 10)
+    assert hit is not None and hit.startswith("第十条")
+    assert art.find_article(text, 1).startswith("第一条")
+    # a mid-sentence reference after a chapter heading must NOT match
+    sneaky = "第二章 处置 本办法第十二条另有规定的从其规定。\n"
+    assert art.find_article(sneaky, 12) is None

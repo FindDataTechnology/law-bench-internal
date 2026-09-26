@@ -24,7 +24,6 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from src.eval.db import connect, now_iso
-from src.settings import LAW_API_MIN_INTERVAL  # noqa: F401  (pacing via client)
 
 from . import store
 from .resolve import LawCatalogIndex, normalize_name
@@ -166,14 +165,27 @@ def find_article(full_text: str, article: int) -> Optional[str]:
 
     Anchors must sit at a line start so mid-sentence references ("本法第X条")
     don't match; a leading page-footer dash is tolerated (extracted texts run
-    "—７９—\\n—第六百七十三条", the footer dash landing on the anchor line).
+    "—７９—\\n—第六百七十三条", the footer dash landing on the anchor line), and
+    so is a chapter heading glued to the first article of a chapter
+    ("第二章 一般处置要求 第十条" — blank-line loss in extraction). The
+    optional chapter prefix must not itself contain 第…条, so a mid-sentence
+    reference after a chapter heading still cannot match.
     Returns the article's text (anchor → next anchor / end) or None when the
     number is beyond the statute's length (or the article is missing from the
     assembled text).
     """
     anchors = []
-    for m in re.finditer(r"^\s*[—\-]?\s*(第[0-9零一二三四五六七八九十百千]+条)", full_text, re.M):
-        anchors.append((m.start(1), m.group(1)))
+    for m in re.finditer(
+        r"^\s*[—\-]?\s*(?:第[一二三四五六七八九十百千]+章[^\n第]{0,30}?)?\s*"
+        # statute self-references ("本办法第十条") never start an article,
+        # even when a chapter heading could otherwise absorb the lead-in
+        r"(?<!本办法)(?<!本法)(?<!本条例)(?<!本规定)(?<!本细则)"
+        r"(?P<anchor>第[0-9零一二三四五六七八九十百千]+条)",
+        full_text, re.M,
+    ):
+        # the anchor is where the article begins (chapter-heading prefix
+        # excluded from the article text)
+        anchors.append((m.start("anchor"), m.group("anchor")))
     for i, (pos, label) in enumerate(anchors):
         num = cn_to_int(label[1:-1])
         if num == article:
