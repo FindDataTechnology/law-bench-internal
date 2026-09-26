@@ -111,3 +111,20 @@ Lago 建客户 → APISIX 发 key → meter-map 加映射（见法规库项目 `
 - 任何网关故障（网络/超时/401/429）一律静默降级为空结果，起草/评测永不被法规检索拖垮。
 - 条文级解析：`python scripts/resolve_article_citations.py`（`--dry-run` 只看不写；需 key）。
   结果入 `law_catalog.clause_article_refs`，outcome 四类分开：resolved / unresolved_name / fetch_failed / out_of_range。
+
+## 引法修复（remediate-repealed-citations）
+
+废止引法的确定性修复：承继映射 → dry-run 过目 → 经 `update_clause` 应用（唯一写路径，manual=true）→ 闭环验证。全程留痕：`law_catalog.citation_revisions`（查询面，`/law-catalog/revisions` 页可看）+ `output/remediation/<batch>/` 快照（回滚面）。
+
+```bash
+python scripts/remediate_citations.py seed                        # 重建承继映射（显式对 + 地方占位）
+python scripts/remediate_citations.py dry-run --batch r1 [--type sale] [--json]  # 计划（diff+证据+跳过）
+python scripts/remediate_citations.py apply --batch r1 [--type sale]             # 应用+记录+快照+验证
+python scripts/remediate_citations.py noaction                    # r0：已修改留档
+python scripts/remediate_citations.py rollback --batch r1 [--clause-id N]        # 从 before 快照恢复
+python scripts/remediate_citations.py verify                      # 闭环：已废数应=占位数
+```
+
+消费导出：`export-paper`（统计聚合）、`export-finetune --batch r1`（修正对 → `data/finetune/citation-fixes/`）。修复统计见 `docs/law_citation_remediation_stats.md`。
+
+当前基线（2026-09-26 r0/r1 完成后）：ok 1,509 / 已废 7（4 部地方废规占位，待人工确认承继后 seed 转正再跑）/ 已修改 17 / 兜底 612。

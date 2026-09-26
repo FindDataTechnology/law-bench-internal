@@ -73,6 +73,34 @@ CREATE TABLE IF NOT EXISTS law_catalog.clause_article_refs (
     resolved_at     TEXT NOT NULL,
     PRIMARY KEY (clause_id, citation, article_ordinal)
 );
+
+CREATE TABLE IF NOT EXISTS law_catalog.successor_map (
+    dead_law_id    BIGINT PRIMARY KEY,
+    successor_law_id BIGINT,
+    authority_law_id BIGINT,
+    effective_date TEXT,
+    rule_version   TEXT NOT NULL,
+    needs_human    BOOLEAN NOT NULL DEFAULT false,
+    seeded_at      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS law_catalog.citation_revisions (
+    id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    clause_id       BIGINT NOT NULL,
+    contract_type   TEXT,
+    batch           TEXT NOT NULL,
+    cited_before    TEXT NOT NULL,
+    cited_after     TEXT,
+    dead_law_id     BIGINT,
+    successor_law_id BIGINT,
+    authority_law_id BIGINT,
+    disposition     TEXT NOT NULL CHECK (disposition IN
+                      ('applied','skipped-review','reviewed-no-action','rolled-back')),
+    rule_version    TEXT,
+    git_sha         TEXT,
+    applied_at      TEXT NOT NULL,
+    UNIQUE (clause_id, batch, cited_before)
+);
 """
 
 # Best-effort trigram support: the GIN index accelerates (and pg_trgm provides)

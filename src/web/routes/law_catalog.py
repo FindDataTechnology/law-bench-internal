@@ -107,3 +107,45 @@ async def law_catalog_non_match(request: Request, db: DbConn = Depends(get_db)):
 router = APIRouter(tags=["law-catalog"])
 router.include_router(read_only_router)
 router.include_router(write_router)
+
+
+@read_only_router.get(
+    "/law-catalog/revisions", include_in_schema=False, name="page_law_catalog_revisions"
+)
+def law_catalog_revisions(request: Request, db: DbConn = Depends(get_db), batch: str = ""):
+    """Remediation revision records: evidence-chain view (read-only)."""
+    if batch:
+        rows = db.execute(
+            "SELECT v.id, v.clause_id, v.contract_type, v.batch, v.cited_before, "
+            "v.cited_after, v.disposition, v.rule_version, v.git_sha, v.applied_at, "
+            "v.dead_law_id, v.successor_law_id, v.authority_law_id, "
+            "ld.title AS dead_title, ld.status AS dead_status, ls.title AS successor_title, "
+            "ls.status AS successor_status, la.title AS authority_title "
+            "FROM law_catalog.citation_revisions v "
+            "LEFT JOIN law_catalog.laws ld ON ld.id = v.dead_law_id "
+            "LEFT JOIN law_catalog.laws ls ON ls.id = v.successor_law_id "
+            "LEFT JOIN law_catalog.laws la ON la.id = v.authority_law_id "
+            "WHERE v.batch = %s ORDER BY v.id DESC LIMIT 500",
+            (batch,),
+        ).fetchall()
+    else:
+        rows = db.execute(
+            "SELECT v.id, v.clause_id, v.contract_type, v.batch, v.cited_before, "
+            "v.cited_after, v.disposition, v.rule_version, v.git_sha, v.applied_at, "
+            "v.dead_law_id, v.successor_law_id, v.authority_law_id, "
+            "ld.title AS dead_title, ld.status AS dead_status, ls.title AS successor_title, "
+            "ls.status AS successor_status, la.title AS authority_title "
+            "FROM law_catalog.citation_revisions v "
+            "LEFT JOIN law_catalog.laws ld ON ld.id = v.dead_law_id "
+            "LEFT JOIN law_catalog.laws ls ON ls.id = v.successor_law_id "
+            "LEFT JOIN law_catalog.laws la ON la.id = v.authority_law_id "
+            "ORDER BY v.id DESC LIMIT 500"
+        ).fetchall()
+    batches = db.execute(
+        "SELECT batch, count(*) n FROM law_catalog.citation_revisions GROUP BY 1 ORDER BY 1"
+    ).fetchall()
+    return _templates.TemplateResponse(
+        request,
+        "law_catalog_revisions.html",
+        {"rows": rows, "batches": batches, "batch": batch, "zh": _zh_map()},
+    )
