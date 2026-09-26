@@ -142,7 +142,6 @@ The `tag_validate` tool SHALL validate a tag dict against the controlled vocabul
 - **WHEN** `tag_validate` is called with `tags={"stance": "pro_A"}`
 - **THEN** the tool returns an error to the client indicating the invalid value and the allowed set
 
-## ADDED Requirements
 
 ### Requirement: Contract Pipeline Tools
 The MCP server SHALL expose a contract-pipeline surface in `tools/pipeline.py` (concept tag `pipeline`): `pipeline_run`, `pipeline_list`, and `pipeline_get`. `pipeline_run(contract_type, tags=None, stance=None, rubric=None, task_desc=None, fill_mode="llm", temperature=0.0, max_iterations=3, custom_clause_ids=None)` SHALL delegate to a LangGraph `StateGraph` (see the `contract-pipeline` capability) that generates, fills, evaluates, and self-heals, then persists one `pipeline_runs` row; it SHALL return `{pipeline_run_id, eval_run_id, score, max_score, all_pass, n_passed, n_criteria, summary, iteration, actions_taken, recommendations}`. `pipeline_list(limit=20)` SHALL return recent `pipeline_runs` rows newest-first. `pipeline_get(pipeline_id)` SHALL return the `pipeline_runs` row joined to its `eval_runs` per-criterion verdicts (via `run_get(eval_run_id)`); an unknown `pipeline_id` SHALL surface as a tool error. Each tool SHALL import its `src` / pipeline dependencies at call time, and `NotFoundError` / `ValidationError` / `CoherenceError` SHALL propagate as tool errors.
@@ -320,3 +319,17 @@ HTTP transport SHALL NOT change any tool's name, signature, or behavior.
 #### Scenario: Unauthenticated HTTP requests are rejected
 - **WHEN** an HTTP request arrives without the token (or with a wrong token)
 - **THEN** it is rejected before any tool dispatch, and no tool executes
+### Requirement: Tool Denylist
+The MCP server SHALL support excluding a configured set of tools from advertisement via environment configuration (`MCP_TOOL_DENYLIST`, comma-separated tool names). Excluded tools SHALL NOT appear in tool listings and SHALL NOT be invocable. When the setting is unset or empty, all tools SHALL be advertised (behavior unchanged for existing clients). The setting SHALL apply on both stdio and streamable HTTP transports.
+
+#### Scenario: Denylisted tools are not advertised
+- **WHEN** the server starts with `MCP_TOOL_DENYLIST=clause_delete,rubric_delete,criterion_delete,prompt_delete` and a client lists tools
+- **THEN** the denylisted tools are absent from the listing and all other tools are present
+
+#### Scenario: Denylisted tool is not invocable
+- **WHEN** a client calls a denylisted tool by name
+- **THEN** the call fails as an unknown tool and no data is changed
+
+#### Scenario: Default keeps the full toolset
+- **WHEN** the server starts without `MCP_TOOL_DENYLIST`
+- **THEN** all tools are advertised exactly as before this change

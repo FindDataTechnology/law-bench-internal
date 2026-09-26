@@ -9,6 +9,7 @@ colors:
   objection-red-deep: "#b91c1c"
   harbor-violet: "#7c3aed"
   citation-cyan: "#0891b2"
+  citation-cyan-deep: "#155e75"
   ledger-gray: "#f6f7f9"
   panel-white: "#ffffff"
   rule-gray: "#e2e5ea"
@@ -73,13 +74,18 @@ components:
     textColor: "{colors.ledger-ink}"
     rounded: "{rounded.md}"
     padding: "0.4rem 0.8rem"
+  badge-default:
+    backgroundColor: "#eef1f5"
+    textColor: "{colors.ledger-ink}"
+    rounded: "{rounded.pill}"
+    padding: "0.1rem 0.45rem"
   badge-harbor:
     backgroundColor: "{colors.harbor-violet}"
     textColor: "{colors.panel-white}"
     rounded: "{rounded.pill}"
     padding: "0.1rem 0.45rem"
   badge-local:
-    backgroundColor: "{colors.citation-cyan}"
+    backgroundColor: "{colors.citation-cyan-deep}"
     textColor: "{colors.panel-white}"
     rounded: "{rounded.pill}"
     padding: "0.1rem 0.45rem"
@@ -123,7 +129,7 @@ A cool, paper-quiet neutral field with one decisive blue accent, two category vi
 
 ### Secondary
 - **Harbor Violet** (#7c3aed): Category marker for harbor-sourced rubrics — badges and the violet readonly-note strip.
-- **Citation Cyan** (#0891b2): Category marker for local-sourced rubrics — badges.
+- **Citation Cyan** (#0891b2): Category marker for local-sourced rubrics; **Citation Cyan, Deep** (#155e75) is its badge step — darkened so white 0.72rem badge text clears AA.
 
 ### Tertiary
 - **Verdict Green** (#047857): Pass states — ok flash text, pass-cell text.
@@ -162,7 +168,7 @@ A cool, paper-quiet neutral field with one decisive blue accent, two category vi
 
 ## Layout
 
-One column, one rhythm. A full-width white topbar (1px bottom rule) carries the brand, eleven nav links, and a divided zh/en language switch; it wraps rather than collapses. Below it, a single centered container (max 980px, 1.25rem gutters, 1.5rem top margin) stacks white panels with 1.25rem gaps. Inside panels, density is compact: controls pad 0.4–0.55rem, rows gap 0.3–0.8rem, definition lists run a 9rem label column. Two-column moments exist only inside panels — side-by-side law-info detail (1fr 1fr, collapses at 900px), generation inputs (1fr 1fr, collapses at 720px), filter forms that wrap per-group (flex → column at 720px). Everything else is a bordered table or a stacked form; long content wraps within the panel, never overflows it.
+One column, one rhythm. A full-width white topbar (1px bottom rule) carries the brand, eleven scope-gated nav links, a divided zh/en language switch, and a divided signed-in identity slot (a lone login link when anonymous); it wraps rather than collapses — below 1024px the brand takes the first row alone with the nav flowing beneath as tidy wrapped rows (0.45rem row gap), and below 560px the language switch and identity drop to their own full-width row with the divider rule removed. Below it, a single centered container (max 980px, 1.25rem gutters, 1.5rem top margin; gutters and panel padding step to 0.9rem below 720px) stacks white panels with 1.25rem gaps. Inside panels, density is compact: controls pad 0.4–0.55rem, rows gap 0.3–0.8rem, definition lists run a 9rem label column (6rem below 720px). Two-column moments exist only inside panels — side-by-side law-info detail (1fr 1fr, collapses at 900px), generation inputs (1fr 1fr, collapses at 720px), filter forms that wrap per-group (flex → column at 720px); toolbars stack at 560px. Wide tables never break the page: the verdict matrix keeps its 40rem min-width inside `.matrix-scroll`, and below 720px every other panel table becomes its own horizontal scroll container (`display: block; overflow-x: auto`) with row rules and header styling untouched. Touch is served by `pointer: coarse` — buttons, nav links, inputs, and checkboxes get 2.4rem (1.25rem for checks) minimum hit areas with the same flat styling; no hamburger, no hidden navigation, the link bar just wraps. Everything else is a bordered table or a stacked form; long content wraps within the panel, never overflows it.
 
 ## Elevation & Depth
 
@@ -192,7 +198,7 @@ Restrained, compact, quietly confident: controls stay understated so tinted verd
 - **Focus:** browser default ring; no custom treatment today
 
 ### Chips
-- **Badges:** full pill (999px), 0.72rem/600, white text on Harbor Violet (harbor-sourced) or Citation Cyan (local-sourced); no selected/unselected states — they are static category marks
+- **Badges:** full pill (999px), 0.72rem/600; three voices — default (Ledger Ink on #eef1f5, the neutral chip for prompt types and law sources), Harbor Violet with white text (harbor-sourced), Citation Cyan Deep #155e75 with white text (local-sourced, darkened for AA); no selected/unselected states — they are static category marks. A badge never ships without a background.
 
 ### Cards / Containers
 - **Panel:** Panel White, 1px Rule Gray border, 8px radius, 1.25rem padding, stacked 1.25rem apart
@@ -204,13 +210,19 @@ Restrained, compact, quietly confident: controls stay understated so tinted verd
 - **Textareas:** min-height 4.5rem, vertical resize
 
 ### Navigation
-- White topbar, 1px bottom rule, 0.75rem 1.25rem padding; brand 1.05rem/700; eleven plain links at 0.85–1rem gaps; zh/en switch divided by a left rule, current language 700, other at 60% opacity; the bar wraps on narrow widths
+- White topbar, 1px bottom rule, 0.75rem 1.25rem padding; brand 1.05rem/700; eleven plain links at 0.85rem gaps, rendered only for identities holding `content:read`; the current page is marked by `aria-current="page"` — ink text, 700, and a flat 2px Bench Blue underline; zh/en switch divided by a left rule, current language 700, other at 60% opacity; a signed-in identity slot divided by the same left rule (0.9rem; muted label, ink name, logout link — or a single login link when anonymous, doubling as the login affordance); the bar wraps on narrow widths
 
 ### Verdict Matrix (signature)
-The compare matrix is the system's signature: a fully ruled table (1px borders on every cell, not just row rules), Nested Paper header row (ink text, uppercase 0.8rem labels), and center-aligned 600-weight verdict cells that speak only in tint pairs — pass (Verdict Green on #ecfdf5), fail (Objection Red Deep #b91c1c on fail-tint, for AA contrast), rate (Bench Blue on #eff6ff). Each verdict trigger is a real button inside the tinted cell so the interaction is keyboard-operable, with a flat 2px Bench Blue focus ring. Data tables elsewhere stay quieter: row rules only, no vertical borders, no fills.
+The compare matrix is the system's signature: a fully ruled table (1px borders on every cell, not just row rules), Nested Paper header row (ink text, uppercase 0.8rem labels), and center-aligned 600-weight verdict cells that speak only in tint pairs — pass (Verdict Green on #ecfdf5), fail (Objection Red Deep #b91c1c on fail-tint, for AA contrast), rate (Bench Blue on #eff6ff). Each verdict trigger is a real button inside the tinted cell so the interaction is keyboard-operable, with a flat 2px Bench Blue focus ring. A muted caption (0.78rem, top-left) may head the table, and wide matrices keep a 40rem min-width and scroll horizontally inside their panel rather than squeezing columns. Data tables elsewhere stay quieter: row rules only, no vertical borders, no fills.
 
 ### Flash Strips
-Feedback is a full-width strip under the topbar: info (Bench Blue on #eef6ff), error (Objection Red on fail-tint), ok (Verdict Green on pass-tint) — the Tint Verdict Rule applied to messaging. The readonly-note is its violet sibling (Harbor Violet on #f5f3ff).
+Feedback is a full-width strip under the topbar, each voice a tint pair with a same-family 1px border: info (Ledger Ink on #eef6ff, Rule Gray border), error (Objection Red on fail-tint, #fecaca border), ok (Verdict Green on pass-tint, #a7f3d0 border) — the Tint Verdict Rule applied to messaging. The readonly-note is the violet sibling (Harbor Violet on #f5f3ff, #ddd6fe border, 0.85rem). The rubric-warning is the error pair scaled down to an inline form strip (fail-tint, #fecaca border, Objection Red Deep text, 0.85rem) for rubric/type mismatches.
+
+### Rendered Markdown
+Contract bodies and law text render inside panels at 1.6 line-height with anywhere-breaking: `h1` 1.2rem and `h2`/`h3` 1.05rem (700), inline code chips at a 3px radius on #f3f4f6, and blockquotes as a 3px Rule Gray left bar on #fafbfc with #555 text.
+
+### Assistant Island (vendored)
+The admin CopilotKit chat island is vendored third-party chrome with its own shadows, radii, and dark theme — the sanctioned exception to the No-Gloss and Flat-Ledger rules. It is themed toward the ledger where its schema allows (error pair = fail tint / #fecaca / Objection Red) and is never a style reference for first-party work.
 
 ## Do's and Don'ts
 

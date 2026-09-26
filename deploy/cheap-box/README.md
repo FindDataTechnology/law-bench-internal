@@ -101,10 +101,13 @@ caddy reload   --config /etc/caddy/Caddyfile   # admin API on 127.0.0.1:2019
 
 Certificates: `/var/lib/caddy/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory/<host>/`.
 
-The file still carries ~10 blocks for names that resolve to america
-(`*.tokenvault.vip`, `file`/`file-console`/`lawbench.token118.com`, and
-`mcp.token118.com → 127.0.0.1:18080`). They are dead weight rather than a live
-footgun — those names never arrive here — but they should be pruned.
+**Pruned 2026-09-19:** all `*.tokenvault.vip` / `*.token118.com` site blocks (18 of
+them, ~230 lines) plus their ACME cert dirs are gone; the file is now
+finddatatech.cloud-only (183 lines). Rollback copy: `/etc/caddy/Caddyfile.bak-20260919`.
+The admin endpoint is `localhost:20198` (see the global block), so reload with
+`caddy reload --config /etc/caddy/Caddyfile` — the CLI picks the address up from
+the flag default only if it matches; if it refuses, pass `localhost:20198`
+explicitly.
 
 ## law-bench on the cheap cluster (ns `law-bench`)
 
@@ -250,6 +253,9 @@ deployments can then be scaled to 0 / deleted.
 
 ## Gateway compose on cheap1
 
+Skills catalog (legal skills, 121 curated): see
+[mcp-gateway-skills.md](mcp-gateway-skills.md).
+
 Lift-and-shift of the america compose stack into `/opt/mcp-gateway-registry`
 (`docker-compose.prebuilt.yml`), *not* the upstream Helm chart. nginx on
 `127.0.0.1:18080`; Caddy fronts it. `openbao` runs in dev mode, so its state is
@@ -329,6 +335,36 @@ A `/32` was chosen over a wider range on purpose: `100.64.0.9` still fails the
 check, and the backend stays inside the tailscale tunnel rather than being
 exposed publicly. Widening this weakens an SSRF control — get explicit sign-off
 first.
+
+## Residue cleanup (2026-09-19)
+
+Swept the migration leftovers off cheap1 (disk 76% → 67%, ~3.9 G freed).
+Deleted: `/root` image tarballs (goharbor, k3s-bootstrap, 07–10.tar, turtles3,
+busybox…), the 16 migration-night SQL dumps + rendered manifests, `go-build`
+cache, `/var/lib/rancher` (k3s was uninstalled earlier; the unit file was
+already gone — including 254 M of stale `law-craw-web` local-path PVs),
+`/opt/{tokenvault-idp,platform,acme-src}` + the tokenvault docker volumes, and
+the dead Caddy blocks/certs (see above).
+
+Everything deleted was first archived (sha256-verified) to the operator's
+machine at `D:\cheap1-archive-20260919\` — including the tokenvault pgdata and
+the lawcraw PVs, which were the only "data" among the residue.
+
+Leftovers kept on purpose:
+
+- **`tokenvault-idp_default` docker network** — declared as an external network
+  by `docker-compose.prebuilt.yml` (auth-server attaches to it, a vestige of the
+  local-IdP era; `LOGTO_EXTERNAL_URL` now points at the remote IdP). Remove it
+  together with the compose edit next time the gateway stack is touched,
+  otherwise `compose up` breaks.
+- **`/root/mcp-gateway`** — NOT build residue: the running registry/auth-server
+  containers bind-mount `ssl/ logs/ agents/ models/ servers/ federation.json`
+  out of it.
+- **`/root/paas-src`** — build source for the live `paas.finddatatech.cloud`.
+
+An ops SSH key (`zcode-local@chengsi`, `~/.ssh/id_ed25519_cheap1` on the
+operator's machine) was appended to root's `authorized_keys` to enable scp;
+remove that line if the password-only policy is preferred.
 
 ## Clock
 
