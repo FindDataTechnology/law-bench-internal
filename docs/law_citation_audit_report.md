@@ -1,14 +1,14 @@
 # 条款引法审计报告
 
-目录快照：32275 部法规，max_id=85113，导入时间 2026-09-26T03:33:04.280164+00:00
+目录快照：32296 部法规，max_id=85137，导入时间 2026-09-26T06:49:41.143861+00:00
 审计范围：2188 条引用
 
 | 分类 | 数量 |
 | --- | ---: |
 | 引用已废法律 | 297 |
 | 已修改（多数仍有效，仅被修正） | 17 |
-| 兜底清单（未解析或状态缺失/脏值） | 684 |
-| 正常 | 1190 |
+| 兜底清单（未解析或状态缺失/脏值） | 651 |
+| 正常 | 1223 |
 
 ## 引用已废法律（297）
 
@@ -334,7 +334,7 @@
 | utilities_supply | #2185 鉴于 | 《四川省城市供水条例》 | 四川省城市供水条例 | 已修改 | exact |
 | utilities_supply | #7687 鉴于 | 《江苏省城乡供水管理条例》 | 江苏省城乡供水管理条例 | 已修改 | exact |
 
-## 兜底清单（未解析或状态缺失/脏值）（684）
+## 兜底清单（未解析或状态缺失/脏值）（651）
 
 | 合同类型 | 条款 | 引用名 | 目录法规 | 状态 | 解析方式 |
 | --- | --- | --- | --- | --- | --- |
@@ -343,9 +343,7 @@
 | bailment | #8803 权利义务 | 《保管凭证》 | — | — | unresolved |
 | bailment | #8805 权利义务 | 《保管凭证》 | — | — | unresolved |
 | bailment | #8807 权利义务 | 《保管凭证》 | — | — | unresolved |
-| capital_increase | #294 违约责任 | 《全国法院民商事审判工作会议纪要》 | — | — | unresolved |
 | construction | #1802 合同标的 | 《委托设计项目表》 | — | — | unresolved |
-| construction | #1811 鉴于 | 《陕西省室内装饰管理规定》 | — | — | unresolved |
 | construction | #1812 合同标的 | 《室内空气质量标准》 | — | — | unresolved |
 | construction | #1812 合同标的 | 《家庭装饰工程质量规范》 | — | — | unresolved |
 | construction | #1850 鉴于 | 《中华人民共和国经济合同法》 | — | — | unresolved |
@@ -369,7 +367,6 @@
 | construction | #4293 权利义务 | 《工程监理合同》 | — | — | unresolved |
 | construction | #4308 鉴于 | 《陕西省室内装饰工程费用定额》 | — | — | unresolved |
 | construction | #4308 鉴于 | 《陕西省室内装饰工程预算定额》 | — | — | unresolved |
-| construction | #4308 鉴于 | 《陕西省室内装饰管理规定》 | — | — | unresolved |
 | construction | #4312 价款及支付 | 《陕西省室内装饰工程费用定额》 | — | — | unresolved |
 | construction | #4312 价款及支付 | 《陕西省室内装饰工程预算定额》 | — | — | unresolved |
 | construction | #4313 权利义务 | 《室内空气质量标准》 | — | — | unresolved |
@@ -384,7 +381,6 @@
 | construction | #8203 价款及支付 | 《建设工程价款结算暂行办法》 | — | — | unresolved |
 | entrustment | #838 鉴于 | 《中华人民共和国食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | entrustment | #2057 附则 | 《天津市婚礼庆典投诉处理暂行办法》 | — | — | unresolved |
-| entrustment | #2864 鉴于 | 《南京市殡葬管理办法》 | — | — | unresolved |
 | entrustment | #2864 鉴于 | 《殡葬管理条例》 | 殡葬管理条例 | sxx:3 | exact |
 | entrustment | #2867 权利义务 | 《殡葬代理机构服务规范》 | — | — | unresolved |
 | entrustment | #3413 权利义务 | 《协议书》 | — | — | unresolved |
@@ -411,7 +407,6 @@
 | entrustment | #4697 价款及支付 | 《施工合同》 | — | — | unresolved |
 | entrustment | #4698 履行期限 | 《施工合同》 | — | — | unresolved |
 | entrustment | #4699 权利义务 | 《施工合同》 | — | — | unresolved |
-| entrustment | #4869 权利义务 | 《浙江省人民政府办公厅关于加强电梯安全工作的意见》 | — | — | unresolved |
 | entrustment | #4869 权利义务 | 《电梯使用管理与维护保养规则》 | — | — | unresolved |
 | entrustment | #4869 权利义务 | 《电梯维护保养安全管理规范》 | — | — | unresolved |
 | entrustment | #4897 权利义务 | 《设计任务书》 | — | — | unresolved |
@@ -490,7 +485,7 @@
 | intermediation | #5326 价款及支付 | 《二手车买卖合同》 | — | — | unresolved |
 | intermediation | #5987 权利义务 | 《存量房买卖合同》 | — | — | unresolved |
 | intermediation | #5988 价款及支付 | 《存量房买卖合同》 | — | — | unresolved |
-| intermediation | #6026 当事人 | 《网络交易管理办法》 | — | — | unresolved |
+| intermediation | #6026 当事人 | 《网络交易管理办法》 | 网络交易管理办法 | 已失效 | exact |
 | intermediation | #6102 价款及支付 | 《山东省二手房买卖合同（经纪成交版）》 | — | — | unresolved |
 | ip_license | #6996 附则 | 《商标使用许可合同备案办法》 | — | — | unresolved |
 | labor_dispatch | #6978 当事人 | 《劳务派遣经营许可证》 | — | — | unresolved |
@@ -506,7 +501,6 @@
 | land_transfer | #7087 违约责任 | 《国有土地租赁合同》 | — | — | unresolved |
 | land_transfer | #7087 违约责任 | 《国有建设用地使用权出让合同》 | — | — | unresolved |
 | land_transfer | #7090 附则 | 《国有建设用地使用权出让合同》 | — | — | unresolved |
-| lease | #1644 鉴于 | 《哈尔滨市城市出租汽车管理办法》 | — | — | unresolved |
 | lease | #1645 合同标的 | 《机动车行驶证》 | — | — | unresolved |
 | lease | #3445 当事人 | 《汽车租赁服务规范》 | — | — | unresolved |
 | lease | #3451 权利义务 | 《车辆生产企业及产品公告》 | — | — | unresolved |
@@ -538,12 +532,7 @@
 | lease | #5801 履行期限 | 《土地交接单》 | — | — | unresolved |
 | lease | #7115 鉴于 | 《住房租赁条例》 | 住房租赁条例 | sxx:3 | exact |
 | lease | #8195 鉴于 | 《住房租赁条例》 | 住房租赁条例 | sxx:3 | exact |
-| merger_acquisition | #6934 违约责任 | 《全国法院民商事审判工作会议纪要（九民纪要）》 | — | — | unresolved |
-| merger_acquisition | #8185 违约责任 | 《全国法院民商事审判工作会议纪要（九民纪要）》 | — | — | unresolved |
-| ppp_project | #392 价款及支付 | 《关于规范实施政府和社会资本合作新机制的指导意见》 | — | — | unresolved |
-| ppp_project | #7059 鉴于 | 《国务院办公厅转发国家发展改革委、财政部关于规范实施政府和社会资本合作新机制的指导意见》 | — | — | unresolved |
 | ppp_project | #8189 权利义务 | 《项目移交确认书》 | — | — | unresolved |
-| private_equity_fund | #7023 双方权利义务 | 《私募投资基金募集行为管理办法》 | — | — | unresolved |
 | property_service | #2017 权利义务 | 《临时管理规约》 | — | — | unresolved |
 | property_service | #2391 权利义务 | 《吉林省物业服务标准》 | — | — | unresolved |
 | property_service | #2391 权利义务 | 《物业服务内容和标准》 | — | — | unresolved |
@@ -551,7 +540,6 @@
 | property_service | #2816 合同标的 | 《广西普通住宅小区前期物业服务等级指导标准（试行）》 | — | — | unresolved |
 | property_service | #3673 鉴于 | 《中华人民共和国食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | property_service | #3678 权利义务 | 《中华人民共和国食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
-| property_service | #3678 权利义务 | 《吉林省教育厅等部门关于加强学校学生集中用餐管理工作的指导意见》 | — | — | unresolved |
 | property_service | #3678 权利义务 | 《学生餐营养指南》 | — | — | unresolved |
 | property_service | #3678 权利义务 | 《餐饮服务食品安全操作规范》 | — | — | unresolved |
 | property_service | #3680 权利义务 | 《学生餐营养指南》 | — | — | unresolved |
@@ -593,7 +581,6 @@
 | property_service | #5347 价款及支付 | 《家政人员意外伤害保险》 | — | — | unresolved |
 | property_service | #5347 价款及支付 | 《家政经营责任险》 | — | — | unresolved |
 | property_service | #6000 权利义务 | 《中华人民共和国食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
-| property_service | #6000 权利义务 | 《吉林省教育厅等部门关于加强学校学生集中用餐管理工作的指导意见》 | — | — | unresolved |
 | property_service | #6000 权利义务 | 《学生餐营养指南》 | — | — | unresolved |
 | property_service | #6000 权利义务 | 《餐饮服务食品安全操作规范》 | — | — | unresolved |
 | property_service | #6001 权利义务 | 《食品经营许可证》 | — | — | unresolved |
@@ -602,7 +589,6 @@
 | property_service | #6002 权利义务 | 《餐饮服务食品安全操作规范》 | — | — | unresolved |
 | property_service | #6004 违约责任 | 《食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | property_service | #7167 价款及支付 | 《物业服务收费管理办法》 | — | — | unresolved |
-| property_service | #7787 鉴于 | 《新疆维吾尔自治区物业服务收费管理办法》 | — | — | unresolved |
 | property_service | #8192 权利义务 | 《物业服务内容及标准》 | — | — | unresolved |
 | real_estate_development | #406 履行期限 | 《商品房预售许可证》 | — | — | unresolved |
 | real_estate_development | #5438 鉴于 | 《集体经营性建设用地使用权出让合同》 | — | — | unresolved |
@@ -637,15 +623,12 @@
 | real_estate_sale | #4624 权利义务 | 《商品房预售许可证》 | — | — | unresolved |
 | real_estate_sale | #4626 价款及支付 | 《商品房买卖合同》 | — | — | unresolved |
 | real_estate_sale | #4628 履行期限 | 《商品房买卖合同》 | — | — | unresolved |
-| real_estate_sale | #4847 当事人 | 《北京市共有产权住房管理暂行办法》 | — | — | unresolved |
 | real_estate_sale | #4849 价款及支付 | 《关于实施保障性住房全装修成品交房的若干规定》 | — | — | unresolved |
-| real_estate_sale | #4849 价款及支付 | 《北京市共有产权住房管理暂行办法》 | — | — | unresolved |
 | real_estate_sale | #5338 权利义务 | 《住宅建筑规范》 | — | — | unresolved |
 | real_estate_sale | #6042 履行期限 | 《房屋交接单》 | — | — | unresolved |
 | real_estate_sale | #6088 价款及支付 | 《二手房交易资金监管协议》 | — | — | unresolved |
 | real_estate_sale | #7199 权利义务 | 《住宅使用说明书》 | — | — | unresolved |
 | real_estate_sale | #7199 权利义务 | 《住宅质量保证书》 | — | — | unresolved |
-| real_estate_sale | #7474 鉴于 | 《大连市共有产权住房建设管理暂行办法》 | — | — | unresolved |
 | real_estate_sale | #7624 权利义务 | 《住宅使用说明书》 | — | — | unresolved |
 | real_estate_sale | #7624 权利义务 | 《住宅质量保证书》 | — | — | unresolved |
 | real_estate_sale | #7885 权利义务 | 《住宅质量保证书》 | — | — | unresolved |
@@ -658,7 +641,6 @@
 | real_estate_sale | #8786 权利义务 | 《住宅质量保证书》 | — | — | unresolved |
 | real_estate_sale | #8788 权利义务 | 《住宅使用说明书》 | — | — | unresolved |
 | real_estate_sale | #8788 权利义务 | 《住宅质量保证书》 | — | — | unresolved |
-| sale | #93 鉴于 | 《广州市中小学校服管理办法》 | — | — | unresolved |
 | sale | #94 合同标的 | 《校服采购清单》 | — | — | unresolved |
 | sale | #540 合同标的 | 《购销商品确认单》 | — | — | unresolved |
 | sale | #1166 合同标的 | 《鲜蛋卫生标准》 | — | — | unresolved |
@@ -739,12 +721,10 @@
 | service | #6227 权利义务 | 《食品经营许可证》 | — | — | unresolved |
 | service | #6228 违约责任 | 《餐饮服务食品安全操作规范》 | — | — | unresolved |
 | service | #6229 违约责任 | 《食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
-| service | #6237 权利义务 | 《校外培训机构从业人员管理办法（试行）》 | — | — | unresolved |
 | service | #6237 权利义务 | 《校外培训机构培训材料管理办法（试行）》 | — | — | unresolved |
 | service | #6253 合同标的 | 《体检报告》 | — | — | unresolved |
 | service | #6253 合同标的 | 《意外风险告知书》 | — | — | unresolved |
 | service | #6253 合同标的 | 《试住期评估表》 | — | — | unresolved |
-| service | #6262 鉴于 | 《机动车驾驶员培训管理规定》 | — | — | unresolved |
 | service | #6295 鉴于 | 《中华人民共和国食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | service | #6384 合同标的 | 《养老机构服务安全基本规范》 | — | — | unresolved |
 | service | #6384 合同标的 | 《护理等级与服务项目》 | — | — | unresolved |
@@ -824,7 +804,6 @@
 | service | #6622 附则 | 《体检报告》 | — | — | unresolved |
 | service | #6622 附则 | 《机构入住须知》 | — | — | unresolved |
 | service | #6661 合同标的 | 《首次服务项目确认表》 | — | — | unresolved |
-| service | #6665 当事人 | 《江苏省合同监督管理办法》 | — | — | unresolved |
 | service | #6668 争议解决 | 《事项委托协议》 | — | — | unresolved |
 | service | #6729 价款及支付 | 《大纲》 | — | — | unresolved |
 | service | #6732 权利义务 | 《大纲》 | — | — | unresolved |
@@ -862,7 +841,6 @@
 | service | #8167 权利义务 | 《服务质量标准》 | — | — | unresolved |
 | service | #8167 权利义务 | 《验收确认书》 | — | — | unresolved |
 | software_development | #7030 合同标的 | 《中华人民共和国网络安全法》 | 中华人民共和国网络安全法 | sxx:3 | exact |
-| talent_agency | #7049 鉴于 | 《文化和旅游部关于规范演出经纪行为加强演员管理促进演出市场健康有序发展的通知》 | — | — | unresolved |
 | talent_agency | #7049 鉴于 | 《营业性演出许可证》 | — | — | unresolved |
 | talent_agency | #7053 双方权利义务 | 《营业性演出许可证》 | — | — | unresolved |
 | technology | #437 履行期限 | 《技术需求规格说明书》 | — | — | unresolved |
@@ -874,7 +852,6 @@
 | technology | #4972 附则 | 《跟踪测量技术服务费用一览表》 | — | — | unresolved |
 | technology | #6082 违约责任 | 《中华人民共和国网络安全法》 | 中华人民共和国网络安全法 | sxx:3 | exact |
 | tourism_service | #1148 合同标的 | 《旅游行程计划说明书》 | — | — | unresolved |
-| tourism_service | #1148 合同标的 | 《旅行社管理条例》 | — | — | unresolved |
 | tourism_service | #1150 履行期限 | 《旅游行程计划说明书》 | — | — | unresolved |
 | tourism_service | #1151 权利义务 | 《出境旅游领队人员管理办法》 | — | — | unresolved |
 | tourism_service | #1151 权利义务 | 《旅行社投保旅行社责任保险的规定》 | — | — | unresolved |
@@ -925,7 +902,6 @@
 | transport | #1662 合同标的 | 《旅游用车确认单》 | — | — | unresolved |
 | transport | #1668 价款及支付 | 《旅游用车确认单》 | — | — | unresolved |
 | transport | #1669 违约责任 | 《旅游用车确认单》 | — | — | unresolved |
-| transport | #5057 权利义务 | 《北京市厨余垃圾分类质量不合格不收运管理暂行规定》 | — | — | unresolved |
 | transport | #5057 权利义务 | 《北京市非居民单位厨余垃圾运输三联单》 | — | — | unresolved |
 | transport | #5057 权利义务 | 《厨余垃圾分类质量不合格不运输告知单》 | — | — | unresolved |
 | transport | #7151 争议解决 | 《中华人民共和国民用航空法》 | 中华人民共和国民用航空法 | sxx:3 | exact |
@@ -936,16 +912,12 @@
 | utilities_supply | #1046 合同标的 | 《生活饮用水卫生标准》 | — | — | unresolved |
 | utilities_supply | #1862 价款及支付 | 《电费结算单》 | — | — | unresolved |
 | utilities_supply | #1862 价款及支付 | 《电量结算单》 | — | — | unresolved |
-| utilities_supply | #1939 鉴于 | 《广州市用户共用用水设施管理办法》 | — | — | unresolved |
 | utilities_supply | #2187 合同标的 | 《生活饮用水卫生标准》 | — | — | unresolved |
-| utilities_supply | #2873 鉴于 | 《广州市用户共用用水设施管理办法》 | — | — | unresolved |
 | utilities_supply | #3380 鉴于 | 《供用电合同》 | — | — | unresolved |
 | utilities_supply | #3383 价款及支付 | 《供用电合同》 | — | — | unresolved |
 | utilities_supply | #3417 鉴于 | 《中华人民共和国网络安全法》 | 中华人民共和国网络安全法 | sxx:3 | exact |
 | utilities_supply | #3572 价款及支付 | 《公共机构能源费用托管实施规程》 | — | — | unresolved |
 | utilities_supply | #3572 价款及支付 | 《能源费用托管合同调整规则指引》 | — | — | unresolved |
-| utilities_supply | #3922 鉴于 | 《广州市排水管理办法》 | — | — | unresolved |
-| utilities_supply | #5346 当事人 | 《广州市用户共用用水设施管理办法》 | — | — | unresolved |
 | utilities_supply | #6034 鉴于 | 《节能发电调度办法（试行）》 | — | — | unresolved |
 | utilities_supply | #6114 鉴于 | 《中华人民共和国网络安全法》 | 中华人民共和国网络安全法 | sxx:3 | exact |
 | utilities_supply | #6393 鉴于 | 《中华人民共和国网络安全法》 | 中华人民共和国网络安全法 | sxx:3 | exact |
@@ -956,15 +928,11 @@
 | utilities_supply | #7747 鉴于 | 《城市燃气安全管理规定》 | — | — | unresolved |
 | utilities_supply | #7747 鉴于 | 《城市燃气管理办法》 | — | — | unresolved |
 | utilities_supply | #7827 合同标的 | 《生活饮用水卫生标准》 | — | — | unresolved |
-| utilities_supply | #7976 鉴于 | 《广州市排水管理办法》 | — | — | unresolved |
-| vam_agreement | #454 违约责任 | 《全国法院民商事审判工作会议纪要》 | — | — | unresolved |
-| vam_agreement | #6949 鉴于 | 《全国法院民商事审判工作会议纪要》 | — | — | unresolved |
 | work | #1598 合同标的 | 《车辆维修前诊断检验单》 | — | — | unresolved |
 | work | #1599 价款及支付 | 《辽宁省机动车维修结算清单》 | — | — | unresolved |
 | work | #1600 履行期限 | 《车辆维修前诊断检验单》 | — | — | unresolved |
 | work | #1600 履行期限 | 《辽宁省汽车维修竣工出厂合格证》 | — | — | unresolved |
 | work | #1608 合同标的 | 《{{media_name}}》 | — | — | unresolved |
-| work | #2087 争议解决 | 《广州市洗衣洗涤行业消费争议解决办法》 | — | — | unresolved |
 | work | #2445 合同标的 | 《家具定制清单》 | — | — | unresolved |
 | work | #2445 合同标的 | 《设计图纸》 | — | — | unresolved |
 | work | #2845 合同标的 | 《家具定制清单》 | — | — | unresolved |
@@ -1019,7 +987,6 @@
 | work | #5574 合同标的 | 《{{local_standard_name}}》 | — | — | unresolved |
 | work | #5574 合同标的 | 《{{national_standard_name}}》 | — | — | unresolved |
 | work | #5580 权利义务 | 《种子生产许可证》 | — | — | unresolved |
-| work | #7832 争议解决 | 《广州市洗衣洗涤行业消费争议解决办法》 | — | — | unresolved |
 | work | #7902 合同标的 | 《产品设计图》 | — | — | unresolved |
 | work | #7902 合同标的 | 《报价明细表》 | — | — | unresolved |
 
