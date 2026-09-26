@@ -1,28 +1,29 @@
 {% extends "base.html" %}
-{% block title %}评价仪表板 - {{ t.nav.brand }}{% endblock %}
+{% block title %}{{ t.dashboard.h1 }} · {{ t.nav.brand }}{% endblock %}
 
 {% block content %}
-<h1>合同评价仪表板</h1>
+<h1>{{ t.dashboard.h1 }}</h1>
+<p class="hint">{{ t.dashboard.source_hint }}</p>
 
 <!-- Overall Stats -->
 <section class="stats-overview">
-  <h2>总览</h2>
+  <h2>{{ t.dashboard.overview }}</h2>
   <div class="stats-grid">
     <div class="stat-card">
       <span class="stat-value">{{ overall.total_runs if overall else 0 }}</span>
-      <span class="stat-label">总流水线运行</span>
+      <span class="stat-label">{{ t.dashboard.stat_runs }}</span>
     </div>
     <div class="stat-card">
       <span class="stat-value">{{ total_types }}</span>
-      <span class="stat-label">合同类型数</span>
+      <span class="stat-label">{{ t.dashboard.stat_types }}</span>
     </div>
     <div class="stat-card">
       <span class="stat-value">{{ "%.1f"|format((overall.avg_pass_rate or 0) * 100) }}%</span>
-      <span class="stat-label">平均通过率</span>
+      <span class="stat-label">{{ t.dashboard.stat_avg_pass }}</span>
     </div>
     <div class="stat-card">
       <span class="stat-value">{{ overall.all_pass_count if overall else 0 }}</span>
-      <span class="stat-label">全通过数</span>
+      <span class="stat-label">{{ t.dashboard.stat_all_pass }}</span>
     </div>
   </div>
 </section>
@@ -30,14 +31,14 @@
 <!-- Version Comparison -->
 {% if version_comparison %}
 <section class="version-comparison">
-  <h2>版本对比</h2>
+  <h2>{{ t.dashboard.version_comparison }}</h2>
   <table class="data-table">
     <thead>
       <tr>
-        <th>版本</th>
-        <th>运行数</th>
-        <th>平均通过率</th>
-        <th>全通过数</th>
+        <th>{{ t.dashboard.col_version }}</th>
+        <th>{{ t.dashboard.col_runs }}</th>
+        <th>{{ t.dashboard.col_avg_pass }}</th>
+        <th>{{ t.dashboard.col_all_pass }}</th>
       </tr>
     </thead>
     <tbody>
@@ -56,17 +57,17 @@
 
 <!-- Per-Type Breakdown -->
 <section class="by-type">
-  <h2>各合同类型评分（最佳运行）</h2>
-  <table class="data-table sortable">
+  <h2>{{ t.dashboard.by_type }}</h2>
+  <table class="data-table">
     <thead>
       <tr>
-        <th>合同类型</th>
-        <th>评价规则</th>
-        <th>通过率</th>
-        <th>通过/总数</th>
-        <th>迭代次数</th>
-        <th>全通过</th>
-        <th>时间</th>
+        <th>{{ t.dashboard.col_type }}</th>
+        <th>{{ t.dashboard.col_rubric }}</th>
+        <th>{{ t.dashboard.col_pass_rate }}</th>
+        <th>{{ t.dashboard.col_passed_total }}</th>
+        <th>{{ t.dashboard.col_iterations }}</th>
+        <th>{{ t.dashboard.col_all_pass }}</th>
+        <th>{{ t.dashboard.col_time }}</th>
       </tr>
     </thead>
     <tbody>
@@ -85,6 +86,8 @@
         <td>{{ '✓' if r.all_pass else '✗' }}</td>
         <td>{{ r.local_time }}</td>
       </tr>
+      {% else %}
+      <tr><td colspan="7" class="empty-row">{{ t.dashboard.empty_by_type }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -92,17 +95,17 @@
 
 <!-- Recent Runs -->
 <section class="recent-runs">
-  <h2>最近运行</h2>
+  <h2>{{ t.dashboard.recent_runs }}</h2>
   <table class="data-table">
     <thead>
       <tr>
         <th>ID</th>
-        <th>合同类型</th>
-        <th>评价规则</th>
-        <th>通过</th>
-        <th>全通过</th>
-        <th>迭代</th>
-        <th>时间</th>
+        <th>{{ t.dashboard.col_type }}</th>
+        <th>{{ t.dashboard.col_rubric }}</th>
+        <th>{{ t.dashboard.col_passed }}</th>
+        <th>{{ t.dashboard.col_all_pass }}</th>
+        <th>{{ t.dashboard.col_iterations }}</th>
+        <th>{{ t.dashboard.col_time }}</th>
       </tr>
     </thead>
     <tbody>
@@ -116,6 +119,8 @@
         <td>{{ r.iteration }}</td>
         <td>{{ r.local_time }}</td>
       </tr>
+      {% else %}
+      <tr><td colspan="7" class="empty-row">{{ t.dashboard.empty_recent }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -147,7 +152,7 @@
   color: var(--muted);
   margin-top: 0.25rem;
 }
-.muted { color: var(--muted); font-size: 0.8em; }
+.muted { color: var(--muted); font-size: 0.78rem; }
 /* Ordinary data tables: row rules only — full ruling is reserved for the
    verdict matrix per DESIGN.md. */
 .data-table {
@@ -181,11 +186,12 @@
   left: 0;
   width: 100%;
   text-align: center;
-  font-size: 0.8em;
+  font-size: 0.78rem;
   line-height: 1.25rem;
   color: var(--text);
   font-weight: 600;
 }
+.empty-row { text-align: center; color: var(--muted); padding: 1rem 0.6rem; }
 section { margin-bottom: 2rem; }
 h2 { border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
 </style>

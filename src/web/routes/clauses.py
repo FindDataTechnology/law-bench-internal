@@ -17,7 +17,7 @@ from ..templating import templates as _templates
 from ..auth.deps import require_scope
 from ..deps import DbConn, get_db
 from ..markdown_render import render_markdown
-from ...clauses import TAG_VOCAB, generate_contract_assembled, list_clauses, tag_vocab_for_type
+from ...clauses import generate_contract_assembled, list_clauses, tag_vocab_for_type
 from ...clauses.store import (
     count_clauses,
     counts_by_type,

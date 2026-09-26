@@ -1,60 +1,57 @@
 {% extends "base.html" %}
-{% block title %}条款库 · {{ t.nav.brand }}{% endblock %}
+{% block title %}{{ t.clauses.h1 }} · {{ t.nav.brand }}{% endblock %}
 {% block content %}
 <div class="toolbar between">
-  <h1>条款库</h1>
+  <h1>{{ t.clauses.h1 }}</h1>
   <div class="inline">
     <form method="get" action="{{ url_for('page_clauses') }}" class="inline">
-      <input type="text" name="q" value="{{ q }}" placeholder="搜索条款正文…" style="width:16em">
+      <input type="text" name="q" value="{{ q }}" placeholder="{{ t.clauses.search_ph }}" style="width:16em">
       <select name="stance" style="width:9em">
-        <option value="">全部立场</option>
+        <option value="">{{ t.clauses.all_stances }}</option>
         {% for v in tag_vocab.stance %}<option value="{{ v }}" {% if active_tags.get('stance') == v %}selected{% endif %}>{{ v }}</option>{% endfor %}
       </select>
-      <button type="submit" class="btn btn-sm btn-ghost">搜索</button>
+      <button type="submit" class="btn btn-sm btn-ghost">{{ t.clauses.search }}</button>
     </form>
     <form method="post" action="{{ url_for('page_clauses_extract') }}" class="inline">
-      <label class="muted">抽取份数</label>
+      <label class="muted">{{ t.clauses.extract_limit }}</label>
       <input type="number" name="limit" value="5" min="0" max="50" style="width:5em">
-      <button type="submit" class="btn btn-sm">从语料抽取</button>
+      <button type="submit" class="btn btn-sm">{{ t.clauses.extract }}</button>
     </form>
   </div>
 </div>
-<p class="muted">从 MinIO 的 823 份合同示范文本抽取的结构化条款，按 基本条款（全国）/ 标签条款（业务场景）/ 自定义条款 三类管理，据此拼装生成合同。完整语料抽取请用 CLI：<code>python -m src.clauses extract</code>。</p>
+<p class="muted">{{ t.clauses.intro|safe }}</p>
 
 {% if flash %}
-<div class="panel" style="background:#f6f8ff">{{ flash }}</div>
+<div class="flash" role="status">{{ flash }}</div>
 {% endif %}
 
 {% if results is not none %}
 <div class="panel">
-  <h2 style="margin-top:0">搜索结果：{{ results | length }} 条</h2>
+  <h2 style="margin-top:0">{{ tr('clauses.results_count', n=results|length) }}</h2>
   {% for c in results %}
   <details>
     <summary>{{ c.section }} · {{ c.category }}{% if c.tags.scenario %} · {{ c.tags.scenario }}{% endif %} · {{ zh.get(c.contract_type, c.contract_type) }}</summary>
     <div class="muted small">#{{ c.id }} · <code>{{ c.contract_type }}</code>{% if c.source_path %} · {{ c.source_path }}{% endif %}</div>
     <div>{{ c.body[:200] }}…</div>
-    <a href="{{ url_for('page_clauses_edit', contract_type=c.contract_type, clause_id=c.id) }}">编辑</a>
+    <a href="{{ url_for('page_clauses_edit', contract_type=c.contract_type, clause_id=c.id) }}">{{ t.clauses.edit }}</a>
   </details>
   {% else %}
-  <p class="muted">无匹配条款。</p>
+  <p class="muted">{{ t.clauses.no_match }}</p>
   {% endfor %}
 </div>
 {% else %}
 <div class="panel">
-  <p>共 <strong>{{ counts.total }}</strong> 条条款 ·
-     基本 <strong>{{ counts.base }}</strong> ·
-     标签 <strong>{{ counts.tagged }}</strong> ·
-     自定义 <strong>{{ counts.custom }}</strong></p>
+  <p>{{ tr('clauses.counts_line', total=counts.total, base=counts.base, tagged=counts.tagged, custom=counts.custom)|safe }}</p>
   <table>
     <thead>
       <tr>
         <th>#</th>
-        <th>合同类型</th>
-        <th>基本</th>
-        <th>标签</th>
-        <th>自定义</th>
-        <th>业务场景</th>
-        <th>操作</th>
+        <th>{{ t.clauses.col_type }}</th>
+        <th>{{ t.clauses.col_base }}</th>
+        <th>{{ t.clauses.col_tagged }}</th>
+        <th>{{ t.clauses.col_custom }}</th>
+        <th>{{ t.clauses.col_scenario }}</th>
+        <th>{{ t.clauses.col_actions }}</th>
       </tr>
     </thead>
     <tbody>
@@ -68,15 +65,15 @@
         <td>{{ r.base }}</td>
         <td>{{ r.tagged }}</td>
         <td>{{ r.custom }}</td>
-        <td class="muted">{{ r.scenarios | join('、') }}</td>
+        <td class="muted">{{ r.scenarios | join(t.clauses.sep) }}</td>
         <td>
-          <a href="{{ url_for('page_clauses_detail', contract_type=r.contract_type) }}">查看</a>
+          <a href="{{ url_for('page_clauses_detail', contract_type=r.contract_type) }}">{{ t.clauses.view }}</a>
           ·
-          <a href="{{ url_for('page_clauses_generate', contract_type=r.contract_type) }}?format=docx">生成</a>
+          <a href="{{ url_for('page_clauses_generate', contract_type=r.contract_type) }}?format=docx">{{ t.clauses.generate }}</a>
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="7" class="muted">暂无条款。点击右上角“从语料抽取”或运行 <code>python -m src.clauses extract</code>。</td></tr>
+      <tr><td colspan="7" class="muted">{{ t.clauses.empty|safe }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

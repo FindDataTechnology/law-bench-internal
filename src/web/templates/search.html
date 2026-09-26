@@ -1,18 +1,18 @@
 {% extends "base.html" %}
-{% block title %}语义搜索 · {{ t.nav.brand }}{% endblock %}
+{% block title %}{{ t.search.h1 }} · {{ t.nav.brand }}{% endblock %}
 {% block content %}
-<h1>语义搜索 / Semantic Search</h1>
-<p class="muted">检索合同模板与已生成草案中的相关条款。 / Search clauses across contract templates and drafts.</p>
+<h1>{{ t.search.h1 }}</h1>
+<p class="muted">{{ t.search.intro }}</p>
 <form method="get" action="{{ url_for('page_search') }}" class="search-form">
-  <input type="text" name="q" value="{{ q }}" placeholder="搜索合同条款… (e.g. 保密义务 / confidentiality)" autofocus
+  <input type="text" name="q" value="{{ q }}" placeholder="{{ t.search.ph }}" autofocus
          style="min-width:60%">
-  <button type="submit" class="btn">搜索 / Search</button>
+  <button type="submit" class="btn">{{ t.search.submit }}</button>
 </form>
 
 {% if error %}
-  <div class="flash error">搜索后端不可用 / search backend unavailable: {{ error }}</div>
+  <div class="flash error">{{ t.search.backend_down }}: {{ error }}</div>
 {% elif q %}
-  <p class="muted">找到 {{ results|length }} 条结果 · {{ results|length }} result(s)</p>
+  <p class="muted">{{ tr('search.results', n=results|length) }}</p>
   <ol class="search-results">
   {% for r in results %}
     <li>

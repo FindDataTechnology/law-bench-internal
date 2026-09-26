@@ -192,3 +192,67 @@ def test_decide_rejects_verdict_not_allowed_for_batch(seeded_db, annotator_clien
     r = annotator_client.post(f"/review/{task_id}/decide", data={"verdict": "approved"})
     assert r.status_code == 400
     assert review.get_task_detail(task_id, db=seeded_db)["status"] == "pending"
+
+
+# --- decision-flow continuation (change review-flow-momentum) -------------- #
+
+
+def _pending_ids(conn, batch_id: str) -> list[int]:
+    return [t["id"] for t in review.list_tasks(batch_id=batch_id, status="pending", db=conn)]
+
+
+def test_decide_redirects_to_next_pending_task(seeded_db, annotator_client):
+    _seed(seeded_db)
+    ids = _pending_ids(seeded_db, "web1")
+    assert len(ids) == 2
+
+    r = annotator_client.post(
+        f"/review/{ids[0]}/decide", data={"verdict": "fail"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"].startswith(f"/review/{ids[1]}?")
+    assert "msg=" in r.headers["location"]
+    # The just-decided task is recorded; the next one is still pending.
+    assert review.get_task_detail(ids[0], db=seeded_db)["status"] == "decided"
+    assert review.get_task_detail(ids[1], db=seeded_db)["status"] == "pending"
+
+
+def test_decide_queue_drained_redirects_to_batch_list(seeded_db, annotator_client):
+    _seed(seeded_db)
+    ids = _pending_ids(seeded_db, "web1")
+    annotator_client.post(f"/review/{ids[0]}/decide", data={"verdict": "fail"})
+
+    r = annotator_client.post(
+        f"/review/{ids[1]}/decide", data={"verdict": "pass"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"].startswith("/review?batch=web1")
+    assert "msg=" in r.headers["location"]
+
+
+def test_pending_task_shows_position_hints_and_primary_submit(seeded_db, annotator_client):
+    _seed(seeded_db)
+    ids = _pending_ids(seeded_db, "web1")
+
+    page = annotator_client.get(f"/review/{ids[0]}")
+    assert page.status_code == 200
+    body = page.text
+    assert "第 1 / 2 条待判" in body
+    assert "（按 1）" in body and "（按 2）" in body
+    assert "btn btn-primary" in body
+    # The keyboard listener ships only with a pending decision form.
+    assert "addEventListener('keydown'" in body
+
+
+def test_decided_task_has_no_position_indicator_or_form(seeded_db, annotator_client):
+    _seed(seeded_db)
+    ids = _pending_ids(seeded_db, "web1")
+    review.decide_task(task_id=ids[0], annotator="annotator@example.com", verdict="fail", db=seeded_db)
+
+    page = annotator_client.get(f"/review/{ids[0]}")
+    assert page.status_code == 200
+    assert "条待判</strong>" not in page.text
+    assert "（按 1）" not in page.text
+    assert "addEventListener('keydown'" not in page.text

@@ -45,10 +45,6 @@ from src.settings import ConfigError
 # signing contexts if more itsdangerous-based signers are added later.
 _SALT = "lawbench-session-v1"
 
-# Keys a session payload must carry. ``sub`` is the only strictly required
-# field (it is the user's stable Logto id); the rest may be empty strings / [].
-_REQUIRED_PAYLOAD_KEYS = ("sub", "name", "email", "scopes")
-
 
 class SessionError(Exception):
     """A session cookie was present but malformed / not a valid payload dict."""

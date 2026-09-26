@@ -1,43 +1,43 @@
 {% extends "base.html" %}
-{% block title %}新建条款 · {{ zh }} · {{ t.nav.brand }}{% endblock %}
+{% block title %}{{ tr('clauses.new_h1', name=zh) }} · {{ t.nav.brand }}{% endblock %}
 {% block content %}
 <div class="toolbar between">
-  <h1>新建条款 · {{ zh }}</h1>
-  <a class="btn btn-sm btn-ghost" href="{{ url_for('page_clauses_detail', contract_type=contract_type) }}">返回</a>
+  <h1>{{ tr('clauses.new_h1', name=zh) }}</h1>
+  <a class="btn btn-sm btn-ghost" href="{{ url_for('page_clauses_detail', contract_type=contract_type) }}">{{ t.clauses.back }}</a>
 </div>
-<p class="muted"><code>{{ contract_type }}</code> · 手工录入的条款标记为 <code>manual</code>，重抽取时保留。正文里的 <code>{{ '{' }}{{ '{' }}slot{{ '}' }}{{ '}' }}</code> 会自动生成插槽说明，<code>《...》</code> 会自动提取为关联法条。</p>
+<p class="muted">{{ tr('clauses.new_hint', type=contract_type)|safe }}</p>
 
 <form method="post" action="{{ url_for('page_clauses_new', contract_type=contract_type) }}" class="panel">
   <p>
-    <label>章节</label>
+    <label>{{ t.clauses.section }}</label>
     <input type="text" name="section" value="附则" required style="width:12em">
-    <span class="muted small">如：当事人 / 违约责任 / 附则</span>
+    <span class="muted small">{{ t.clauses.section_hint }}</span>
   </p>
   <p>
-    <label>类别</label>
+    <label>{{ t.clauses.category }}</label>
     <select name="category">
       {% for c in categories %}
       <option value="{{ c }}" {% if c == 'custom' %}selected{% endif %}>{{ category_zh[c] }}（{{ c }}）</option>
       {% endfor %}
     </select>
-    <span class="muted small">自定义=custom；标签需填业务场景；基本=全国</span>
+    <span class="muted small">{{ t.clauses.category_hint }}</span>
   </p>
   <p>
-    <label>正文</label>
-    <textarea name="body" rows="12" style="width:100%" placeholder="甲方：{{ '{{' }}party_a{{ '}}' }}；依据《民法典》……" required></textarea>
+    <label>{{ t.clauses.body }}</label>
+    <textarea name="body" rows="12" style="width:100%" placeholder="{{ t.clauses.body_ph }}" required></textarea>
   </p>
   <p>
-    <label>标签</label>
+    <label>{{ t.clauses.tags }}</label>
     <span class="inline">
       {% for dim in tag_filters %}
       <select name="{{ dim }}" style="width:9em">
-        <option value="">{{ dim }}（未标注）</option>
+        <option value="">{{ dim }}{{ t.clauses.untagged }}</option>
         {% for v in tag_vocab[dim] %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
       </select>
       {% endfor %}
     </span>
-    <span class="muted small">stance=利益倾向 · strength=强度 · risk=风险 · mandatory=法律性质 · scenario=业务场景</span>
+    <span class="muted small">{{ t.clauses.tags_hint }}</span>
   </p>
-  <button type="submit" class="btn">创建条款</button>
+  <button type="submit" class="btn">{{ t.clauses.create }}</button>
 </form>
 {% endblock %}

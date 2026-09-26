@@ -1,28 +1,28 @@
 {% extends "base.html" %}
-{% block title %}引法审计 · {{ t.nav.brand }}{% endblock %}
+{% block title %}{{ t.catalog.audit_h1 }} · {{ t.nav.brand }}{% endblock %}
 {% block content %}
 <div class="toolbar between">
-  <h1>条款引法审计</h1>
-  <a class="btn btn-sm btn-ghost" href="{{ url_for('page_law_catalog_review') }}">未解析复核队列</a>
+  <h1>{{ t.catalog.audit_h1 }}</h1>
+  <a class="btn btn-sm btn-ghost" href="{{ url_for('page_law_catalog_review') }}">{{ t.catalog.to_review }}</a>
 </div>
 <p class="muted">
-  法规目录快照：{{ result.snapshot.rows }} 部法规（max_id={{ result.snapshot.max_id }}，导入 {{ result.snapshot.imported_at or '—' }}）。
-  引用分类仅依据法规 status；expiry（施行日期）不参与判定。
+  {{ tr('catalog.snapshot_line', rows=result.snapshot.rows, max_id=result.snapshot.max_id, imported=result.snapshot.imported_at or '—') }}
+  {{ t.catalog.snapshot_note }}
 </p>
 
 <div class="panel">
-  <h3 style="margin-top:0">总览（共 {{ result.total }} 条引用）</h3>
+  <h3 style="margin-top:0">{{ tr('catalog.overview_h2', n=result.total) }}</h3>
   <ul>
-    <li><strong style="color:#c0392b">引用已废法律</strong>：{{ result.summary.repealed }} 条</li>
-    <li><strong>已修改（多数仍有效，仅被修正）</strong>：{{ result.summary.amended }} 条</li>
-    <li><strong>兜底清单（未解析或状态缺失/脏值）</strong>：{{ result.summary.fallback }} 条</li>
-    <li>正常：{{ result.summary.ok }} 条</li>
+    <li><strong style="color:var(--danger)">{{ tr('catalog.count_repealed', n=result.summary.repealed) }}</strong></li>
+    <li><strong>{{ tr('catalog.count_amended', n=result.summary.amended) }}</strong></li>
+    <li><strong>{{ tr('catalog.count_fallback', n=result.summary.fallback) }}</strong></li>
+    <li>{{ tr('catalog.count_ok', n=result.summary.ok) }}</li>
   </ul>
 </div>
 
 {% set sections = [
-  ('repealed', '引用已废法律'),
-  ('amended', '已修改（多数仍有效，仅被修正）')
+  ('repealed', t.catalog.cat_repealed),
+  ('amended', t.catalog.cat_amended)
 ] %}
 {% for cat, label in sections %}
 <div class="panel">
@@ -30,7 +30,7 @@
   {% if result.findings[cat] %}
   <table>
     <thead>
-      <tr><th>合同类型</th><th>条款</th><th>引用名</th><th>目录法规</th><th>状态</th><th>解析方式</th></tr>
+      <tr><th>{{ t.catalog.col_type }}</th><th>{{ t.catalog.col_clause }}</th><th>{{ t.catalog.col_cited }}</th><th>{{ t.catalog.col_title }}</th><th>{{ t.catalog.col_status }}</th><th>{{ t.catalog.col_via }}</th></tr>
     </thead>
     <tbody>
       {% for it in result.findings[cat] %}
@@ -46,7 +46,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="muted">（无）</p>
+  <p class="muted">{{ t.catalog.none }}</p>
   {% endif %}
 </div>
 {% endfor %}

@@ -16,6 +16,17 @@
 (function () {
   'use strict';
 
+  // Chrome catalog for this panel (base.html bootstraps window.__LOCALE__).
+  var L = (window.__LOCALE__ && window.__LOCALE__.gen) || {};
+  // fmt('key', {placeholder: value}) — catalog strings carry {name} placeholders.
+  function fmt(key, params) {
+    var s = L[key] || '';
+    if (params) Object.keys(params).forEach(function (k) {
+      s = s.split('{' + k + '}').join(String(params[k]));
+    });
+    return s;
+  }
+
   var panel = document.getElementById('generation-panel');
   if (!panel) return;
   var contractType = panel.getAttribute('data-contract-type') || '';
@@ -103,24 +114,20 @@
     if (tcRaw) {
       try {
         var parsed = JSON.parse(tcRaw);
-        if (!Array.isArray(parsed)) throw new Error('不是数组');
+        if (!Array.isArray(parsed)) throw new Error(L.err_not_array);
         body.tag_combinations = parsed;
       } catch (e) {
-        throw new Error('tag_combinations 不是合法的 JSON 数组：' + e.message);
+        throw new Error(fmt('err_tc_invalid', { msg: e.message }));
       }
     }
     if (!body.enumerate_all && !(body.tag_combinations && body.tag_combinations.length)) {
-      throw new Error('模式 D 需要填写 tag_combinations 或勾选「枚举全部组合」');
+      throw new Error(L.err_d_requires);
     }
     return body;
   }
 
   // E/F/G 确认文案：点明各自改写的状态。{N} 占位替换为实际迭代上限。
-  var CONFIRM = {
-    E: '将运行自愈流水线（生成→填充→评价→自愈，最多 {N} 次迭代），可能写入 clauses 表与 pipeline_runs。确认继续？',
-    F: '将运行自动拒绝流水线：除自愈外，还会把累计被多次判定不合格的自定义条款标记为 rejected（clauses 表）。确认继续？',
-    G: '将通过 LLM 重写该类型的母版正文，直接改写全局文件 src/contracts/data/contracts.json。确认继续？'
-  };
+  var CONFIRM = { E: L.confirm_e, F: L.confirm_f, G: L.confirm_g };
 
   function downloadLink(href, label) {
     if (!href) return '';
@@ -132,34 +139,34 @@
   function renderSyncResult(mode, data) {
     var html = '';
     if (mode === 'B') {
-      html += '<div class="flash ok">组装完成。</div>';
+      html += '<div class="flash ok">' + L.done_assemble + '</div>';
       html += '<div class="toolbar">' +
-        downloadLink(data.docx_url, '下载 DOCX') + downloadLink(data.pdf_url, '下载 PDF') + '</div>';
+        downloadLink(data.docx_url, L.download_docx) + downloadLink(data.pdf_url, L.download_pdf) + '</div>';
       if (data.diagnostics) {
-        html += '<details><summary class="muted">诊断信息</summary><pre class="prompt-content">' +
+        html += '<details><summary class="muted">' + L.diagnostics + '</summary><pre class="prompt-content">' +
           escapeHtml(JSON.stringify(data.diagnostics, null, 2)) + '</pre></details>';
       }
     } else if (mode === 'C') {
       if (data.docx_url || data.pdf_url) {
-        var reused = data.reused ? '（复用已有 artifact）' : '';
-        html += '<div class="flash ok">已存储到 MinIO' + reused + '。artifact #' +
-          escapeHtml(data.artifact_id) + '</div>';
+        var reused = data.reused ? L.reused_suffix : '';
+        html += '<div class="flash ok">' + escapeHtml(fmt('stored_ok', { reused: reused, id: data.artifact_id })) + '</div>';
         html += '<div class="toolbar">' +
-          downloadLink(data.docx_url, '下载 DOCX') + downloadLink(data.pdf_url, '下载 PDF') + '</div>';
+          downloadLink(data.docx_url, L.download_docx) + downloadLink(data.pdf_url, L.download_pdf) + '</div>';
       } else if (Array.isArray(data.artifacts)) {
-        html += '<div class="flash ok">批量存储完成：' + (data.count || 0) +
-          ' 个 artifact（新增 ' + (data.new || 0) + '，复用 ' + (data.reused || 0) +
-          '，失败 ' + (data.failed || 0) + '）</div>';
+        html += '<div class="flash ok">' + escapeHtml(fmt('batch_stored', {
+          count: data.count || 0, new: data.new || 0, reused: data.reused || 0, failed: data.failed || 0
+        })) + '</div>';
         if (data.failed) {
-          html += '<details><summary class="muted">失败明细</summary><pre class="prompt-content">' +
+          html += '<details><summary class="muted">' + L.failure_detail + '</summary><pre class="prompt-content">' +
             escapeHtml(JSON.stringify(data.failures, null, 2)) + '</pre></details>';
         }
       } else {
         html += '<pre class="prompt-content">' + escapeHtml(JSON.stringify(data, null, 2)) + '</pre>';
       }
     } else if (mode === 'D') {
-      html += '<div class="flash ok">批量组装：请求 ' + (data.total_requested || 0) +
-        '，成功 ' + (data.success_count || 0) + '，失败 ' + (data.failure_count || 0) + '。</div>';
+      html += '<div class="flash ok">' + escapeHtml(fmt('batch_assembled', {
+        total: data.total_requested || 0, ok: data.success_count || 0, fail: data.failure_count || 0
+      })) + '</div>';
       (data.results || []).forEach(function (r) {
         var tags = r.tags ? JSON.stringify(r.tags) : '';
         if (r.success) {
@@ -179,32 +186,34 @@
   function renderJobResult(kind, ref, errMsg) {
     var html = '';
     if (errMsg) {
-      html += '<div class="flash error">失败：' + escapeHtml(errMsg) + '</div>';
+      html += '<div class="flash error">' + escapeHtml(L.failed_prefix + errMsg) + '</div>';
     } else if (kind === 'pipeline') {
       var pass = ref && ref.all_pass;
-      html += '<div class="flash ' + (pass ? 'ok' : 'error') + '">自愈流水线完成：第 ' +
-        (ref && ref.iteration != null ? ref.iteration : '-') + ' 次迭代，得分 ' +
-        (ref && ref.score != null ? ref.score : '-') + '/' +
-        (ref && ref.n_criteria != null ? ref.n_criteria : '-') +
-        (pass ? '（全部通过）' : '（未全部通过）') + '</div>';
+      html += '<div class="flash ' + (pass ? 'ok' : 'error') + '">' + escapeHtml(fmt('pipeline_done', {
+        iter: (ref && ref.iteration != null ? ref.iteration : '-'),
+        score: (ref && ref.score != null ? ref.score : '-'),
+        criteria: (ref && ref.n_criteria != null ? ref.n_criteria : '-'),
+        pass: pass ? L.all_pass : L.not_all_pass
+      })) + '</div>';
       if (ref && ref.eval_run_id != null) {
         html += '<div class="muted">eval_run_id: ' + escapeHtml(ref.eval_run_id) +
           ' · pipeline_run_id: ' + escapeHtml(ref.pipeline_run_id) + '</div>';
       }
     } else if (kind === 'auto_reject') {
       var pass2 = ref && ref.all_pass;
-      html += '<div class="flash ' + (pass2 ? 'ok' : 'error') + '">自动拒绝流水线完成：第 ' +
-        (ref && ref.iteration != null ? ref.iteration : '-') + ' 次迭代，得分 ' +
-        (ref && ref.score != null ? ref.score : '-') +
-        (pass2 ? '（全部通过）' : '') + '</div>';
+      html += '<div class="flash ' + (pass2 ? 'ok' : 'error') + '">' + escapeHtml(fmt('auto_reject_done', {
+        iter: (ref && ref.iteration != null ? ref.iteration : '-'),
+        score: (ref && ref.score != null ? ref.score : '-'),
+        criteria: (ref && ref.n_criteria != null ? ref.n_criteria : '-'),
+        pass: pass2 ? L.all_pass : ''
+      })) + '</div>';
       if (ref && ref.learn_applied != null) {
-        html += '<div class="muted">自动拒绝条款数 learn_applied: ' +
-          escapeHtml(ref.learn_applied) + '</div>';
+        html += '<div class="muted">' + escapeHtml(fmt('learn_applied', { n: ref.learn_applied })) + '</div>';
       }
     } else if (kind === 'regenerate') {
-      html += '<div class="flash ok">母版重生成完成（exit 0）。刷新页面可查看新正文。</div>';
+      html += '<div class="flash ok">' + L.regen_done + '</div>';
       if (ref && ref.stdout) {
-        html += '<details><summary class="muted">stdout（尾部 2000 字符）</summary>' +
+        html += '<details><summary class="muted">' + L.stdout_tail + '</summary>' +
           '<pre class="prompt-content">' + escapeHtml(String(ref.stdout).slice(-2000)) + '</pre></details>';
       }
     } else {
@@ -225,21 +234,21 @@
           n++;
           if (job.status === 'completed' || job.status === 'failed') {
             submitBtn.disabled = false;
-            setStatus(job.status === 'completed' ? '完成。' : '失败。',
+            setStatus(job.status === 'completed' ? L.status_done : L.status_failed,
               job.status === 'completed' ? 'ok' : 'error');
             renderJobResult(job.kind, job.result_ref, job.error_message);
             resolve(job);
           } else if (n >= MAX_POLLS) {
             submitBtn.disabled = false;
-            setStatus('轮询超时，请稍后刷新页面查看 job #' + jobId + '。', 'error');
+            setStatus(fmt('poll_timeout', { id: jobId }), 'error');
             reject(new Error('poll timeout'));
           } else {
-            setStatus('运行中…（' + job.status + '）');
+            setStatus(fmt('status_running', { status: job.status }));
             setTimeout(tick, POLL_MS);
           }
         }).catch(function (err) {
           submitBtn.disabled = false;
-          setStatus('查询失败：' + err.message, 'error');
+          setStatus(fmt('status_query_failed', { msg: err.message }), 'error');
           reject(err);
         });
       }
@@ -251,11 +260,11 @@
   async function submitAsync(url, body, mode) {
     var msg = CONFIRM[mode].replace('{N}', String(body.max_iterations || 3));
     if (!window.confirm(msg)) {
-      setStatus('已取消。');
+      setStatus(L.status_cancelled);
       return;
     }
     submitBtn.disabled = true;
-    setStatus('提交中…');
+    setStatus(L.status_submitting);
     clearResult();
     try {
       var r = await fetch(url, {
@@ -268,11 +277,11 @@
         throw new Error((err1 && (err1.detail || err1.error)) || ('HTTP ' + r.status));
       }
       var data = await r.json();
-      setStatus('已提交，job #' + data.job_id + '，轮询中…');
+      setStatus(fmt('status_submitted', { id: data.job_id }));
       await pollJob(data.job_id);
     } catch (err) {
       submitBtn.disabled = false;
-      setStatus('错误：' + err.message, 'error');
+      setStatus(fmt('status_error', { msg: err.message }), 'error');
       resultEl.innerHTML = '<div class="flash error">' + escapeHtml(err.message) + '</div>';
     }
   }
@@ -280,7 +289,7 @@
   // B/C/D：同步 POST → 200 → 渲染下载链接。
   async function submitSync(url, body, mode) {
     submitBtn.disabled = true;
-    setStatus('生成中…');
+    setStatus(L.status_generating);
     clearResult();
     try {
       var r = await fetch(url, {
@@ -292,10 +301,10 @@
       if (!r.ok) {
         throw new Error((data && (data.detail || data.error)) || ('HTTP ' + r.status));
       }
-      setStatus('完成。', 'ok');
+      setStatus(L.status_done, 'ok');
       renderSyncResult(mode, data);
     } catch (err) {
-      setStatus('错误：' + err.message, 'error');
+      setStatus(fmt('status_error', { msg: err.message }), 'error');
       resultEl.innerHTML = '<div class="flash error">' + escapeHtml(err.message) + '</div>';
     } finally {
       submitBtn.disabled = false;
@@ -306,9 +315,9 @@
   function renderModeA() {
     clearResult();
     var base = '/contracts/' + encodeURIComponent(contractType) + '/download/';
-    var html = '<div class="flash ok">母版骨架：点击下载。</div>';
+    var html = '<div class="flash ok">' + L.mode_a_hint + '</div>';
     html += '<div class="toolbar">' +
-      downloadLink(base + 'docx', '下载 DOCX') + downloadLink(base + 'pdf', '下载 PDF') + '</div>';
+      downloadLink(base + 'docx', L.download_docx) + downloadLink(base + 'pdf', L.download_pdf) + '</div>';
     resultEl.innerHTML = html;
     setStatus('');
   }
@@ -335,7 +344,7 @@
       }
     } catch (err) {
       submitBtn.disabled = false;
-      setStatus('错误：' + err.message, 'error');
+      setStatus(fmt('status_error', { msg: err.message }), 'error');
       resultEl.innerHTML = '<div class="flash error">' + escapeHtml(err.message) + '</div>';
     }
   });

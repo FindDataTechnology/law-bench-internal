@@ -36,12 +36,6 @@ def _annotator_of(user: User) -> str:
     return user.email or user.name or user.sub
 
 
-def _verdict_labels(batch_type: str) -> dict[str, str]:
-    if batch_type == "validity":
-        return {"pass": "通过（与标准一致）", "fail": "不通过（与标准不符）"}
-    return {"approved": "认可该判定", "rejected": "不认可该判定", "skipped": "跳过"}
-
-
 @read_only_router.get("/review", include_in_schema=False, name="page_review")
 def review_home(
     request: Request,
@@ -93,13 +87,28 @@ def review_task(
             request, "review_task.html", {"task": None, "task_id": task_id},
             status_code=404,
         )
+    # Queue position context for the pending page (spec: Queue Position
+    # Indicator). Computed against the *annotator's own* pending queue — the
+    # same exclusion list_tasks applies post-decide — so the indicator and the
+    # decide-redirect below can never disagree. Tasks outside that queue (e.g.
+    # a sibling slot this annotator already decided) and already-decided tasks
+    # get no indicator.
+    pending_ids = None
+    if task["status"] == "pending":
+        mine = review_store.list_tasks(
+            batch_id=task["batch_id"], status="pending",
+            for_annotator=_annotator_of(user), db=db,
+        )
+        ids = [t["id"] for t in mine]
+        if task_id in ids:
+            pending_ids = ids
     return _templates.TemplateResponse(
         request,
         "review_task.html",
         {
             "task": task,
-            "verdict_labels": _verdict_labels(task["batch_type"]),
             "me": _annotator_of(user),
+            "pending_ids": pending_ids,
         },
     )
 
@@ -132,11 +141,28 @@ async def review_decide(
         raise HTTPException(status_code=400, detail=str(exc))
     if not outcome["ok"]:
         return RedirectResponse(
-            f"/review/{task_id}?flash={quote('该条目已被其他标注员处理')}",
+            f"/review/{task_id}?flash=review.msg_conflict",
+            status_code=303,
+        )
+    # Momentum flow (spec: Decision Flow Continuation): land the annotator on
+    # their next pending task in the same batch instead of the list; only a
+    # drained queue falls back to the batch view. ``msg`` rides base.html's
+    # ok-flash and is a catalog key, so it renders in the active locale; the
+    # conflict path above keeps the task page's error ``flash`` (also a key).
+    batch_id = outcome["task"]["batch_id"]
+    remaining = review_store.list_tasks(
+        batch_id=batch_id, status="pending",
+        for_annotator=_annotator_of(user), db=db,
+    )
+    if remaining:
+        next_id = remaining[0]["id"]
+        return RedirectResponse(
+            f"/review/{next_id}?msg=review.msg_recorded",
             status_code=303,
         )
     return RedirectResponse(
-        f"/review?flash={quote('已记录判定')}", status_code=303
+        f"/review?batch={quote(batch_id)}&msg=review.msg_queue_done",
+        status_code=303,
     )
 
 

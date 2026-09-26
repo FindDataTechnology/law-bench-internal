@@ -1,18 +1,18 @@
 {% extends "base.html" %}
-{% block title %}合同模板 · {{ t.nav.brand }}{% endblock %}
+{% block title %}{{ t.contracts.h1 }} · {{ t.nav.brand }}{% endblock %}
 {% block content %}
 <div class="toolbar between">
-  <h1>合同模板</h1>
+  <h1>{{ t.contracts.h1 }}</h1>
 </div>
-<p class="muted">选择合同类型，查看可填写的合同模板、字段说明及相关法律法规，并下载 DOCX / PDF。每份合同由 doubao 大模型依据该类法律法规单独起草，含 12 个可填写占位符；详情页见“生成原理”。</p>
+<p class="muted">{{ t.contracts.intro }}</p>
 
 <div class="panel">
   <table>
     <thead>
       <tr>
         <th>#</th>
-        <th>合同类型</th>
-        <th>操作</th>
+        <th>{{ t.contracts.col_type }}</th>
+        <th>{{ t.contracts.col_actions }}</th>
       </tr>
     </thead>
     <tbody>
@@ -24,12 +24,12 @@
           <div class="muted"><code>{{ ct.key }}</code></div>
         </td>
         <td>
-          <a href="{{ url_for('page_contract_detail', contract_type=ct.key) }}">查看</a>
+          <a href="{{ url_for('page_contract_detail', contract_type=ct.key) }}">{{ t.contracts.view }}</a>
         </td>
       </tr>
       {% endfor %}
       {% if not types %}
-      <tr><td colspan="3" class="muted">暂无合同类型</td></tr>
+      <tr><td colspan="3" class="muted">{{ t.contracts.empty }}</td></tr>
       {% endif %}
     </tbody>
   </table>

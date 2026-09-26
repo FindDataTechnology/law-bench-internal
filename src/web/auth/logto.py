@@ -90,21 +90,6 @@ def _get_client() -> httpx.Client:
     return _client
 
 
-def close() -> None:
-    """Close the shared HTTP client (test/shutdown helper; no-op if unopened)."""
-    global _client, _discovery, _jwks
-    with _client_lock:
-        if _client is not None:
-            try:
-                _client.close()
-            except Exception:  # noqa: BLE001
-                pass
-            _client = None
-    with _cache_lock:
-        _discovery = None
-        _jwks = None
-
-
 def _discovery_url() -> str:
     if not LOGTO_ENDPOINT:
         raise LogtoError("LOGTO_ENDPOINT is not configured")

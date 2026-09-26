@@ -7,18 +7,18 @@
       action="{{ url_for('page_create_rubric') if mode == 'create' else url_for('page_update_rubric', name=rubric.name) }}">
   <div class="panel">
     <div class="row">
-      <label>{{ t.form.name }} <span class="muted">{{ t.form.unique_among_local }}</span></label>
-      <input type="text" name="name" required value="{{ rubric.name if rubric else '' }}"
+      <label for="rf-name">{{ t.form.name }} <span class="muted">{{ t.form.unique_among_local }}</span></label>
+      <input type="text" id="rf-name" name="name" required value="{{ rubric.name if rubric else '' }}"
              placeholder="{% if lang == 'zh' %}如：contract_sale_v2{% else %}e.g. contract_sale_v2{% endif %}">
     </div>
     <div class="row">
-      <label>{{ t.form.context }}</label>
-      <input type="text" name="context" required value="{{ rubric.context if rubric else '' }}"
+      <label for="rf-context">{{ t.form.context }}</label>
+      <input type="text" id="rf-context" name="context" required value="{{ rubric.context if rubric else '' }}"
              placeholder="{% if lang == 'zh' %}如：合同{% else %}e.g. contract{% endif %}">
     </div>
     <div class="row">
-      <label>{{ t.form.description }}</label>
-      <textarea name="description">{{ rubric.description if rubric else '' }}</textarea>
+      <label for="rf-description">{{ t.form.description }}</label>
+      <textarea id="rf-description" name="description">{{ rubric.description if rubric else '' }}</textarea>
     </div>
   </div>
 

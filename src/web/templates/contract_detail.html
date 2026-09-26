@@ -1,36 +1,36 @@
 {% extends "base.html" %}
-{% block title %}{% if template %}{{ template.zh_name }}{% else %}{{ contract_type }}{% endif %} · 合同模板{% endblock %}
+{% block title %}{% if template %}{{ template.zh_name }}{% else %}{{ contract_type }}{% endif %} · {{ t.contracts.h1 }}{% endblock %}
 {% block content %}
 <div class="toolbar between">
   <div>
     <h1>{% if template %}{{ template.zh_name }}{% else %}{{ contract_type }}{% endif %}</h1>
-    <a href="{{ url_for('page_contracts') }}">返回合同列表</a>
+    <a href="{{ url_for('page_contracts') }}">{{ t.contract.back }}</a>
   </div>
   <div>
     {% if template %}
-    <a class="btn btn-sm" href="{{ url_for('page_contract_download', contract_type=contract_type, format='docx') }}">下载 DOCX</a>
-    <a class="btn btn-sm" href="{{ url_for('page_contract_download', contract_type=contract_type, format='pdf') }}">下载 PDF</a>
+    <a class="btn btn-sm" href="{{ url_for('page_contract_download', contract_type=contract_type, format='docx') }}">{{ t.gen.download_docx }}</a>
+    <a class="btn btn-sm" href="{{ url_for('page_contract_download', contract_type=contract_type, format='pdf') }}">{{ t.gen.download_pdf }}</a>
     {% endif %}
   </div>
 </div>
 
 {% if not_found %}
-  <div class="flash error">未找到合同类型：<code>{{ contract_type }}</code></div>
+  <div class="flash error">{{ t.contract.not_found }}：<code>{{ contract_type }}</code></div>
 {% else %}
 <div class="law-info-grid">
   <section class="panel">
-    <h2>合同模板</h2>
-    <div class="muted"><code>{{ template.type }}</code> · 共 {{ instructions|length }} 个字段</div>
+    <h2>{{ t.contract.template_h2 }}</h2>
+    <div class="muted"><code>{{ template.type }}</code> · {{ tr('contract.fields_count', n=instructions|length) }}</div>
     <article class="markdown-body">
       {{ body_html|safe }}
     </article>
   </section>
 
   <section class="panel">
-    <h2>字段说明（Slot Instructions）</h2>
+    <h2>{{ t.contract.slots_h2 }}</h2>
     <table>
       <thead>
-        <tr><th>字段</th><th>说明</th><th>示例</th><th>必填</th></tr>
+        <tr><th>{{ t.contract.col_field }}</th><th>{{ t.contract.col_desc }}</th><th>{{ t.contract.col_example }}</th><th>{{ t.contract.col_required }}</th></tr>
       </thead>
       <tbody>
         {% for si in instructions %}
@@ -38,7 +38,7 @@
           <td><strong>{{ si.label }}</strong><div class="muted"><code>{{ si.name }}</code></div></td>
           <td>{{ si.description }}</td>
           <td class="muted">{{ si.example }}</td>
-          <td>{{ "是" if si.required else "否" }}</td>
+          <td>{{ t.contract.yes if si.required else t.contract.no }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -46,56 +46,56 @@
   </section>
 
   <section class="panel">
-    <h2>相关法律法规</h2>
+    <h2>{{ t.contract.law_h2 }}</h2>
     {% for g in grouped %}
     <h3>{{ g.category_zh }}</h3>
     <ul>
       {% for r in g.refs %}
-      <li>{{ r.name }} <span class="muted">（{{ r.sources|join("、") }}）</span></li>
+      <li>{{ r.name }} <span class="muted">（{{ r.sources|join(t.contract.sep_sources) }}）</span></li>
       {% endfor %}
     </ul>
     {% endfor %}
     {% if not grouped %}
-    <p class="muted">暂无相关法律法规</p>
+    <p class="muted">{{ t.contract.law_empty }}</p>
     {% endif %}
   </section>
 </div>
 
 <section class="panel" id="generation-panel" data-contract-type="{{ contract_type }}">
-  <h2>生成合同模板</h2>
-  <div class="muted">选择生成模式，填写共享参数，点击「生成」。A 为只读下载；B/C/D 同步返回下载链接；E/F/G 异步运行（修改数据），需二次确认。</div>
+  <h2>{{ t.contract.gen_h2 }}</h2>
+  <div class="muted">{{ t.contract.gen_intro }}</div>
 
   <form id="generation-form">
     <fieldset class="gen-modes">
-      <legend>生成模式</legend>
-      <label class="check"><input type="radio" name="mode" value="A" checked> A 母版骨架（下载）</label>
-      <label class="check"><input type="radio" name="mode" value="B"> B 标签组装</label>
-      <label class="check"><input type="radio" name="mode" value="C"> C 存储 MinIO</label>
-      <label class="check"><input type="radio" name="mode" value="D"> D 批量组装</label>
-      <label class="check"><input type="radio" name="mode" value="E"> E 自愈流水线</label>
-      <label class="check"><input type="radio" name="mode" value="F"> F 自动拒绝</label>
-      <label class="check"><input type="radio" name="mode" value="G"> G LLM 重生成</label>
+      <legend>{{ t.contract.mode_legend }}</legend>
+      <label class="check"><input type="radio" name="mode" value="A" checked> {{ t.contract.mode_a }}</label>
+      <label class="check"><input type="radio" name="mode" value="B"> {{ t.contract.mode_b }}</label>
+      <label class="check"><input type="radio" name="mode" value="C"> {{ t.contract.mode_c }}</label>
+      <label class="check"><input type="radio" name="mode" value="D"> {{ t.contract.mode_d }}</label>
+      <label class="check"><input type="radio" name="mode" value="E"> {{ t.contract.mode_e }}</label>
+      <label class="check"><input type="radio" name="mode" value="F"> {{ t.contract.mode_f }}</label>
+      <label class="check"><input type="radio" name="mode" value="G"> {{ t.contract.mode_g }}</label>
     </fieldset>
 
     <div class="gen-grid">
       <div class="row">
-        <label>立场 stance</label>
+        <label>{{ t.contract.stance }}</label>
         <select name="stance">
-          <option value="">（默认）</option>
+          <option value="">{{ t.contract.stance_default }}</option>
           <option value="balanced">balanced</option>
           <option value="pro_a">pro_a</option>
           <option value="pro_b">pro_b</option>
         </select>
       </div>
       <div class="row">
-        <label>业务场景 scenario</label>
-        <input type="text" name="scenario" placeholder="如 农产品买卖">
+        <label>{{ t.contract.scenario }}</label>
+        <input type="text" name="scenario" placeholder="{{ t.contract.scenario_ph }}">
       </div>
     </div>
 
     <div class="gen-grid">
       <div class="row">
-        <label>输出格式 format</label>
+        <label>{{ t.contract.format }}</label>
         <select name="format">
           <option value="docx">docx</option>
           <option value="pdf">pdf</option>
@@ -104,42 +104,42 @@
         </select>
       </div>
       <div class="row">
-        <label>自定义条款 id custom_clause_ids</label>
-        <input type="text" name="custom_clause_ids" placeholder="逗号分隔，如 101,102">
+        <label>{{ t.contract.custom_ids }}</label>
+        <input type="text" name="custom_clause_ids" placeholder="{{ t.contract.custom_ids_ph }}">
       </div>
     </div>
 
     <div class="gen-extra" data-mode="D">
       <div class="row">
-        <label>批量组合 tag_combinations（JSON 数组；留空且勾选下方枚举则枚举全部）</label>
+        <label>{{ t.contract.batch_label }}</label>
         <textarea name="tag_combinations" placeholder='[{"stance":"balanced"},{"scenario":"农产品买卖"}]'></textarea>
       </div>
-      <label class="check"><input type="checkbox" name="enumerate_all"> 枚举全部组合 enumerate_all</label>
+      <label class="check"><input type="checkbox" name="enumerate_all"> {{ t.contract.enumerate }}</label>
     </div>
 
     <div class="gen-extra" data-mode="EF">
       <div class="gen-grid">
         <div class="row">
-          <label>评价规则 rubric（留空取该类型最新版）</label>
+          <label>{{ t.contract.rubric_label }}</label>
           <input type="text" name="rubric" placeholder="contract_sale_v1">
         </div>
         <div class="row">
-          <label>最大迭代 max_iterations</label>
+          <label>{{ t.contract.max_iter }}</label>
           <input type="number" name="max_iterations" value="3" min="1" max="10">
         </div>
       </div>
       <div class="row">
-        <label>起草请求 task_desc</label>
-        <textarea name="task_desc" placeholder="原始起草需求，作为 judge 上下文"></textarea>
+        <label>{{ t.contract.task_desc }}</label>
+        <textarea name="task_desc" placeholder="{{ t.contract.task_desc_ph }}"></textarea>
       </div>
       <div class="row">
-        <label>温度 temperature</label>
+        <label>{{ t.contract.temperature }}</label>
         <input type="number" name="temperature" value="0" step="0.1" min="0" max="2">
       </div>
     </div>
 
     <div class="toolbar">
-      <button type="submit" class="btn btn-primary" id="gen-submit">生成</button>
+      <button type="submit" class="btn btn-primary" id="gen-submit">{{ t.contract.generate }}</button>
       <span id="gen-status" class="muted"></span>
     </div>
   </form>
@@ -148,13 +148,13 @@
 </section>
 
 <section class="panel">
-  <h2>生成原理</h2>
+  <h2>{{ t.contract.principle_h2 }}</h2>
   <ol>
-    <li><strong>数据来源</strong>：相关法律法规取自 Doubao 与 DeepSeek 的回答（每类合同一份，存放于 <code>src/eval/seed/law_info/</code>）。</li>
-    <li><strong>起草方式</strong>：由 doubao 大模型（<code>DRAFTER_MODEL</code>）依据上述法律法规，为该合同类型单独起草正文，条款结合该类合同特点，非通用模板。</li>
-    <li><strong>Slot 机制</strong>：正文中的 <code>{% raw %}{{slot}}{% endraw %}</code> 为可填写占位符，共 12 个；下载的 DOCX 中以高亮显示，按上方“字段说明”填写，也可用 <code>fill_slots</code> 程序化填充。</li>
-    <li><strong>文档生成</strong>：DOCX 由 <code>python-docx</code> 渲染，PDF 由 headless LibreOffice 转换，下载时按需生成。</li>
-    <li><strong>一致性保证</strong>：<code>normalize_body</code> 确保占位符与字段说明一一对应，<code>check_slot_consistency</code> 校验。</li>
+    <li>{{ t.contract.principle_1|safe }}</li>
+    <li>{{ t.contract.principle_2|safe }}</li>
+    <li>{{ t.contract.principle_3|safe }}</li>
+    <li>{{ t.contract.principle_4|safe }}</li>
+    <li>{{ t.contract.principle_5|safe }}</li>
   </ol>
 </section>
 {% endif %}

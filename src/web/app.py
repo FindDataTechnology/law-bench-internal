@@ -8,12 +8,9 @@ All routers — the HTML pages (``src/web/routes/pages.py`` and siblings) and
 the JSON API (``src/web/routes/api.py``) — are included unconditionally at
 module load, so a missing or broken router surfaces at startup instead of
 404-ing silently at request time. Manage-layer errors (``src/eval/manage.py``)
-are mapped to HTTP statuses here so routes stay thin.
-
-The Jinja2 ``templates`` renderer lives in ``src/web/templating.py`` (not here)
-so the HTML route modules can import it without a circular import through this
-module; it is re-exported below for any existing ``from ..app import
-templates`` callers.
+are mapped to HTTP statuses here so routes stay thin. The Jinja2 ``templates``
+renderer lives in ``src/web/templating.py`` (not here) so the HTML route
+modules can import it without a circular import through this module.
 """
 
 from __future__ import annotations
@@ -25,7 +22,6 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from src.eval import manage as M  # noqa: F401 — re-exported for callers
 from src.eval.manage import (
     ConflictError,
     HarborReadOnlyError,
@@ -36,9 +32,6 @@ from src.eval.manage import (
 
 from .i18n import resolve_locale
 from .paths import STATIC_DIR, TEMPLATES_DIR
-# Re-exported (bound before the routes import below) so route modules that do
-# ``from ..app import templates`` resolve without a circular-import error.
-from .templating import templates  # noqa: F401
 from .routes import (
     api,
     auth,

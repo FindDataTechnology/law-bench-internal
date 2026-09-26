@@ -35,7 +35,7 @@
       {% endfor %}
       {% if not compares %}
       <tr><td colspan="7" class="muted">{{ t.empty.compares }}
-        {% if has_scope('content:write') %}<a href="{{ url_for('page_new_compare') }}">{{ t.btn.new_compare }}</a>{% endif %}
+        {% if has_scope('content:write') %}<a href="{{ url_for('page_new_compare') }}">{{ t.btn.new_compare }}</a>{{ t.empty.compares_suffix }}{% endif %}
       </td></tr>
       {% endif %}
     </tbody>

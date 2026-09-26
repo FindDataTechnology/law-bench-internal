@@ -1,24 +1,24 @@
 {% extends "base.html" %}
-{% block title %}编辑条款 · {{ zh }} · {{ t.nav.brand }}{% endblock %}
+{% block title %}{{ tr('clauses.edit_h1', name=zh) }} · {{ t.nav.brand }}{% endblock %}
 {% block content %}
 <div class="toolbar between">
-  <h1>编辑条款 · {{ zh }}</h1>
+  <h1>{{ tr('clauses.edit_h1', name=zh) }}</h1>
   <div class="inline">
-    <a class="btn btn-sm btn-ghost" href="{{ url_for('page_clauses_detail', contract_type=contract_type) }}{% if q %}?q={{ q }}{% endif %}">返回</a>
+    <a class="btn btn-sm btn-ghost" href="{{ url_for('page_clauses_detail', contract_type=contract_type) }}{% if q %}?q={{ q }}{% endif %}">{{ t.clauses.back }}</a>
   </div>
 </div>
-<p class="muted"><code>{{ contract_type }}</code> · 条款 #{{ clause.id }}
-  {% if clause.source_path %}· 来源 <code>{{ clause.source_path }}</code>{% else %}· 自定义{% endif %}
+<p class="muted"><code>{{ contract_type }}</code> · {{ tr('clauses.clause_no', id=clause.id) }}
+  {% if clause.source_path %}· {{ t.clauses.source }}<code>{{ clause.source_path }}</code>{% else %}· {{ t.clauses.custom }}{% endif %}
   {% if clause.manual %}· <span class="badge local">manual</span>{% endif %}
-  · {{ clause.law_refs | length }} 部法规 · {{ clause.slot_instructions | length }} 插槽</p>
+  · {{ tr('clauses.laws_count', n=clause.law_refs|length) }} · {{ tr('clauses.slots_count', n=clause.slot_instructions|length) }}</p>
 
 <form method="post" action="{{ url_for('page_clauses_edit', contract_type=contract_type, clause_id=clause.id) }}" class="panel">
   <p>
-    <label>章节</label>
+    <label>{{ t.clauses.section }}</label>
     <input type="text" name="section" value="{{ clause.section }}" required style="width:12em">
   </p>
   <p>
-    <label>类别</label>
+    <label>{{ t.clauses.category }}</label>
     <select name="category">
       {% for c in categories %}
       <option value="{{ c }}" {% if c == clause.category %}selected{% endif %}>{{ category_zh[c] }}（{{ c }}）</option>
@@ -26,37 +26,37 @@
     </select>
   </p>
   <p>
-    <label>正文</label>
+    <label>{{ t.clauses.body }}</label>
     <textarea name="body" rows="14" style="width:100%" required>{{ clause.body }}</textarea>
   </p>
   <p>
-    <label>标签</label>
+    <label>{{ t.clauses.tags }}</label>
     <span class="inline">
       {% for dim in tag_dims %}
       <select name="{{ dim }}" style="width:9em">
-        <option value="">{{ dim }}（未标注）</option>
+        <option value="">{{ dim }}{{ t.clauses.untagged }}</option>
         {% for v in tag_vocab[dim] %}<option value="{{ v }}" {% if clause.tags.get(dim) == v %}selected{% endif %}>{{ v }}</option>{% endfor %}
       </select>
       {% endfor %}
     </span>
-    <span class="muted small">编辑正文不会自动改标签（标签是人工判断，不随正文派生）。</span>
+    <span class="muted small">{{ t.clauses.tags_edit_hint }}</span>
   </p>
   <div class="inline">
-    <button type="submit" class="btn">保存</button>
-    <form method="post" action="{{ url_for('page_clauses_delete', contract_type=contract_type, clause_id=clause.id) }}" class="inline" data-confirm="确定删除该条款？">
-      <button type="submit" class="btn btn-sm btn-ghost">删除</button>
+    <button type="submit" class="btn">{{ t.clauses.save }}</button>
+    <form method="post" action="{{ url_for('page_clauses_delete', contract_type=contract_type, clause_id=clause.id) }}" class="inline" data-confirm="{{ t.clauses.delete_confirm }}">
+      <button type="submit" class="btn btn-sm btn-ghost">{{ t.clauses.delete }}</button>
     </form>
   </div>
 </form>
 
 <div class="panel">
-  <h3 style="margin-top:0">预览</h3>
+  <h3 style="margin-top:0">{{ t.clauses.preview }}</h3>
   {{ body_html }}
   {% if clause.slot_instructions %}
-  <p class="muted small">插槽：{% for s in clause.slot_instructions %}<code>{{ s.name }}</code>{% if not loop.last %}、{% endif %}{% endfor %}</p>
+  <p class="muted small">{{ t.clauses.slots_prefix }}{% for s in clause.slot_instructions %}<code>{{ s.name }}</code>{% if not loop.last %}{{ t.clauses.sep }}{% endif %}{% endfor %}</p>
   {% endif %}
   {% if clause.law_refs %}
-  <p class="muted small">法条：{% for l in clause.law_refs %}《{{ l.name }}》{% if not loop.last %}、{% endif %}{% endfor %}</p>
+  <p class="muted small">{{ t.clauses.law_refs_prefix }}{% for l in clause.law_refs %}《{{ l.name }}》{% if not loop.last %}{{ t.clauses.sep }}{% endif %}{% endfor %}</p>
   {% endif %}
 </div>
 {% endblock %}

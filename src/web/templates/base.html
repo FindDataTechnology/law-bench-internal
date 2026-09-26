@@ -11,17 +11,23 @@
     <a class="brand" href="{{ url_for('page_list_rubrics') }}">{{ t.nav.brand }}</a>
     <nav>
       {% if has_scope('content:read') %}
-      <a href="{{ url_for('page_list_rubrics') }}">{{ t.nav.rubrics }}</a>
-      <a href="{{ url_for('page_list_prompts') }}">{{ t.nav.prompts }}</a>
-      <a href="{{ url_for('page_list_compares') }}">{{ t.nav.compare }}</a>
-      <a href="{{ url_for('page_law_info') }}">{{ t.nav.law_info }}</a>
-      <a href="{{ url_for('page_law_references') }}">{{ t.nav.law_references }}</a>
-      <a href="{{ url_for('page_contracts') }}">合同模板</a>
-      <a href="{{ url_for('page_samples') }}">合同样本</a>
-      <a href="{{ url_for('page_clauses') }}">条款库</a>
-      <a href="/dashboard">仪表板</a>
-      <a href="{{ url_for('page_review') }}">人工审查</a>
-      <a href="{{ url_for('page_search') }}">搜索</a>
+      {% set nav_items = [
+        (url_for('page_list_rubrics'), '/rubrics', t.nav.rubrics),
+        (url_for('page_list_prompts'), '/prompts', t.nav.prompts),
+        (url_for('page_list_compares'), '/compare', t.nav.compare),
+        (url_for('page_law_info'), '/law-info', t.nav.law_info),
+        (url_for('page_law_references'), '/law-references', t.nav.law_references),
+        (url_for('page_contracts'), '/contracts', t.nav.contracts),
+        (url_for('page_samples'), '/samples', t.nav.samples),
+        (url_for('page_clauses'), '/clauses', t.nav.clauses),
+        ('/dashboard', '/dashboard', t.nav.dashboard),
+        (url_for('page_review'), '/review', t.nav.review),
+        (url_for('page_search'), '/search', t.nav.search),
+      ] %}
+      {% set current_path = request.url.path %}
+      {% for href, prefix, label in nav_items %}
+      <a href="{{ href }}"{% if current_path.startswith(prefix) %} aria-current="page"{% endif %}>{{ label }}</a>
+      {% endfor %}
       {% endif %}
       <span class="lang-switch">
         <a href="{{ request.url.path }}?lang=en"{% if lang == 'en' %} aria-current="true"{% endif %}>{{ t.switch.en }}</a>
@@ -43,7 +49,7 @@
   </header>
   <main class="container">
     {% if request.query_params.get('msg') %}
-      <div class="flash {{ 'error' if request.query_params.get('err') else 'ok' }}">
+      <div class="flash {{ 'error' if request.query_params.get('err') else 'ok' }}" role="{{ 'alert' if request.query_params.get('err') else 'status' }}">
         {{ tr(request.query_params.get('msg'), name=request.query_params.get('name') or '', detail=request.query_params.get('detail') or '') }}
       </div>
     {% endif %}

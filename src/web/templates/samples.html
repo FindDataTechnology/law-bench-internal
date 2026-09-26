@@ -1,19 +1,19 @@
 {% extends "base.html" %}
-{% block title %}合同样本库 · {{ t.nav.brand }}{% endblock %}
+{% block title %}{{ t.samples.h1 }} · {{ t.nav.brand }}{% endblock %}
 
 {% block content %}
 <div class="toolbar between">
-  <h1>合同样本库</h1>
-  <span class="muted">共 {{ total }} 条{% if include_history %}（含历史）{% endif %}</span>
+  <h1>{{ t.samples.h1 }}</h1>
+  <span class="muted">{{ tr('samples.total', total=total) }}{% if include_history %}{{ t.samples.incl_history }}{% endif %}</span>
 </div>
-<p class="muted">浏览已生成并上传到 MinIO 的全部合同样本（按 业务场景 × 立场 排列组合）。先选合同类型，再按场景 / 立场筛选，直接下载 DOCX / PDF。</p>
+<p class="muted">{{ t.samples.intro }}</p>
 
 <div class="panel">
   <form method="GET" action="{{ url_for('page_samples') }}" class="filter-form">
     <div class="filter-group">
-      <label>合同类型</label>
+      <label>{{ t.samples.filter_type }}</label>
       <select name="contract_type" onchange="this.form.submit()">
-        <option value="">全部类型</option>
+        <option value="">{{ t.samples.all_types }}</option>
         {% for ct in all_types %}
         <option value="{{ ct.key }}"{% if selected_ct == ct.key %} selected{% endif %}>{{ ct.zh }}</option>
         {% endfor %}
@@ -21,9 +21,9 @@
     </div>
 
     <div class="filter-group">
-      <label>业务场景</label>
+      <label>{{ t.samples.filter_scenario }}</label>
       <select name="scenario" onchange="this.form.submit()">
-        <option value="">全部场景</option>
+        <option value="">{{ t.samples.all_scenarios }}</option>
         {% for s in scen_opts %}
         <option value="{{ s }}"{% if selected_scenario == s %} selected{% endif %}>{{ s }}</option>
         {% endfor %}
@@ -31,9 +31,9 @@
     </div>
 
     <div class="filter-group">
-      <label>立场</label>
+      <label>{{ t.samples.filter_stance }}</label>
       <select name="stance" onchange="this.form.submit()">
-        <option value="">全部立场</option>
+        <option value="">{{ t.samples.all_stances }}</option>
         {% for s in stance_opts %}
         <option value="{{ s }}"{% if selected_stance == s %} selected{% endif %}>{{ s }}</option>
         {% endfor %}
@@ -45,7 +45,7 @@
         <input type="checkbox" name="include_history" value="1"
                onchange="this.form.submit()"
                {% if include_history %}checked{% endif %}>
-        显示历史版本
+        {{ t.samples.include_history }}
       </label>
     </div>
 
@@ -55,7 +55,7 @@
     <noscript>
       <div class="filter-group">
         <label>&nbsp;</label>
-        <button type="submit" class="btn btn-primary">应用筛选</button>
+        <button type="submit" class="btn btn-primary">{{ t.samples.apply }}</button>
       </div>
     </noscript>
   </form>
@@ -66,11 +66,11 @@
     <thead>
       <tr>
         <th>#</th>
-        <th>合同类型</th>
-        <th>业务场景</th>
-        <th>立场</th>
-        <th>字段数</th>
-        <th>下载</th>
+        <th>{{ t.samples.col_type }}</th>
+        <th>{{ t.samples.col_scenario }}</th>
+        <th>{{ t.samples.col_stance }}</th>
+        <th>{{ t.samples.col_slots }}</th>
+        <th>{{ t.samples.col_download }}</th>
       </tr>
     </thead>
     <tbody>
@@ -85,18 +85,18 @@
           {% if a.docx_key %}
           <a href="/api/contracts/artifacts/{{ a.id }}/download?format=docx" class="btn btn-sm">DOCX</a>
           {% else %}
-          <span class="btn btn-sm disabled" title="未生成 DOCX">DOCX</span>
+          <span class="btn btn-sm disabled" title="{{ t.samples.no_docx }}">DOCX</span>
           {% endif %}
           {% if a.pdf_key %}
           <a href="/api/contracts/artifacts/{{ a.id }}/download?format=pdf" class="btn btn-sm">PDF</a>
           {% else %}
-          <span class="btn btn-sm disabled" title="未生成 PDF">PDF</span>
+          <span class="btn btn-sm disabled" title="{{ t.samples.no_pdf }}">PDF</span>
           {% endif %}
         </td>
       </tr>
       {% endfor %}
       {% if not artifacts %}
-      <tr><td colspan="6" class="muted">没有匹配的样本{% if selected_ct %}（类型 <code>{{ selected_ct }}</code>{% if selected_scenario %}，场景 {{ selected_scenario }}{% endif %}{% if selected_stance %}，立场 {{ selected_stance }}{% endif %}）{% endif %}</td></tr>
+      <tr><td colspan="6" class="muted">{% if selected_ct or selected_scenario or selected_stance %}{{ t.samples.empty_filtered }}{% else %}{{ t.samples.empty }}{% endif %}</td></tr>
       {% endif %}
     </tbody>
   </table>
@@ -105,17 +105,17 @@
 {% if pages > 1 %}
 <div class="pagination">
   {% if has_prev %}
-  <a href="?contract_type={{ selected_ct or '' }}&amp;scenario={{ selected_scenario or '' }}&amp;stance={{ selected_stance or '' }}&amp;limit={{ limit }}&amp;offset={{ offset - limit }}{% if include_history %}&amp;include_history=1{% endif %}" class="btn btn-sm">◀ 上一页</a>
+  <a href="?contract_type={{ selected_ct or '' }}&amp;scenario={{ selected_scenario or '' }}&amp;stance={{ selected_stance or '' }}&amp;limit={{ limit }}&amp;offset={{ offset - limit }}{% if include_history %}&amp;include_history=1{% endif %}" class="btn btn-sm">{{ t.samples.prev_page }}</a>
   {% else %}
-  <span class="btn btn-sm disabled">◀ 上一页</span>
+  <span class="btn btn-sm disabled">{{ t.samples.prev_page }}</span>
   {% endif %}
 
-  <span class="page-info">第 {{ page }} / {{ pages }} 页（共 {{ total }} 条）</span>
+  <span class="page-info">{{ tr('samples.page_info', page=page, pages=pages, total=total) }}</span>
 
   {% if has_next %}
-  <a href="?contract_type={{ selected_ct or '' }}&amp;scenario={{ selected_scenario or '' }}&amp;stance={{ selected_stance or '' }}&amp;limit={{ limit }}&amp;offset={{ offset + limit }}{% if include_history %}&amp;include_history=1{% endif %}" class="btn btn-sm">下一页 ▶</a>
+  <a href="?contract_type={{ selected_ct or '' }}&amp;scenario={{ selected_scenario or '' }}&amp;stance={{ selected_stance or '' }}&amp;limit={{ limit }}&amp;offset={{ offset + limit }}{% if include_history %}&amp;include_history=1{% endif %}" class="btn btn-sm">{{ t.samples.next_page }}</a>
   {% else %}
-  <span class="btn btn-sm disabled">下一页 ▶</span>
+  <span class="btn btn-sm disabled">{{ t.samples.next_page }}</span>
   {% endif %}
 </div>
 {% endif %}
