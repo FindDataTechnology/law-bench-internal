@@ -1,16 +1,16 @@
 # 条款引法审计报告
 
-目录快照：32296 部法规，max_id=85137，导入时间 2026-09-26T06:49:41.143861+00:00
+目录快照：32296 部法规，max_id=85137，导入时间 2026-09-26T11:05:06.995039+00:00
 审计范围：2188 条引用
 
 | 分类 | 数量 |
 | --- | ---: |
-| 引用已废法律 | 297 |
+| 引用已废法律 | 298 |
 | 已修改（多数仍有效，仅被修正） | 17 |
-| 兜底清单（未解析或状态缺失/脏值） | 651 |
-| 正常 | 1223 |
+| 兜底清单（未解析或状态缺失/脏值） | 612 |
+| 正常 | 1261 |
 
-## 引用已废法律（297）
+## 引用已废法律（298）
 
 | 合同类型 | 条款 | 引用名 | 目录法规 | 状态 | 解析方式 |
 | --- | --- | --- | --- | --- | --- |
@@ -78,6 +78,7 @@
 | intermediation | #3578 鉴于 | 《中华人民共和国合同法》 | 中华人民共和国合同法 | 已废止 | exact |
 | intermediation | #5324 鉴于 | 《中华人民共和国合同法》 | 中华人民共和国合同法 | 已废止 | exact |
 | intermediation | #6026 当事人 | 《中华人民共和国合同法》 | 中华人民共和国合同法 | 已废止 | exact |
+| intermediation | #6026 当事人 | 《网络交易管理办法》 | 网络交易管理办法 | 已失效 | exact |
 | labor_dispatch | #4752 鉴于 | 《中华人民共和国合同法》 | 中华人民共和国合同法 | 已废止 | exact |
 | land_transfer | #6649 当事人 | 《中华人民共和国合同法》 | 中华人民共和国合同法 | 已废止 | exact |
 | land_transfer | #6649 当事人 | 《中华人民共和国物权法》 | 中华人民共和国物权法 | 已废止 | exact |
@@ -334,7 +335,7 @@
 | utilities_supply | #2185 鉴于 | 《四川省城市供水条例》 | 四川省城市供水条例 | 已修改 | exact |
 | utilities_supply | #7687 鉴于 | 《江苏省城乡供水管理条例》 | 江苏省城乡供水管理条例 | 已修改 | exact |
 
-## 兜底清单（未解析或状态缺失/脏值）（651）
+## 兜底清单（未解析或状态缺失/脏值）（612）
 
 | 合同类型 | 条款 | 引用名 | 目录法规 | 状态 | 解析方式 |
 | --- | --- | --- | --- | --- | --- |
@@ -379,21 +380,16 @@
 | construction | #7572 合同标的 | 《项目定制内容表》 | — | — | unresolved |
 | construction | #7575 权利义务 | 《项目变更单》 | — | — | unresolved |
 | construction | #8203 价款及支付 | 《建设工程价款结算暂行办法》 | — | — | unresolved |
-| entrustment | #838 鉴于 | 《中华人民共和国食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | entrustment | #2057 附则 | 《天津市婚礼庆典投诉处理暂行办法》 | — | — | unresolved |
-| entrustment | #2864 鉴于 | 《殡葬管理条例》 | 殡葬管理条例 | sxx:3 | exact |
 | entrustment | #2867 权利义务 | 《殡葬代理机构服务规范》 | — | — | unresolved |
 | entrustment | #3413 权利义务 | 《协议书》 | — | — | unresolved |
 | entrustment | #3414 违约责任 | 《专用条件》 | — | — | unresolved |
 | entrustment | #3415 争议解决 | 《专用条件》 | — | — | unresolved |
-| entrustment | #3670 附则 | 《中华人民共和国网络安全法》 | 中华人民共和国网络安全法 | sxx:3 | exact |
 | entrustment | #3888 鉴于 | 《GB 31654—2021 食品安全国家标准 餐饮服务通用卫生规范》 | — | — | unresolved |
-| entrustment | #3888 鉴于 | 《中华人民共和国食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | entrustment | #3888 鉴于 | 《餐饮服务食品安全操作规范》 | — | — | unresolved |
 | entrustment | #3892 权利义务 | 《GB 31654—2021 食品安全国家标准 餐饮服务通用卫生规范》 | — | — | unresolved |
 | entrustment | #3892 权利义务 | 《食品安全员守则》 | — | — | unresolved |
 | entrustment | #3892 权利义务 | 《食品安全总监职责》 | — | — | unresolved |
-| entrustment | #3892 权利义务 | 《食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | entrustment | #3892 权利义务 | 《食品经营许可证》 | — | — | unresolved |
 | entrustment | #3892 权利义务 | 《餐饮服务食品安全操作规范》 | — | — | unresolved |
 | entrustment | #3894 合同解除 | 《食品经营许可证》 | — | — | unresolved |
@@ -419,9 +415,7 @@
 | entrustment | #5609 合同标的 | 《委托流转土地经营权基本情况表》 | — | — | unresolved |
 | entrustment | #5899 权利义务 | 《农作物种子经营许可证》 | — | — | unresolved |
 | entrustment | #6063 权利义务 | 《食品经营许可证》 | — | — | unresolved |
-| entrustment | #6064 违约责任 | 《食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | entrustment | #6134 合同标的 | 《车辆基本情况表》 | — | — | unresolved |
-| entrustment | #7677 权利义务 | 《中华人民共和国食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | equity_incentive | #6939 鉴于 | 《财政部 国家税务总局关于完善股权激励和技术入股有关所得税政策的通知》 | — | — | unresolved |
 | equity_transfer | #320 权利义务 | 《放弃优先购买权声明函》 | — | — | unresolved |
 | factoring | #327 履行期限 | 《应收账款转让通知书》 | — | — | unresolved |
@@ -477,15 +471,11 @@
 | intermediation | #1659 价款及支付 | 《存量房买卖合同》 | — | — | unresolved |
 | intermediation | #2025 权利义务 | 《院校及专业确认表》 | — | — | unresolved |
 | intermediation | #2029 附则 | 《院校及专业确认表》 | — | — | unresolved |
-| intermediation | #3487 鉴于 | 《中华人民共和国反不正当竞争法》 | 中华人民共和国反不正当竞争法 | sxx:3 | exact |
-| intermediation | #3633 权利义务 | 《网络安全法》 | 中华人民共和国网络安全法 | sxx:3 | exact |
 | intermediation | #3656 履行期限 | 《数据交易机构互认互通倡议》 | — | — | unresolved |
-| intermediation | #3658 权利义务 | 《中华人民共和国网络安全法》 | 中华人民共和国网络安全法 | sxx:3 | exact |
 | intermediation | #5324 鉴于 | 《二手车交易规范》 | — | — | unresolved |
 | intermediation | #5326 价款及支付 | 《二手车买卖合同》 | — | — | unresolved |
 | intermediation | #5987 权利义务 | 《存量房买卖合同》 | — | — | unresolved |
 | intermediation | #5988 价款及支付 | 《存量房买卖合同》 | — | — | unresolved |
-| intermediation | #6026 当事人 | 《网络交易管理办法》 | 网络交易管理办法 | 已失效 | exact |
 | intermediation | #6102 价款及支付 | 《山东省二手房买卖合同（经纪成交版）》 | — | — | unresolved |
 | ip_license | #6996 附则 | 《商标使用许可合同备案办法》 | — | — | unresolved |
 | labor_dispatch | #6978 当事人 | 《劳务派遣经营许可证》 | — | — | unresolved |
@@ -525,27 +515,20 @@
 | lease | #3760 权利义务 | 《车辆行驶证》 | — | — | unresolved |
 | lease | #4030 履行期限 | 《国有建设用地交地确认书》 | — | — | unresolved |
 | lease | #4100 权利义务 | 《租赁物资缺损赔偿办法》 | — | — | unresolved |
-| lease | #4446 当事人 | 《中华人民共和国食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | lease | #4818 附则 | 《人民防空工程平时使用证》 | — | — | unresolved |
-| lease | #5032 当事人 | 《殡葬管理条例》 | 殡葬管理条例 | sxx:3 | exact |
 | lease | #5035 权利义务 | 《居民死亡医学证明（推断）书》 | — | — | unresolved |
 | lease | #5801 履行期限 | 《土地交接单》 | — | — | unresolved |
-| lease | #7115 鉴于 | 《住房租赁条例》 | 住房租赁条例 | sxx:3 | exact |
-| lease | #8195 鉴于 | 《住房租赁条例》 | 住房租赁条例 | sxx:3 | exact |
 | ppp_project | #8189 权利义务 | 《项目移交确认书》 | — | — | unresolved |
 | property_service | #2017 权利义务 | 《临时管理规约》 | — | — | unresolved |
 | property_service | #2391 权利义务 | 《吉林省物业服务标准》 | — | — | unresolved |
 | property_service | #2391 权利义务 | 《物业服务内容和标准》 | — | — | unresolved |
 | property_service | #2526 权利义务 | 《物业管理服务方案》 | — | — | unresolved |
 | property_service | #2816 合同标的 | 《广西普通住宅小区前期物业服务等级指导标准（试行）》 | — | — | unresolved |
-| property_service | #3673 鉴于 | 《中华人民共和国食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
-| property_service | #3678 权利义务 | 《中华人民共和国食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | property_service | #3678 权利义务 | 《学生餐营养指南》 | — | — | unresolved |
 | property_service | #3678 权利义务 | 《餐饮服务食品安全操作规范》 | — | — | unresolved |
 | property_service | #3680 权利义务 | 《学生餐营养指南》 | — | — | unresolved |
 | property_service | #3680 权利义务 | 《食品经营许可证》 | — | — | unresolved |
 | property_service | #3681 违约责任 | 《餐饮服务食品安全操作规范》 | — | — | unresolved |
-| property_service | #3682 违约责任 | 《食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | property_service | #4212 鉴于 | 《电梯使用管理与维护保养规则》 | — | — | unresolved |
 | property_service | #4213 合同标的 | 《电梯使用管理与维护保养规则》 | — | — | unresolved |
 | property_service | #4213 合同标的 | 《电梯保养时间和保养费明细表》 | — | — | unresolved |
@@ -580,14 +563,12 @@
 | property_service | #5104 附则 | 《老年人能力评估报告》 | — | — | unresolved |
 | property_service | #5347 价款及支付 | 《家政人员意外伤害保险》 | — | — | unresolved |
 | property_service | #5347 价款及支付 | 《家政经营责任险》 | — | — | unresolved |
-| property_service | #6000 权利义务 | 《中华人民共和国食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | property_service | #6000 权利义务 | 《学生餐营养指南》 | — | — | unresolved |
 | property_service | #6000 权利义务 | 《餐饮服务食品安全操作规范》 | — | — | unresolved |
 | property_service | #6001 权利义务 | 《食品经营许可证》 | — | — | unresolved |
 | property_service | #6002 权利义务 | 《学生餐营养指南》 | — | — | unresolved |
 | property_service | #6002 权利义务 | 《营养与健康学校建设指南》 | — | — | unresolved |
 | property_service | #6002 权利义务 | 《餐饮服务食品安全操作规范》 | — | — | unresolved |
-| property_service | #6004 违约责任 | 《食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | property_service | #7167 价款及支付 | 《物业服务收费管理办法》 | — | — | unresolved |
 | property_service | #8192 权利义务 | 《物业服务内容及标准》 | — | — | unresolved |
 | real_estate_development | #406 履行期限 | 《商品房预售许可证》 | — | — | unresolved |
@@ -600,11 +581,9 @@
 | real_estate_lease | #2256 权利义务 | 《租赁房屋及附属设施维修责任划分表》 | — | — | unresolved |
 | real_estate_lease | #2331 权利义务 | 《深圳市公共租赁住房安全管理责任书》 | — | — | unresolved |
 | real_estate_lease | #2331 权利义务 | 《租赁房屋及附属设施维修责任划分表》 | — | — | unresolved |
-| real_estate_lease | #3810 鉴于 | 《中华人民共和国食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | real_estate_lease | #4714 履行期限 | 《房屋交还确认书》 | — | — | unresolved |
 | real_estate_lease | #5377 权利义务 | 《租赁房屋及附属设施维修责任划分表》 | — | — | unresolved |
 | real_estate_lease | #5380 权利义务 | 《深圳市保障性租赁住房安全管理责任书》 | — | — | unresolved |
-| real_estate_lease | #7956 鉴于 | 《中华人民共和国治安管理处罚法》 | 中华人民共和国治安管理处罚法 | sxx:3 | exact |
 | real_estate_sale | #1798 权利义务 | 《住宅质量保证书》 | — | — | unresolved |
 | real_estate_sale | #2114 权利义务 | 《天津市商品住宅使用说明书》 | — | — | unresolved |
 | real_estate_sale | #2114 权利义务 | 《天津市商品住宅质量保证书》 | — | — | unresolved |
@@ -645,8 +624,6 @@
 | sale | #540 合同标的 | 《购销商品确认单》 | — | — | unresolved |
 | sale | #1166 合同标的 | 《鲜蛋卫生标准》 | — | — | unresolved |
 | sale | #1347 合同标的 | 《使用说明书》 | — | — | unresolved |
-| sale | #1577 鉴于 | 《中华人民共和国食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
-| sale | #1584 权利义务 | 《中华人民共和国食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | sale | #1679 鉴于 | 《中标通知书》 | — | — | unresolved |
 | sale | #1679 鉴于 | 《招投标文件》 | — | — | unresolved |
 | sale | #2743 权利义务 | 《商品车辆交接书》 | — | — | unresolved |
@@ -710,22 +687,17 @@
 | sale | #8049 合同标的 | 《家具使用说明书》 | — | — | unresolved |
 | sale | #8054 履行期限 | 《家具使用说明书》 | — | — | unresolved |
 | service | #6164 权利义务 | 《GB 31654—2021食品安全国家标准餐饮服务通用卫生规范》 | — | — | unresolved |
-| service | #6164 权利义务 | 《中华人民共和国食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | service | #6164 权利义务 | 《食品经营许可证》 | — | — | unresolved |
 | service | #6164 权利义务 | 《餐饮服务食品安全操作规范》 | — | — | unresolved |
-| service | #6214 鉴于 | 《中华人民共和国食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
-| service | #6225 权利义务 | 《中华人民共和国食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | service | #6225 权利义务 | 《学生餐营养指南》 | — | — | unresolved |
 | service | #6225 权利义务 | 《餐饮服务食品安全操作规范》 | — | — | unresolved |
 | service | #6227 权利义务 | 《学生餐营养指南》 | — | — | unresolved |
 | service | #6227 权利义务 | 《食品经营许可证》 | — | — | unresolved |
 | service | #6228 违约责任 | 《餐饮服务食品安全操作规范》 | — | — | unresolved |
-| service | #6229 违约责任 | 《食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | service | #6237 权利义务 | 《校外培训机构培训材料管理办法（试行）》 | — | — | unresolved |
 | service | #6253 合同标的 | 《体检报告》 | — | — | unresolved |
 | service | #6253 合同标的 | 《意外风险告知书》 | — | — | unresolved |
 | service | #6253 合同标的 | 《试住期评估表》 | — | — | unresolved |
-| service | #6295 鉴于 | 《中华人民共和国食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | service | #6384 合同标的 | 《养老机构服务安全基本规范》 | — | — | unresolved |
 | service | #6384 合同标的 | 《护理等级与服务项目》 | — | — | unresolved |
 | service | #6384 合同标的 | 《设备设施清单》 | — | — | unresolved |
@@ -762,7 +734,6 @@
 | service | #6474 价款及支付 | 《能源费用托管合同调整规则指引》 | — | — | unresolved |
 | service | #6501 附则 | 《会员须知》 | — | — | unresolved |
 | service | #6501 附则 | 《补充协议》 | — | — | unresolved |
-| service | #6512 鉴于 | 《中华人民共和国食品安全法》 | 中华人民共和国食品安全法 | sxx:3 | exact |
 | service | #6533 权利义务 | 《托育机构婴幼儿伤害预防指南》 | — | — | unresolved |
 | service | #6533 权利义务 | 《托育机构管理规范（试行）》 | — | — | unresolved |
 | service | #6533 权利义务 | 《托育机构设置标准（试行）》 | — | — | unresolved |
@@ -819,7 +790,6 @@
 | service | #6796 违约责任 | 《标准》 | — | — | unresolved |
 | service | #6797 争议解决 | 《天津市洗染服务管理办法》 | — | — | unresolved |
 | service | #6798 附则 | 《凭证》 | — | — | unresolved |
-| service | #6844 权利义务 | 《中华人民共和国网络安全法》 | 中华人民共和国网络安全法 | sxx:3 | exact |
 | service | #7736 权利义务 | 《厨余垃圾分类质量不合格不收运告知单》 | — | — | unresolved |
 | service | #8007 合同标的 | 《机动车驾驶培训教学与考试大纲》 | — | — | unresolved |
 | service | #8009 履行期限 | 《机动车驾驶技能准考证明》 | — | — | unresolved |
@@ -840,7 +810,6 @@
 | service | #8167 权利义务 | 《服务说明书》 | — | — | unresolved |
 | service | #8167 权利义务 | 《服务质量标准》 | — | — | unresolved |
 | service | #8167 权利义务 | 《验收确认书》 | — | — | unresolved |
-| software_development | #7030 合同标的 | 《中华人民共和国网络安全法》 | 中华人民共和国网络安全法 | sxx:3 | exact |
 | talent_agency | #7049 鉴于 | 《营业性演出许可证》 | — | — | unresolved |
 | talent_agency | #7053 双方权利义务 | 《营业性演出许可证》 | — | — | unresolved |
 | technology | #437 履行期限 | 《技术需求规格说明书》 | — | — | unresolved |
@@ -850,7 +819,6 @@
 | technology | #4491 履行期限 | 《房屋建筑面积测绘成果书》 | — | — | unresolved |
 | technology | #4972 附则 | 《甲方提供的有关资料清单》 | — | — | unresolved |
 | technology | #4972 附则 | 《跟踪测量技术服务费用一览表》 | — | — | unresolved |
-| technology | #6082 违约责任 | 《中华人民共和国网络安全法》 | 中华人民共和国网络安全法 | sxx:3 | exact |
 | tourism_service | #1148 合同标的 | 《旅游行程计划说明书》 | — | — | unresolved |
 | tourism_service | #1150 履行期限 | 《旅游行程计划说明书》 | — | — | unresolved |
 | tourism_service | #1151 权利义务 | 《出境旅游领队人员管理办法》 | — | — | unresolved |
@@ -904,8 +872,6 @@
 | transport | #1669 违约责任 | 《旅游用车确认单》 | — | — | unresolved |
 | transport | #5057 权利义务 | 《北京市非居民单位厨余垃圾运输三联单》 | — | — | unresolved |
 | transport | #5057 权利义务 | 《厨余垃圾分类质量不合格不运输告知单》 | — | — | unresolved |
-| transport | #7151 争议解决 | 《中华人民共和国民用航空法》 | 中华人民共和国民用航空法 | sxx:3 | exact |
-| transport | #7151 争议解决 | 《中华人民共和国海商法》 | 中华人民共和国海商法 | sxx:3 | exact |
 | transport | #7531 合同标的 | 《旅游客运包车行程单》 | — | — | unresolved |
 | transport | #7543 附则 | 《旅游客运包车行程单》 | — | — | unresolved |
 | trust | #7016 附则 | 《信托登记管理办法》 | — | — | unresolved |
@@ -915,13 +881,9 @@
 | utilities_supply | #2187 合同标的 | 《生活饮用水卫生标准》 | — | — | unresolved |
 | utilities_supply | #3380 鉴于 | 《供用电合同》 | — | — | unresolved |
 | utilities_supply | #3383 价款及支付 | 《供用电合同》 | — | — | unresolved |
-| utilities_supply | #3417 鉴于 | 《中华人民共和国网络安全法》 | 中华人民共和国网络安全法 | sxx:3 | exact |
 | utilities_supply | #3572 价款及支付 | 《公共机构能源费用托管实施规程》 | — | — | unresolved |
 | utilities_supply | #3572 价款及支付 | 《能源费用托管合同调整规则指引》 | — | — | unresolved |
 | utilities_supply | #6034 鉴于 | 《节能发电调度办法（试行）》 | — | — | unresolved |
-| utilities_supply | #6114 鉴于 | 《中华人民共和国网络安全法》 | 中华人民共和国网络安全法 | sxx:3 | exact |
-| utilities_supply | #6393 鉴于 | 《中华人民共和国网络安全法》 | 中华人民共和国网络安全法 | sxx:3 | exact |
-| utilities_supply | #7105 鉴于 | 《供水条例》 | 供水条例 | sxx:3 | exact |
 | utilities_supply | #7106 合同标的 | 《生活饮用水卫生标准》 | — | — | unresolved |
 | utilities_supply | #7712 合同标的 | 《城镇供水服务标准》 | — | — | unresolved |
 | utilities_supply | #7712 合同标的 | 《生活饮用水卫生标准》 | — | — | unresolved |

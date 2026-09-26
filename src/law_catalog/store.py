@@ -60,6 +60,19 @@ CREATE TABLE IF NOT EXISTS law_catalog.clause_law_refs (
     resolved_at  TEXT NOT NULL,
     PRIMARY KEY (clause_id, cited_name)
 );
+
+CREATE TABLE IF NOT EXISTS law_catalog.clause_article_refs (
+    clause_id       BIGINT NOT NULL,
+    contract_type   TEXT,
+    citation        TEXT NOT NULL,
+    article_ordinal INT NOT NULL,
+    law_id          BIGINT,
+    article_text    TEXT,
+    law_status      TEXT,
+    outcome         TEXT NOT NULL,
+    resolved_at     TEXT NOT NULL,
+    PRIMARY KEY (clause_id, citation, article_ordinal)
+);
 """
 
 # Best-effort trigram support: the GIN index accelerates (and pg_trgm provides)
@@ -322,7 +335,10 @@ def distinct_unresolved(db=None) -> list[dict]:
     """Distinct unresolved cited names with occurrence counts.
 
     Deliberate non-matches (aliases.source='non_match') are excluded - an
-    operator already looked at them.
+    operator already looked at them. Aliases are stored post-normalization
+    (stripped 中华人民共和国 prefix / 《》), so the comparison tries both the
+    raw cited name and its prefix-stripped form - otherwise "中华人民共和国X"
+    citations would stay in the queue after marking "X".
     """
     conn = connect(db)
     try:
@@ -330,8 +346,11 @@ def distinct_unresolved(db=None) -> list[dict]:
             "SELECT r.cited_name, count(*) AS occurrences "
             "FROM law_catalog.clause_law_refs r "
             "WHERE r.resolved_via = 'unresolved' "
-            "AND r.cited_name NOT IN ( "
-            "  SELECT alias FROM law_catalog.aliases WHERE source = 'non_match') "
+            "AND NOT EXISTS ("
+            "  SELECT 1 FROM law_catalog.aliases a "
+            "  WHERE a.source = 'non_match' "
+            "  AND (a.alias = r.cited_name "
+            "       OR a.alias = regexp_replace(r.cited_name, '^《?中华人民共和国', ''))) "
             "GROUP BY r.cited_name ORDER BY occurrences DESC, r.cited_name"
         ).fetchall()
     finally:

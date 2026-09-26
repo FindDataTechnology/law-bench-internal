@@ -16,8 +16,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-REPEALED_STATUSES = {"已废止", "失效"}
+REPEALED_STATUSES = {"已废止", "失效", "已失效"}
 AMENDED_STATUS = "已修改"
+# "未知" is the catalog's normalized no-source-value status (2026-09-26 export
+# vocabulary: 有效/已修改/已废止/未知/尚未生效/失效/已失效) — it falls to the
+# fallback category by design, never guessed.
 OK_STATUSES = {"有效", "尚未生效"}
 
 CATEGORY_ORDER = ("repealed", "amended", "fallback", "ok")

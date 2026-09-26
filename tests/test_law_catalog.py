@@ -335,3 +335,22 @@ def test_review_non_match_flow(app_client, audited, seeded_db):
     # page shows it under 已标记不匹配
     page = app_client.get("/law-catalog/review")
     assert "已标记不匹配" in page.text
+
+
+def test_classify_vocabulary_2026_09_26():
+    # export vocabulary after status normalization: 有效/已修改/已废止/未知/
+    # 尚未生效/失效/已失效
+    assert lc_audit.classify("已失效", "exact") == "repealed"
+    assert lc_audit.classify("未知", "exact") == "fallback"
+    assert lc_audit.classify("有效", "exact") == "ok"
+    assert lc_audit.classify("尚未生效", "trigram") == "ok"
+
+
+def test_non_match_suppresses_prefixed_citation(catalog):
+    # aliases are stored normalized (中华人民共和国 stripped); a full-form
+    # citation must still be suppressed from the review queue
+    _clause(catalog, 703, [{"name": "中华人民共和国经济合同法", "category": "other", "category_zh": "其他"}])
+    lc_resolve.resolve_all_clauses(db=catalog)
+    assert len(lc_store.distinct_unresolved(db=catalog)) == 1
+    lc_store.upsert_alias("中华人民共和国经济合同法", None, None, source="non_match", db=catalog)
+    assert lc_store.distinct_unresolved(db=catalog) == []
