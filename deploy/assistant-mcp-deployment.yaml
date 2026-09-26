@@ -35,10 +35,12 @@ spec:
       labels:
         app: law-bench-mcp-assistant
     spec:
-      # cheap-4: where the web pod runs and the image is present (Harbor pull
-      # via the node's registries.yaml auth also works there).
+      # cheap-7 since 2026-09-27: the healthy node carrying the current image
+      # (sha-b4c90f4, includes the bundled MCP package since sha-3b6502b).
+      # cheap-4's kubelet flapped phantom disk-pressure that night; the web
+      # pod moved to cheap-7 too.
       nodeSelector:
-        kubernetes.io/hostname: cheap-4
+        kubernetes.io/hostname: cheap-7
       dnsPolicy: None
       dnsConfig:
         nameservers:
@@ -52,7 +54,7 @@ spec:
             value: "5"
       containers:
         - name: law-bench-mcp-assistant
-          image: 100.64.0.8:30880/law-bench/law-template:sha-a0207d1
+          image: 100.64.0.8:30880/law-bench/law-template:sha-b4c90f4
           imagePullPolicy: IfNotPresent
           command: ["/app/.venv/bin/python", "-m", "fd_coding_law_bench_mcp"]
           env:
