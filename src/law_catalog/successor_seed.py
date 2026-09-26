@@ -39,6 +39,9 @@ EXPLICIT_MAP: list[dict] = [
     # 部门规章更替
     {"dead": "网络交易管理办法", "successor": "网络交易监督管理办法",
      "authority": None, "effective": "2021-05-01", "rule": "replace-2021"},
+    # 地方条例更替（r3，人工判定 2026-09-26）
+    {"dead": "天津市旅游条例", "successor": "天津市旅游促进条例",
+     "authority": "天津市旅游促进条例", "effective": "2022-09-01", "rule": "local-replace-2022"},
 ]
 
 
