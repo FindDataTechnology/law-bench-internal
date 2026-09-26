@@ -158,7 +158,6 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.contract_type:
         parser.error("contract_type is required (or use --all, or the `audit` subcommand)")
-        return 2  # parser.error exits; unreachable
 
     try:
         result = generate_contract(args.contract_type, format=args.format, out_dir=args.out)

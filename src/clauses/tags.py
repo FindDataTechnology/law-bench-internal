@@ -176,32 +176,6 @@ def validate_tags(tags: dict | None, contract_type: str | None = None) -> dict:
     return out
 
 
-def normalize_tags(tags: dict | None, contract_type: str | None = None) -> dict:
-    """Safe read: validated tags, dropping unknown keys/values without raising."""
-    if not tags:
-        return {}
-    _ensure_db_vocab(contract_type)
-    universal = TAG_VOCAB.get(None, {})
-    type_specific = TAG_VOCAB.get(contract_type, {}) if contract_type else {}
-    out: dict[str, str] = {}
-    for k, v in tags.items():
-        vs = str(v)
-        if not vs:
-            continue
-        # Resolve stance aliases for backward compatibility
-        if k == "stance" and vs in ("pro_seller", "pro_buyer"):
-            vs = "pro_a" if vs == "pro_seller" else "pro_b"
-        if k == "scenario":
-            out[k] = vs  # lenient
-        elif k in FREE_FORM_TAGS:
-            out[k] = vs
-        elif k in universal and vs in universal[k]:
-            out[k] = vs
-        elif k in type_specific and vs in type_specific[k]:
-            out[k] = vs
-    return out
-
-
 def tag_vocab_for_type(contract_type: str | None = None) -> dict[str, list[str]]:
     """Merged flat vocab for a contract type: universal + type-specific.
 

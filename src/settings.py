@@ -36,23 +36,6 @@ class ConfigError(Exception):
     """A required environment variable is missing or misconfigured."""
 
 
-# Env vars the drafting crew needs (checked up front in main.py / llm.py).
-DRAFTING_REQUIRED_VARS = [
-    "OPENAI_API_KEY",
-    "OPENAI_API_BASE",
-    "INTAKE_MODEL",
-    "DRAFTER_MODEL",
-    "AUDITOR_MODEL",
-]
-
-# Env vars the evaluation judge needs (checked in judge.py).
-EVAL_JUDGE_REQUIRED_VARS = [
-    "OPENAI_API_KEY",
-    "OPENAI_API_BASE",
-    "EVAL_MODEL",
-]
-
-
 # --------------------------------------------------------------------------- #
 # Search / RAG service config (read from env; used by src/search/*)
 # --------------------------------------------------------------------------- #
@@ -157,16 +140,6 @@ MINIO_PUBLIC_SECURE = (
 
 # CrewAI RAG retrieval tool toggle (on by default; degrades gracefully if off).
 RAG_TOOL_ENABLED = _env("RAG_TOOL_ENABLED", "1") == "1"
-
-# Search-service env vars required for live RAG (checked up front where useful).
-SEARCH_REQUIRED_VARS = [
-    "database_url",
-    "OPENROUTER_API_KEY",
-    "elastic_search_host",
-    "elastic_search_pass",
-    "minio_host",
-    "minio_root_password",
-]
 
 
 # --------------------------------------------------------------------------- #

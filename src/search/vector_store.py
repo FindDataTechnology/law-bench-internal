@@ -54,15 +54,3 @@ def _check_dims() -> None:
             )
     finally:
         es.close()
-
-
-def drop_index() -> None:
-    """Drop the search index (used by the explicit-reindex path)."""
-    from elasticsearch import Elasticsearch
-
-    es = Elasticsearch(ES_URL, basic_auth=(ES_USER, ES_PASSWORD))
-    try:
-        if es.indices.exists(index=SEARCH_INDEX_NAME):
-            es.indices.delete(index=SEARCH_INDEX_NAME)
-    finally:
-        es.close()

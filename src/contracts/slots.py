@@ -9,27 +9,12 @@ and live in this contracts layer (they are not a change to ``document-generation
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
 from functools import lru_cache
 from pathlib import Path
 
 from src.eval.errors import NotFoundError
 
 from .templates import _registry, get_template
-
-
-@dataclass
-class SlotInstruction:
-    """Structured guidance for one ``{{slot}}`` placeholder."""
-
-    name: str
-    label: str
-    description: str
-    example: str
-    required: bool
-
-    def to_dict(self) -> dict:
-        return asdict(self)
 
 
 def get_slot_instructions(contract_type: str) -> list[dict]:

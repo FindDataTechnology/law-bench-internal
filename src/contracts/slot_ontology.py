@@ -234,8 +234,8 @@ def normalize_instruction_names(instructions: list[dict], contract_type: str | N
 # {{party_a_address}}, ...). The user wants every *generated* (assembled)
 # contract to carry Chinese slot names. Rather than migrate the corpus, we
 # render Latin -> Chinese at assembly time: ``render_body_chinese`` rewrites
-# the assembled body, ``chinese_instruction_for_slot`` returns instructions
-# whose ``name`` matches the rendered Chinese tokens so the coherence gate
+# the assembled body, ``render_instructions_chinese`` remaps instruction names
+# to match the rendered Chinese tokens so the coherence gate
 # (slot name == instruction name) still passes.
 #
 # Canonicalization stays Latin (so DB writes + variant/role-prefix logic +
@@ -693,38 +693,6 @@ def render_body_chinese(body: str, contract_type: str | None = None) -> str:
     )
 
 
-def chinese_instruction_for_slot(slot: str, contract_type: str | None = None) -> dict | None:
-    """Return a slot instruction dict with a Chinese ``name``, or None.
-
-    Mirrors :func:`instruction_for_slot` but renders the slot ``name`` to
-    Chinese so it matches the Chinese tokens in a :func:`render_body_chinese`
-    body. Returns ``None`` when no Chinese mapping exists (the caller should
-    keep the original instruction so an unknown slot still matches its
-    clause-declared instruction).
-    """
-    canon = canonicalize_slot(slot, contract_type)
-    l2c = latin_to_chinese_map(contract_type) if contract_type else {}
-    cn = _chinese_name(canon, contract_type, l2c)
-    if cn == canon:
-        return None  # no Chinese mapping - caller keeps the original instruction
-    base = instruction_for_slot(slot, contract_type)
-    if base is not None:
-        return {**base, "name": cn}
-    # concept not reachable via instruction_for_slot (e.g. bare attribute stem)
-    role, rest = _strip_role(canon)
-    if rest and rest in _CONCEPTS:
-        m = _CONCEPTS[rest]
-        side = _role_to_canonical(role, contract_type)
-        label = f"{'甲方' if side == 'party_a' else '乙方'}{m['label']}" if side else m["label"]
-        return {"name": cn, "label": label, "description": m["description"],
-                "example": m["example"], "required": m["required"]}
-    if canon in _CONCEPTS:
-        m = _CONCEPTS[canon]
-        return {"name": cn, "label": m["label"], "description": m["description"],
-                "example": m["example"], "required": m["required"]}
-    return None
-
-
 def render_instructions_chinese(
     instructions: list[dict], contract_type: str | None = None
 ) -> list[dict]:
@@ -758,7 +726,6 @@ __all__ = [
     "normalize_instruction_names",
     "render_body_chinese",
     "render_instructions_chinese",
-    "chinese_instruction_for_slot",
 ]
 
 

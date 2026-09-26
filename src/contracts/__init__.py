@@ -16,11 +16,10 @@ from __future__ import annotations
 from .audit import AuditReport, TemplateAudit, audit_all, audit_body, audit_template
 from .generator import generate_contract
 from .legal import extract_laws_for_type
-from .slots import SlotInstruction, check_slot_consistency, get_slot_instructions
+from .slots import check_slot_consistency, get_slot_instructions
 from .templates import get_template, list_contract_types
 
 __all__ = [
-    "SlotInstruction",
     "list_contract_types",
     "get_template",
     "get_slot_instructions",

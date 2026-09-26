@@ -14,8 +14,6 @@ from __future__ import annotations
 
 import re
 
-from src.eval.errors import NotFoundError
-
 
 class CoherenceError(ValueError):
     """Raised when an assembled contract fails the coherence gate."""

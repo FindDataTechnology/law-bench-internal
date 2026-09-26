@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from .assemble import generate_contract_assembled
 from .corpus import iter_unique_documents, list_corpus_documents, read_document
-from .extract import SECTION_ORDER, extract_clauses, extract_document, section_rank
+from .extract import SECTION_ORDER, extract_document, section_rank
 from .store import (
     count_clauses,
     counts_by_type,
@@ -44,7 +44,6 @@ __all__ = [
     "delete_auto_clauses",
     "delete_clause",
     "delete_clauses",
-    "extract_clauses",
     "extract_document",
     "generate_contract_assembled",
     "get_custom_clause",

@@ -15,6 +15,8 @@ Usage (on cheap1, from the gateway compose env):
     python3 register_skills_gateway.py register --visibility group
     python3 register_skills_gateway.py register --dry-run
     python3 register_skills_gateway.py remove <skill-name>
+    python3 register_skills_gateway.py remove --repo THUYRan/Legal-Skills-Chinese
+    python3 register_skills_gateway.py remove --visibility group
 
 Credentials: LOGTO_M2M_APP_ID / LOGTO_M2M_CLIENT_SECRET from the environment, or
 parsed from /root/.mcp_logto_creds when present (america-era path). The M2M
@@ -24,9 +26,10 @@ lives in this file or the repo.
 
 Catalog curation (license-driven visibility):
   - permissive-license skills (CC BY-SA, MIT, repo-level MIT) -> public
-  - skills whose SKILL.md declares CC-BY-NC / CC-BY-NC-SA     -> group-restricted
-    to registry-admins; public promotion requires the author's written
-    authorization (see deploy/america-box/mcp-gateway-skills.md).
+  - skills whose SKILL.md declares CC-BY-NC / CC-BY-NC-SA, or whose repo declares
+    CC BY-NC-ND -> group-restricted to registry-admins; public promotion requires
+    the author's written authorization; NC-ND skills are served verbatim (no
+    modified distribution) (see deploy/cheap-box/mcp-gateway-skills.md).
 """
 
 import argparse
@@ -43,10 +46,16 @@ RESOURCE = os.environ.get("MCP_GATEWAY_RESOURCE", "https://mcp.finddatatech.clou
 TOKEN_URL = os.environ.get("LOGTO_TOKEN_URL", "https://auth.finddatatech.cloud/oidc/token")
 CREDS_FILE = "/root/.mcp_logto_creds"
 
-# Generated from the three source repos (see change catalog-legal-skills-in-gateway):
-# 85 skills = 66 public + 19 CC-BY-NC(-SA) restricted; pinned 2026-08-30.
-# Generated from the three source repos (see change catalog-legal-skills-in-gateway):
-# 85 skills = 66 public + 19 CC-BY-NC(-SA) restricted; pinned 2026-08-30.
+# Generated from the three source repos (see change catalog-legal-skills-in-gateway);
+# originally 85 skills = 66 public + 19 CC-BY-NC(-SA) restricted, pinned 2026-08-30.
+# 2026-09-18 restore on the cheap gateway (change restore-legal-skills-catalog):
+#   - 'contract-review' -> 'pa1nrui1-contract-review' (name held on the gateway by an
+#     unrelated paste.rs-based entry; collision guard must not overwrite it)
+#   - 'industry-research-report' -> 'legal-industry-report' (upstream dir renamed)
+#   - excluded: 'paddle-ocr' (upstream merged into legal-ocr), 'weekly-legal-briefing'
+#     (deleted upstream)
+#   - extended with 38 THUYRan/Legal-Skills-Chinese skills (CC BY-NC-ND, all group)
+#     -> 121 skills = 65 public + 56 CC-BY-NC(-SA/ND) restricted.
 # 57 Chinese-named skills registered under translated English slugs (metadata.name_zh
 # keeps the original) because the gateway requires lowercase-alphanumeric names.
 CATALOG = [
@@ -219,10 +228,10 @@ CATALOG = [
   }
  },
  {
-  "name": "industry-research-report",
+  "name": "legal-industry-report",
   "description": "输入一个行业（可选区域与业务方向），输出一份可交付的精排 A4 PDF 行业法律调研报告。设计风格采用律所蓝皮书体例（深蓝主色 + 白色页面 + 衬线大标题 + 顶部品牌带），内置 report-profile.md 个性化配置（律所抬头 / 配色 / 主办律师 / 封面变体 / 联系方式），数据源来自企查查 MCP（企业名录 + 司法/经营风险标签）+ 网络检索（政策文件、产业园名录、产业链结构）。建议在用户说\"做一份行业调研报告 / 见客户前先了解下 XX 行业 / 这周要去 XX 行业跑客户帮我准备背景资料 / 开拓新行业之前知己知彼\"时使用；不要用于：客户名下的具体法律意见、对单一企业的尽调（用 opc-legal-counsel）、按周推送的对外研报（用 weekly-legal-briefing）。",
   "license": "CC-BY-NC",
-  "skill_md_url": "https://raw.githubusercontent.com/cat-xierluo/legal-skills/main/skills/industry-research-report/SKILL.md",
+  "skill_md_url": "https://raw.githubusercontent.com/cat-xierluo/legal-skills/main/skills/legal-industry-report/SKILL.md",
   "repository_url": "https://github.com/cat-xierluo/legal-skills",
   "version": "0.7.0",
   "visibility": "group",
@@ -457,26 +466,6 @@ CATALOG = [
   }
  },
  {
-  "name": "paddle-ocr",
-  "description": "面向法律 PDF 与扫描件的 PaddleOCR 结构化解析技能。默认将本地 PDF 或图片转换为 Markdown，并在技能内部保留可追溯 archive 归档。适用于卷宗、病历、证据材料、发票、财报、复杂扫描件、表格密集文档、公式与多栏版面。触发词包括：法律 PDF OCR、卷宗 OCR、病历 OCR、证据扫描件转 Markdown、PaddleOCR、表格识别、公式识别、版面分析、PDF 转 Markdown、复杂 PDF 解析。",
-  "license": "MIT",
-  "skill_md_url": "https://raw.githubusercontent.com/cat-xierluo/legal-skills/main/skills/paddle-ocr/SKILL.md",
-  "repository_url": "https://github.com/cat-xierluo/legal-skills",
-  "version": "1.1.1",
-  "visibility": "public",
-  "allowed_groups": [],
-  "tags": [
-   "legal",
-   "chinese-law",
-   "cat-xierluo"
-  ],
-  "metadata": {
-   "author": "杨卫薪（执业律师）",
-   "source_repo": "cat-xierluo/legal-skills",
-   "skill_dir": "paddle-ocr"
-  }
- },
- {
   "name": "patent-analysis",
   "description": "面向中国发明和实用新型专利的结构化初步分析工具。本技能应在用户需要拆解或解释权利要求、比较专利保护范围、进行产品侵权比对、等同分析、稳定性与无效风险分析、FTO、规避设计、专利价值评估或制作专利分析图表时使用。不要用于：代替专利律师或专利代理师出具正式意见、仅下载/OCR专利、撰写专利申请文件，或在未确认法域与有效权利要求时给出确定性结论；外观设计近似判断需另行采用专门方法并人工复核。",
   "license": "CC-BY-NC",
@@ -558,28 +547,6 @@ CATALOG = [
    "author": "杨卫薪（执业律师）",
    "source_repo": "cat-xierluo/legal-skills",
    "skill_dir": "trademark-assistant"
-  }
- },
- {
-  "name": "weekly-legal-briefing",
-  "description": "配置一次，定期自动生成行业/法律研报草稿（如科技型制造企业法律周报），人工复核后发布。设计风格同 industry-research-report（蓝皮书体例 + 抬头/配色/署名由 report-profile.md 配置），支持白名单信源过滤与案号回查，输出文件带 _DRAFT 标记，发布动作永远留给人工。建议在用户说\"配一个周报 / 每周给客户发一份法律研报 / 客户要法律周报了怎么落地 / 顾问客户要定期触达\"时使用；不要用于：单次行业情报底稿（用 industry-research-report）、自动邮件/群发（硬约束禁止）、客户名下的具体法律意见（用 opc-legal-counsel）。",
-  "license": "CC-BY-NC",
-  "skill_md_url": "https://raw.githubusercontent.com/cat-xierluo/legal-skills/main/skills/weekly-legal-briefing/SKILL.md",
-  "repository_url": "https://github.com/cat-xierluo/legal-skills",
-  "version": "0.6.0",
-  "visibility": "group",
-  "allowed_groups": [
-   "registry-admins"
-  ],
-  "tags": [
-   "legal",
-   "chinese-law",
-   "cat-xierluo"
-  ],
-  "metadata": {
-   "author": "杨卫薪（执业律师）",
-   "source_repo": "cat-xierluo/legal-skills",
-   "skill_dir": "weekly-legal-briefing"
   }
  },
  {
@@ -907,7 +874,7 @@ CATALOG = [
   }
  },
  {
-  "name": "contract-review",
+  "name": "pa1nrui1-contract-review",
   "description": "基于张海燕四步审查法+何力/常金光三观分析法，对合同进行深度审查。支持企业核验、多语言自动检测、Mermaid业务流程图、二段式审核意见、合同概览、客户可读合同编号、业务摘要、22类合同专项审查、续约提醒和 Word 修订模式审核红线稿。飞书正式交付物必须包含问题卡片列表和业务流程图；用户选择修订模式时，以原合同为只读来源，先生成 redline-plan.json，再运行 scripts/redline/apply_redline_plan.py 生成带真实修订痕迹和批注的 Word 审核修订稿，并完成红线 QA。其他记录保存为本地 Markdown。",
   "license": "MIT (repo-level)",
   "skill_md_url": "https://raw.githubusercontent.com/pa1nrui1/legal-skills/main/skills/legal/%E5%90%88%E5%90%8C%E5%AE%A1%E6%9F%A5/SKILL.md",
@@ -925,7 +892,7 @@ CATALOG = [
    "source_repo": "pa1nrui1/legal-skills",
    "skill_dir": "合同审查",
    "name_zh": "合同审查",
-   "registration_note": "gateway requires lowercase-alphanumeric names; Chinese name kept in name_zh"
+   "registration_note": "gateway requires lowercase-alphanumeric names; Chinese name kept in name_zh. Renamed from 'contract-review' (2026-09-18): the cheap gateway already holds a same-name entry (owner aloadtree, paste.rs upstream) that the collision guard must not overwrite"
   }
  },
  {
@@ -1901,7 +1868,924 @@ CATALOG = [
    "name_zh": "预包装食品标签合规",
    "registration_note": "gateway requires lowercase-alphanumeric names; Chinese name kept in name_zh"
   }
- }
+ },
+ # --- THUYRan/Legal-Skills-Chinese (change restore-legal-skills-catalog, 2026-09-18):
+ # 38 lawyer-verified Chinese legal-reasoning skills (检索→推理→论证→文书). The repo
+ # README declares CC BY-NC-ND 4.0 repo-wide -> every entry below is group-restricted
+ # to registry-admins and must be served verbatim (ND: no modified distribution).
+ # Curated catalog total after this block: 121 = 65 public + 56 group.
+ {
+  "name": "legal-abductive-reasoning",
+  "description": "法律溯因推理（Abductive Reasoning）技能，用于在证据不完整、事实模糊时生成并评估最合理的解释性假设。结合米尔五法（求同、求异、求同求异、剩余、共变）进行结构化因果推断。当用户需要\"提出可能的法律解释\"、\"生成辩护/起诉假设\"、\"评估证据的多种解读\"或\"基于不完整事实推断最佳解释\"时触发。适用于案例分析、证据评估、规则适用争议、因果关系推断等场景。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/Legal-Abductive-Reasoning/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "Legal-Abductive-Reasoning",
+   "fm_name": "legal-abductive-reasoning",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "normative-meaning-argumentation",
+  "description": "分析法律规范的目的、价值导向，以及事实应如何进入规范评价，判断涵摄的限度，需要适当区别于法律解释中的规范目的解释。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/Normative-Meaning-Argumentation/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "Normative-Meaning-Argumentation",
+   "fm_name": "normative-meaning-argumentation",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "administrative-value-judgment",
+  "description": "辅助中国大陆行政机关法律工作人员，根据一段行政案情，按行政法基本原则进行价值判断、利益衡量，并形成倾向性裁量结论。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/administrative-value-judgment/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "administrative-value-judgment",
+   "fm_name": "administrative-value-judgment",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "analogical-reasoning",
+  "description": "当AI智能体需要处理以下情形时触发本技能： 1. 当前案件/问题在现行法律中没有直接、明确的规定（法律漏洞）； 2. 需要参考已有判例、相似案件或相近法律规范来推导当前问题的处理方案； 3. 用户明确要求\"参照\"\"比照\"\"类推适用\"某一规范或案例； 4. 在法律论证中需要以\"相似案件相似处理\"（Like cases should be treated alike）原则支撑结论； 5. 需要评估两个或多个案件/规范之间的相似性与差异性，以判断能否进行类比； 6. 在合同解释、侵权责任认定、行政处罚裁量等场景中，需要借助类似情形的处理经验形成论证。 本技能的核心是：识别相似性基础（tertium comparationis），论证类比的正当性，并在此基础上得出合理的法律结论。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/analogical-reasoning/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "analogical-reasoning",
+   "fm_name": "analogical-reasoning",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "argument-chain-construction",
+  "description": "当AI智能体需要将法律推理结果组织为完整、自洽、有说服力的论证结构时触发此技能。 典型触发场景包括但不限于： - 撰写法律意见书、代理词、辩护词、答辩状等法律文书中的论证部分 - 回答用户提出的复杂法律问题，需要多步骤推理并呈现结论 - 对争议焦点进行系统性分析，需要构建从事实到法律到结论的完整推理路径 - 反驳对方观点时，需要构建替代性论证链条 - 对多个法律问题进行综合分析，需要确保各论证之间逻辑一致、互不矛盾 - 在法律研究备忘录中呈现分析结论 触发信号关键词：论证、分析、推理、为什么、证明、理由、论述、阐述观点、法律分析",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/argument-chain-construction/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "argument-chain-construction",
+   "fm_name": "argument-chain-construction",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "argument-strength-evaluation",
+  "description": "当AI智能体完成一段法律推理或论证后，需要对该推理结论进行自我评估，判断论证的整体强度与置信度，识别并标注推理链条中的薄弱环节。 触发条件包括但不限于： - 完成法律分析后需要给出结论可靠性评级 - 用户明确要求评估某一论证的说服力或可靠性 - 存在多个竞争性法律解释需要比较论证强度 - 推理过程中涉及不确定因素（事实不明、法律空白、争议观点）需要标注 - 为决策者提供风险提示，说明结论的局限性 - 对己方或对方的法律论证进行攻防强度评估 - 在法律意见书、备忘录等文书中需要附加置信度说明",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/argument-strength-evaluation/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "argument-strength-evaluation",
+   "fm_name": "argument-strength-evaluation",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "billing-and-litigation-budget",
+  "description": "当用户需要统计、管理律师工时、专家费用、调查费用，控制诉讼成本、向客户出具工时单或费用单时使用此技能。 典型触发场景包括但不限于： - 提到\"工作小时\"\"专家费用\"\"调查费用\"\"办案成本\"\"工时单\"\"费用单\"\"预算\"\"成本控制\"等关键词 - 询问某一律师的工作小时、某一案件的办案费用或诉讼成本时 - 用户要求交付律师工作时长总结或办案工时单、办案费用单，用于交付客户或申请报销时 - 需要对某一案件或常法服务进行预算编制、预算执行监控或预算偏差分析时 - 需要评估诉讼成本与预期收益，进行诉讼经济性分析时",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/billing-and-litigation-budget/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "billing-and-litigation-budget",
+   "fm_name": "billing-and-litigation-budget",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "case-lifecycle-planning",
+  "description": "案件全周期规划技能。当用户需要规划案件准备时间线、创建或询问案件准备时间节点、生成案件诉讼路线图和关键时间一览表时触发。典型触发关键词：\"案件准备\"\"案件准备规划\"\"案件准备时间线\"\"规划案件准备节奏\"\"排开庭\"。不处理案件向律师的分配，也不处理与案件管理无关的一般性编程任务。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/case-lifecycle-planning/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "case-lifecycle-planning",
+   "fm_name": "case-lifecycle-planning",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "case-retrieval",
+  "description": "当用户需要查找与当前法律问题相关的类似案例、相关判决、裁判规则时触发此技能。典型触发场景包括：用户明确要求查找类似案例或判例；需要通过既往裁判支撑法律论点；进行案件预判需要参考同类判决；撰写法律文书需要引用权威案例；分析某一法律问题的司法实践趋势；对比不同法院、不同时期对同一问题的裁判立场。关键词包括但不限于：类似案例、相关判决、判例检索、裁判规则、同类案件、指导性案例、典型案例、司法观点、裁判要旨等。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/case-retrieval/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "case-retrieval",
+   "fm_name": "case-retrieval",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "conflict-resolution",
+  "description": "当AI智能体在法律推理过程中遇到以下情形时触发本技能：(1)多个法律条文均可适用于同一事实（法条竞合）；(2)不同证据之间存在矛盾或不一致（证据矛盾）；(3)案件存在多个争议焦点需要确定审理或分析顺序（争点优先级排序）；(4)不同法律渊源（法律、法规、司法解释、地方性法规等）对同一问题作出不同规定（法源冲突）；(5)当事人主张与法律适用之间存在张力需要协调。本技能是法律推理的核心枢纽能力，几乎所有复杂法律分析都会涉及某种形式的冲突解决。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/conflict-resolution/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "conflict-resolution",
+   "fm_name": "conflict-resolution",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "counterfactual-reasoning",
+  "description": "当需要评估'如果某一事实/行为/条件不存在或发生改变，法律结果将如何不同'时触发此技能。典型触发场景包括：因果关系认定（若无该行为，损害是否仍会发生）、过错与责任比例划分、损害赔偿范围确定、合同违约损失计算、行政行为合法性假设检验、刑事因果关系中断判断、立法影响评估等。核心方法是构建一个与现实世界仅在目标变量上不同的'反事实世界'，比较两个世界的结果差异，从而得出目标变量对结果的贡献程度。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/counterfactual-reasoning/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "counterfactual-reasoning",
+   "fm_name": "counterfactual-reasoning",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "deductive-reasoning",
+  "description": "基于形式逻辑执行严密的法律演绎推理。当用户要求\"分析案件逻辑\"、\"验证法律推理\"、\"提取三段论\"、\"梳理案件事实与法条的关系\"或\"判断法律论证的有效性\"时使用本技能。 为用户提供基于形式逻辑的法律推理框架，将非结构化的法律规范与案件事实转化为有效、可检验、可复现的演绎论证链条（P-F-C）。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/deductive-reasoning/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "deductive-reasoning",
+   "fm_name": "deductive-reasoning",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "dispute-and-performance-risk",
+  "description": "当用户提交合同文本、交易安排、商业协议或法律关系描述，需要评估其中可能产生法律纠纷或违约风险时触发此技能。 典型触发场景包括但不限于： - 用户要求审查合同并指出潜在风险 - 用户询问某项交易安排是否存在履约障碍 - 用户描述合同执行中的困难，需要判断是否构成违约 - 用户要求对合同条款进行风险评级 - 用户提供两方或多方之间的协议，要求识别可能的争议焦点 - 用户描述已发生的履约偏差，需要评估法律后果 - 合同审查、尽职调查、交易谈判等场景中需要前瞻性风险识别 此技能聚焦于\"是否会产生法律纠纷\"和\"是否存在违约风险\"两大核心问题， 输出结构化的风险清单与应对建议。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/dispute-and-performance-risk/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "dispute-and-performance-risk",
+   "fm_name": "dispute-and-performance-risk",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "dispute-issue-identification",
+  "description": "争议焦点识别是指在法律要素提取之后，从法律事实中提取争议焦点，进一步将案件关系转化为法律关系问题。 能够排除无争议事项，能够有效围绕当事人争议的事实、证据和法律适用等焦点问题进行后续分析。 通过事实调查、证据审查等梳理再次确定争议焦点，可更加深入和靠近争议焦点的本质，将案件剖析的更加充分和透彻。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/dispute-issue-identification/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "dispute-issue-identification",
+   "fm_name": "dispute-issue-identification",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "evidence-argument-chain",
+  "description": "当需要将案件中的多项证据与法律论证主张进行系统性对应挂钩时触发此技能。 典型触发场景包括：准备诉讼文书（起诉状、答辩状、代理词）时需要构建完整的证据-主张对应关系； 庭审前整理证据目录并明确每项证据的证明目的；对方提出反驳后需要重新组织证据链以回应； 案件涉及多个争议焦点，需要将证据分组归类到不同论证主张下； 需要评估现有证据是否足以支撑全部主张，识别证据链中的薄弱环节和缺口。 本技能的核心是建立\"主张→要件→证据→证明力评估\"的完整映射关系，确保每个法律主张都有充分的证据支撑， 每项证据都有明确的证明目的，整体论证链条逻辑严密、层次清晰。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/evidence-argument-chain/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "evidence-argument-chain",
+   "fm_name": "evidence-argument-chain",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "evidence-evaluation",
+  "description": "当需要对案件中的证据材料进行真实性、合法性、关联性（证据\"三性\"）及证明力评估时触发此技能。 典型触发场景包括但不限于： - 当事人或代理人提交证据后，需要判断该证据能否被法庭采纳 - 对方当事人对己方证据提出质证意见，需要进行回应和分析 - 需要对全案证据进行综合评判，确定待证事实是否成立 - 需要判断证据是否达到相应的证明标准（如高度盖然性、排除合理怀疑等） - 需要识别证据链中的薄弱环节并提出补强建议 - 电子数据、鉴定意见、证人证言等特殊证据形式的效力判断 - 非法证据排除的识别与论证",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/evidence-evaluation/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "evidence-evaluation",
+   "fm_name": "evidence-evaluation",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "formal-legal-consequence",
+  "description": "当需要根据已确认的法律事实、已识别的法律关系和已匹配的法律规范，推导出具体的法律后果（包括但不限于民事责任类型与范围、损害赔偿金额计算、刑事刑期确定、行政处罚种类与幅度、合同效力状态等）时，触发本技能。 典型触发场景包括： - 用户询问\"我能获得多少赔偿\"\"对方要承担什么责任\" - 用户询问\"这个行为会判几年\"\"罚款多少\" - 需要从法律构成要件满足情况推导出具体法律效果 - 需要计算具体赔偿数额、刑期范围、违约金数额等量化结果 - 需要综合考虑加重、减轻、免除等调整因素后得出最终法律后果 本技能是法律推理链条的终端环节，将抽象的法律规范转化为具体的、可操作的法律结论。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/formal-legal-consequence/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "formal-legal-consequence",
+   "fm_name": "formal-legal-consequence",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "inductive-reasoning",
+  "description": "当需要从一个或多个具体案例、判决、事实模式中提炼、总结出一般性法律规则、裁判规则或法律原则时，触发此技能。典型触发场景包括：用户要求从系列案例中归纳裁判要旨、从个案中提炼可推广的法律命题、从多个事实模式中识别共同法律规则、构建类案检索的裁判规则摘要、以及从实务判例中总结司法适用标准。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/inductive-reasoning/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "inductive-reasoning",
+   "fm_name": "inductive-reasoning",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "internal-compliance-risk-identification",
+  "description": "当需要对企业内部的合规管理体系进行系统性审查，识别制度缺漏、流程缺陷和数据隐私合规风险时触发此技能。 典型触发场景包括但不限于： - 企业委托律师或合规顾问进行内部合规风险评估 - 企业拟上市、并购或接受监管检查前进行合规自查 - 发生合规事件后，需要排查管理体系中的系统性缺陷 - 企业建立或更新合规管理体系时，需要评估现有制度与法律法规的匹配度 - 用户要求审查企业内部规章制度、核心业务流程或隐私政策协议的合规性 本技能覆盖三大审查维度：制度体系完整性审查、业务流程控制有效性审查、个人信息保护合规性审查。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/internal-compliance-risk-identification/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "internal-compliance-risk-identification",
+   "fm_name": "internal-compliance-risk-identification",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "judgment-document-generation",
+  "description": "根据案件事实描述，协调调用8个原子能力，生成格式规范、论证严密的完整刑事判决书。涵盖事实认定、法律适用、量刑推理及文书输出全流程。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/judgment-document-generation/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "judgment-document-generation",
+   "fm_name": "judgment-document-generation",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "judicial-value-judgment",
+  "description": "辅助法官在权利冲突、法律不确定、比例原则审查和裁量说理场景中，进行结构化、可审查、可论证的司法价值判断。 本 Skill 用于辅助法官在疑难案件中识别法律价值冲突、确定裁量边界、展开价值衡量，并形成可用于裁判说理的分析框架，不替代法官作出最终裁判，而是帮助法官将价值判断转化为有事实基础、规范基础和论证结构的司法推理过程。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/judicial-value-judgment/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "judicial-value-judgment",
+   "fm_name": "judicial-value-judgment",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "legal-article-retrieval",
+  "description": "生成标准化法律检索报告，适用于案例检索、法条检索、类案分析等法律研究场景。当用户需要进行行业或专业分析、预测裁判结果、复核法律依据的有效性、确认请求、抗辩主张的法律依据、分析司法实践倾向等任务时使用。支持诉讼方案评估、庭审准备、合规审查、法律培训等各类法律实务场景。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/legal-article-retrieval/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "legal-article-retrieval",
+   "fm_name": "legal-article-retrieval",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "legal-concept-comprehension",
+  "description": "当用户要求解释、辨析、拆解或理解某个法律概念时触发此技能。 典型触发场景包括但不限于： - 用户直接询问\"什么是XX\"\"如何理解XX\" - 用户要求比较两个法律概念的异同（如\"不当得利与无因管理的区别\"） - 用户给出具体事实，询问是否构成某法律概念（如\"甲误将钱转给乙，是否构成不当得利？\"） - 用户在法律分析、文书写作、合同审查中遇到不熟悉的术语 - 用户要求拆解某概念的构成要件或分析其法律效果 本技能是法律分析的基础单元，为法律规则适用、案件分析、法律文书写作等提供概念基础。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/legal-concept-comprehension/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "legal-concept-comprehension",
+   "fm_name": "legal-concept-comprehension",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "legal-document-formatting",
+  "description": "基于中国人民法院裁判文书制作规范，起草完整的民事判决书或刑事判决书。当用户要求\"起草判决书\"、\"生成裁判文书\"、\"写民事判决书\"、\"写刑事判决书\"、\"根据案卷写文书\"或提供案卷材料要求输出裁判文书时使用本技能，在起草各段落时自主调用原子技能（如争议焦点识别、法条检索、演绎推理、证据效力评估等）。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/legal-document-formatting/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "legal-document-formatting",
+   "fm_name": "legal-document-formatting",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "legal-document-summarization",
+  "description": "当需要对判决书、裁定书、调解书、仲裁裁决书、行政处罚决定书等法律文书进行结构化摘要时触发此技能。 典型触发场景包括但不限于： - 用户要求对一份法律文书做摘要、提炼要点或生成裁判要旨 - 用户需要将多份法律文书转化为可对比、可检索的标准化摘要 - 用户要求提取案件信息、争议焦点、法律依据或说理过程 - 用户需要为案例研究、诉讼分析、教学备课准备摘要材料 - 用户要求区分不同文书类型（判决/裁定/调解/仲裁/行政处罚）的摘要重点 本技能的核心价值：在忠实于原文的基础上，将冗长法律文书转化为简明、客观、结构化的摘要，突出核心内容，避免复述全文和主观评价。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/legal-document-summarization/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "legal-document-summarization",
+   "fm_name": "legal-document-summarization",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "legal-element-extraction",
+  "description": "当需要从案件描述、当事人陈述、聊天记录、媒体报道等非结构化文本中提取具有法律意义的事实时触发此技能。 典型触发场景包括但不限于： - 用户提供一段日常语言的案件描述，要求提取法律事实 - 用户要求将口语化、情绪化的叙事转化为法律分析可用的事实结构 - 用户要求区分案件叙述中的\"客观事实\"\"主观判断\"和\"法律评价\" - 用户要求将提取的事实对应到特定法律关系的构成要件 - 用户要求整理案件时间轴或制作事实梳理表 - 用户要求将生活语言转化为法律语言（如\"他一直拖着不还\"→\"履行期限届满后未履行\"） 本技能的核心价值：将混杂的生活叙事整理为可进入法律推理的事实结构，是法律分析的前置步骤。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/legal-element-extraction/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "legal-element-extraction",
+   "fm_name": "legal-element-extraction",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "legal-interpretation-argument",
+  "description": "当法律推理过程中遇到以下情形时触发本技能： （1）法条文本含义模糊、存在多种理解可能； （2）法条适用于具体案件事实时产生争议； （3）需要论证某一法条应当/不应当适用于特定情形； （4）当事人双方对同一法条的理解存在分歧； （5）法条之间存在表面冲突，需要通过解释协调； （6）新型案件事实无法直接对应既有法条文本； （7）需要对裁判文书中的法律适用进行分析或质疑。 本技能的核心是运用文义解释、体系解释、目的解释等法律解释方法，对关键法条进行严谨的解释论证，得出合理、可辩护的法律含义，并以规范化的方式呈现解释过程与结论。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/legal-interpretation-argument/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "legal-interpretation-argument",
+   "fm_name": "legal-interpretation-argument",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "legal-judgment-prediction",
+  "description": "根据案件事实描述，综合调用8个原子能力，预测罪名、适用法条、刑期及量刑情节，输出结构化预测报告及置信度评估。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/legal-judgment-prediction/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "legal-judgment-prediction",
+   "fm_name": "legal-judgment-prediction",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "legal-norm-validity-check",
+  "description": "当AI智能体在法律推理过程中检索到具体法律条文后，需要对该法条进行效力验证时触发此技能。 触发条件包括但不限于： 1. 智能体引用任何法律条文作为推理依据前； 2. 用户提供法条要求分析其适用性时； 3. 多个法律规范可能存在冲突需要判断优先适用时； 4. 法律文件的时间效力存疑（可能已被修订、废止）时； 5. 需要确认某规范性文件是否具有法律约束力时； 6. 跨层级、跨区域法律规范适用产生疑问时。 本技能确保智能体引用的每一条法律规范均为现行有效、层级正确、与上位法及同位法无冲突， 从而保障法律推理结论的可靠性和权威性。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/legal-norm-validity-check/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "legal-norm-validity-check",
+   "fm_name": "legal-norm-validity-check",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "legal-risk-assessment",
+  "description": "从许可资质、监管法规遵循及历史处罚记录四个维度评估企业面临的监管处罚风险。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/legal-risk-assessment/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "legal-risk-assessment",
+   "fm_name": "legal-risk-assessment",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "legal-terminology",
+  "description": "当AI智能体在生成、审查或修改任何法律文本（包括但不限于合同、诉状、法律意见书、裁判文书、法规释义、法律备忘录等）时，需要确保其中使用的法律术语措辞准确、无歧义、符合法律文体要求。该技能在以下场景触发： 1. 起草或修改法律文书时，需要选择正确的法律术语； 2. 审查法律文本时，发现术语使用不规范、混淆或存在歧义； 3. 将日常用语转化为法律规范表达时； 4. 翻译或对照中外法律术语时； 5. 用户明确要求对法律文本进行术语规范化处理时； 6. 对法律概念进行精确定义或解释时。 本技能是法律写作的基础原子能力，贯穿所有法律文本生产环节。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/legal-terminology/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "legal-terminology",
+   "fm_name": "legal-terminology",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "multi-document-summarization",
+  "description": "当需要对多份相关文档进行综合分析、提取共同观点、识别冲突并生成统一概览时触发此技能。 典型触发场景包括但不限于： - 用户上传多份判决书、裁定书，要求总结类案裁判要旨 - 用户提供多个合同文本，要求归纳条款异同和关键差异 - 用户提供多份法律法规、司法解释，要求梳理规范演变和适用要点 - 用户提供多个证据材料、调查笔录，要求整合事实脉络 - 用户提供多篇学术论文、研究报告，要求提炼研究共识和分歧 - 用户要求对比多份法律意见书的观点差异 本技能的核心价值：不是简单压缩单篇文档，而是构建跨文档的关联分析，识别共性与差异，生成新的综合性洞见。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/multi-document-summarization/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "multi-document-summarization",
+   "fm_name": "multi-document-summarization",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "other-legal-retrieval",
+  "description": "当智能体需要检索法律条文、司法解释、典型案例之外的辅助性法律信息时触发此技能。具体包括但不限于：立法背景资料（草案说明、审议报告、立法机关答记者问）、监管案例与行政处罚决定、地方指导意见与会议纪要、部门规章的起草说明与政策解读、行业标准与技术规范、法律实施情况报告、人大常委会执法检查报告、白皮书与政策文件、学术通说与权威教材观点、域外法律比较资料等。当用户问题涉及'为什么这样规定''立法目的是什么''实践中监管部门怎么处理''地方上有什么特殊规定''行业惯例是什么'等语境时，应当触发本技能。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/other-legal-retrieval/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "other-legal-retrieval",
+   "fm_name": "other-legal-retrieval",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "strategic-risk-prioritization",
+  "description": "当法律分析中存在多个可能的结论、风险点或争议焦点时，需要对这些风险按照发生概率和影响程度进行系统化排序，以帮助决策者聚焦最关键的风险并合理分配资源。该技能在以下场景触发：(1)法律尽职调查中发现多项合规风险需要排序；(2)诉讼策略制定中需要评估多个不利结论的可能性与后果；(3)交易结构设计中需要识别并排列关键法律障碍；(4)合同审查中发现多个风险条款需要确定修改优先级；(5)监管合规评估中需要对多项违规风险进行分级管理；(6)任何需要在有限资源下对法律风险进行战略性取舍的场景。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/strategic-risk-prioritization/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "strategic-risk-prioritization",
+   "fm_name": "strategic-risk-prioritization",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "structured-element-extraction",
+  "description": "当AI智能体需要对一个法律问题、案件事实、法律条文或法律关系进行系统性分析时，首先必须将其分解为结构化的要素清单。该技能在以下场景触发： - 接收到一段案件事实描述，需要提取全部法律要素后再进行分析 - 需要判断某一法律关系是否成立（如合同成立、侵权构成、犯罪构成） - 需要对比两个或多个法律事实/条文的异同 - 在进入法律推理、法律适用、法律建议等下游任务之前，作为前置质量关卡 - 用户明确要求\"列出要素\"\"逐项分析\"\"检查是否遗漏\" 本技能的核心目标是：确保要素提取完整、无遗漏，形成可追溯、可验证的结构化清单，然后才允许进入下一阶段推理。它是法律分析链条中的\"质量闸门\"。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/structured-element-extraction/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "structured-element-extraction",
+   "fm_name": "structured-element-extraction",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "systematic-interpretation",
+  "description": "体系解释是指针对法律规范文义解释后所产生的含义或适用范围上的争议，根据法律规范在法律体系中的位置（如在哪一部法律、编、章或节），关联的法律规范的含义，或者法律作为一个体系的应由之意，做出最符合体系性的解释，从而明确体系视角下法律规范的含义与适用范围。 触发条件（满足任一即可调用）：",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/systematic-interpretation/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "systematic-interpretation",
+   "fm_name": "systematic-interpretation",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "teleological-interpretation",
+  "description": "目的解释技能。当法律条文经过文义解释后仍无法得出确定结论时，通过系统性地发现并论证该条文的目的，在文本可承受范围内选择最正当的含义，形成可裁判的解释结论。触发条件（满足任一即可）：文义解释存在两种以上可能无法择一；文义解释结论明显不合理；条文含开放性评价概念（如\"合理\"\"正当\"\"必要\"\"重大\"）；条文较旧、面对新型事实时文义覆盖不足。",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/teleological-interpretation/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "teleological-interpretation",
+   "fm_name": "teleological-interpretation",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
+ {
+  "name": "trial-scheduling-and-deadline-monitoring",
+  "description": "当用户需要跟踪、被提醒案件的开庭排期、执行排期、证据提交期限、上诉期限、送达期限、保全续保等各项法定期限时，使用此技能。 典型触发场景包括但不限于： - 提到\"上诉期限\"\"证据提交期限\"\"送达期限\"\"保全期限\"等关键词 - 增加、修改、询问案件期限时",
+  "license": "CC BY-NC-ND 4.0 (repo-level)",
+  "skill_md_url": "https://raw.githubusercontent.com/THUYRan/Legal-Skills-Chinese/main/skills/trial-scheduling-and-deadline-monitoring/SKILL.md",
+  "repository_url": "https://github.com/THUYRan/Legal-Skills-Chinese",
+  "version": None,
+  "visibility": "group",
+  "allowed_groups": [
+   "registry-admins"
+  ],
+  "tags": [
+   "legal",
+   "chinese-law",
+   "thuyran"
+  ],
+  "metadata": {
+   "author": "Legal-Skills-Chinese 项目团队（执业法律专业人员手写验证）",
+   "source_repo": "THUYRan/Legal-Skills-Chinese",
+   "skill_dir": "trial-scheduling-and-deadline-monitoring",
+   "fm_name": "trial-scheduling-and-deadline-monitoring",
+   "license_note": "repo README declares CC BY-NC-ND 4.0; some skill files mention MIT - treat all as NC-ND until the author grants per-file clarification"
+  }
+ },
 ]
 
 def _load_creds():
@@ -2003,34 +2887,78 @@ def _select(args):
     return selected
 
 
+def _check_catalog_duplicates():
+    by_name = {}
+    for entry in CATALOG:
+        by_name.setdefault(entry["name"], []).append(entry["skill_md_url"])
+    dupes = {n: urls for n, urls in by_name.items() if len(urls) > 1}
+    if dupes:
+        detail = "; ".join(f"{n} <- {' | '.join(urls)}" for n, urls in sorted(dupes.items()))
+        sys.exit(f"error: duplicate CATALOG names (fix before registering): {detail}")
+
+
+def _toggle_skill(token, path, enabled):
+    return _api("POST", f"/api/skills/{path}/toggle", token, {"enabled": enabled})
+
+
+def _ensure_enabled(token, path, item):
+    """Re-enable a skill the gateway has auto-disabled (fail-safe drift disable).
+
+    `item` is the listing entry when available; None forces a detail GET (needed
+    for disabled entries, which the listing hides). Returns True when a toggle
+    to enabled was issued and succeeded, None when no toggle was needed.
+    """
+    if item is None:
+        st, det = _api("GET", f"/api/skills/{path}", token)
+        if not (st == 200 and isinstance(det, dict)):
+            return None
+        item = det
+    if item.get("is_enabled", item.get("enabled")) is False:
+        st, _resp = _toggle_skill(token, path, True)
+        return st in (200, 201)
+    return None
+
+
 def cmd_register(args):
-    token = _mint_token()
     targets = _select(args)
     if not targets:
         sys.exit("error: no catalog entries match the given filters")
-    existing = {}
+    existing_items = {}
     if not args.dry_run:
-        existing = {_skill_path(item): _skill_path(item) for item in _list_skills(token)}
-        # index by name as well; path usually equals the normalized name
+        token = _mint_token()
         for item in _list_skills(token):
-            existing[item.get("name")] = _skill_path(item)
+            existing_items.setdefault(item.get("name"), item)
     failures = 0
     for entry in targets:
         payload = _entry_payload(entry)
         if args.dry_run:
             print(f"DRY {entry['visibility']:6} {entry['name']}  <- {entry['skill_md_url']}")
             continue
-        path = existing.get(entry["name"])
-        if path:
+        item = existing_items.get(entry["name"])
+        if item:
+            upstream = _existing_source_url(token, item)
+            if upstream and upstream != entry["skill_md_url"]:
+                # fail closed: the name belongs to a different upstream skill
+                print(f"COLLISION       {entry['name']}: name held by "
+                      f"{upstream}; skipped, existing entry untouched")
+                failures += 1
+                continue
+            path = _skill_path(item)
             status, resp = _api("PUT", f"/api/skills/{path}", token, payload)
             action = "updated"
+            if status in (200, 201) and _ensure_enabled(token, path, item):
+                action += "+enabled"
         else:
             status, resp = _api("POST", "/api/skills", token, payload)
             action = "created"
-            if status in (409, 400) and isinstance(resp, dict) and not resp.get("ok", True):
-                # race / stale list: fall back to an in-place update by name
+            if status in (409, 400):
+                # race / stale list / DISABLED entry (auto-disabled skills are hidden
+                # from the listing): fall back to an in-place update by name, which
+                # re-baselines content and re-enables
                 status, resp = _api("PUT", f"/api/skills/{entry['name']}", token, payload)
                 action = "updated"
+                if status in (200, 201) and _ensure_enabled(token, entry["name"], None):
+                    action += "+enabled"
         ok = status in (200, 201)
         failures += 0 if ok else 1
         marker = "OK  " if ok else "FAIL"
@@ -2038,6 +2966,24 @@ def cmd_register(args):
               + ("" if ok else f": {str(resp)[:300]}"))
     print(f"done: {len(targets)} processed, {failures} failed")
     return 1 if failures else 0
+
+
+def _existing_source_url(token, item):
+    """Best-effort upstream URL of an already-registered skill.
+
+    Returns None when the API exposes no source URL — the caller then proceeds
+    (idempotent re-registration must keep working); only a *known different*
+    upstream counts as a collision.
+    """
+    url = item.get("skill_md_url") or item.get("source_url") or item.get("url")
+    if url:
+        return url
+    path = _skill_path(item)
+    status, detail = _api("GET", f"/api/skills/{path}", token)
+    if status == 200 and isinstance(detail, dict):
+        detail = detail.get("skill") if isinstance(detail.get("skill"), dict) else detail
+        return detail.get("skill_md_url") or detail.get("source_url") or detail.get("url")
+    return None
 
 
 def cmd_show(args):
@@ -2060,17 +3006,40 @@ def cmd_show(args):
 
 def cmd_remove(args):
     token = _mint_token()
-    items = _list_skills(token)
-    match = next((it for it in items if it.get("name") == args.name), None)
-    if not match:
-        sys.exit(f"error: skill {args.name!r} not in catalog (nothing to remove)")
-    status, resp = _api("DELETE", f"/api/skills/{_skill_path(match)}", token)
-    print(f"{'OK  ' if status in (200, 204) else 'FAIL'} removed [{status}] {args.name}"
-          + ("" if status in (200, 204) else f": {str(resp)[:300]}"))
-    return 0 if status in (200, 204) else 1
+    if not args.name and not args.repo and not args.visibility:
+        sys.exit("error: remove needs a skill name or a --repo/--visibility filter")
+    if args.name:
+        items = _list_skills(token)
+        match = next((it for it in items if it.get("name") == args.name), None)
+        if not match:
+            sys.exit(f"error: skill {args.name!r} not in catalog (nothing to remove)")
+        targets = [match]
+    else:
+        selected = _select(args)
+        if not selected:
+            sys.exit("error: no catalog entries match the given filters")
+        on_gateway = {it.get("name"): it for it in _list_skills(token)}
+        targets, absent = [], []
+        for entry in selected:
+            item = on_gateway.get(entry["name"])
+            targets.append(item) if item else absent.append(entry["name"])
+        if absent:
+            preview = ", ".join(absent[:10]) + ("…" if len(absent) > 10 else "")
+            print(f"note: {len(absent)} catalog entries not on the gateway (skipped): {preview}")
+    print(f"removing {len(targets)} skill(s)")
+    failed = 0
+    for item in targets:
+        name = item.get("name")
+        status, resp = _api("DELETE", f"/api/skills/{_skill_path(item)}", token)
+        ok = status in (200, 204)
+        failed += 0 if ok else 1
+        print(f"{'OK  ' if ok else 'FAIL'} removed [{status}] {name}"
+              + ("" if ok else f": {str(resp)[:300]}"))
+    return 1 if failed else 0
 
 
 def main():
+    _check_catalog_duplicates()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="action", required=True)
 
@@ -2086,8 +3055,11 @@ def main():
     show.add_argument("--name", help="show full detail for one skill")
     show.set_defaults(func=cmd_show)
 
-    rem = sub.add_parser("remove", help="remove one skill by exact name")
-    rem.add_argument("name")
+    rem = sub.add_parser("remove", help="remove one skill by name, or a repo/visibility subset")
+    rem.add_argument("name", nargs="?", help="exact skill name to delete")
+    rem.add_argument("--repo", help="remove every catalog entry from this source repo")
+    rem.add_argument("--visibility", choices=("public", "group"),
+                     help="remove every catalog entry with this visibility")
     rem.set_defaults(func=cmd_remove)
 
     args = parser.parse_args()
