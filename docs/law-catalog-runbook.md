@@ -29,6 +29,14 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;   -- 若 DATABASE_URL 用户无权限，
 
 ## 目录刷新（法规库侧有增量后）
 
+一键方式（导入 → 名称级解析+审计 → 条文级解析，约 5 分钟）：
+
+```bash
+scripts/refresh_law_catalog.sh /path/to/laws_export.jsonl
+```
+
+分步方式（与上面等价）：
+
 1. **法规库侧导出**（在法规库 PG 上）：
 
    ```sql
