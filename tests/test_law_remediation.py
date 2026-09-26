@@ -165,3 +165,17 @@ def test_verify_closed_loop(catalog):
     after = rem.verify_batch(db=catalog)
     assert after["audit"]["repealed"] == 1          # only the needs_human local case
     assert before["audit"]["repealed"] >= 2
+
+
+def test_revisions_page_registered(app_client, catalog):
+    """Route ordering regression: the revisions page must be reachable
+    (an earlier append-after-include left it unregistered -> 404)."""
+    _clause(catalog, 110, "依据《中华人民共和国合同法》签订。")
+    _setup_resolution(catalog)
+    plan = rem.plan_batch("r1-page", db=catalog)
+    rem.apply_batch(plan, db=catalog)
+    r = app_client.get("/law-catalog/revisions")
+    assert r.status_code == 200
+    assert "r1-page" in r.text
+    r2 = app_client.get("/law-catalog/revisions", params={"batch": "r1-page"})
+    assert r2.status_code == 200 and "applied" in r2.text

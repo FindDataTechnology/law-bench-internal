@@ -1,23 +1,23 @@
 {% extends "base.html" %}
-{% block title %}引法修订记录 · {{ t.nav.brand }}{% endblock %}
+{% block title %}{{ t.catalog.rev_h1 }} · {{ t.nav.brand }}{% endblock %}
 {% block content %}
 <div class="toolbar between">
-  <h1>引法修订记录</h1>
-  <a class="btn btn-sm btn-ghost" href="{{ url_for('page_law_catalog_audit') }}">返回引法审计</a>
+  <h1>{{ t.catalog.rev_h1 }}</h1>
+  <a class="btn btn-sm btn-ghost" href="{{ url_for('page_law_catalog_audit') }}">{{ t.catalog.back_audit }}</a>
 </div>
 <p class="muted">
-  废止引法修复的留痕：每条含 before/after 与三段证据链（死法 → 废止依据 → 承继法），全部可对目录复核。只读页。
+  {{ t.catalog.rev_note }}
 </p>
 <div class="inline">
-  <a class="btn btn-sm {{ 'btn-ghost' if batch else '' }}" href="{{ url_for('page_law_catalog_revisions') }}">全部</a>
+  <a class="btn btn-sm {{ 'btn-ghost' if batch else '' }}" href="{{ url_for('page_law_catalog_revisions') }}">{{ t.catalog.all }}</a>
   {% for b in batches %}
   <a class="btn btn-sm {{ 'btn-ghost' if batch != b.batch else '' }}"
-     href="{{ url_for('page_law_catalog_revisions', batch=b.batch) }}">{{ b.batch }}（{{ b.n }}）</a>
+     href="{{ url_for('page_law_catalog_revisions') }}?batch={{ b.batch }}">{{ b.batch }}（{{ b.n }}）</a>
   {% endfor %}
 </div>
 <table>
   <thead>
-    <tr><th>#</th><th>条款</th><th>类型</th><th>before → after</th><th>证据链</th><th>处置</th><th>规则/提交</th></tr>
+    <tr><th>#</th><th>{{ t.catalog.col_clause }}</th><th>{{ t.catalog.col_type }}</th><th>{{ t.catalog.col_cited_before_after }}</th><th>{{ t.catalog.col_evidence }}</th><th>{{ t.catalog.col_disposition }}</th><th>{{ t.catalog.col_rule }}</th></tr>
   </thead>
   <tbody>
     {% for r in rows %}
@@ -28,8 +28,8 @@
       <td><code>{{ r.cited_before }}</code> → <code>{{ r.cited_after or '—' }}</code></td>
       <td class="small">
         {{ r.dead_title }}［{{ r.dead_status }}］
-        {% if r.authority_title %} ←依据 {{ r.authority_title }}{% endif %}
-        → {{ r.successor_title or '待人工' }}{% if r.successor_status %}［{{ r.successor_status }}］{% endif %}
+        {% if r.authority_title %} {{ t.catalog.per_authority }} {{ r.authority_title }}{% endif %}
+        → {{ r.successor_title or t.catalog.pending_manual }}{% if r.successor_status %}［{{ r.successor_status }}］{% endif %}
       </td>
       <td><code>{{ r.disposition }}</code></td>
       <td class="small">{{ r.rule_version or '—' }} @{{ r.git_sha or '?' }}</td>

@@ -104,11 +104,6 @@ async def law_catalog_non_match(request: Request, db: DbConn = Depends(get_db)):
     )
 
 
-router = APIRouter(tags=["law-catalog"])
-router.include_router(read_only_router)
-router.include_router(write_router)
-
-
 @read_only_router.get(
     "/law-catalog/revisions", include_in_schema=False, name="page_law_catalog_revisions"
 )
@@ -149,3 +144,7 @@ def law_catalog_revisions(request: Request, db: DbConn = Depends(get_db), batch:
         "law_catalog_revisions.html",
         {"rows": rows, "batches": batches, "batch": batch, "zh": _zh_map()},
     )
+
+router = APIRouter(tags=["law-catalog"])
+router.include_router(read_only_router)
+router.include_router(write_router)
