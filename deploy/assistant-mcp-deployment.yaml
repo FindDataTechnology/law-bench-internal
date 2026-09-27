@@ -54,7 +54,7 @@ spec:
             value: "5"
       containers:
         - name: law-bench-mcp-assistant
-          image: 100.64.0.8:30880/law-bench/law-template:sha-b4c90f4
+          image: 100.64.0.8:30880/law-bench/law-template:sha-db5ed10
           imagePullPolicy: IfNotPresent
           command: ["/app/.venv/bin/python", "-m", "fd_coding_law_bench_mcp"]
           env:
