@@ -14,36 +14,24 @@ permissions:
 jobs:
   list-tags:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - name: List TCR tags
+      - name: Login and inspect TCR manifests
         env:
           TCR_USER: ${{ secrets.TCR_USER }}
           TCR_PASS: ${{ secrets.TCR_PASS }}
         run: |
           set -euo pipefail
-          for repo in law-template law-render; do
-            echo "== ccr.ccs.tencentyun.com/law-bench/$repo =="
-            curl -sS -u "$TCR_USER:$TCR_PASS" \
-              "https://ccr.ccs.tencentyun.com/v2/law-bench/$repo/tags/list" \
-              || echo "(query failed)"
-            echo
-          done
+          echo "$TCR_PASS" | docker login ccr.ccs.tencentyun.com -u "$TCR_USER" --password-stdin 2>/dev/null
           for ref in \
             law-bench/law-template:sha-aa3df58 \
             law-bench/law-render:sha-aa3df58 \
-            law-bench/law-template:sha-98bbbb8; do
-            code=$(curl -sS -o /dev/null -w '%{http_code}' -u "$TCR_USER:$TCR_PASS" \
-              -I "https://ccr.ccs.tencentyun.com/v2/$ref/manifests/latest" \
-              -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.index.v1+json" || true)
-            echo "manifest HEAD $ref (via :latest placeholder) -> $code"
-          done
-          # Direct manifest check for the exact tags we care about:
-          for tag in sha-aa3df58 sha-98bbbb8; do
-            for repo in law-template law-render; do
-              code=$(curl -sS -o /dev/null -w '%{http_code}' -u "$TCR_USER:$TCR_PASS" \
-                -I "https://ccr.ccs.tencentyun.com/v2/law-bench/$repo/manifests/$tag" \
-                -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.index.v1+json" || true)
-              echo "$repo:$tag -> HTTP $code"
-            done
+            law-bench/law-template:sha-98bbbb8 \
+            law-bench/law-template:latest; do
+            if docker manifest inspect "ccr.ccs.tencentyun.com/$ref" >/dev/null 2>&1; then
+              size=$(docker manifest inspect "ccr.ccs.tencentyun.com/$ref" | python3 -c "import json,sys; m=json.load(sys.stdin); print('multi-arch')" 2>/dev/null || true)
+              echo "EXISTS: $ref"
+            else
+              echo "MISSING: $ref"
+            fi
           done
