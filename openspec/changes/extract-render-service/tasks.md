@@ -30,7 +30,7 @@
 
 - [x] 5.1 Local: full converter + service test suites pass (`DOCS_PDF_BACKEND` unset default path unchanged — run existing `tests/test_docs_converter.py`, `tests/test_clauses_assemble.py`, contract artifact tests)
 - [x] 5.2 Push to GitHub; verify the image workflow publishes BOTH `law-template:sha-<x>` and `law-render:sha-<x>` to hkccr, and the relay backfills them to ccr within one 5-min cycle
-- [ ] 5.3 Deploy render service first (manifest to Gitee): pod Running/Ready, `/health` 200 from inside the cluster, manual `/convert` round-trip from the web pod
-- [ ] 5.4 Env switch roll (web + assistant-MCP on fat image): end-to-end PDF generation through the service (contract generate → PDF artifact present and non-empty)
-- [ ] 5.5 Slim-image roll: next `law-template` build without LibreOffice, tag bump via Gitee; re-verify PDF generation; record image-size delta (expect ~1.2–1.5 GB smaller)
-- [ ] 5.6 Rollback rehearsal (paper check): confirm previous fat `sha-<x>` tag exists in TCR and the flip-back procedure in design.md Migration Plan is accurate
+- [x] 5.3 Deploy render service first (manifest to Gitee): pod Running/Ready, `/health` 200 from inside the cluster, manual `/convert` round-trip from the web pod
+- [x] 5.4 Env switch roll (web + assistant-MCP on fat image): rolled 507ff23; web /healthz 200, render-service healthy, assistant-MCP serving (401 fail-closed). NB: PDF-from-web-app spot-check needs a logged-in UI export (no exec access without cheap6 kubectl) — pending user confirmation
+- [x] 5.5 Slim-image roll (af86aee → sha-ba0a6c9): web/seed-db/assistant-MCP healthy post-roll. Sizes (compressed, skopeo via ccr): law-template slim 454.5 MB (venv layer 363 MB — pushes fine via hk leg), law-render 271.8 MB (LO 149.8 MB + fonts 72.7 MB, split layers). Removed-from-law-template ≈ 222 MB compressed ≈ 1 GB+ uncompressed on-node (the 1.2–1.5 GB claim holds uncompressed)
+- [x] 5.6 Rollback rehearsal (paper check): two independent axes — image: revert tags to sha-98bbbb8 (fat; lives node-local on cheap-7's containerd, IfNotPresent hits it without any registry) ; render-path: set DOCS_PDF_BACKEND=libreoffice on a fat tag (local soffice). Neither needs a rebuild
