@@ -21,6 +21,10 @@ FROM ${BASE_IMAGE}
 # (SimSun/SimHei, proprietary) so Chinese PDFs don't render as boxes. Mirror
 # ARGs + Acquire::* bounds carried over for the in-cluster Jenkins fallback
 # builder (the GitHub-hosted runner uses the defaults).
+#
+# The two installs are separate RUN layers deliberately (tcr-image-pipeline
+# image-build policy): one giant ~350MB apt layer wedges transpacific registry
+# pushes; ~150MB layers complete.
 ARG DEBIAN_MIRROR=http://deb.debian.org/debian
 ARG DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security
 RUN set -eux; \
@@ -30,7 +34,11 @@ RUN set -eux; \
                -e "s|https\?://deb\.debian\.org/debian|${DEBIAN_MIRROR}|g" "$f"; \
     done; \
     apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update; \
-    apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y --no-install-recommends libreoffice-writer fonts-noto-cjk; \
+    apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y --no-install-recommends libreoffice-writer; \
+    rm -rf /var/lib/apt/lists/*
+RUN set -eux; \
+    apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update; \
+    apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y --no-install-recommends fonts-noto-cjk; \
     rm -rf /var/lib/apt/lists/*
 
 # Pinned to the versions in uv.lock so the service behaves like the app venv.
