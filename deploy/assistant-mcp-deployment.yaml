@@ -41,6 +41,9 @@ spec:
       # pod moved to cheap-7 too.
       nodeSelector:
         kubernetes.io/hostname: cheap-7
+      # TCR personal edition pull creds (switch-image-pipeline-github-actions-tcr).
+      imagePullSecrets:
+        - name: tcr-pull
       dnsPolicy: None
       dnsConfig:
         nameservers:
@@ -54,7 +57,7 @@ spec:
             value: "5"
       containers:
         - name: law-bench-mcp-assistant
-          image: 100.64.0.8:30880/law-bench/law-template:sha-db5ed10
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-98bbbb8
           imagePullPolicy: IfNotPresent
           command: ["/app/.venv/bin/python", "-m", "fd_coding_law_bench_mcp"]
           env:
@@ -74,6 +77,12 @@ spec:
             # denylist naming a nonexistent tool refuses to start (stale-guard).
             - name: MCP_TOOL_DENYLIST
               value: "clause_delete,rubric_delete,criterion_delete,prompt_delete"
+            # DOCX->PDF via the shared render service (extract-render-service);
+            # the image no longer carries LibreOffice.
+            - name: DOCS_PDF_BACKEND
+              value: "http"
+            - name: RENDER_SERVICE_URL
+              value: "http://render-service.law-bench.svc.cluster.local:8090"
           envFrom:
             - secretRef:
                 name: law-bench-db

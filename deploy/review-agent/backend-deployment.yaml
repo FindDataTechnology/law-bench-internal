@@ -27,6 +27,12 @@ spec:
           env:
             - name: CORS_ORIGINS
               value: "http://23.144.68.246:30830,http://23.144.68.246:30831,http://localhost:3000"
+            # DOCX->PDF via the shared render service (extract-render-service);
+            # the review-backend image no longer carries LibreOffice.
+            - name: DOCS_PDF_BACKEND
+              value: "http"
+            - name: RENDER_SERVICE_URL
+              value: "http://render-service.law-bench.svc.cluster.local:8090"
           ports:
             - containerPort: 8000
           livenessProbe:
