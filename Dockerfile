@@ -60,29 +60,10 @@ ENV UV_COMPILE_BYTECODE=1 \
 RUN useradd --create-home --uid 1001 appuser \
     && chown appuser:appuser /app
 
-# Headless LibreOffice for DOCX -> PDF conversion (src.docs.converter). Only
-# the writer module is needed; it pulls in `soffice` via libreoffice-core.
-# fonts-noto-cjk: the DOCX declares 宋体/黑体 (SimSun/SimHei, proprietary, not
-# in Debian); LibreOffice substitutes them with Noto CJK for PDF rendering, but
-# only if a CJK font is installed. Without this, Chinese PDFs render as boxes.
-#
-# The Debian mirrors are parameterised for the same reason as UV_INDEX_URL:
-# direct deb.debian.org is ~460x slower from the in-cluster builder (measured
-# 20 KB/s vs 9.6 MB/s on the mirror), and a stalled 56 MB fonts-noto-cjk
-# download once burned Jenkins's entire 60-min timeout. CI overrides both; the
-# Acquire::* options bound each request so a transient stall fails fast instead
-# of hanging the build.
-ARG DEBIAN_MIRROR=http://deb.debian.org/debian
-ARG DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security
-RUN set -eux; \
-    for f in /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources; do \
-        [ -f "$f" ] || continue; \
-        sed -i -e "s|https\?://deb\.debian\.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" \
-               -e "s|https\?://deb\.debian\.org/debian|${DEBIAN_MIRROR}|g" "$f"; \
-    done; \
-    apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update; \
-    apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y --no-install-recommends libreoffice-writer fonts-noto-cjk; \
-    rm -rf /var/lib/apt/lists/*
+# DOCX -> PDF rendering no longer lives in this image (extract-render-service):
+# it moved to the shared render service (Dockerfile.render), reached at runtime
+# via DOCS_PDF_BACKEND=http + RENDER_SERVICE_URL in the deploy manifests. That
+# layer (libreoffice-writer + fonts-noto-cjk) was ~1.2-1.5 GB of every image.
 
 # Package index for resolving locked deps. Default is PyPI; the in-cluster CI
 # builder overrides UV_INDEX_URL with a domestic mirror because direct PyPI is

@@ -13,6 +13,7 @@ from __future__ import annotations
 from .converter import (
     ConverterNotAvailableError,
     Docx2PdfConverter,
+    HttpRenderConverter,
     LibreOfficeConverter,
     PdfConverter,
     docx_to_pdf,
@@ -28,6 +29,7 @@ __all__ = [
     "PdfConverter",
     "LibreOfficeConverter",
     "Docx2PdfConverter",
+    "HttpRenderConverter",
     "slot_token",
     "find_slots",
     "fill_slots",
