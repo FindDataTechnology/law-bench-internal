@@ -9,7 +9,7 @@ CJK-correct PDFs.
 
 ### Requirement: Convert DOCX to PDF over HTTP
 
-The service SHALL accept an unauthenticated in-cluster `POST /convert`
+The service SHALL accept an unauthenticated `POST /convert`
 request carrying a `.docx` file as a multipart form field, and SHALL respond
 with the rendered PDF bytes (`application/pdf`). The input file SHALL NOT be
 retained after the response is sent.

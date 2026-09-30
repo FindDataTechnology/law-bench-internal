@@ -15,7 +15,7 @@
 ## 3. Images & CI
 
 - [x] 3.1 Add `Dockerfile.render`: `python:3.12-slim`, apt `libreoffice-writer fonts-noto-cjk` (with the DEBIAN_MIRROR args + Acquire timeouts carried over for the Jenkins fallback path), `pip install` pinned `fastapi uvicorn python-multipart`, non-root user, `uvicorn` on 0.0.0.0:8090, copy `src/render_service/` only
-- [ ] 3.2 Extend `.github/workflows/build-and-push.yml`: second metadata + build-push step for `Dockerfile.render` → `ccr.ccs.tencentyun.com/law-bench/law-render`, same `sha-<short>`/`latest`/`v*` tags, same login; confirm TCR personal-edition repo quota allows the second repo (design Risk)
+- [x] 3.2 CI image workflow (superseded 2026-10-01: onboarded onto the tcr-image-pipeline standard channel instead of extending build-and-push.yml) — `image.yml` matrix builds `law-template` + `law-render`, pushes `hkccr.ccs.tencentyun.com` (secrets TCR_USERNAME/TCR_PASSWORD, `sha-<short>` + `main`, provenance false); cheap-3 relay repos.conf lists `law-bench/law-render`; obsolete workflows deleted
 - [x] 3.3 Slim root `Dockerfile`: remove the `libreoffice-writer fonts-noto-cjk` apt layer (and its now-unused mirror ARGs if nothing else uses them); note the ~GB delta in the image-size check
 - [x] 3.4 Slim `Dockerfile.review-backend`: remove its `libreoffice-writer` install (keep libpq-dev/gcc — still needed for psycopg build)
 
@@ -29,7 +29,7 @@
 ## 5. Verification & rollout
 
 - [x] 5.1 Local: full converter + service test suites pass (`DOCS_PDF_BACKEND` unset default path unchanged — run existing `tests/test_docs_converter.py`, `tests/test_clauses_assemble.py`, contract artifact tests)
-- [ ] 5.2 Push to GitHub; verify workflow publishes BOTH `law-template:sha-<x>` and `law-render:sha-<x>` to TCR
+- [x] 5.2 Push to GitHub; verify the image workflow publishes BOTH `law-template:sha-<x>` and `law-render:sha-<x>` to hkccr, and the relay backfills them to ccr within one 5-min cycle
 - [ ] 5.3 Deploy render service first (manifest to Gitee): pod Running/Ready, `/health` 200 from inside the cluster, manual `/convert` round-trip from the web pod
 - [ ] 5.4 Env switch roll (web + assistant-MCP on fat image): end-to-end PDF generation through the service (contract generate → PDF artifact present and non-empty)
 - [ ] 5.5 Slim-image roll: next `law-template` build without LibreOffice, tag bump via Gitee; re-verify PDF generation; record image-size delta (expect ~1.2–1.5 GB smaller)

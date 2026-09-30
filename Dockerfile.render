@@ -8,8 +8,8 @@
 #
 # Consumed in-cluster by the web / assistant-MCP / review-backend pods via
 # DOCS_PDF_BACKEND=http + RENDER_SERVICE_URL — those images no longer carry
-# LibreOffice (this is where it moved). No auth: ClusterIP-only, reachable
-# solely from inside the cluster.
+# LibreOffice (this is where it moved). No auth: in-cluster Service plus an
+# ops NodePort (30920), never exposed through the public edge.
 #
 #   docker build -t law-render -f Dockerfile.render .
 

@@ -99,14 +99,24 @@ image simply keeps its local LibreOffice (non-goal).
 `Dockerfile.review-backend` drops LibreOffice and the review backend env
 gets the same pair.
 
-**D6 — CI: extend `build-and-push.yml` with a second build-push step.**
-Same job, after the main image: build `Dockerfile.render`, same
-`sha-<short>`/`latest`/`v*` tag logic (docker/metadata-action per-image),
-push to `ccr.ccs.tencentyun.com/law-bench/law-render`. No new secrets.
-Alternative: separate workflow — rejected: same triggers, same login,
-duplicating boilerplate; a second step shares checkout/buildx/login.
-Alternative: multi-target single image — rejected: one image carrying both
-the app and LibreOffice is exactly what we are deleting.
+**D6 — CI: repo image workflow (tcr-image-pipeline standard channel).**
+Updated 2026-10-01: the original plan (extend `build-and-push.yml` with a
+direct second push to ccr) is obsolete — direct US→ccr pushes crawl at
+~0.14MB/s and were abandoned fleet-wide. law-bench is onboarded onto the
+standard `image.yml` channel: matrix over `law-template` (Dockerfile) and
+`law-render` (Dockerfile.render), push to `hkccr.ccs.tencentyun.com`
+(11.6MB/s transpacific leg, secrets `TCR_USERNAME`/`TCR_PASSWORD`, tags
+`sha-<short>` + `main`, `provenance: false`), then the cheap-3 tcr-relay
+backfills ccr within its 5-minute cron cycle (repos.conf lists both repos).
+Nodes pull from ccr with node-level registries.yaml auth — no per-pod
+imagePullSecret required (existing `tcr-pull` refs are harmless).
+Alternative: separate workflow — rejected: same triggers, same login, the
+matrix keeps it one file. Alternative: multi-target single image — rejected:
+one image carrying both the app and LibreOffice is exactly what we are
+deleting. Layer policy: no single RUN layer above ~300MB (transpacific blob
+uploads wedge); law-render's apt installs are split into two RUNs, and the
+slim law-template's venv layer (~370MB uncompressed, ~150MB compressed)
+stays a single `uv sync` layer.
 
 **D7 — Deploy manifest: `deploy/render-service-deployment.yaml` + Service.**
 Namespace `law-bench`, `imagePullSecrets: tcr-pull`, image
