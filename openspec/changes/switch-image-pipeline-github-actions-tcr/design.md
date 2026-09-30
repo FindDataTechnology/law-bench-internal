@@ -115,6 +115,10 @@ deploy push target.
    deployed** `sha-db5ed10` (content-identical roll: proves the pull path
    without introducing a new build), push to Gitee, watch ArgoCD sync, smoke
    test. Subsequent rolls use freshly built tags.
+   *(Apply-time amendment: the rewritten workflow only builds pushed HEADs, so
+   `sha-db5ed10` cannot be produced through TCR. The first roll instead uses
+   the freshly built `sha-<head>` whose diff vs db5ed10 is Jenkinsfile/CI/docs
+   only — functionally the same content-identical guarantee.)*
 
 Rollback = flip the references back to `100.64.0.8:30880/law-bench/law-template:sha-<x>`
 with a Harbor-existing tag and push. No rebuild, no cluster change.
