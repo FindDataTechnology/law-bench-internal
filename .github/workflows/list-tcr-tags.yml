@@ -16,22 +16,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Login and inspect TCR manifests
+      - name: Query TCR registry API with docker-issued creds
         env:
           TCR_USER: ${{ secrets.TCR_USER }}
           TCR_PASS: ${{ secrets.TCR_PASS }}
         run: |
           set -euo pipefail
-          echo "$TCR_PASS" | docker login ccr.ccs.tencentyun.com -u "$TCR_USER" --password-stdin 2>/dev/null
-          for ref in \
-            law-bench/law-template:sha-aa3df58 \
-            law-bench/law-render:sha-aa3df58 \
-            law-bench/law-template:sha-98bbbb8 \
-            law-bench/law-template:latest; do
-            if docker manifest inspect "ccr.ccs.tencentyun.com/$ref" >/dev/null 2>&1; then
-              size=$(docker manifest inspect "ccr.ccs.tencentyun.com/$ref" | python3 -c "import json,sys; m=json.load(sys.stdin); print('multi-arch')" 2>/dev/null || true)
-              echo "EXISTS: $ref"
-            else
-              echo "MISSING: $ref"
-            fi
+          echo "$TCR_PASS" | docker login ccr.ccs.tencentyun.com -u "$TCR_USER" --password-stdin
+          AUTH=$(python3 -c "
+          import json, os
+          cfg = json.load(open(os.path.expanduser('~/.docker/config.json')))
+          print(cfg['auths']['ccr.ccs.tencentyun.com']['auth'])
+          ")
+          H="Authorization: Basic $AUTH"
+          A="Accept: application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json"
+          for repo in law-template law-render; do
+            echo "== tags for law-bench/$repo =="
+            curl -sS -H "$H" "https://ccr.ccs.tencentyun.com/v2/law-bench/$repo/tags/list" || echo "(tags/list failed)"
+            echo
+          done
+          for ref in law-template:sha-aa3df58 law-render:sha-aa3df58 law-template:sha-98bbbb8 law-template:latest; do
+            repo=${ref%%:*}; tag=${ref##*:}
+            code=$(curl -sS -o /dev/null -w '%{http_code}' -H "$H" -H "$A" \
+              "https://ccr.ccs.tencentyun.com/v2/law-bench/$repo/manifests/$tag")
+            echo "manifest $ref -> HTTP $code"
           done
