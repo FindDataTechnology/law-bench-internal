@@ -67,7 +67,9 @@ the tunnel.
 - **Image layout:** CI (`build-and-push.yml`) pushes to project `law-bench`
   (`law-bench/law-template:sha-<git>`); the `finddata` project carries the
   fd-* services (`finddata/law-bench`, `finddata/fd-open-data-mcp`, …) pushed
-  by hand/deploy scripts.
+  by hand/deploy scripts. Since 2026-09-30 the law-bench deployments pull
+  from TCR instead (next section); Harbor keeps its `law-bench` project as
+  the dual-track rollback target while the Jenkins path stays alive.
 
 ## Networking constraints (provider layer, not fixable from inside)
 
@@ -115,13 +117,13 @@ explicitly.
 `deploy/pvc.yaml` describe the running state. Two cheap-specific deviations are
 baked into those manifests:
 
-- **`nodeSelector: kubernetes.io/hostname: liuliangculkrd838gqz` and no
-  `imagePullSecrets`.** Historical reason: the earlier in-cluster Harbor kept
-  `registry-data` on an `emptyDir`, so `harbor.local/law-bench/law-template:sha-2c502d7`
-  only existed in that node's containerd store. The Harbor has since been rebuilt
-  with an S3 backend (see "Harbor" above), but the manifests still pin the node
-  and rely on `IfNotPresent` + the locally imported image; switching them to the
-  durable registry reference plus a pull secret is still owed.
+- **`nodeSelector: kubernetes.io/hostname: cheap-7` (web) with
+  `imagePullSecrets: [tcr-pull]`.** The node pin is purely the local-path PVC
+  (`law-bench-db`) binding — the PV carries node affinity, so rescheduling
+  elsewhere forces a PVC recreate. The image itself no longer needs a
+  node-local pre-import: since the TCR switch any node can pull
+  `ccr.ccs.tencentyun.com` images with the `tcr-pull` secret
+  (switch-image-pipeline-github-actions-tcr).
 - **`PYTHONPATH=/opt/mcp/lib/pkgs:/app` plus a read-only hostPath mount** of
   `/opt/lawbench-mcp-pkgs` on the MCP pod. `sha-2c502d7` was built *without* the
   `fd-coding-law-bench-mcp` build context, so `/app/.venv` has no MCP package.
@@ -192,7 +194,38 @@ is repointed. When a better LLM path exists (e.g. gpt-load reachable from this
 cluster), swap the secret and `kubectl -n law-bench rollout restart
 deploy/copilot-runtime` — nothing else changes.
 
-### Image delivery on the cheap cluster (2026-09-15 state)
+### Image delivery (2026-09-30: GitHub Actions → TCR; Gitee/ArgoCD rolls)
+
+**Why not GitHub end-to-end:** cluster nodes cannot reach github.com (verified
+2026-09-30 from cheap-6 and cheap-7 — github.com and api.github.com both time
+out), so ArgoCD keeps watching the **Gitee** repo. `ccr.ccs.tencentyun.com`
+answers from the cluster in ~0.24 s (TCR personal edition).
+
+- **Build:** push code to `github.com/FindDataTechnology/law-bench` (the dev
+  box needs `git config --global http.https://github.com.proxy
+  http://127.0.0.1:7890`) → GitHub Actions `build-and-push` (hosted runner,
+  Dockerfile defaults — no CN-mirror build args) → pushes
+  `ccr.ccs.tencentyun.com/law-bench/law-template:sha-<short>` plus `latest` on
+  main. Credentials: repo secrets `TCR_USER` / `TCR_PASS`. First push of a
+  tree is slow (~2.3 GB across the Pacific); the GHA layer cache shrinks the
+  rest.
+- **Roll:** bump the tag in `deploy/deployment.yaml` +
+  `deploy/assistant-mcp-deployment.yaml`, push to Gitee `origin` (ArgoCD app
+  `law-bench` syncs; force with the refresh annotate if impatient), and push
+  the same commit to the GitHub remote to keep the mirror in sync. Kubelet
+  pulls via `imagePullSecrets: tcr-pull` — recreate after a password rotation
+  with `kubectl -n law-bench create secret docker-registry tcr-pull
+  --docker-server=ccr.ccs.tencentyun.com --docker-username=<tcr-user>
+  --docker-password=<tcr-pass>`.
+- **Rollback (dual-track window):** the Jenkins→Harbor path stays alive
+  (Jenkinsfile kept, Gitee webhook intact, Harbor retains old tags). Roll back
+  by flipping the manifest image refs back to
+  `100.64.0.8:30880/law-bench/law-template:sha-<x>` (a tag that exists in
+  Harbor) and pushing — no rebuild involved.
+- **TCR tag hygiene:** personal-edition storage fills with `sha-*` tags
+  (~2.3 GB each); prune in the console occasionally (keep `latest` + recent).
+  The TCR login is a console-set fixed password — rotating it means updating
+  BOTH the GitHub repo secret and the `tcr-pull` k8s secret.
 
 Frontend-island notes (all three fixed in 4618fc0, verified live with an admin
 browser session): CopilotKit's v1 island needs (a) vite `define` replacing

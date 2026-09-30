@@ -1,20 +1,23 @@
 name: build-and-push
 
-# Build the web-app image and push it to the Harbor project `law-bench`.
+# Build the web-app image on GitHub-hosted runners and push it to Tencent
+# TCR personal edition. The cluster-side deployment pulls from TCR (k8s
+# secret `tcr-pull`, ns `law-bench`); rollout stays Gitee-driven — ArgoCD
+# watches the Gitee repo because the cheap-cluster nodes cannot reach
+# github.com. A deploy is: push code here (this build runs), then bump the
+# image tag in `deploy/*.yaml` and push to Gitee.
 #
-# Harbor is served over plain HTTP (insecure), so before login/build/push the
-# workflow registers the host in the docker daemon's insecure-registries (for
-# `docker login`) and in a buildkit config (for the buildx push).
+# No China-mirror build args here on purpose: hosted runners are outside
+# China, so the Dockerfile defaults (ghcr.io base, pypi.org, deb.debian.org,
+# npmjs) apply. The Jenkins path keeps the mirror args for in-cluster builds
+# (dual-track fallback).
 #
 # Required repository SECRETS (Settings -> Secrets and variables -> Actions):
-#   LAW_BENCH_HARBOR_REGISTRY  Harbor host, e.g. http://harbor.finddatatech.cloud:8080
-#                              (the cheap-cluster Harbor; a leading http(s):// and
-#                              a trailing / are stripped)
-#   LAW_BENCH_HARBOR_USER      Harbor robot username, e.g. robot$law-bench+law-bench
-#   LAW_BENCH_HARBOR_PASS      Harbor robot password / token
+#   TCR_USER   TCR personal edition login user (Tencent account id)
+#   TCR_PASS   TCR personal edition login password (console-set)
 #
-# Optional repository VARIABLE:
-#   LAW_BENCH_HARBOR_PROJECT   Harbor project name (default: law-bench)
+# First push of a commit is slow (~2.3 GB across the Pacific); the GHA layer
+# cache shrinks subsequent builds.
 
 on:
   push:
@@ -25,6 +28,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: build-and-push-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ccr.ccs.tencentyun.com/law-bench/law-template
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -32,58 +42,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Resolve Harbor registry + image name
-        id: img
-        run: |
-          set -euo pipefail
-          reg="${{ secrets.LAW_BENCH_HARBOR_REGISTRY }}"
-          reg="${reg#https://}"
-          reg="${reg#http://}"
-          reg="${reg%/}"
-          if [ -z "$reg" ]; then
-            echo "::error::Secret LAW_BENCH_HARBOR_REGISTRY is empty. Set it to your Harbor host (e.g. http://harbor.finddatatech.cloud:8080)." >&2
-            exit 1
-          fi
-          project="${{ vars.LAW_BENCH_HARBOR_PROJECT || 'law-bench' }}"
-          echo "registry=${reg}" >> "$GITHUB_OUTPUT"
-          echo "name=${reg}/${project}/law-template" >> "$GITHUB_OUTPUT"
-
-      - name: Allow insecure (HTTP) Harbor registry in docker daemon
-        run: |
-          set -euo pipefail
-          reg="${{ steps.img.outputs.registry }}"
-          cfg=/etc/docker/daemon.json
-          if [ -f "$cfg" ] && jq empty "$cfg" 2>/dev/null; then
-            tmp="$(mktemp)"
-            jq --arg r "$reg" '. + {"insecure-registries": (((.insecure-registries // []) + [$r]) | unique)}' "$cfg" > "$tmp"
-            sudo mv "$tmp" "$cfg"
-          else
-            echo "{\"insecure-registries\":[\"${reg}\"]}" | sudo tee "$cfg" >/dev/null
-          fi
-          sudo systemctl restart docker
-          sleep 3
-          echo "insecure-registries: $(docker info --format '{{json .RegistryConfig.InsecureRegistryCIDRs}}')"
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          config-inline: |
-            [registry."${{ steps.img.outputs.registry }}"]
-              http = true
-              insecure = true
 
-      - name: Login to Harbor
+      - name: Login to TCR
         uses: docker/login-action@v3
         with:
-          registry: ${{ steps.img.outputs.registry }}
-          username: ${{ secrets.LAW_BENCH_HARBOR_USER }}
-          password: ${{ secrets.LAW_BENCH_HARBOR_PASS }}
+          registry: ccr.ccs.tencentyun.com
+          username: ${{ secrets.TCR_USER }}
+          password: ${{ secrets.TCR_PASS }}
 
       - name: Image metadata (tags + labels)
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ steps.img.outputs.name }}
+          images: ${{ env.IMAGE }}
           tags: |
             type=sha,format=short
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
@@ -103,10 +76,10 @@ jobs:
       - name: Summary
         run: |
           {
-            echo "### Pushed to Harbor"
+            echo "### Pushed to TCR"
             echo ""
             echo '```'
-            echo "image: ${{ steps.img.outputs.name }}"
+            echo "image: ${{ env.IMAGE }}"
             echo "tags:  ${{ steps.meta.outputs.tags }}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
