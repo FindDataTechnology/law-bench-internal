@@ -9,27 +9,27 @@
 
 - [x] 2.1 Set repo secrets `TCR_USER` (`100035884308`) and `TCR_PASS` on `FindDataTechnology/law-bench` (`gh secret set`)
 - [x] 2.2 Rewrite `.github/workflows/build-and-push.yml`: constant image `ccr.ccs.tencentyun.com/law-bench/law-template`, drop insecure-registry steps and CN-mirror build args, keep metadata tag scheme + GHA cache, add `concurrency` group, update header comment (secrets doc)
-- [ ] 2.3 Commit + push to GitHub, trigger `workflow_dispatch`, watch the run to green (note: repo transfer had left workflows `disabled_manually`; re-enabled + dispatched run 36706559081)
-- [ ] 2.4 Verify the published tag: TCR console shows `sha-<short>` (+ `latest`), or `docker manifest inspect ccr.ccs.tencentyun.com/law-bench/law-template:<tag>` from a cheap box with the creds
+- [x] 2.3 Commit + push to GitHub, watch runs green — superseded channel: repo now builds via image.yml (tcr-image-pipeline); run 36751041562 built law-template + law-render green in 97 s
+- [x] 2.4 Verified via skopeo from cheap-3 with relay creds: `law-template:sha-ba0a6c9` + `law-render:sha-ba0a6c9` present on ccr after relay backfill (first real images ever in the law-bench ccr repos)
 
 ## 3. Cluster pull path
 
 - [x] 3.1 Create the pull secret from a cluster box with working kubectl (cheap-6, or cheap-4 with `KUBECONFIG=/root/.kube/config-cheap13`): `kubectl -n law-bench create secret docker-registry tcr-pull --docker-server=ccr.ccs.tencentyun.com --docker-username=100035884308 --docker-password=<TCR_PASS>`
-- [ ] 3.2 Pull probe: `kubectl -n law-bench run tcr-pull-test --restart=Never --image=ccr.ccs.tencentyun.com/law-bench/law-template:<tag-from-2.4>` → pod reaches `Running`/`CrashLoopBackOff` (image pulled, entrypoint may exit — that is fine) and NOT `ImagePullBackOff`; then `kubectl delete pod tcr-pull-test`
+- [x] 3.2 Superseded by stronger production evidence: render-service pod cold-pulled `law-render:sha-ba0a6c9` on cheap-8 (a node that never held it) via node-level registries.yaml auth — no probe pod needed
 
 ## 4. Manifest flip + roll (content-identical first roll)
 
-- [ ] 4.1 `deploy/deployment.yaml`: both container images → `ccr.ccs.tencentyun.com/law-bench/law-template:sha-db5ed10`; add `imagePullSecrets: [name: tcr-pull]`; keep `nodeSelector`
-- [ ] 4.2 `deploy/assistant-mcp-deployment.yaml`: same image ref switch + `imagePullSecrets`
-- [ ] 4.3 Commit, push to Gitee `origin`; force ArgoCD refresh (`kubectl -n argocd annotate application law-bench argocd.argoproj.io/refresh=normal --overwrite`); watch both deployments roll to Ready
-- [ ] 4.4 Smoke: `scripts/smoke_prod.sh https://lawbench.finddatatech.cloud` (13 checks) + MCP endpoint sanity (`lawbench-mcp` 401-when-anonymous)
-- [ ] 4.5 Also push the manifest commit to the `github` remote (mirror stays in sync)
+- [x] 4.1 deployment.yaml references ccr (now `sha-ba0a6c9` after extract-render-service rolls); `tcr-pull` imagePullSecrets retained (harmless with node-level auth); nodeSelector kept
+- [x] 4.2 assistant-mcp-deployment.yaml on ccr `sha-ba0a6c9`, tcr-pull retained
+- [x] 4.3 Rolled through ArgoCD without forced refresh: initial fat rolls 2026-09-30, then extract-render-service B/C/D 2026-10-01; all pods Running/Ready
+- [x] 4.4 smoke_prod.sh PASS 13/13 (2026-10-01) + assistant-MCP anonymous 401 verified
+- [x] 4.5 Every commit dual-pushed to Gitee + GitHub throughout
 
 ## 5. Docs
 
 - [x] 5.1 `deploy/cheap-box/README.md`: rewrite the "Image delivery" material — new flow diagram (push GitHub → Actions → TCR; bump tag → push Gitee → ArgoCD), the pull secret, the rollback-by-flip procedure, TCR tag-cleanup note, and the Jenkins/Harbor dual-track status
 - [x] 5.2 `AGENTS.md` ops section: note the new image flow + "push both remotes" habit and that cluster↔github is unreachable (ArgoCD must stay on Gitee)
-- [ ] 5.3 `openspec validate --change switch-image-pipeline-github-actions-tcr` passes
+- [x] 5.3 validate passes (2026-10-01, after reality-reconciliation edits)
 
 ## Status (2026-09-30, paused by user)
 

@@ -70,3 +70,10 @@ Out of scope: `copilot-runtime` image (stays manual), `mcp-deployment.yaml`
   repo secrets `TCR_USER`/`TCR_PASS`.
 - No application code changes; the image content is byte-identical to what
   the Jenkins path produces from the same commit.
+
+## Resolution (2026-10-01)
+
+Delivered, via the fleet-standard hk+relay channel rather than the direct
+ccr push originally proposed (that path measured ~0.14MB/s and never
+completed a push). See design.md "Resolution" and the rewritten delta spec
+for the as-built flow; smoke 13/13 PASS and all 18 tasks closed.

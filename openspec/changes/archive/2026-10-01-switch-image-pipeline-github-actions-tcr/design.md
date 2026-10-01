@@ -167,3 +167,18 @@ with a Harbor-existing tag and push. No rebuild, no cluster change.
   every node (post-change, needs PVC placement thought for the web pod).
 - Cadence/tooling for TCR tag cleanup (manual console cleanup is fine to
   start).
+
+## Resolution (2026-10-01)
+
+The direct US-runner→ccr push designed here never completed: measured
+~0.14MB/s, three runs cancelled after up to 2h12m, and (verified via a
+temporary tag-list workflow) the registry never actually held the running
+tags — pods ran off node-local pre-imported images. The fleet moved to the
+standard tcr-image-pipeline channel instead: `image.yml` pushes to
+hkccr.ccs.tencentyun.com (11.6MB/s leg), a cheap-3 skopeo relay backfills
+ccr within a 5-minute cron cycle, and nodes authenticate via node-level
+registries.yaml (no per-pod imagePullSecret). law-bench was onboarded
+during extract-render-service: both images built green in 97 s, relay
+backfill verified, and a production cold-node pull confirmed the auth
+model. The delta spec was rewritten to the delivered behavior; this design
+stands as the historical record of the direct-push attempt and why it died.
