@@ -79,6 +79,8 @@ data/finetune/review/bootstrap_manifest.json
 .mcp.json
 # local SSH connection config (plaintext passwords — never commit)
 ssh-config.json
+# local SSH exec helper (reads ssh-config.json; box access tooling, not source)
+scripts/_ssh_exec.py
 # root-level venv (has its own internal .gitignore with "*", but ignore by name too)
 list/
 # local agent tooling configs (.zcode/config.json references ssh-config.json)
