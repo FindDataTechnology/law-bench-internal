@@ -1,0 +1,121 @@
+{
+  "schema": "mcp-tool-surface/v1",
+  "server": "law-bench",
+  "entry_path": "/law-bench",
+  "product_line": "lex",
+  "hosting": ["shared-instance"],
+  "description": "LawBench 合同智能 MCP（52 工具）：条款语料与装配、合同生成、法条引用、验证审查（commercial 面）；评测/rubric/对比/自愈流水线/语料治理（internal 面）。分级依据 design D8（adapt-legal-skills-to-facet-presets）。",
+  "skills_eligible_for_packs": [
+    "contract-review-cn",
+    "civil-nine-step-workflow",
+    "labor-arbitration-workflow",
+    "personal-injury-calculator",
+    "criminal-defense-workflow",
+    "criminal-plea-and-nonprosecution",
+    "criminal-trial-examination-outline",
+    "statute-validity-check",
+    "case-retrieval-report",
+    "legal-concept-map",
+    "litigation-drafting",
+    "evidence-card-organizer",
+    "labor-compensation-calculator"
+  ],
+  "tool_groups": [
+    {
+      "group": "assembly",
+      "level": "commercial",
+      "tools": [
+        "contract_generate",
+        "contract_generate_stored",
+        "contract_generate_batch",
+        "contract_type_catalog",
+        "type_metadata",
+        "contract_content",
+        "contract_download",
+        "tag_combinations_list",
+        "tag_vocab_list",
+        "tag_validate"
+      ],
+      "notes": "条款装配生成线：骨架/标签驱动装配 + 人工审阅条款语料（全部维度 approved 才参与装配）。"
+    },
+    {
+      "group": "clauses",
+      "level": "commercial",
+      "tools": ["clause_get", "clause_list", "search_clauses", "clause_review"],
+      "notes": "条款语料只读 + 单条款评审。语料的写权（update/delete）在 internal 组——客户不得改语料。"
+    },
+    {
+      "group": "clauses_admin",
+      "level": "internal",
+      "tools": ["clause_update", "clause_delete"],
+      "notes": "条款语料治理：内容编辑属运营侧职权。"
+    },
+    {
+      "group": "legal_refs",
+      "level": "commercial",
+      "tools": ["law_info", "law_references", "law_types"],
+      "notes": "法条引用与法律目录。"
+    },
+    {
+      "group": "review",
+      "level": "commercial",
+      "tools": ["validation_check", "validation_list"],
+      "notes": "合同验证审查（完整性/缺失检查）。"
+    },
+    {
+      "group": "evaluation",
+      "level": "internal",
+      "tools": [
+        "contract_evaluate",
+        "run_draft",
+        "run_get",
+        "run_list",
+        "rubric_create",
+        "rubric_delete",
+        "rubric_get",
+        "rubric_list",
+        "rubric_update",
+        "criterion_add",
+        "criterion_delete",
+        "criterion_reorder",
+        "criterion_update"
+      ],
+      "notes": "LLM 判官评测线（rubric 打分/运行/准则管理）——内部质量基建，design D8 定为不外售。"
+    },
+    {
+      "group": "compare",
+      "level": "internal",
+      "tools": ["compare_get", "compare_list", "compare_matrix", "compare_run"],
+      "notes": "起草提示词两两对比（A/B 评测）。"
+    },
+    {
+      "group": "pipeline_heal",
+      "level": "internal",
+      "tools": ["pipeline_get", "pipeline_list", "self_heal_pipeline_run", "auto_reject_pipeline_run"],
+      "notes": "评测流水线与低分自愈。"
+    },
+    {
+      "group": "prompts_admin",
+      "level": "internal",
+      "tools": ["prompt_create", "prompt_delete", "prompt_get", "prompt_list", "prompt_update"],
+      "notes": "起草提示词管理。"
+    },
+    {
+      "group": "tag_iteration",
+      "level": "internal",
+      "tools": ["tag_iteration_apply", "tag_iteration_suggest"],
+      "notes": "条款语料标签迭代（语料演化）。"
+    },
+    {
+      "group": "ops",
+      "level": "internal",
+      "tools": ["agent_run_get", "agent_run_list", "agent_run_store"],
+      "notes": "agent 运行记录（内部运维面）。"
+    }
+  ],
+  "registry": {
+    "entry_path": "/law-bench",
+    "upstream": "http://cheap6.mesh.finddata.cn:30840/mcp",
+    "expected_tool_count": 52
+  }
+}
