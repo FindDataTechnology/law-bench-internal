@@ -10,6 +10,7 @@ import asyncio
 import sys
 from pathlib import Path
 
+from ..annotations import annotations_for
 from ..server import mcp
 
 # Make the law-template repo importable so `from agent.store` resolves.
@@ -18,7 +19,7 @@ if str(_AGENT_ROOT) not in sys.path:
     sys.path.insert(0, str(_AGENT_ROOT))
 
 
-@mcp.tool(tags={"metrics"})
+@mcp.tool(tags={"metrics"}, annotations=annotations_for("agent_run_store"))
 def agent_run_store(
     thread_id: str,
     contract_type: str,
@@ -77,7 +78,7 @@ def agent_run_store(
     return insert_agent_run(row)
 
 
-@mcp.tool(tags={"metrics"})
+@mcp.tool(tags={"metrics"}, annotations=annotations_for("agent_run_get"))
 def agent_run_get(run_id: int) -> dict | None:
     """Get one ``agent_runs`` row (full) by id.
 
@@ -88,7 +89,7 @@ def agent_run_get(run_id: int) -> dict | None:
     return get_agent_run(run_id)
 
 
-@mcp.tool(tags={"metrics", "query"})
+@mcp.tool(tags={"metrics", "query"}, annotations=annotations_for("agent_run_list"))
 def agent_run_list(limit: int = 20) -> list[dict]:
     """List recent ``agent_runs`` rows (summary fields only).
 

@@ -2,12 +2,15 @@
 """tool-surface manifest 双向 selfcheck（mcp-surface-contract）。
 
 断言两个方向：
-  1. 一致：manifest 声明的工具 == 代码注册的工具
+  1. 一致：manifest 声明的工具 == 代码注册的工具；且每个工具的四个行为属性
+     （readOnlyHint / destructiveHint / idempotentHint / openWorldHint）
+     manifest ↔ 运行时逐项相等——谎报只读会让客户端自动批准一个会写库的工具
   2. 闭合：消费侧必需依赖（data_binding / mcp_servers 声明行）中的本 server
      工具 ⊆ manifest 的 commercial 集（optional_binding 为可选增强，不受约束）
 
 代码注册面优先 `mcp.list_tools()` 运行时真值，不可导入时回退源码码点
-（@mcp.tool 分布在 src 包根与 tools/ 子模块，rglob 全扫）。
+（@mcp.tool 分布在 src 包根与 tools/ 子模块，rglob 全扫）。行为属性无法回退：
+运行时不可导入即失败（无法核对比不核对更危险）。
 
 用法：
     python3 scripts/selfcheck_surface.py
@@ -27,9 +30,14 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 MANIFEST = REPO / "tool-surface.json"
 SERVER_NAME = "law-bench"
-PKG = REPO / "src" / "fd_coding_law_bench_mcp"
+# The MCP package is a sub-project, not ``REPO/src`` (the shared venv also has
+# an editable install pointing at another checkout, so the path insert must
+# name this repo explicitly and come first).
+PKG_SRC = REPO / "fd-coding-law-bench-mcp" / "src"
+PKG = PKG_SRC / "fd_coding_law_bench_mcp"
 
 TOOL_PATTERN = re.compile(rf"mcp__{SERVER_NAME}__([A-Za-z0-9_.\-]+)")
+HINTS = ("readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint")
 
 
 def fail(problems: list[str]) -> "None":
@@ -59,26 +67,77 @@ def manifest_tools(m: dict) -> dict[str, str]:
 
 
 async def runtime_tools() -> set[str]:
-    sys.path.insert(0, str(REPO / "src"))
+    names = await runtime_annotations()
+    if names is None:
+        return source_tools()
+    return set(names)
+
+
+async def runtime_annotations() -> dict[str, dict] | None:
+    """Each registered tool's protocol-level hints; ``None`` if not importable."""
+    sys.path.insert(0, str(PKG_SRC))
     try:
         from fd_coding_law_bench_mcp.server import mcp  # type: ignore
 
         tools = await mcp.list_tools()
-        names = {getattr(t, "name", None) or t.get("name") for t in tools}
-        return {n for n in names if n}
     except Exception:
-        return source_tools()
+        return None
+    out: dict[str, dict] = {}
+    for t in tools:
+        name = getattr(t, "name", None) or t.get("name")
+        if not name:
+            continue
+        a = getattr(t, "annotations", None)
+        out[name] = {} if a is None else {k: getattr(a, k) for k in HINTS}
+    return out
 
 
 def source_tools() -> set[str]:
     names: set[str] = set()
     for f in PKG.rglob("*.py"):
         text = f.read_text(encoding="utf-8")
+        # The decorator args now nest parentheses (annotations_for("...")), so
+        # match to the end of the decorator line instead of the first ")".
         for m in re.finditer(
-            r"@mcp\.tool\s*(?:\([^)]*\))?\s*\n\s*(?:async\s+)?def\s+([A-Za-z0-9_]+)", text
+            r"@mcp\.tool\(.*?\)\s*\n(?:\s*\n)*\s*(?:async\s+)?def\s+([A-Za-z0-9_]+)",
+            text,
         ):
             names.add(m.group(1))
     return names
+
+
+async def check_annotations(m: dict, declared: dict[str, str]) -> list[str]:
+    """manifest ``tool_annotations`` ↔ runtime hints, both directions.
+
+    Missing hints leave the client unable to decide auto-approval; a declared
+    read-only hint on a writing tool makes it auto-approve a state change.
+    Both are surfacing defects.
+    """
+    ann = m.get("tool_annotations")
+    if not isinstance(ann, dict):
+        return ["[属性缺失] manifest 缺 tool_annotations（行为属性须随工具一并上牌）"]
+    runtime = await runtime_annotations()
+    if runtime is None:
+        return ["[无法核对] server 不可导入，行为属性无法与运行时比对"]
+
+    problems: list[str] = []
+    for name in sorted(set(declared) - set(ann)):
+        problems.append(f"[属性缺失] {name}: manifest 未声明行为属性")
+    for name in sorted(set(ann) - set(declared)):
+        problems.append(f"[属性越界] {name}: tool_annotations 登记了未上牌的工具")
+    for name in sorted(set(declared) & set(ann)):
+        d = ann[name]
+        missing = [k for k in HINTS if k not in d]
+        if missing:
+            problems.append(f"[属性不全] {name}: 缺 {', '.join(missing)}")
+            continue
+        rt = runtime.get(name, {})
+        for k in HINTS:
+            if rt.get(k) != d[k]:
+                problems.append(
+                    f"[属性不符] {name}.{k}: manifest 声明 {d[k]!r}，运行时 {rt.get(k)!r}"
+                )
+    return problems
 
 
 def consumer_tools(consumers: list[Path]) -> dict[str, set[str]]:
@@ -121,6 +180,8 @@ async def main() -> int:
     if expected is not None and len(actual) != expected:
         problems.append(f"[工具数不符] 运行时 {len(actual)} ≠ manifest 声明 {expected}")
 
+    problems += await check_annotations(m, declared)
+
     internal = {t for t, lv in declared.items() if lv == "internal"}
     if args.consumers:
         for where, used in consumer_tools(args.consumers).items():
@@ -131,6 +192,9 @@ async def main() -> int:
     commercial = sorted(t for t, lv in declared.items() if lv == "commercial")
     print(f"manifest：{len(declared)} 工具（commercial {len(commercial)} / internal {len(internal)}）")
     print(f"运行时：{len(actual)} 工具")
+    ann = m.get("tool_annotations") or {}
+    read_only = sum(1 for v in ann.values() if v.get("readOnlyHint") is True)
+    print(f"行为属性：{len(ann)} 工具已声明（只读 {read_only} / 写 {len(ann) - read_only}）")
     if problems:
         fail(problems)
     print("✓ selfcheck 双向断言通过")
