@@ -62,6 +62,63 @@ pipeline {
       }
     }
 
+    // 测试门：镜像构建以测试通过为前置。套件是 hermetic 的，只要求一个可达
+    // PostgreSQL（conftest 为每个用例建库）。Jenkins 内置节点没有宿主 python
+    // 环境，故用一次性容器跑，PG 也起在容器里——不污染构建节点。
+    // 需要真实 MinIO 的两个集成用例带 @pytest.mark.external，这里排除并先打印清单。
+    stage('Test') {
+      steps {
+        sh '''
+          set -e
+          NET="lawbench-test-$$"
+          docker network create "$NET" >/dev/null
+          docker run -d --name "${NET}-pg" --network "$NET" \
+            -e POSTGRES_USER=app -e POSTGRES_PASSWORD=app -e POSTGRES_DB=law_bench \
+            postgres:14 >/dev/null
+          for i in $(seq 1 30); do
+            if docker exec "${NET}-pg" pg_isready -U app >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          docker run --rm --network "$NET" -v "$WORKSPACE":/src -w /src \
+            -e database_url=postgresql://app:app@"${NET}-pg":5432/law_bench \
+            -e minio_host=http://127.0.0.1:1 \
+            python:3.12-slim sh -c '
+              set -e
+              pip install -q --upgrade pip
+              # pyproject 已配 pythonpath = ["."]，无需 -e . 安装（也避免把
+              # .egg-info 写回宿主 workspace）。依赖仍需装。
+              pip install -q \
+                "crewai[litellm]>=1.15.5" "deepeval>=3.9.6" "python-dotenv>=1.2.2" \
+                "fastapi>=0.115" "uvicorn[standard]>=0.32" "jinja2>=3.1" \
+                "markdown-it-py>=3.0" "psycopg[binary]>=3.2" \
+                "llama-index-core>=0.12" \
+                "llama-index-vector-stores-elasticsearch>=0.4" \
+                "llama-index-embeddings-openai-like>=0.3" \
+                "llama-index-readers-minio>=0.3" "elasticsearch>=8.15" \
+                "boto3>=1.34" "python-docx>=1.1" "pypdf>=6.14.2" \
+                "itsdangerous>=2.2" "pytest>=8.0"
+              echo "== 被排除的 external 用例 =="
+              python -m pytest tests -q -m external --collect-only || true
+              echo "== 正式跑 =="
+              python -m pytest tests -q -m "not external"
+            '
+        '''
+      }
+      post {
+        always {
+          // 按前缀枚举容器再删：`docker rm -f lawbench-test-*-pg` 不会展开通配符。
+          sh '''
+            for c in $(docker ps -aq --filter "name=lawbench-test-"); do
+              docker rm -f "$c" >/dev/null 2>&1 || true
+            done
+            for n in $(docker network ls --filter "name=lawbench-test-" -q); do
+              docker network rm "$n" >/dev/null 2>&1 || true
+            done
+          '''
+        }
+      }
+    }
+
     stage('Build') {
       steps {
         sh 'docker build --build-arg BASE_IMAGE="$BASE_IMAGE_MIRROR" --build-arg UV_INDEX_URL="$UV_INDEX_URL" --build-arg DEBIAN_MIRROR="$DEBIAN_MIRROR" --build-arg DEBIAN_SECURITY_MIRROR="$DEBIAN_SECURITY_MIRROR" --build-arg NODE_IMAGE="$NODE_IMAGE_MIRROR" --build-arg NPM_REGISTRY="$NPM_REGISTRY" -t "$IMAGE:$TAG" -t "$IMAGE:latest" -f Dockerfile .'
