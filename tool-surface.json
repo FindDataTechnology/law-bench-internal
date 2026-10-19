@@ -74,6 +74,8 @@
       "tag_iteration_suggest",
       "tag_validate",
       "tag_vocab_list",
+      "task_failed_items",
+      "task_status",
       "type_metadata",
       "validation_check",
       "validation_list"
@@ -209,6 +211,15 @@
         "agent_run_store"
       ],
       "notes": "agent 运行记录（内部运维面）。"
+    },
+    {
+      "group": "metrics",
+      "level": "commercial",
+      "tools": [
+        "task_failed_items",
+        "task_status"
+      ],
+      "description": ""
     }
   ],
   "tool_annotations": {
@@ -452,6 +463,18 @@
       "idempotentHint": true,
       "openWorldHint": false
     },
+    "task_status": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "task_failed_items": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "self_heal_pipeline_run": {
       "readOnlyHint": false,
       "destructiveHint": false,
@@ -528,6 +551,6 @@
   "registry": {
     "entry_path": "/law-bench",
     "upstream": "http://cheap6.mesh.finddata.cn:30840/mcp",
-    "expected_tool_count": 52
+    "expected_tool_count": 54
   }
 }

@@ -134,6 +134,10 @@ TOOL_ANNOTATIONS: dict[str, dict[str, Any]] = {
     "compare_get": dict(READ_ONLY),
     "compare_matrix": dict(READ_ONLY),
     "run_draft": dict(READ_ONLY),
+    # --- long-running task handles (mcp-long-running-operations) ---
+    "task_status": dict(READ_ONLY),
+    "task_failed_items": dict(READ_ONLY),
+
     # --- pipelines (LLM fill/judge/improve; one pipeline_runs row per call) ---
     "self_heal_pipeline_run": dict(WRITE_LLM_APPEND),
     # Also auto-rejects high-confidence clauses; the review status is
