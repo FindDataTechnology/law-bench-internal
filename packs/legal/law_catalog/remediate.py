@@ -23,7 +23,9 @@ from src.eval.db import connect, now_iso
 from . import store
 from .resolve import normalize_name
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+# packs/legal/law_catalog/remediate.py -> parents[3] = repo root (was parents[2]
+# when the package lived at src/law_catalog).
+REPO_ROOT = Path(__file__).resolve().parents[3]
 SNAPSHOT_ROOT = REPO_ROOT / "output" / "remediation"
 
 # narration contexts that must not be auto-replaced ("合同法实施以来" etc.)
