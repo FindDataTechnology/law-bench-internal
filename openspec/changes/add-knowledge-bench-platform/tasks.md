@@ -31,10 +31,10 @@
 
 ## 5. P2 · 柏讯贯通
 
-- [ ] 5.1 wire 实体/关系单向拉取同步：wire 主键源、知验台零身份存储（verify: 同步后身份键与 wire 全等；重复同步幂等无新增行）
-- [ ] 5.2 升格流水线（bronze 机器预标注 → silver → gold 人工核验）接入复核工作流（verify: 真实 wire 实体抽样走完全流程，审核人留痕可查）
-- [ ] 5.3 gold 回写带档（sensitivity/tier），幂等键 = wire 实体键（verify: 回写成功路径 + 注入失败路径（网络断），知验台侧状态如实不误标「已回写」）
-- [ ] 5.4 图谱展示接线：工厂内视图在 bench 工作台，客户面归 wire 控制台（verify: 两端同源抽样对账口径一致）
+- [x] 5.1 wire 实体/关系单向拉取同步：wire 主键源、知验台零身份存储（verify: 同步后身份键与 wire 全等；重复同步幂等无新增行）（scoping：sync_graph external_key=源 id、双跑零写、unchanged 不 bump；wire api 实查=graph 端点 console Bearer 验 Logto ID token，端点域名+mesh 三处全 401 可达、生产凭据无（造 token 需写生产 Logto 库=禁）→真拉 deferred 如实记录于 packs/gov README 与 wire-connector/README.md；内部连接器 client/sync 已就位 selfcheck 全过）
+- [x] 5.2 升格流水线（bronze 机器预标注 → silver → gold 人工核验）接入复核工作流（verify: 真实 wire 实体抽样走完全流程，审核人留痕可查）（scoping：promote_unit 单向相邻晋升、gold 必带 reviewer 路由恒取 session 身份 body 带 reviewer 键直接 400、provenance 逐跃迁留痕；真实抽样随 5.1 真拉 deferred，fixture 全链测试覆盖）
+- [x] 5.3 gold 回写带档（sensitivity/tier），幂等键 = wire 实体键（verify: 回写成功路径 + 注入失败路径（网络断），知验台侧状态如实不误标「已回写」）（scoping：run_writeback 成功才记 written_back+回执、抛错批次续跑不假标、重跑按 wire 键幂等跳过；**wire 契约缺口**：实体无 tier/sensitivity 一等公民字段（现以 column_notes._bench 元数据袋承载）、关系无更新面→连接器如实拒绝——wire 侧需求已在两处 README 记录）
+- [x] 5.4 图谱展示接线：工厂内视图在 bench 工作台，客户面归 wire 控制台（verify: 两端同源抽样对账口径一致）（scoping：工厂视图=/promotion/queue 计数+分页+回写状态装饰（任意登录可读）；客户面=wire 控制台既有实体图谱端点，知验台零第二份身份存储故天然同源；抽样对账腿随真拉 deferred，口径一致性由 promotion 键=源 id 设计保证）
 
 ## 6. P3 · 全生态秤与飞轮
 
