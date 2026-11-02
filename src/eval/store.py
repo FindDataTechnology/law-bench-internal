@@ -443,6 +443,8 @@ def store_result(
     prompt_type: Optional[str] = None,
     variant_label: Optional[str] = None,
     draft_text: Optional[str] = None,
+    channel: str = "text",
+    unit_kind: str = "clause",
 ) -> int:
     """Insert an evaluation run + its per-criterion verdicts. Returns the run id.
 
@@ -452,6 +454,12 @@ def store_result(
     ``draft_text``) are optional keyword-only args; standalone runs leave them
     null, compare runs populate them so the run is grouped under and traceable
     to its prompt without a foreign key.
+
+    ``channel`` / ``unit_kind`` (keyword-only) label which evaluation channel
+    produced the run and what kind of unit it evaluated. Defaults (``'text'`` /
+    ``'clause'``) match the column defaults, so every legacy insert path reads
+    exactly as before; the deterministic data-check channel passes
+    ``channel='data'`` with its own unit kind (see src/bench/data_checks.py).
     """
     ensure_schema(db_path)
     now = datetime.now(timezone.utc).isoformat()
@@ -463,8 +471,10 @@ def store_result(
                 "INSERT INTO eval_runs "
                 "(rubric_name, contract_path, task_desc, score, max_score, all_pass, "
                 " n_criteria, n_passed, summary, judge_model, scored_at, created_at, "
-                " compare_run_id, prompt_name, prompt_type, variant_label, draft_text) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+                " compare_run_id, prompt_name, prompt_type, variant_label, draft_text, "
+                " channel, unit_kind) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                "RETURNING id",
                 (
                     result["rubric"],
                     contract_path,
@@ -483,6 +493,8 @@ def store_result(
                     prompt_type,
                     variant_label,
                     draft_text,
+                    channel,
+                    unit_kind,
                 ),
             )
             run_id = cur.fetchone()["id"]
