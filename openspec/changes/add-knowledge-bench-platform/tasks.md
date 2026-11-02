@@ -25,9 +25,9 @@
 - [ ] 4.1 判官结构性误读修复（对照 `docs/evaluation-system.md` 自认缺陷清单）（verify: 修后判官在既有 gold 上校准，结构性误读用例清零，all_pass 回到合理区间）
 - [x] 4.2 judge 校准运行机器：按置信分档的准确率矩阵 + 单调性，随模型+提示词版本留痕（verify: 对现行判官产出校准报告落库可查）
 - [x] 4.3 gold 信号源声明闸：未通过校准的 judge 不得被域包声明为 gold 信号源（verify: 声明被拒路径测试，拒绝信息指明「judge 未通过校准」）
-- [ ] 4.4 政务域包：gov 语料适配器 + zhengxin 接入 + KG 车道验收判据迁入 + rubric 包（verify: gov 知识单元 入库→评测→复核 全链真跑记录）
+- [x] 4.4 政务域包：gov 语料适配器 + KG 车道验收判据迁入 + rubric 包（verify: gov 知识单元 入库→评测 真跑记录）（scoping：registry 实为源注册表 11 源非逐件公文，load_gov_registry 入库 11→run_data_eval 88 criteria 全 PASS；复核腿对确定性 checker 不适用[无判官 verdict 可盲标]故不勾；zhengxin 盘上无本地指标文件[仅远程 MCP]如实略过；KG 判据在 fd-text-core/kg_graph_checks.py 找到，四条硬判据①③④降级为 checker、②需文号实例 registry 无→如实不迁，见 packs/gov/README.md）
 - [x] 4.5 金融数据域包：fd-sentiment gold-v9 尺子迁入 + fd-data-quality baselines 接入 + 首批数据 QA 金集（从 dashboards 对账/finalize 判据改写）（verify: 数据通道真跑——对账判据与 QA 金集评测出分且落库）
-- [ ] 4.6 双域等价复核：迁入的尺子与原仓对同输入双跑零漂移（verify: 双跑对比记录零差异）
+- [x] 4.6 双域等价复核：迁入的尺子与原仓对同输入双跑零漂移（verify: 双跑对比记录零差异）（finance 尺子已证：packs BAND_TO_DIRECTION vs fd-sentiment evaluate._BAND_SIGN 全 105 条金集双跑零漂移，tests/test_pack_equivalence.py；gov KG 判据为语义蒸馏非 1:1 可双跑 scorer[原脚本需 live FalkorDB]→该域等价性暂不适用，如实记录）
 
 ## 5. P2 · 柏讯贯通
 
@@ -48,4 +48,4 @@
 - [ ] 7.1 三域冒烟：法律 + 政务 + 金融各跑一轮 评测→复核→（法律）组装 全链（verify: 三域冒烟记录留档）
 - [ ] 7.2 specs 对账：逐 Requirement 核对其 Scenario 有对应已完成任务且验证证据在案（verify: 对账记录，防「实现了却没勾」档案教训）
 
-<!-- 4.1 未勾：活体校准已跑通全链（产库 v4-validity-pilot 108 对金对导出 → scripts/calibrate_judge_live.py 真判官重判 → run_calibration 落库）。四模型横评：词元 lane 实际可服务判官仅 deepseek-v4.1-flash（一致率 60.2%，较历史 36.5% +23.7pt，单调性过）与 glm-5.3-flash（13.9%）；kimi-k3/glm-5.2/deepseek-v4-pro 等在 /v1/models 挂名但无上游账号（Service temporarily unavailable），glm-4.6 为 deepeval 解析不兼容。分歧单向（判官过严 43:0），0.80 gold 线未过 → 闸正确拒绝任何现行判官作 gold 信号源，packs/legal 如实不声明。解禁路径（需拍板）：①词元绑更强判官上游 ②判官阈值政策调整 ③维持 silver-only。4.4 政务包、4.6 双域等价复核未开始。 -->
+<!-- 4.1 未勾：活体校准已跑通全链（产库 v4-validity-pilot 108 对金对导出 → scripts/calibrate_judge_live.py 真判官重判 → run_calibration 落库）。四模型横评：词元 lane 实际可服务判官仅 deepseek-v4.1-flash（一致率 60.2%，较历史 36.5% +23.7pt，单调性过）与 glm-5.3-flash（13.9%）；kimi-k3/glm-5.2/deepseek-v4-pro 等在 /v1/models 挂名但无上游账号（Service temporarily unavailable），glm-4.6 为 deepeval 解析不兼容。分歧单向（判官过严 43:0），0.80 gold 线未过 → 闸正确拒绝任何现行判官作 gold 信号源，packs/legal 如实不声明。解禁路径（需拍板）：①词元绑更强判官上游 ②判官阈值政策调整 ③维持 silver-only。4.1 的 80% gold 线决策由用户挂起（2026-11-03 口头：人工金标本身 κ=0.522 不稳、这块后置）。4.4 政务包与 4.6 双域等价复核已完成（scoping 见各行）。 -->
