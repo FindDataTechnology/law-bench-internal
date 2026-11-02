@@ -119,6 +119,9 @@ ALLOWLIST = [
     ("test_public_hygiene.py", "assigned secret literal"),
     ("test_public_hygiene.py", "url-embedded credential"),
     ("test_public_hygiene.py", "internal repo import/path reference"),
+    # the gate's own self-test carries synthetic sk-/PEM samples by design
+    ("test_public_hygiene.py", "sk-style api key"),
+    ("test_public_hygiene.py", "pem private key block"),
 ]
 
 
