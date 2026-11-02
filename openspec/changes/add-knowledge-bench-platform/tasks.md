@@ -46,6 +46,6 @@
 ## 7. 收口
 
 - [x] 7.1 三域冒烟：法律 + 政务 + 金融各跑一轮 评测→复核→（法律）组装 全链（verify: 三域冒烟记录留档）
-- [ ] 7.2 specs 对账：逐 Requirement 核对其 Scenario 有对应已完成任务且验证证据在案（verify: 对账记录，防「实现了却没勾」档案教训）
+- [x] 7.2 specs 对账：逐 Requirement 核对其 Scenario 有对应已完成任务且验证证据在案（verify: 对账记录，防「实现了却没勾」档案教训）
 
 <!-- 4.1 未勾：活体校准已跑通全链（产库 v4-validity-pilot 108 对金对导出 → scripts/calibrate_judge_live.py 真判官重判 → run_calibration 落库）。四模型横评：词元 lane 实际可服务判官仅 deepseek-v4.1-flash（一致率 60.2%，较历史 36.5% +23.7pt，单调性过）与 glm-5.3-flash（13.9%）；kimi-k3/glm-5.2/deepseek-v4-pro 等在 /v1/models 挂名但无上游账号（Service temporarily unavailable），glm-4.6 为 deepeval 解析不兼容。分歧单向（判官过严 43:0），0.80 gold 线未过 → 闸正确拒绝任何现行判官作 gold 信号源，packs/legal 如实不声明。解禁路径（需拍板）：①词元绑更强判官上游 ②判官阈值政策调整 ③维持 silver-only。4.1 的 80% gold 线决策由用户挂起（2026-11-03 口头：人工金标本身 κ=0.522 不稳、这块后置）。4.4 政务包与 4.6 双域等价复核已完成（scoping 见各行）。 -->
