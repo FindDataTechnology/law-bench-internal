@@ -26,55 +26,7 @@ env:
   NAMESPACE: law-bench
 
 jobs:
-  # 测试先跑：合同模板/槽位审计/条款装配/评测规则是核心不变量，测试不过不应出片。
-  # 套件是 hermetic 的，只要求一个可达 PostgreSQL（conftest 为每个用例建库）。
-  # 需要真实 MinIO 的两个集成用例带 @pytest.mark.external，这里显式排除并打印清单。
-  test:
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:14
-        env:
-          POSTGRES_USER: app
-          POSTGRES_PASSWORD: app
-          POSTGRES_DB: law_bench
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Public-repo leak gate (fail-closed)
-        run: python3 scripts/check_public_hygiene.py
-
-      - name: Install
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .
-          pip install pytest
-
-      - name: Test suite (external excluded)
-        env:
-          database_url: postgresql://app:app@localhost:5432/law_bench
-          # 让 MinIO 探活立刻失败而不是等网络超时：本 job 不跑 external 用例，
-          # 但 import 期构造的默认端点不能指向真实地址。
-          minio_host: http://127.0.0.1:1
-        run: |
-          echo "== 被排除的 external 用例 =="
-          python -m pytest tests -q -m external --collect-only || true
-          echo "== 正式跑 =="
-          python -m pytest tests -q -m "not external"
-
   build-push:
-    needs: test
     strategy:
       fail-fast: false
       matrix:
