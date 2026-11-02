@@ -291,6 +291,12 @@ _ADDITIVE_COLUMNS = (
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS prompt_type TEXT; "
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS variant_label TEXT; "
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS draft_text TEXT; "
+    # knowledge-bench kernel (add-knowledge-bench-platform): every run is
+    # honestly labeled with its channel (text judge vs deterministic data
+    # checks) and the unit kind it evaluated. Defaults keep every legacy row
+    # and every legacy insert path reading exactly as before.
+    "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'text'; "
+    "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS unit_kind TEXT NOT NULL DEFAULT 'clause'; "
     "ALTER TABLE IF EXISTS clauses ADD COLUMN IF NOT EXISTS manual BOOLEAN NOT NULL DEFAULT false; "
     "ALTER TABLE IF EXISTS clauses ADD COLUMN IF NOT EXISTS tags JSONB NOT NULL DEFAULT '{}'::jsonb; "
     "ALTER TABLE IF EXISTS clauses DROP COLUMN IF EXISTS province; "
@@ -409,6 +415,10 @@ def ensure_schema(db_path=DEFAULT_DB) -> None:
             conn.execute(GENERATION_JOBS_SCHEMA)
             conn.execute(API_KEYS_SCHEMA)
             conn.execute(REVIEW_TASKS_SCHEMA)
+            # knowledge-bench kernel tables (domain-neutral; see src/bench)
+            from ..bench.store import BENCH_SCHEMA
+
+            conn.execute(BENCH_SCHEMA)
             conn.execute(_ADDITIVE_COLUMNS)
             conn.commit()
             _ensured_dbs.add(key)
