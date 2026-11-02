@@ -7,12 +7,12 @@
 
 ## 2. P0 · 内核抽取（知识单元泛化）
 
-- [ ] 2.1 知识单元 `kind` 幂等加列 + 存量回填 `clause`（verify: schema 幂等自建测试过；存量条款行 kind 计数 = 条款总数）
-- [ ] 2.2 建 `src/bench` 内核包：语料库/评测/复核/组装/导出读写面按 kind 泛化，内核不含法律常量（verify: 既有 pytest 全绿且断言口径与 1.4 基线一致，未改任何既有断言）
-- [ ] 2.3 `law_catalog`、`clause_seeds`、法律引用组件迁入 `packs/legal`，经域包声明接入（verify: 法律全链 组装→评测→复核→MCP 工具→公共 API 行为等价；MCP 37 工具面只增不减）
-- [ ] 2.4 CI 内核领域无关断言：法律常量在 `src/bench` 源码树零命中（verify: 扫描脚本入 CI 且通过）
-- [ ] 2.5 数据通道：评测运行加通道字段（text/data）+ 确定性校验器注册表接口（verify: 样例数据对象评测全程未调 judge 且 verdict 落库；注入限流/模型故障不影响数据通道结果）
-- [ ] 2.6 真值守卫从 finetune 导出器扩展到全平台导出面（verify: bronze/silver 按 ground-truth/reward 用途请求被单点守卫拒绝（新增测试）；既有 finetune 守卫测试不回归）
+- [x] 2.1 知识单元 `kind` 幂等加列 + 存量回填 `clause`（verify: schema 幂等自建测试过；存量条款行 kind 计数 = 条款总数）
+- [x] 2.2 建 `src/bench` 内核包：语料库/评测/复核/组装/导出读写面按 kind 泛化，内核不含法律常量（verify: 既有 pytest 全绿且断言口径与 1.4 基线一致，未改任何既有断言）
+- [x] 2.3 `law_catalog`、`clause_seeds`、法律引用组件迁入 `packs/legal`，经域包声明接入（verify: 法律全链 组装→评测→复核→MCP 工具→公共 API 行为等价；MCP 37 工具面只增不减）
+- [x] 2.4 CI 内核领域无关断言：法律常量在 `src/bench` 源码树零命中（verify: 扫描脚本入 CI 且通过）
+- [x] 2.5 数据通道：评测运行加通道字段（text/data）+ 确定性校验器注册表接口（verify: 样例数据对象评测全程未调 judge 且 verdict 落库；注入限流/模型故障不影响数据通道结果）
+- [x] 2.6 真值守卫从 finetune 导出器扩展到全平台导出面（verify: bronze/silver 按 ground-truth/reward 用途请求被单点守卫拒绝（新增测试）；既有 finetune 守卫测试不回归）
 
 ## 3. P0 · 开源切分
 
