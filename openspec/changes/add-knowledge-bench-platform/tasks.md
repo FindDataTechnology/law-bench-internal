@@ -23,10 +23,10 @@
 ## 4. P1 · 双域验证与判官校准
 
 - [ ] 4.1 判官结构性误读修复（对照 `docs/evaluation-system.md` 自认缺陷清单）（verify: 修后判官在既有 gold 上校准，结构性误读用例清零，all_pass 回到合理区间）
-- [ ] 4.2 judge 校准运行机器：按置信分档的准确率矩阵 + 单调性，随模型+提示词版本留痕（verify: 对现行判官产出校准报告落库可查）
-- [ ] 4.3 gold 信号源声明闸：未通过校准的 judge 不得被域包声明为 gold 信号源（verify: 声明被拒路径测试，拒绝信息指明「judge 未通过校准」）
+- [x] 4.2 judge 校准运行机器：按置信分档的准确率矩阵 + 单调性，随模型+提示词版本留痕（verify: 对现行判官产出校准报告落库可查）
+- [x] 4.3 gold 信号源声明闸：未通过校准的 judge 不得被域包声明为 gold 信号源（verify: 声明被拒路径测试，拒绝信息指明「judge 未通过校准」）
 - [ ] 4.4 政务域包：gov 语料适配器 + zhengxin 接入 + KG 车道验收判据迁入 + rubric 包（verify: gov 知识单元 入库→评测→复核 全链真跑记录）
-- [ ] 4.5 金融数据域包：fd-sentiment gold-v9 尺子迁入 + fd-data-quality baselines 接入 + 首批数据 QA 金集（从 dashboards 对账/finalize 判据改写）（verify: 数据通道真跑——对账判据与 QA 金集评测出分且落库）
+- [x] 4.5 金融数据域包：fd-sentiment gold-v9 尺子迁入 + fd-data-quality baselines 接入 + 首批数据 QA 金集（从 dashboards 对账/finalize 判据改写）（verify: 数据通道真跑——对账判据与 QA 金集评测出分且落库）
 - [ ] 4.6 双域等价复核：迁入的尺子与原仓对同输入双跑零漂移（verify: 双跑对比记录零差异）
 
 ## 5. P2 · 柏讯贯通
@@ -47,3 +47,5 @@
 
 - [ ] 7.1 三域冒烟：法律 + 政务 + 金融各跑一轮 评测→复核→（法律）组装 全链（verify: 三域冒烟记录留档）
 - [ ] 7.2 specs 对账：逐 Requirement 核对其 Scenario 有对应已完成任务且验证证据在案（verify: 对账记录，防「实现了却没勾」档案教训）
+
+<!-- 4.1 未勾：提示词结构修复已落（EVAL_PROMPT_VERSION=v2-structure），但其 verify 要求在既有 gold 上活体校准且误读用例清零——待接 LLM 端点与产库 gold 后执行。4.4 政务包、4.6 双域等价复核未开始。 -->
