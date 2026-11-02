@@ -52,6 +52,11 @@ pipeline {
   }
 
   stages {
+    stage('Public-repo leak gate') {
+      steps {
+        sh 'python3 scripts/check_public_hygiene.py'
+      }
+    }
     stage('Resolve tag') {
       steps {
         script {
