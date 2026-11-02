@@ -10,6 +10,17 @@ A domain pack is a directory under the repo's ``packs/`` declaring itself in a
     components:                           # what the pack owns/contributes
       - {type: module|data|db_seed, path: <repo-relative path>}
     eval_suites: [<suite id>, ...]
+    gold_judge:                           # optional gold signal source
+      model: <judge model id>             #   both keys required when the
+      prompt_version: <str>               #   field is declared at all
+
+``gold_judge`` declares which judge (model + prompt version) the pack treats
+as a gold signal source. It is optional: a pack that does not declare one is
+simply not subject to the calibration gate. Declaring one is gated by
+:func:`require_calibrated_gold_judge` — the pair must have a passing,
+sufficiently-sampled calibration run on record (see ``src/bench/calibration``),
+otherwise the declaration is rejected. Validation (:func:`validate_pack`)
+checks the field's shape only and never requires it.
 
 The kernel understands only the manifest schema above. What a pack's kinds,
 components, or eval suites mean is entirely the pack's business; domain
@@ -26,6 +37,10 @@ import pathlib
 from typing import Any, Optional
 
 import yaml
+
+from src.settings import DEFAULT_DB
+
+from .calibration import is_calibrated
 
 # src/bench/packs.py -> repo root.
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -88,6 +103,42 @@ def load_pack(name: str) -> dict:
     return _read_manifest(PACKS_DIR / name / MANIFEST_NAME)
 
 
+class UncalibratedJudgeError(RuntimeError):
+    """A pack declares a gold judge that has not passed calibration.
+
+    Raised by :func:`require_calibrated_gold_judge`: a pack may declare a
+    ``gold_judge`` signal source only when that (model, prompt_version) pair
+    has a passing, sufficiently-sampled calibration run on record (see
+    ``src/bench/calibration.py``). The message names the judge, the prompt
+    version, and the reason.
+    """
+
+
+def _check_gold_judge(manifest: dict, problems: list[str]) -> None:
+    """Optional-field shape check for ``gold_judge``.
+
+    Absent (or ``None``) is legal — not every pack declares a gold signal
+    source, and the calibration gate deliberately only applies to packs that
+    do. When present it must be a mapping carrying non-empty ``model`` and
+    ``prompt_version`` strings; extra keys are tolerated (forward
+    compatibility). This is shape validation only — whether the declared
+    judge actually passed calibration is :func:`require_calibrated_gold_judge`'s
+    job.
+    """
+    gold_judge = manifest.get("gold_judge")
+    if gold_judge is None:
+        return
+    if not isinstance(gold_judge, dict):
+        problems.append(
+            "'gold_judge' must be a mapping with 'model' and 'prompt_version'"
+        )
+        return
+    for key in ("model", "prompt_version"):
+        value = gold_judge.get(key)
+        if not isinstance(value, str) or not value.strip():
+            problems.append(f"'gold_judge.{key}' must be a non-empty string")
+
+
 def _check_kinds(manifest: dict, problems: list[str]) -> None:
     kinds = manifest.get("kinds")
     if kinds is None:
@@ -142,6 +193,8 @@ def validate_pack(manifest: Any, *, directory: Optional[str] = None) -> list[str
     - every component has a legal ``type`` and a ``path`` that exists inside
       the repo (paths are repo-relative; escaping the repo root is a
       violation),
+    - ``gold_judge``, when declared, is a mapping with non-empty ``model`` and
+      ``prompt_version`` strings (optional: absent is legal, never required),
     - when the caller passes the pack's ``directory`` name, ``name`` matches
       it.
     """
@@ -175,9 +228,60 @@ def validate_pack(manifest: Any, *, directory: Optional[str] = None) -> list[str
     ):
         problems.append("'eval_suites' must be a list of strings")
 
+    _check_gold_judge(manifest, problems)
+
     if directory is not None and name != directory:
         problems.append(
             f"'name' {name!r} does not match the pack directory {directory!r}"
         )
 
     return problems
+
+
+def require_calibrated_gold_judge(
+    conn: Any,
+    manifest: Any,
+    *,
+    db_path: Any = DEFAULT_DB,
+) -> None:
+    """Gold-signal gate: an uncalibrated judge cannot be declared as gold.
+
+    - A manifest that does not declare ``gold_judge`` (or declares it as
+      ``None``) passes immediately: no gold claim, nothing to check.
+    - A manifest declaring ``gold_judge: {model, prompt_version}`` must point
+      at a judge whose pair has a passing, sufficiently-sampled calibration
+      run on record (:func:`src.bench.calibration.is_calibrated`, queried on
+      ``conn``; ``db_path`` is kept for symmetry with the calibration API and
+      forwarded as-is). Otherwise raises :class:`UncalibratedJudgeError`
+      naming the judge, the prompt version, and the reason.
+
+    An invalid declaration (missing/empty keys) also raises — a malformed
+    gold claim must not slip through as "no claim".
+    """
+    declaration = manifest.get("gold_judge") if isinstance(manifest, dict) else None
+    if not declaration:
+        return None
+
+    model = declaration.get("model")
+    prompt_version = declaration.get("prompt_version")
+    if (
+        not isinstance(model, str)
+        or not model.strip()
+        or not isinstance(prompt_version, str)
+        or not prompt_version.strip()
+    ):
+        raise UncalibratedJudgeError(
+            "pack declares an invalid gold_judge (need non-empty 'model' and "
+            "'prompt_version' strings); validate_pack reports the shape problem"
+        )
+
+    ok, reason = is_calibrated(
+        conn, judge_model=model, prompt_version=prompt_version, db_path=db_path
+    )
+    if not ok:
+        raise UncalibratedJudgeError(
+            f"gold judge '{model}' @ prompt version '{prompt_version}' has not "
+            f"passed calibration and cannot be declared as a gold signal "
+            f"source: {reason}"
+        )
+    return None
