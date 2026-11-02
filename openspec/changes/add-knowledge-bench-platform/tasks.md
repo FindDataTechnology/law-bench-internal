@@ -1,9 +1,9 @@
 ## 1. P0 · 合流与奠基
 
-- [ ] 1.1 造 donor 白名单：对 law-bench-server 拷贝的 `contracts/`、`paper/`、README 差异逐文件列示审查，明确「无凭据文件」（`.env`、`ssh-config.json`、`.git` 及任何 config/密钥永不在列）；清单落档于本 change 根 `donor-whitelist.md`，每行含审阅结论（verify: 清单文件存在且逐行有结论）
-- [ ] 1.2 按白名单拷入正身仓，单提交（verify: `git show --stat HEAD` 仅含白名单路径，无凭据形态文件）
-- [ ] 1.3 law-bench-server 标记为只读供体（目录内注记：不再迭代，仅资产来源）（verify: 注记文件存在）
-- [ ] 1.4 确立基线：合流提交后跑全量 pytest，存档基线输出（verify: 基线全绿且输出文件留档，供 2.2 对比断言口径）
+- [x] 1.1 造 donor 白名单：对 law-bench-server 拷贝的 `contracts/`、`paper/`、README 差异逐文件列示审查，明确「无凭据文件」（`.env`、`ssh-config.json`、`.git` 及任何 config/密钥永不在列）；清单落档于本 change 根 `donor-whitelist.md`，每行含审阅结论（verify: 清单文件存在且逐行有结论）
+- [x] 1.2 按白名单拷入正身仓，单提交（verify: `git show --stat HEAD` 仅含白名单路径，无凭据形态文件）
+- [x] 1.3 law-bench-server 标记为只读供体（目录内注记：不再迭代，仅资产来源）（verify: 注记文件存在）
+- [x] 1.4 确立基线：合流提交后跑全量 pytest，存档基线输出（verify: 基线全绿且输出文件留档，供 2.2 对比断言口径）
 
 ## 2. P0 · 内核抽取（知识单元泛化）
 
