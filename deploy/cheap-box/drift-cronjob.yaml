@@ -75,7 +75,7 @@ spec:
                 value: "5"
           containers:
             - name: drift-check
-              image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-ba0a6c9
+              image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-c505f0c
               imagePullPolicy: IfNotPresent
               command:
                 - /app/.venv/bin/python
