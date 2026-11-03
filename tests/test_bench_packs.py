@@ -71,6 +71,15 @@ class TestListPacks:
         with pytest.raises(FileNotFoundError):
             list_packs()
 
+    def test_runtime_pycache_and_dot_dirs_are_skipped(self, packs_root):
+        # The packs package is importable in the image, so Python materialises
+        # packs/__pycache__ at runtime; that must never wedge the registry.
+        _make_pack(packs_root, "alpha")
+        (packs_root / "__pycache__").mkdir()
+        (packs_root / ".staging").mkdir()
+        found = list_packs()
+        assert [m["name"] for m in found] == ["alpha"]
+
     def test_malformed_yaml_raises(self, packs_root):
         broken = packs_root / "broken"
         broken.mkdir()

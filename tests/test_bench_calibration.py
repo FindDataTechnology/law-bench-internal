@@ -279,7 +279,9 @@ class TestRunCalibration:
         assert res["agree_rate"] == pytest.approx(0.9)
         assert res["monotonic"] is True
         assert res["all_pass"] is True
-        assert res["min_agree"] == pytest.approx(0.80)
+        # the reported bar is whatever the configured constant says, not a
+        # frozen number (the user has already moved it once: 0.80 → 0.70)
+        assert res["min_agree"] == pytest.approx(CALIBRATION_MIN_AGREE)
         assert [b["bucket"] for b in res["buckets"]] == BUCKET_LABELS
 
     def test_below_bar_agree_rate_fails_the_run(self, db_conn):
