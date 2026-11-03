@@ -77,10 +77,15 @@ def list_packs() -> list[dict]:
     One manifest per subdirectory of :data:`PACKS_DIR`, sorted by directory
     name; non-directory entries are ignored. A directory without a
     ``pack.yaml`` or with malformed YAML raises (never silently skipped).
+
+    Exception: ``__pycache__`` (created at runtime the moment anything
+    imports the ``packs`` package — e.g. the ``src/law_catalog`` shim) and
+    dot-directories are skipped, not raised on. They are Python/editor
+    noise, not half-configured packs.
     """
     out: list[dict] = []
     for entry in sorted(PACKS_DIR.iterdir(), key=lambda p: p.name):
-        if not entry.is_dir():
+        if not entry.is_dir() or entry.name.startswith(".") or entry.name == "__pycache__":
             continue
         out.append(_read_manifest(entry / MANIFEST_NAME))
     return out
