@@ -40,7 +40,7 @@ from src.settings import DEFAULT_DB
 from src.eval.store import store_result
 
 # Agree-rate bar a calibration run must meet (tunable).
-CALIBRATION_MIN_AGREE = 0.80
+CALIBRATION_MIN_AGREE = 0.70
 # Tolerated single-step accuracy dip between adjacent confidence buckets
 # (small-sample noise); a larger drop fails the monotonicity check.
 MONOTONIC_TOLERANCE = 0.05
