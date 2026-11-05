@@ -15,17 +15,13 @@ spec:
       labels:
         app: law-bench
     spec:
-      # Migrated to cheap-7 2026-09-27: cheap-4 kubelet reported phantom disk-pressure
-      # deploy/cheap-box/README.md "Harbor"). Pin to cheap-4 by hostname: the
-      # law-bench-db PVC is local-path, so its PV is bound to one node and
-      # carries node affinity there — rescheduling elsewhere forces a PVC
-      # recreate (empty volume). Keep this in lockstep with the node the PVC
-      # is bound to. (The image itself needs no node-local pre-import anymore:
-      # it pulls from TCR via `tcr-pull` below.)
-      nodeSelector:
-        kubernetes.io/hostname: cheap-7
-      # TCR personal edition pull creds (switch-image-pipeline-github-actions-tcr):
-      # any node can fetch ccr.ccs.tencentyun.com images with this secret.
+      # UNPINNED 2026-11-05: the old cheap-7 pin existed only for the
+      # law-bench-db PVC (local-path node affinity), but that PVC now holds a
+      # 176K legacy sqlite (evaluation_rules.db, unused since the Postgres
+      # migration — real store is the `postgres` StatefulSet via
+      # law-bench-db secret). The pin kept crashing the pod on cheap-7's
+      # standing disk pressure (repeated Evicted/137). Any node works: the
+      # image pulls from TCR via tcr-pull below, the DB is the remote PG.
       imagePullSecrets:
         - name: tcr-pull
       # Node resolv.conf picked up a wildcard `mesh.finddata.cn` search domain
