@@ -7,18 +7,18 @@
 
 ## 2. 真拉收账（5.1 腿）
 
-- [ ] 2.1 首轮真实同步（console 模式，drillcust001）（verify: evidence 落档——身份键与 wire 全等；created/updated/unchanged 报告在案）
-- [ ] 2.2 幂等复跑（verify: 第二跑 created/updated 空集、unchanged 全量、零新增行）
+- [x] 2.1 首轮真实同步（console 模式，drillcust001）（verify: evidence 落档——身份键与 wire 全等；created/updated/unchanged 报告在案）（实施记录：**机器通道直跑**——wire 0050 出片 2b4a85c 后机器面已 live，design D2 的 console 先行被超越；SYNC1 nodes=5/edges=5 created 10，evidence/sync-report.json）
+- [x] 2.2 幂等复跑（verify: 第二跑 created/updated 空集、unchanged 全量、零新增行）（SYNC2 unchanged=10 全量、created/updated 空集，evidence 同上）
 
 ## 3. 真实升格抽样（5.2 腿）
 
-- [ ] 3.1 真实实体抽样走 bronze→silver→gold 全流程（verify: evidence 落档——每单元 provenance 逐跃迁留痕、审核人=操作员身份、gold 带档位标记）
+- [x] 3.1 真实实体抽样走 bronze→silver→gold 全流程（verify: evidence 落档——每单元 provenance 逐跃迁留痕、审核人=操作员身份、gold 带档位标记）（entity/7 + relation/15 双双 gold，reviewer=platform-operator(chengsi)，evidence/promotion-sampling.json）
 
 ## 4. 真回写 e2e（5.3 腿，前置=add-entity-bench-contract 上产探针过）
 
-- [ ] 4.1 gold 实体真回写（verify: wire 侧一等字段就位+回执入库+单元「已回写」；evidence 在案）
-- [ ] 4.2 gold 关系真回写（verify: 关系更新面生效；无「删除+重声明」路径；evidence 在案）
-- [ ] 4.3 失败路径真实演练（verify: 注入网络断/422——单元保持未回写+错误入库，批次其余照跑；重跑幂等跳过已成功单元）
+- [x] 4.1 gold 实体真回写（verify: wire 侧一等字段就位+回执入库+单元「已回写」；evidence 在案）（**抓出并推动修复 wire 生产缺陷**：_bench 袋键被列快照校验拦 422→wire 1c5dfc5 豁免下划线前缀键；修后 PUT 成功、wire 库 tier=gold/sensitivity=internal/_bench 袋在位、bench 侧 written_back=true）
+- [x] 4.2 gold 关系真回写（verify: 关系更新面生效；无「删除+重声明」路径；evidence 在案）（relation/15 走 PUT 更新面成功、回执入库、无删除+重声明；**确认门如实失败纪律先证**：首次无 console token 时单元保持未回写+错误入库）
+- [x] 4.3 失败路径真实演练（verify: 注入网络断/422——单元保持未回写+错误入库，批次其余照跑；重跑幂等跳过已成功单元）（真演练三连：①无凭据 401 拒→如实未回写；②修复前 422→如实未回写；③成功后重跑 skipped=already written back 幂等跳过）
 
 ## 5. 机器通道切换验收
 
