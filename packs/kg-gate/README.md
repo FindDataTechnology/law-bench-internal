@@ -103,10 +103,19 @@ registry 条目 `metadata.surface.commercial_tools` 名单，越界即拒（`con
 3. `export_surface_commercial.py` 的写入端（registry PATCH）——只迁推导。
 
 **双跑零漂移**：`tests/test_kg_gate.py::TestGateDualRun` 在 node 可用且
-`/Users/chengsishi/paas/lib/publish-tool-gate.js` 可读时，对同一组
+`/Users/chengsishi/finddata/paas/lib/publish-tool-gate.js` 可读时，对同一组
 (manifest, index) 输入同时跑真实 JS 门（`toolGateErrors(m, serverInfo, {})`，
 无 probe、零网络）与本包 Python 内核，逐字段比对 errors/notes（含文案）
 与三个纯函数的返回结构，断言零漂移；node 或 paas 仓缺席时如实 skip。
+
+**live 双跑收账（2026-11-05，close-wire-real-loop 6.x）**：对生产 registry
+真实条目（29 条，只读拉取）双跑——6 例聚焦（真实闭包合法/越界/counts-only
+哨兵/无 surface/本地引用豁免/存在性缺名）+ 61 例全域扫（29 条目×各自变体）
+**全部逐字段 AGREE**。此前 add-knowledge-bench-platform 6.2 的
+NOT EQUIVALENT 定谳为 fixture 假象：registry 未 seed 真实条目时原 JS 对
+index 缺席条目放行、内核 fail-closed；真实数据下两侧行为一致。裁决：内核
+保留 fail-closed 加严语义（比原门更严的一处维持如实标注），零漂移以
+`evidence/2026-11-05-publish-gate-dualrun.json` 实证收账。
 
 ## 与 packs/gov 的关系（防重复计数）
 
