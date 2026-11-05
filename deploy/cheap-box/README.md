@@ -117,6 +117,28 @@ explicitly.
 `deploy/pvc.yaml` describe the running state. Two cheap-specific deviations are
 baked into those manifests:
 
+### Quarterly judge-drift CronJob (`drift-cronjob.yaml`)
+
+`deploy/cheap-box/drift-cronjob.yaml` runs `scripts/drift_check.py` quarterly
+(03:00 UTC, day 1 of Jan/Apr/Jul/Oct) — pure arithmetic over stored calibration
+runs, zero LLM calls. Cheap-side facts:
+
+- **Unpinned on purpose**: cheap-7 carries a standing disk-pressure condition
+  that EVICTS new pods (2026-11-05 manual-verify: scheduled via taint
+  toleration, then kubelet-evicted). The job mounts no volumes and talks to a
+  remote PG, so it schedules on any untainted node.
+- **Image tag must be re-verified on deploy bumps**: the tag is only valid
+  while the image contains `/app/scripts/drift_check.py` byte-identical to the
+  repo copy (sha-6916bd9 verified 2026-11-05, sha256 dee3138df65c3578).
+- **First-run semantics**: no stored calibration runs for the pinned
+  judge+prompt-version → `not_comparable` (exit 0, honest no-op, nothing
+  written). Real comparisons start once two `meta/judge` calibration runs
+  exist in the production `eval_runs` (see scripts/calibrate_judge_live.py).
+- **Quarterly check**: on day 1 of the schedule month,
+  `kubectl --context cheap-ts get jobs -n law-bench` — a `Failed` job = drift
+  detected (exit 1), the comparison record also lands in `eval_runs` for
+  querying.
+
 - **`nodeSelector: kubernetes.io/hostname: cheap-7` (web) with
   `imagePullSecrets: [tcr-pull]`.** The node pin is purely the local-path PVC
   (`law-bench-db`) binding — the PV carries node affinity, so rescheduling

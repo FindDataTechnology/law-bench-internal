@@ -81,6 +81,16 @@ _ALL_TABLES = (
     "law_catalog.clause_article_refs",
     "law_catalog.successor_map",
     "law_catalog.citation_revisions",
+    # Workspace tables (see src/bench/workspace_store.py). Referencing tables
+    # go first; TRUNCATE ... CASCADE handles the rest regardless of order.
+    "domain_members",
+    "domain_invitations",
+    "authoring_events",
+    "authoring_tasks",
+    "ontology_publications",
+    "distribution_consumers",
+    "domains",
+    "ontology_templates",
 )
 
 

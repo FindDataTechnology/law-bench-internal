@@ -15,17 +15,24 @@ spec:
       labels:
         app: law-bench
     spec:
-      # Migrated to cheap-7 2026-09-27: cheap-4 kubelet reported phantom disk-pressure
-      # deploy/cheap-box/README.md "Harbor"). Pin to cheap-4 by hostname: the
-      # law-bench-db PVC is local-path, so its PV is bound to one node and
-      # carries node affinity there — rescheduling elsewhere forces a PVC
-      # recreate (empty volume). Keep this in lockstep with the node the PVC
-      # is bound to. (The image itself needs no node-local pre-import anymore:
-      # it pulls from TCR via `tcr-pull` below.)
+      # MIGRATED to cheap-8 2026-11-05: the whole law-bench stack (origin pod
+      # + postgres PV) moved off cheap-7's standing disk pressure. The old
+      # law-bench-db PVC (176K legacy sqlite, unused since the Postgres
+      # migration) was dropped and recreated here - the new PV's node
+      # affinity now pins the pod to cheap-8, so the selector below must stay
+      # in lockstep with it (same rule as before, new node). Image pulls from
+      # TCR via tcr-pull; the real DB is the remote PG service.
       nodeSelector:
-        kubernetes.io/hostname: cheap-7
-      # TCR personal edition pull creds (switch-image-pipeline-github-actions-tcr):
-      # any node can fetch ccr.ccs.tencentyun.com images with this secret.
+        kubernetes.io/hostname: cheap-8
+      # (previous note: UNPINNED 2026-11-05 intermediate step; superseded same
+      # day by this pin because the recreated PVC's affinity decides the node)
+
+      # law-bench-db PVC (local-path node affinity), but that PVC now holds a
+      # 176K legacy sqlite (evaluation_rules.db, unused since the Postgres
+      # migration — real store is the `postgres` StatefulSet via
+      # law-bench-db secret). The pin kept crashing the pod on cheap-7's
+      # standing disk pressure (repeated Evicted/137). Any node works: the
+      # image pulls from TCR via tcr-pull below, the DB is the remote PG.
       imagePullSecrets:
         - name: tcr-pull
       # Node resolv.conf picked up a wildcard `mesh.finddata.cn` search domain
@@ -60,7 +67,7 @@ spec:
             - lawbench.finddatatech.cloud
       initContainers:
         - name: seed-db
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-ba0a6c9
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-6916bd9
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsUser: 0
@@ -82,7 +89,7 @@ spec:
               ls -la /data
       containers:
         - name: law-bench
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-ba0a6c9
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-6916bd9
           imagePullPolicy: IfNotPresent
           env:
             # Admin-assistant runtime (add-admin-copilot-assistant). Non-secret

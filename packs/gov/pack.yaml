@@ -1,0 +1,12 @@
+name: gov
+version: 0.1.0
+description: 政务数据域包（数据/元数据重、文本可选）：fd-cn-gov 公文爬虫 registry（sources/datasource_columns/scraw_configs/organizations 四表）的只读适配与纯确定性事实校验（kind=gov-fact，含 KG 车道验收判据的元数据图降级迁移）；零 LLM、零网络。
+kinds:
+  - gov-fact
+components:
+  - type: module
+    path: packs/gov/adapters.py
+  - type: module
+    path: packs/gov/checks.py
+eval_suites:
+  - gov-registry-consistency

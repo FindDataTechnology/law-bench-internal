@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}{{ t.admin.distribution.title }} · {{ t.nav.brand }}{% endblock %}
+
+{% block content %}
+<div class="toolbar between">
+  <h1>{{ t.admin.distribution.title }}</h1>
+</div>
+<p class="muted">{{ t.admin.distribution.intro }}</p>
+
+{# Consumer registration: the machine token is generated server-side, stored
+   as sha256 only, and its plaintext is shown exactly once — in the creation
+   flash (same discipline as the C1 invitations). #}
+<div class="panel">
+  <details {% if not consumers %}open{% endif %}>
+    <summary>{{ t.admin.distribution.register_h2 }}</summary>
+    <form method="POST" action="{{ url_for('admin_consumer_register') }}" class="filter-form">
+      <div class="filter-group">
+        <label>{{ t.admin.distribution.name_label }}</label>
+        <input type="text" name="name" required>
+      </div>
+      <div class="filter-group">
+        <label>{{ t.admin.distribution.domains_label }}</label>
+        <input type="text" name="domains" placeholder="{{ t.admin.distribution.domains_ph }}" required>
+      </div>
+      <div class="filter-group">
+        <label>&nbsp;</label>
+        <button type="submit" class="btn btn-primary">{{ t.admin.distribution.register_btn }}</button>
+      </div>
+    </form>
+  </details>
+</div>
+
+<div class="panel">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>{{ t.admin.distribution.col_name }}</th>
+        <th>{{ t.admin.distribution.col_domains }}</th>
+        <th>{{ t.admin.distribution.col_created_by }}</th>
+        <th>{{ t.admin.distribution.col_created_at }}</th>
+        <th>{{ t.admin.distribution.col_status }}</th>
+        <th>{{ t.admin.distribution.col_actions }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in consumers %}
+      <tr>
+        <td><strong>{{ c.name }}</strong></td>
+        <td>
+          {% for d in c.domains or [] %}<span class="badge"><code>{{ d }}</code></span> {% endfor %}
+        </td>
+        <td>{{ c.created_by }}</td>
+        <td class="muted">{{ c.created_at }}</td>
+        <td>
+          {% if c.revoked_at %}
+          <span class="badge">{{ t.admin.distribution.revoked_badge }}</span>
+          {% else %}
+          <span class="badge">{{ t.admin.distribution.active_badge }}</span>
+          {% endif %}
+        </td>
+        <td class="dl-cell">
+          {% if not c.revoked_at %}
+          <form method="POST" action="{{ url_for('admin_consumer_domains', name=c.name) }}" class="inline-form">
+            <input type="text" name="domains" value="{{ (c.domains or []) | join(',') }}"
+                   placeholder="{{ t.admin.distribution.domains_ph }}">
+            <button type="submit" class="btn btn-sm">{{ t.admin.distribution.set_domains_btn }}</button>
+          </form>
+          <form method="POST" action="{{ url_for('admin_consumer_revoke', name=c.name) }}" class="inline-form">
+            <button type="submit" class="btn btn-sm">{{ t.admin.distribution.revoke_btn }}</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not consumers %}
+      <tr><td colspan="6" class="muted">{{ t.admin.distribution.empty }}</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
