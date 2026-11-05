@@ -21,9 +21,10 @@
 #   * command override on the shared image with /app/.venv/bin/python
 #     -> deploy/mcp-deployment.yaml (law-bench-mcp pod)
 # The image ships the repo at /app including scripts/ (Dockerfile: WORKDIR /app,
-# COPY scripts ./scripts). Pin the tag to the newest build that CONTAINS
-# scripts/drift_check.py before any apply; sha-ba0a6c9 is copied from
-# deploy/deployment.yaml purely to mirror the style.
+# COPY scripts ./scripts). Tag pinned after image-content verification
+# (skopeo copy + layer scan 2026-11-05): sha-6916bd9 CONTAINS
+# /app/scripts/drift_check.py byte-identical to the repo copy
+# (sha256 dee3138df65c3578). On later deploy bumps, re-verify then update here.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
