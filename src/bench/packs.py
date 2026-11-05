@@ -79,8 +79,8 @@ def list_packs() -> list[dict]:
     ``pack.yaml`` or with malformed YAML raises (never silently skipped).
 
     Exception: ``__pycache__`` (created at runtime the moment anything
-    imports the ``packs`` package — e.g. the ``src/law_catalog`` shim) and
-    dot-directories are skipped, not raised on. They are Python/editor
+    imports the ``packs`` package — e.g. a pack shim module under ``src``)
+    and dot-directories are skipped, not raised on. They are Python/editor
     noise, not half-configured packs.
     """
     out: list[dict] = []

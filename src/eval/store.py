@@ -417,8 +417,10 @@ def ensure_schema(db_path=DEFAULT_DB) -> None:
             conn.execute(REVIEW_TASKS_SCHEMA)
             # knowledge-bench kernel tables (domain-neutral; see src/bench)
             from ..bench.store import BENCH_SCHEMA
+            from ..bench.workspace_store import WORKSPACE_SCHEMA
 
             conn.execute(BENCH_SCHEMA)
+            conn.execute(WORKSPACE_SCHEMA)
             conn.execute(_ADDITIVE_COLUMNS)
             conn.commit()
             _ensured_dbs.add(key)

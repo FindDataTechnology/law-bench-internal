@@ -29,6 +29,30 @@
       <a href="{{ href }}"{% if current_path.startswith(prefix) %} aria-current="page"{% endif %}>{{ label }}</a>
       {% endfor %}
       {% endif %}
+      {# 我的域 (web-rbac delta 「导航按域过滤」): rendered ONLY for domains the
+         signed-in user holds an active membership in — non-members and
+         anonymous users see zero domain entries. The resolver is fail-safe
+         (no DB -> no entries, never a 500); the workbench and admin routes
+         re-enforce membership server-side, so this section is usability, not
+         the gate. Each member domain gets a workbench entry (expert authoring
+         surface, member-gated) next to the C1 admin detail link. #}
+      {% if user and user.sub %}
+      {% set my_domain_entries = my_domains() %}
+      {% if my_domain_entries %}
+      <span class="muted">{{ t.admin.nav_my_domains }}</span>
+      {% for d in my_domain_entries %}
+      <a href="{{ url_for('workbench_home', domain_key=d.key) }}"{% if request.url.path == '/workbench/' ~ d.key %} aria-current="page"{% endif %}>{{ d.name }} · {{ t.workbench.nav_link }}</a>
+      <a href="{{ url_for('admin_domain_detail', domain_key=d.key) }}"{% if request.url.path == '/admin/domains/' ~ d.key %} aria-current="page"{% endif %}>{{ d.name }}</a>
+      {% endfor %}
+      {% endif %}
+      {% endif %}
+      {# 管理门: platform-admin exclusive (templates + all-domain management are
+         admin-scope pages); hidden for every other identity. #}
+      {% if has_scope('admin') %}
+      <span class="muted">{{ t.admin.nav_gate }}</span>
+      <a href="{{ url_for('admin_templates') }}"{% if request.url.path.startswith('/admin/templates') %} aria-current="page"{% endif %}>{{ t.admin.templates.title }}</a>
+      <a href="{{ url_for('admin_domains') }}"{% if request.url.path.startswith('/admin/domains') %} aria-current="page"{% endif %}>{{ t.admin.domains.title }}</a>
+      {% endif %}
       <span class="lang-switch">
         <a href="{{ request.url.path }}?lang=en"{% if lang == 'en' %} aria-current="true"{% endif %}>{{ t.switch.en }}</a>
         <span class="muted">|</span>

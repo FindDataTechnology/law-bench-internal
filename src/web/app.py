@@ -33,13 +33,16 @@ from src.eval.manage import (
 from .i18n import resolve_locale
 from .paths import STATIC_DIR, TEMPLATES_DIR
 from .routes import (
+    admin,
     api,
     auth,
+    authoring,
     clauses,
     contract_context,
     contracts,
     copilot,
     dashboard,
+    distribution,
     generation,
     law_catalog,
     law_info,
@@ -102,6 +105,8 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     app.include_router(api.router)
+    app.include_router(admin.router)
+    app.include_router(authoring.router)
     app.include_router(auth.router)
     app.include_router(copilot.router)
     app.include_router(contract_context.router)
@@ -116,6 +121,10 @@ def create_app() -> FastAPI:
     app.include_router(review.router)
     app.include_router(promotion.router)
     app.include_router(dashboard.router)
+    # Logto-free machine surface: /api/v1/distribution/* is exempted from the
+    # app-level get_current_user (see auth.deps._EXEMPT_PREFIXES) and does its
+    # own X-Consumer-Token auth; not mounted on public_app.
+    app.include_router(distribution.router)
 
     # Resolve the active locale once per request, stash it for the template
     # context processor, and persist the choice as a cookie so it sticks.

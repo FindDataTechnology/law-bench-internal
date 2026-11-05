@@ -44,6 +44,39 @@ def _has_scope(user: object, scope: str) -> bool:
     return "*" in scopes or scope in scopes
 
 
+def _my_domains(request: Request) -> list[dict]:
+    """Domains where the signed-in user holds an active membership (nav).
+
+    Backs the permission-aware 「我的域」 navigation section (web-rbac delta
+    scenario 「导航按域过滤」): a user must see ONLY domains they are a member
+    of — non-members and anonymous users render zero domain entries. The
+    context processor has no DB conn of its own, so this resolves through
+    ``get_db`` lazily: Jinja calls it only when the chrome renders the section
+    for a signed-in user, the result is cached on ``request.state`` per request,
+    and ``get_db`` rides the process-wide cached connection (no per-request TCP
+    churn). Fail-safe by contract: ANY failure (DB unavailable, no identity,
+    import trouble) renders no domains rather than 500-ing the chrome — this is
+    navigation sugar, never an enforcement point (``require_domain_role`` on the
+    admin routes stays authoritative).
+    """
+    try:
+        user = getattr(request.state, "user", None)
+        sub = getattr(user, "sub", "") or ""
+        if not sub:
+            return []
+        cached = getattr(request.state, "my_domains", None)
+        if cached is not None:
+            return cached
+        from ..bench import workspaces  # local import: avoid import cycles
+        from .deps import get_db  # local import: avoid import cycles
+
+        domains = workspaces.list_domains(get_db(), user_id=sub)
+        request.state.my_domains = domains
+        return domains
+    except Exception:  # noqa: BLE001 - the nav must never take the page down
+        return []
+
+
 def _locale_context(request: Request) -> dict:
     """Per-request Jinja context: active locale + catalog + a bound translator.
 
@@ -79,6 +112,10 @@ def _locale_context(request: Request) -> dict:
         # plus a scope predicate the chrome uses to show/hide permission-gated actions.
         "user": user,
         "has_scope": lambda scope: _has_scope(user, scope),
+        # My domains (change `add-ontology-template-and-workspaces`): a lazy
+        # resolver so the 「我的域」 nav section only queries the DB when a
+        # signed-in chrome actually renders it; returns [] on any failure.
+        "my_domains": lambda: _my_domains(request),
         # Admin assistant (change `add-admin-copilot-assistant`): the island is
         # served only to admin sessions AND only when a runtime is configured;
         # unset COPILOT_RUNTIME_URL means the assistant is disabled outright.

@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}{{ t.workbench.overview.h1 }} {{ domain.name }} · {{ t.nav.brand }}{% endblock %}
+
+{% block content %}
+<div class="toolbar between">
+  <h1>{{ domain.name }} <code>{{ domain.key }}</code></h1>
+  <span class="badge">{% if cap.role == 'admin' %}{{ t.workbench.role.admin }}{% else %}{{ t.admin.role[cap.role] }}{% endif %}</span>
+</div>
+
+{# My tasks (assignee = signed-in member), active statuses first. Claim /
+   complete are the assignee's (write gate); cancel is lead/admin. #}
+<div class="panel">
+  <h2>{{ t.workbench.overview.my_tasks_h2 }}</h2>
+  {% if cap.can_assign %}
+  <p><a class="btn btn-sm" href="{{ url_for('workbench_task_new', domain_key=domain.key) }}">{{ t.workbench.overview.assign_new }}</a></p>
+  {% endif %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>{{ t.workbench.overview.col_title }}</th>
+        <th>{{ t.workbench.overview.col_status }}</th>
+        <th>{{ t.workbench.overview.col_target }}</th>
+        <th>{{ t.workbench.overview.col_actions }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for task in my_tasks %}
+      <tr>
+        <td>{{ task.title }}{% if task.detail %} <span class="muted">{{ task.detail }}</span>{% endif %}</td>
+        <td><span class="badge">{{ t.workbench.overview['status_' ~ task.status] }}</span></td>
+        <td class="muted">{% if task.target_kind %}<code>{{ task.target_kind }}</code>{% if task.target_key %} / <code>{{ task.target_key }}</code>{% endif %}{% else %}—{% endif %}</td>
+        <td class="dl-cell">
+          {% if cap.can_write and task.assignee == user.sub and task.status == 'pending' %}
+          <form method="POST" action="{{ url_for('workbench_task_status', domain_key=domain.key, task_id=task.id) }}" class="inline-form">
+            <input type="hidden" name="to_status" value="in_progress">
+            <button type="submit" class="btn btn-sm">{{ t.workbench.overview.claim_btn }}</button>
+          </form>
+          {% endif %}
+          {% if cap.can_write and task.assignee == user.sub and task.status == 'in_progress' %}
+          <form method="POST" action="{{ url_for('workbench_task_status', domain_key=domain.key, task_id=task.id) }}" class="inline-form">
+            <input type="hidden" name="to_status" value="done">
+            <button type="submit" class="btn btn-sm">{{ t.workbench.overview.complete_btn }}</button>
+          </form>
+          {% endif %}
+          {% if cap.can_assign and task.status in ('pending', 'in_progress') %}
+          <form method="POST" action="{{ url_for('workbench_task_status', domain_key=domain.key, task_id=task.id) }}" class="inline-form">
+            <input type="hidden" name="to_status" value="cancelled">
+            <button type="submit" class="btn btn-sm">{{ t.workbench.overview.cancel_btn }}</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not my_tasks %}
+      <tr><td colspan="4" class="muted">{{ t.workbench.overview.empty_tasks }}</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+{# Domain content overview: one row per in-vocabulary kind (both lanes) with
+   its unit count and a browse link — this doubles as the vocabulary display,
+   so experts see exactly the kinds the anchored template allows. #}
+<div class="panel">
+  <h2>{{ t.workbench.overview.content_h2 }}</h2>
+  <h3>{{ t.admin.templates.entity_types }}</h3>
+  <table class="data-table">
+    <thead>
+      <tr><th>{{ t.workbench.overview.col_kind }}</th><th>{{ t.workbench.overview.col_count }}</th><th>{{ t.workbench.overview.col_actions }}</th></tr>
+    </thead>
+    <tbody>
+      {% for kind in entity_types %}
+      <tr>
+        <td><span class="badge">{{ kind }}</span></td>
+        <td>{{ counts.get(kind, 0) }}</td>
+        <td><a href="{{ url_for('workbench_browse', domain_key=domain.key, kind=kind) }}">{{ t.workbench.overview.browse }}</a></td>
+      </tr>
+      {% endfor %}
+      {% if not entity_types %}
+      <tr><td colspan="3" class="muted">{{ t.admin.templates.none }}</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+  <h3>{{ t.admin.templates.relationship_kinds }}</h3>
+  <table class="data-table">
+    <thead>
+      <tr><th>{{ t.workbench.overview.col_kind }}</th><th>{{ t.workbench.overview.col_count }}</th><th>{{ t.workbench.overview.col_actions }}</th></tr>
+    </thead>
+    <tbody>
+      {% for kind in relationship_kinds %}
+      <tr>
+        <td><span class="badge">{{ kind }}</span></td>
+        <td>{{ counts.get(kind, 0) }}</td>
+        <td><a href="{{ url_for('workbench_browse', domain_key=domain.key, kind=kind) }}">{{ t.workbench.overview.browse }}</a></td>
+      </tr>
+      {% endfor %}
+      {% if not relationship_kinds %}
+      <tr><td colspan="3" class="muted">{{ t.admin.templates.none }}</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+{% if cap.can_assign %}
+<p><a href="{{ url_for('admin_domain_detail', domain_key=domain.key) }}">{{ t.workbench.overview.manage_link }}</a></p>
+{% endif %}
+{% endblock %}

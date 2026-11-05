@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}{{ t.admin.templates.detail_h1 }} {{ template.name }} · {{ t.nav.brand }}{% endblock %}
+
+{% block content %}
+<p><a href="{{ url_for('admin_templates') }}">{{ t.admin.templates.back }}</a></p>
+<div class="toolbar between">
+  <h1>{{ template.name }} <span class="badge">v{{ template.version }}</span></h1>
+  <span class="muted">{{ t.admin.templates.col_created_by }}: {{ template.created_by }} · {{ t.admin.templates.col_created_at }}: {{ template.created_at }}</span>
+</div>
+
+{# Version history: every edit appends a row; rows are immutable (D2). #}
+<div class="panel">
+  <h2>{{ t.admin.templates.versions_h2 }}</h2>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>{{ t.admin.templates.col_version }}</th>
+        <th>{{ t.admin.templates.col_created_by }}</th>
+        <th>{{ t.admin.templates.col_created_at }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for v in versions|reverse %}
+      <tr>
+        <td>
+          <span class="badge">v{{ v.version }}</span>
+          {% if v.version == template.version %}<span class="badge">{{ t.admin.templates.latest_badge }}</span>{% endif %}
+        </td>
+        <td>{{ v.created_by }}</td>
+        <td class="muted">{{ v.created_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{# Full three-part schema, rendered readably per design D1. #}
+<div class="panel">
+  <h2>{{ t.admin.templates.schema_h2 }}</h2>
+  <h3>{{ t.admin.templates.entity_types }}</h3>
+  <p>
+    {% for item in schema.get('entity_types', []) %}<span class="badge">{{ item }}</span> {% else %}<span class="muted">{{ t.admin.templates.none }}</span>{% endfor %}
+  </p>
+  <h3>{{ t.admin.templates.concept_structures }}</h3>
+  {% if schema.get('concept_structures') %}
+  <table class="data-table">
+    <thead><tr><th>{{ t.admin.templates.col_name }}</th><th>{{ t.admin.templates.col_fields }}</th></tr></thead>
+    <tbody>
+      {% for entity, fields in schema.get('concept_structures', {}).items() %}
+      <tr>
+        <td><code>{{ entity }}</code></td>
+        <td>
+          {% if fields is iterable and fields is not string %}
+            {% for f in fields %}<span class="badge">{{ f }}</span> {% endfor %}
+          {% else %}{{ fields }}{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted">{{ t.admin.templates.none }}</p>{% endif %}
+  <h3>{{ t.admin.templates.relationship_kinds }}</h3>
+  <p>
+    {% for item in schema.get('relationship_kinds', []) %}<span class="badge">{{ item }}</span> {% else %}<span class="muted">{{ t.admin.templates.none }}</span>{% endfor %}
+  </p>
+  <h3>{{ t.admin.templates.tier_vocabulary }}</h3>
+  <p>
+    {% for item in schema.get('tier_vocabulary', []) %}<span class="badge">{{ item }}</span> {% endfor %}
+  </p>
+  <h3>{{ t.admin.templates.sensitivity_vocabulary }}</h3>
+  <p>
+    {% for item in schema.get('sensitivity_vocabulary', []) %}<span class="badge">{{ item }}</span> {% endfor %}
+  </p>
+  <h3>{{ t.admin.templates.corpus_declaration }}</h3>
+  {% if schema.get('corpus_declaration') %}
+  <pre><code>{{ corpus_pretty }}</code></pre>
+  {% else %}<p class="muted">{{ t.admin.templates.none }}</p>{% endif %}
+  <h3>{{ t.admin.templates.rubric_refs }}</h3>
+  <p>
+    {% for item in schema.get('rubric_refs', []) %}<span class="badge">{{ item }}</span> {% else %}<span class="muted">{{ t.admin.templates.none }}</span>{% endfor %}
+  </p>
+</div>
+
+{# Editing appends a new version (update_template); history rows stay intact. #}
+<div class="panel">
+  <details>
+    <summary>{{ t.admin.templates.new_version_h2 }}</summary>
+    <form method="POST" action="{{ url_for('admin_template_version_create', name=template.name) }}" class="filter-form">
+      <div class="filter-group wide">
+        <label>{{ t.admin.templates.schema_label }}</label>
+        <textarea name="schema" rows="16" required>{{ schema_pretty }}</textarea>
+      </div>
+      <div class="filter-group">
+        <label>&nbsp;</label>
+        <button type="submit" class="btn btn-primary">{{ t.admin.templates.update_btn }}</button>
+      </div>
+    </form>
+  </details>
+</div>
+{% endblock %}

@@ -109,8 +109,14 @@ def upsert_knowledge_unit(
     tier: str = "raw",
     source_path: Optional[str] = None,
     provenance: Optional[dict] = None,
+    commit: bool = True,
 ) -> dict:
-    """Insert or update one knowledge unit; returns the stored row as a dict."""
+    """Insert or update one knowledge unit; returns the stored row as a dict.
+
+    ``commit=False`` leaves the transaction open for the caller to commit —
+    used by write paths that must pair the unit write with a companion write
+    (e.g. the authoring event stream) so both land or neither does.
+    """
     if not kind or not external_key:
         raise ValueError("kind and external_key are required")
     now = _now()
@@ -146,7 +152,8 @@ def upsert_knowledge_unit(
         ),
     )
     row = cur.fetchone()
-    conn.commit()
+    if commit:
+        conn.commit()
     return _row_to_dict(row)
 
 

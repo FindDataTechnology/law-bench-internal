@@ -110,3 +110,39 @@ implicit grant.
 
 - **WHEN** an identity's scope set is empty
 - **THEN** no scope is granted and access is denied
+
+### Requirement: Domain-scoped permission composition
+
+Managed domain routes SHALL enforce a domain-role check in addition to the existing
+`require_scope` platform check: platform scope first, then the domain role; both MUST pass.
+The sole source of truth for domain roles SHALL be the workspace membership record
+(`domain_members`); the source of truth for platform-level scopes SHALL remain, and only
+remain, Logto — the existing contract that platform-level roles exist only in Logto is
+NOT changed by this requirement. An authenticated identity without membership in the
+target domain SHALL be denied (fail-closed).
+
+#### Scenario: Dual-gate enforcement
+
+- **WHEN** an authenticated identity holding the `content:write` platform scope is a domain
+  expert in its member domain and requests to modify that domain's content
+- **THEN** both the platform scope check and the domain role check pass and the operation executes
+
+#### Scenario: Platform scope does not bypass the domain check
+
+- **WHEN** an authenticated identity holds `content:write` but has no membership in the
+  target domain
+- **THEN** the request is denied at the domain check
+
+### Requirement: Permission-aware navigation covers the domain surface
+
+The workbench navigation SHALL render domain entries by effective permission: an identity
+SHALL see only domains where it holds an active membership; the platform administration
+gate (templates, all-domain membership, invitations) SHALL render only for identities
+holding the `admin` platform scope. Unauthorized entries SHALL NOT be rendered rather than
+rendered and denied.
+
+#### Scenario: Navigation is filtered by domain membership
+
+- **WHEN** an identity whose only membership is domain A views the navigation
+- **THEN** the navigation shows domain A's entry and common platform items; domain B and
+  the administration gate do not appear

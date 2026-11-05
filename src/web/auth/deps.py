@@ -75,10 +75,22 @@ class User:
 # wired in Task 8.1 applies to every route; these are the deliberate holes.
 # ``/auth/*`` must be reachable pre-login (login starts the flow, callback
 # completes it, logout clears the cookie); ``/healthz`` is the liveness probe.
+# ``/admin/invite/`` is the invitation landing page (change
+# add-ontology-template-and-workspaces): an invitee may not have an account
+# yet, and the plaintext token in the URL is itself the capability — the DB
+# stores only its SHA-256 digest, so an invalid/used/expired token renders a
+# neutral page and leaks nothing. Accepting an invitation is NOT exempted from
+# enforcement: the route resolves the cookie session itself and redirects
+# logged-out accepters into the login flow.
+# ``/api/v1/distribution/`` is the machine pull API (change
+# add-knowledge-distribution-contract): consumers authenticate with their own
+# registered ``X-Consumer-Token`` header (only its SHA-256 digest is stored),
+# not Logto — the route in ``src/web/routes/distribution.py`` performs its own
+# three-state token auth and never consumes ``get_current_user``.
 # Exempt routes do not declare a ``user`` parameter, so the anonymous sentinel
 # is never consumed.
 _EXEMPT_PATHS: frozenset[str] = frozenset({"/healthz"})
-_EXEMPT_PREFIXES: tuple[str, ...] = ("/auth/",)
+_EXEMPT_PREFIXES: tuple[str, ...] = ("/auth/", "/admin/invite/", "/api/v1/distribution/")
 
 
 def _is_exempt(path: str) -> bool:
