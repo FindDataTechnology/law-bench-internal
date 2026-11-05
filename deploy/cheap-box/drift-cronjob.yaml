@@ -56,8 +56,14 @@ spec:
           # Same node pin as the origin pod (deploy/deployment.yaml). This job
           # mounts no volumes, so the pin is continuity-of-style, not a hard
           # requirement: the image pulls from TCR on any node via tcr-pull.
-          nodeSelector:
-            kubernetes.io/hostname: cheap-7
+          # NO node pin: the original cheap-7 pin was continuity-of-style only
+          # (comment below said so), and cheap-7 carries a standing
+          # disk-pressure condition that EVICTS new pods regardless of
+          # tolerations (manual-verify run 2026-11-05: scheduled via taint
+          # toleration, then Evicted by kubelet DiskPressure — change
+          # rollout-drift-cronjob task 3.2). The image pulls from TCR on any
+          # node via tcr-pull, the job mounts no volumes and talks to a remote
+          # PG, so unpinned scheduling lands it on any untainted node.
           imagePullSecrets:
             - name: tcr-pull
           # Same cluster-DNS pollution workaround as deploy/deployment.yaml and
