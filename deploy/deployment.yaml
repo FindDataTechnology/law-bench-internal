@@ -15,7 +15,18 @@ spec:
       labels:
         app: law-bench
     spec:
-      # UNPINNED 2026-11-05: the old cheap-7 pin existed only for the
+      # MIGRATED to cheap-8 2026-11-05: the whole law-bench stack (origin pod
+      # + postgres PV) moved off cheap-7's standing disk pressure. The old
+      # law-bench-db PVC (176K legacy sqlite, unused since the Postgres
+      # migration) was dropped and recreated here - the new PV's node
+      # affinity now pins the pod to cheap-8, so the selector below must stay
+      # in lockstep with it (same rule as before, new node). Image pulls from
+      # TCR via tcr-pull; the real DB is the remote PG service.
+      nodeSelector:
+        kubernetes.io/hostname: cheap-8
+      # (previous note: UNPINNED 2026-11-05 intermediate step; superseded same
+      # day by this pin because the recreated PVC's affinity decides the node)
+
       # law-bench-db PVC (local-path node affinity), but that PVC now holds a
       # 176K legacy sqlite (evaluation_rules.db, unused since the Postgres
       # migration — real store is the `postgres` StatefulSet via
