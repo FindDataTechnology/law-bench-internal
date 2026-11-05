@@ -14,7 +14,7 @@ A. KG 车道四条硬判据 — deterministic algorithms ported from
    these units; nothing claims a verdict about a production graph.
 
 B. Market publish gate — the deterministic decision kernel of
-   ``/Users/chengsishi/paas/lib/publish-tool-gate.js`` (+ registry-bridge
+   ``/Users/chengsishi/finddata/paas/lib/publish-tool-gate.js`` (+ registry-bridge
    surface mapping + export_surface_commercial derivation). The real gate's
    registry fetch and live probe legs stay deferred; the migrated kernel is
    the probe-absent branch of the real gate, error/note strings verbatim.
@@ -56,7 +56,7 @@ from src.eval.store import ensure_schema
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PACK_DIR = REPO_ROOT / "packs" / "kg-gate"
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "kg"
-PAAS_GATE = Path("/Users/chengsishi/paas/lib/publish-tool-gate.js")
+PAAS_GATE = Path("/Users/chengsishi/finddata/paas/lib/publish-tool-gate.js")
 
 KIND_GRAPH = "graph-snapshot"
 KIND_PUBLISH = "publish-rule"
