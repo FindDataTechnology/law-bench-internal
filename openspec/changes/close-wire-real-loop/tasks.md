@@ -26,8 +26,8 @@
 
 ## 6. 发布门 live 双跑（6.2 腿）
 
-- [ ] 6.1 harness 构建并对生产 registry 只读双跑（verify: 逐条目 {item, original, kernel, agree} 行+汇总留档）（挂账：生产 registry 侧发布门判定依赖 paas 进程内 Logto/CM 状态，harness 需 paas 会话协调——本 change 主体（wire 真实循环）已全绿，此腿独立成单跟踪）
-- [ ] 6.2 分歧例归因与裁决（verify: 每分歧例有采纳方与理由；无悬置未裁决项；结论写入 packs/kg-gate/README.md（公共仓脱敏版））（同上挂账）
+- [x] 6.1 harness 构建并对生产 registry 只读双跑（verify: 逐条目 {item, original, kernel, agree} 行+汇总留档）（**实施记录 2026-11-05**：原判定实为纯函数、不依赖 paas 进程——生产 registry 只读拉 29 条（mongosh 集群内、凭据不入档）构建真实 index，6 例聚焦+61 例全域扫**全部逐字段 AGREE**；law-bench 仓 evidence/2026-11-05-publish-gate-dualrun*.json）
+- [x] 6.2 分歧例归因与裁决（verify: 每分歧例有采纳方与理由；无悬置未裁决项；结论写入 packs/kg-gate/README.md（公共仓脱敏版））（**定谳**：NOT EQUIVALENT=fixture 假象——无真实条目时原 JS 对 index 缺席条目放行、内核 fail-closed；真实数据零漂移。裁决=内核保留 fail-closed 加严语义（更严一处维持如实标注），kg-gate README 已收账）
 
 ## 7. 收口
 
