@@ -78,16 +78,31 @@ def main() -> int:
         _fail("mirror rendering", e)
     print("OK 3 wire-shaped node/edge render into unit bodies/keys")
 
-    # 4. client: constructs; missing credentials fail honestly, pre-network
+    # 4. client: constructs; dual-mode routing; no-credential paths raise
+    #    honestly, pre-network (task 1.1)
     try:
         c = _c.WireClient(base_url="http://wire.invalid", id_token="fake")
-        assert c._headers()["Authorization"] == "Bearer fake"
-        noauth = _c.WireClient(base_url="http://wire.invalid", id_token="")
+        assert c._headers(machine=False)["Authorization"] == "Bearer fake"
+        # repr never leaks tokens (task 1.4)
+        r = repr(c)
+        assert "fake" not in r and "<set:" in r, r
+        # machine-only client: read routes to the internal mirror shape
+        m = _c.WireClient(base_url="http://wire.invalid",
+                          internal_token="mt", customer_id="cust-1")
+        assert m.machine_reads_available
+        # write face still demands console token (never machine-mode writes)
+        try:
+            m._require_write_credentials()
+            raise AssertionError("expected WireAuthError without console token")
+        except _c.WireAuthError as e:
+            assert "WIRE_ID_TOKEN" in str(e) and "machine" in str(e).lower(), e
+        # no credentials at all: read face raises actionable error pre-network
+        noauth = _c.WireClient(base_url="http://wire.invalid")
         try:
             noauth.get_graph()
-            raise AssertionError("expected WireAuthError with no token")
+            raise AssertionError("expected WireAuthError with no credentials")
         except _c.WireAuthError as e:
-            assert "WIRE_ID_TOKEN" in str(e), e
+            assert "WIRE_INTERNAL_TOKEN" in str(e) and "WIRE_ID_TOKEN" in str(e), e
         naked = _c.WireClient(base_url="", id_token="x")
         try:
             naked.get_graph()
@@ -95,8 +110,8 @@ def main() -> int:
         except _c.WireClientError as e:
             assert "WIRE_API_BASE" in str(e), e
     except Exception as e:  # noqa: BLE001
-        _fail("client construction / no-credential error path", e)
-    print("OK 4 client builds; no-cred paths raise actionable errors pre-network")
+        _fail("client dual-mode / no-credential error path", e)
+    print("OK 4 client dual-mode routing; no-cred paths raise actionable errors pre-network; repr masked")
 
     # 5. writeback stamp markers (tier/sensitivity/idempotency on the payload)
     try:
@@ -113,6 +128,93 @@ def main() -> int:
     except Exception as e:  # noqa: BLE001
         _fail("writeback stamp markers", e)
     print(f"OK 5 gold writeback stamp: {stamp}")
+
+    # 5b. 0050 first-class surfaces: entity PUT body carries tier/sensitivity;
+    #     relation update goes through the PUT update face (no more refusal)
+    try:
+        captured = {}
+
+        class _FakeClient:
+            def update_entity(self, entity_id, **kw):
+                captured["entity"] = (entity_id, kw)
+                return {"updated_at": "2026-11-05T00:00:00"}
+            def update_relationship(self, entity_id, rel_id, **kw):
+                captured["relation"] = (entity_id, rel_id, kw)
+                return {"label": kw.get("label")}
+
+        wb = _w.WireWriteback(_FakeClient())
+        node_payload = {
+            "kind": "entity", "external_key": "7", "tier": "gold",
+            "sensitivity": "confidential", "idempotency_key": "wire/entity/7",
+            "review": {"reviewer": "r@x", "at": "2026-11-05T00:00:00"},
+            "registry_fields": dict(node),
+        }
+        receipt = wb(node_payload)
+        eid, kw = captured["entity"]
+        assert eid == 7 and kw["tier"] == "gold" and kw["sensitivity"] == "confidential", kw
+        assert "_bench" in (kw.get("column_notes") or {}), kw  # bag rides along
+        assert receipt["endpoint"].startswith("PUT /api/v1/entities/7"), receipt
+
+        edge_payload = {
+            "kind": "relation", "external_key": "9", "tier": "gold",
+            "sensitivity": "internal", "idempotency_key": "wire/relation/9",
+            "review": {"reviewer": "r@x"},
+            "registry_fields": dict(edge),
+        }
+        receipt = wb(edge_payload)
+        feid, rid, kw = captured["relation"]
+        assert (feid, rid) == (2, 9), (feid, rid)
+        assert kw == {"label": None, "tier": "gold", "sensitivity": "internal"}, kw
+        assert "relationships/" in receipt["endpoint"], receipt
+    except Exception as e:  # noqa: BLE001
+        _fail("0050 first-class writeback surfaces", e)
+    print("OK 5b entity PUT carries first-class tier/sensitivity; relation via update face")
+
+    # 5c. batch confirmation gate (task 1.2): unconfirmed -> zero writes
+    try:
+        calls = []
+
+        class _NoWriteClient:
+            def update_entity(self, *a, **kw):
+                calls.append(("entity", a, kw))
+                return {}
+            def update_relationship(self, *a, **kw):
+                calls.append(("relation", a, kw))
+                return {}
+
+        gold_payload = {
+            "idempotency_key": "wire/entity/1", "registry_namespace": "wire",
+            "kind": "entity", "external_key": "1", "tier": "gold",
+            "sensitivity": "internal", "registry_fields": dict(node),
+            "review": {"reviewer": "r@x"}, "written_back": False,
+        }
+
+        class _FakeKernel:
+            """Minimal stand-in for the imported kernel (avoid PG in selfcheck)."""
+            @staticmethod
+            def export_gold(conn, namespace, limit=1000):
+                return [dict(gold_payload)]
+            @staticmethod
+            def run_writeback(conn, namespace, writeback_fn, force=False, limit=1000):
+                # only called after confirmation; record the push
+                writeback_fn(gold_payload)
+                return {"succeeded": [gold_payload["idempotency_key"]], "failed": [], "skipped": [], "counts": {}}
+
+        import wire_connector.writeback as wbmod
+        original_loader = wbmod._kernel_loader
+        wbmod._kernel_loader = lambda: _FakeKernel
+        try:
+            dry = wbmod.run_writeback_confirmed(None, "wire", _NoWriteClient(), dry_run=True)
+            assert dry["pushed"] is False and dry["confirmed"] is None and "1 unit" in dry["preview"], dry
+            denied = wbmod.run_writeback_confirmed(None, "wire", _NoWriteClient(), confirm=lambda b: False)
+            assert denied["confirmed"] is False and denied["pushed"] is False and not calls, (denied, calls)
+            ok = wbmod.run_writeback_confirmed(None, "wire", _NoWriteClient(), confirm=lambda b: True)
+            assert ok["confirmed"] is True and ok["pushed"] is True and len(calls) == 1, (ok, calls)
+        finally:
+            wbmod._kernel_loader = original_loader
+    except Exception as e:  # noqa: BLE001
+        _fail("batch confirmation gate", e)
+    print("OK 5c run_writeback_confirmed: dry-run/denied/approved paths, zero writes before confirm")
 
     # environment info (not pass/fail)
     try:

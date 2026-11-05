@@ -41,26 +41,35 @@ to_entity_id / to_column / kind / label / junction_*`（m:n 三键）。
 ## 配置（env）
 
 ```
-WIRE_API_BASE   默认建议 https://wire.finddatatech.cloud
-WIRE_ID_TOKEN   console Logto ID token（缺失 → 客户端报错如实，不触网）
-LAW_BENCH_REPO  公共仓 checkout 路径（缺省取 sibling ../law-bench）
+WIRE_API_BASE           默认建议 https://wire.finddatatech.cloud
+WIRE_ID_TOKEN           console Logto ID token（写面恒走此凭据——审核人归因在场；
+                        缺失 → 客户端报错如实，不触网）
+WIRE_INTERNAL_TOKEN     机器通道令牌（与 wire FD_WIRE_INTERNAL_TOKEN 同源；
+                        只读镜像面）
+WIRE_CUSTOMER_ID        机器通道客户键（须在 wire scope 白名单
+                        FD_WIRE_INTERNAL_ENTITY_CUSTOMERS 内，越界 404）
+LAW_BENCH_REPO          公共仓 checkout 路径（缺省取 sibling ../law-bench）
 BENCH_DATABASE_URL（或 database_url） 知验台 Postgres DSN
 ```
 
-## 契约缺口清单（如实，勿假装 wire 已支持）
+**凭据双模择路**（close-wire-real-loop design D1）：读面机器凭据（token+客户键
+齐备）即走 `/api/v1/internal/entities` 只读镜像，否则回落 console；写面无论
+凭据为何恒走 console 身份。repr/错误信息永不携带令牌明文（1.4 脱敏纪律）。
 
-1. **wire 实体 API 无 `tier`/`sensitivity` 可写字段。** 升格契约要求 gold 回写
-   带这两标记供 wire ACL/舰队消费。当前实现：连接器把标记打进 wire 现存的
-   元数据袋 `column_notes["_bench"]`（下划线前缀键不可能与数据集真实列名撞车），
-   格式 `platform=knowledge-bench; tier=gold; sensitivity=…; idempotency_key=…;
-   reviewer=…; review_at=…`。**wire 侧需求**：实体表增一等公民 `tier`/
-   `sensitivity`（或 tags）可写字段 + ACL 消费面；届时连接器改直写该字段，
-   知验台内核载荷不变。
-2. **关系（edges）无任何更新面**（只有 POST/DELETE）。gold 关系回写当前
-   只能「删除+重声明」（破坏连续性且可能级联丢数据），连接器**拒绝假装成功**：
-   `WireWriteback` 对 kind=relation 抛错 → 内核记「未回写」+ 错误原因，批次
-   其余照跑。**wire 侧需求**：`PUT /api/v1/entities/{id}/relationships/{rid}`
-   （或至少可写 label/notes 的 PATCH）。
+## 契约缺口清单（2026-11-05 更新：1/2 已由 wire add-entity-bench-contract 0050 解决）
+
+1. ~~wire 实体 API 无 `tier`/`sensitivity` 可写字段~~ **已解决**：一等字段
+   上线（0050），连接器 `update_entity` 直写 `tier`/`sensitivity`；袋 stamp
+   仍随写（承载 reviewer/idempotency 溯源，pre-0050 消费方兼容）。
+2. ~~关系无任何更新面~~ **已解决**：`PUT /api/v1/entities/{id}/relationships/
+   {rid}`（label/tier/sensitivity 三键必传、显式 null=清空、结构键 422）。
+   `WireWriteback` 对 kind=relation 走更新面——「删除+重声明」与拒绝路径退役。
+3. **PUT 是整量替换且全链重校验**（主键列 ⊆ 数据集列快照等）：若 wire 端数据集
+   已漂移（列删了/实体被改名），知验台 gold 的镜像快照 PUT 回去会 422。连接器
+   如实抛错（单元保持未回写 + 错误入库），由操作员先重同步再回写。
+4. 回写幂等 = wire 实体键（内核 provenance 记 `writeback_idempotency_key`，
+   重复 `run_writeback` 默认跳过已回写单元，不产生第二次推送）。wire 侧若有
+   `If-Match`/版本头可进一步升级为服务端幂等（当前无）。
 3. **PUT 是整量替换且全链重校验**（主键列 ⊆ 数据集列快照等）：若 wire 端数据集
    已漂移（列删了/实体被改名），知验台 gold 的镜像快照 PUT 回去会 422。连接器
    如实抛错（单元保持未回写 + 错误入库），由操作员先重同步再回写。
@@ -79,13 +88,14 @@ PYTHONPATH=wire-connector/src python3 - <<'EOF'
 from wire_connector.sync import sync_now
 print(sync_now())   # {"created": [...], "updated": [...], "unchanged": [...]}
 EOF
-# gold 回写（本地库已把某实体升到 gold 之后）：
+# gold 回写——操作员确认门（dry_run 先看批次；交互 y/N；脚本化用 confirm=）
 PYTHONPATH=wire-connector/src python3 - <<'EOF'
-from wire_connector.sync import bench_connect, import_kernel
-from wire_connector.writeback import WireWriteback
+from wire_connector.sync import bench_connect
+from wire_connector.writeback import run_writeback_confirmed
 conn = bench_connect()
-promotion = import_kernel()
-print(promotion.run_writeback(conn, "wire", WireWriteback()))
+print(run_writeback_confirmed(conn, "wire", dry_run=True))    # 只预览零写
+print(run_writeback_confirmed(conn, "wire"))                  # 交互确认后推
+print(run_writeback_confirmed(conn, "wire", confirm=lambda b: True))  # 脚本 --yes
 EOF
 ```
 
