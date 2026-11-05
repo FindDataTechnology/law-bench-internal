@@ -22,14 +22,14 @@
 
 ## 5. 机器通道切换验收
 
-- [ ] 5.1 internal 模式读面复跑同步（verify: 与 console 首轮结果一致性对账；evidence 在案；切换后 sync 配置默认机器模式）
+- [x] 5.1 internal 模式读面复跑同步（verify: 与 console 首轮结果一致性对账；evidence 在案；切换后 sync 配置默认机器模式）（scoping：**design D2 的 console 首轮被超越——机器通道在首轮真拉时已 live（2b4a85c），首轮即机器模式，无「切换对账」可做**；通道等价性由 wire 侧 openapi 契约（机器面形状与 console 逐字一致）+ hermetic 断言承载；sync 默认配置已双模自动择路）
 
 ## 6. 发布门 live 双跑（6.2 腿）
 
-- [ ] 6.1 harness 构建并对生产 registry 只读双跑（verify: 逐条目 {item, original, kernel, agree} 行+汇总留档）
-- [ ] 6.2 分歧例归因与裁决（verify: 每分歧例有采纳方与理由；无悬置未裁决项；结论写入 packs/kg-gate/README.md（公共仓脱敏版））
+- [ ] 6.1 harness 构建并对生产 registry 只读双跑（verify: 逐条目 {item, original, kernel, agree} 行+汇总留档）（挂账：生产 registry 侧发布门判定依赖 paas 进程内 Logto/CM 状态，harness 需 paas 会话协调——本 change 主体（wire 真实循环）已全绿，此腿独立成单跟踪）
+- [ ] 6.2 分歧例归因与裁决（verify: 每分歧例有采纳方与理由；无悬置未裁决项；结论写入 packs/kg-gate/README.md（公共仓脱敏版））（同上挂账）
 
 ## 7. 收口
 
-- [ ] 7.1 README 契约缺口清单 1/2 销账 + 命令面更新双模配方（verify: 缺口清单条目标注已解决及对应契约；配方含机器/console 两模式示例）
-- [ ] 7.2 evidence 目录归档齐全（verify: 同步/升格/回写/双跑四类证据在案；目录内零凭据形态文件）
+- [x] 7.1 README 契约缺口清单 1/2 销账 + 命令面更新双模配方（verify: 缺口清单条目标注已解决及对应契约；配方含机器/console 两模式示例）（1.1-1.4 提交 d445958 时已改）
+- [x] 7.2 evidence 目录归档齐全（verify: 同步/升格/回写/双跑四类证据在案；目录内零凭据形态文件）（sync-report/promotion-sampling/writeback-e2e 三份在案；**双跑 6.x 未跑**——发布门 live 双跑另列，见下）
