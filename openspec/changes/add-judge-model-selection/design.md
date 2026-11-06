@@ -45,3 +45,26 @@
 - **并发/限速**：沿 driver 既有 ThreadPoolExecutor + 重试；relay 429 时退避重试，仍失败如实计入 call_error。
 - **gold 泄漏风险**：gold 集不得因任何候选结果回改；发现标注错误另行走人工流程，不在校准轮内修。
 - **兼容**：校准报告消费方（`is_calibrated` 解析、web 展示）读旧字段仍工作；新字段纯增量。
+
+## 附录：bake-off 实跑记录与选型定谳（2026-11-06，apply 期）
+
+**外部条件（如实）**：判官 relay `token.finddatatech.cloud` 在本次实跑窗口严重退化——`deepseek-v4.1-flash` 一度返回 400「积分已耗尽」（后恢复但延迟飙升），`glm-5.3-flash` 短文本可用、全量 payload 间歇 503/超时；deepeval GEval 单次 `measure` 含 evaluation_steps + evaluate 两次 LLM 调用（实测 13/11.6/48.8s），十重试封装 `tenacity` 会抛 RetryError(TimeoutError)。**k=5 全量 108 对轮（540 调用/候选）三次尝试均未跑完，无全量 run 落库——不造数据、不冒充完成**。driver 侧三项硬化（按 guidance 缓存 evaluation_steps、单次异常降级 dropped 记录、超时/重试封顶）已落地并有 14 项单测。
+
+**落库 run（本地 dev PG，channel='meta'/unit_kind='judge'）**：
+
+| run | 候选 | gold | n_calls | agree_rate | balanced_acc | kappa | monotonic | all_pass |
+|---|---|---|---|---|---|---|---|---|
+| 1 | flash-k1-credits-probe（k=1 smoke） | 前 3 对 | 3 | 0.667 | none（单类） | 0.0 | 空转 yes | False |
+| 2 | run8-flash-k1（11-06 存档重算） | 全 108 | 108 | 0.602 | **0.7713** | 0.2352 | 空转 yes（105 无置信） | **True** |
+| 3 | 11-03-glm53-k1（存档重算） | 全 108 | 108 | 0.139 | 0.5053 | 0.0028 | yes | False |
+| 4 | flash-vote-k3-pilot（采样通道） | 前 8 对 | 24 | 0.375 | none（单类） | 0.0 | **no** | False |
+| 5 | flash-vote-k3-pilot20（采样通道） | 前 20 对 | 60 | 0.450 | **0.6944** | 0.1129 | **no** | False |
+| 6 | glm53-vote-k3-pilot20（采样通道） | 前 20 对 | 60 | 0.100 | 0.5000 | 0.0000 | yes | False |
+
+**通道实证**：run 4/5/6 共 48 条记录全部 `confidence_source=vote_share`、零调用错误、零 dropped——采样一致率通道**工程可用**（对比自报通道 105/108 无 token）。置信分布反而暴露新事实：run 5 有 18/20 记录 conf=1.0（k 次重复把判官的过严偏置投得更一致），且 [0.6,0.7) 桶 acc=1.0 → [0.9,1.0] 桶 acc=0.389 单调性挂——**D5 风险①「采样不稀释系统性偏置」被实证**：采样解决了「置信从哪来」，没解决「判得准不准」；分层矩阵独立抓出该偏置（run 5 balanced 0.6944、run 6 0.50 均不过门），两把尺互补的设计意图成立。
+
+**选型定谳**：
+1. **无候选通过分层门**（run 5/6 均 all_pass=False）；run 2 虽 balanced 0.7713 过门，但它是 k=1 自报通道、105/108 无置信使分桶单调性空转，且 kappa 仅 0.2352——**不构成可校准判官的证据**（正是本 change 要替换的旧世界），不据此勾选 4.1。
+2. 生产 `EVAL_MODEL` 保持 `openai/deepseek-v4.1-flash` 不动；切换是显式运维动作，选型记录不越权。
+3. 解禁路径（挂账）：①绑更强/更稳定的判官上游（relay 退化是本次全量轮失败的直接原因）②判官口径与 gold 的「过严」偏差另立校准/阈值政策轮（非本 change 范围）③维持 silver-only。
+4. `add-judge-misread-remediation` 4.1 维持不勾：结构性误读已堵、分层门与采样通道已上线并有 run 实证，但 all_pass 合理区间仍无候选达成，差距如实挂账。
