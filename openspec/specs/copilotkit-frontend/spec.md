@@ -1,5 +1,9 @@
-## ADDED Requirements
+# copilotkit-frontend Specification
 
+## Purpose
+Wire the React frontend to the LangGraph agent with CopilotKit: provider setup, chat sidebar, live agent state, and human-in-the-loop surfaces for quiz filling, review triage, and contract preview.
+
+## Requirements
 ### Requirement: CopilotKit provider setup
 The Next.js app SHALL wrap the entire application in a `CopilotKit` provider with `runtimeUrl` pointing to the backend API route and `agent` set to the review agent name.
 

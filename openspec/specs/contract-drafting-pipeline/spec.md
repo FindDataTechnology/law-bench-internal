@@ -1,7 +1,8 @@
 # contract-drafting-pipeline Specification
 
 ## Purpose
-TBD - created by archiving change chinese-contract-drafting-agents. Update Purpose after archive.
+Draft Chinese contracts through a sequential multi-role LLM pipeline with per-role model configuration, Ark endpoint wiring, template-driven generation, and secrets kept out of git.
+
 ## Requirements
 ### Requirement: Per-role Model Configuration
 The system SHALL allow the model name, temperature, and max tokens for each agent role to be configured via environment variables.

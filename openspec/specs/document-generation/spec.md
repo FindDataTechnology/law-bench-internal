@@ -1,7 +1,8 @@
 # document-generation Specification
 
 ## Purpose
-TBD - created by archiving change add-docx-pdf-generation-slots. Update Purpose after archive.
+Generate DOCX and PDF documents from Markdown with a slot-token model that is injected at generation time and convertible from DOCX to PDF.
+
 ## Requirements
 ### Requirement: DOCX Generation from Markdown Content
 The system SHALL provide a `create_docx(content, output_path, *, slots=None, title=None)` function that renders Markdown contract content into a formatted `.docx` file at `output_path` and returns the resolved path. The renderer SHALL map `#`/`##`/`###` to headings, `**bold**` and `*italic*` to styled runs, `- `/`* ` to bullet lists, `1. ` to numbered lists, `---` to a horizontal rule, and blank-line-separated text to paragraphs. The function SHALL create parent directories that do not exist.

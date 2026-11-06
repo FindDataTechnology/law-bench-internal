@@ -1,7 +1,8 @@
 # evaluation-rules Specification
 
 ## Purpose
-TBD - created by archiving change chinese-contract-drafting-agents. Update Purpose after archive.
+Store rubrics and criteria with Harbor provenance, support local rubric extension, provide per-class Chinese contract rubrics, and group compare runs with their eval_run linkage.
+
 ## Requirements
 ### Requirement: Rubric and Criterion Storage
 The system SHALL store evaluation rubrics and their criteria in a PostgreSQL database addressed by the `database_url` environment variable. Each rubric SHALL have a name, context, source, source_path, and description. Each criterion SHALL belong to exactly one rubric and SHALL have a name, description, guidance, and ordinal. The combination of rubric and criterion name SHALL be unique.

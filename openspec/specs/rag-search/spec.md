@@ -1,7 +1,8 @@
 # rag-search Specification
 
 ## Purpose
-TBD - created by archiving change add-rag-search-postgres. Update Purpose after archive.
+Provide semantic search over ingested legal documents: MinIO document source, OpenRouter embeddings, Elasticsearch vector store, an ingestion pipeline, and a search API/page. Per-domain corpus resolution is layered on top while the legacy legal index stays byte-compatible.
+
 ## Requirements
 ### Requirement: Document Source in MinIO
 The system SHALL read contract documents (seed templates and generated drafts) from an S3-compatible MinIO bucket configured via environment (`minio_host`, `minio_root_user`, `minio_root_password`). Documents SHALL be organized under a configured bucket with prefixes separating templates from drafts (e.g. `templates/` and `drafts/`). The system SHALL read documents lazily from MinIO rather than from the local filesystem, so the corpus is shared and durable across processes.

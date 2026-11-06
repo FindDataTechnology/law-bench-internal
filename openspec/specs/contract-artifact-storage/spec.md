@@ -1,7 +1,8 @@
 # contract-artifact-storage Specification
 
 ## Purpose
-TBD - created by archiving change add-contract-artifact-storage. Update Purpose after archive.
+Store generated contract artifacts with content-addressed deduplication and expose list, metadata, and download endpoints so outputs are retrievable without regenerating.
+
 ## Requirements
 ### Requirement: Contract Artifacts Table
 The system SHALL maintain a `contract_artifacts` table created by `ensure_schema()` with columns: `id` (serial PK), `contract_type` (text, not null), `scenario` (text, nullable), `stance` (text, nullable), `custom_clause_ids` (jsonb, nullable), `body_hash` (text, not null), `body_text` (text, not null), `slots` (jsonb, not null), `docx_key` (text, nullable), `pdf_key` (text, nullable), `minio_bucket` (text, not null), `created_at` (timestamptz, not null), `updated_at` (timestamptz, not null). There SHALL be a unique constraint on `body_hash`.

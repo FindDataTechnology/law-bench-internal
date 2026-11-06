@@ -1,5 +1,9 @@
-## ADDED Requirements
+# auto-iteration-pipeline Specification
 
+## Purpose
+Close the loop between stored drafting runs and future clause selection: after each run, learn from reviewer rejections, auto-reject custom clauses at a configurable threshold, persist the outcome, and never let the learn node break the pipeline.
+
+## Requirements
 ### Requirement: Auto-iteration pipeline runs learn node after store
 The system SHALL provide an `auto_pipeline_run` that extends the standard pipeline with a learn node executed after the store node.
 

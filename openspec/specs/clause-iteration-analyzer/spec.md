@@ -1,5 +1,9 @@
-## ADDED Requirements
+# clause-iteration-analyzer Specification
 
+## Purpose
+Turn historical pipeline_runs rows into actionable clause-improvement recommendations by counting exclusions, aggregating LLM rejection advice, scoring confidence, and emitting a JSON report.
+
+## Requirements
 ### Requirement: Analyzer reads pipeline_runs table
 The system SHALL read historical pipeline_runs to extract clause exclusion patterns and LLM recommendations.
 

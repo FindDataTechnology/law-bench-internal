@@ -1,5 +1,9 @@
-## ADDED Requirements
+# agent-metrics Specification
 
+## Purpose
+Capture per-run agent execution metrics — node timings, model calls, reviewer suggestions, human checkpoint participation, and evaluation linkage — so contract-drafting runs can be profiled, audited, and compared without instrumenting each node ad hoc.
+
+## Requirements
 ### Requirement: agent_runs table schema
 The system SHALL create a new PostgreSQL table `agent_runs` with the following columns: `id` (BIGSERIAL PK), `thread_id` (TEXT, LangGraph thread), `contract_type` (TEXT), `tags` (JSONB), `node_timings` (JSONB, per-node duration in seconds), `model_calls` (JSONB, array of {model, tokens, cost, latency}), `review_suggestions` (JSONB, all suggestions from reviewers), `suggestions_applied` (JSONB, which were applied in v2), `total_slots` (INT), `human_filled_slots` (INT), `eval_run_id` (BIGINT FK to eval_runs), `deepeval_scores` (JSONB), `total_duration` (FLOAT, seconds), `created_at` (TIMESTAMPTZ).
 

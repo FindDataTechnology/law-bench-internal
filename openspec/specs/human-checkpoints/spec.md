@@ -1,5 +1,9 @@
-## ADDED Requirements
+# human-checkpoints Specification
 
+## Purpose
+Insert explicit human approval gates into the LangGraph drafting flow (triage, quiz/slot filling, final approval) using interrupt(), with checkpoint state that survives resume.
+
+## Requirements
 ### Requirement: CP1 — Triage reviewer suggestions
 The system SHALL pause the graph after suggestion synthesis and present all reviewer suggestions to the user. The user SHALL be able to accept, reject, or modify each suggestion. The graph SHALL resume only after the user submits their triage decisions.
 

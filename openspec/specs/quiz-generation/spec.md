@@ -1,5 +1,9 @@
-## ADDED Requirements
+# quiz-generation Specification
 
+## Purpose
+Generate a natural-language quiz from an assembled contract: extract every slot, ask one question per slot, and carry slot metadata so answers can be mapped back deterministically.
+
+## Requirements
 ### Requirement: Extract all slots from assembled contract
 The system SHALL extract ALL `{{slot}}` placeholders from the assembled contract body text. The extraction SHALL use the existing `src.docs.slots.extract_slots()` function. The system SHALL also retrieve slot instructions (name, label, description, example) from the assembly result.
 

@@ -1,5 +1,9 @@
-## ADDED Requirements
+# dual-evaluation Specification
 
+## Purpose
+Evaluate a generated contract with both the rubric-based judge and deepeval metrics, combine the results into one report, and record timing and model identity for comparability.
+
+## Requirements
 ### Requirement: Rubric-based evaluation (existing)
 The system SHALL evaluate the final contract using the existing rubric-based evaluation (`src.eval.scoring.evaluate_contract()`). This SHALL load the rubric criteria from the database, create a `GEval(strict_mode=True)` metric per criterion, run all criteria concurrently, and return per-criterion PASS/FAIL verdicts with reasoning.
 

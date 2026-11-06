@@ -1,7 +1,8 @@
 # contract-context-api Specification
 
 ## Purpose
-TBD - created by archiving change add-contract-context-api. Update Purpose after archive.
+Serve the read-only context bundle a drafting agent needs: contract classes, slots with ontology coverage, laws, tag vocabularies, and a filterable clause catalog.
+
 ## Requirements
 ### Requirement: Contract Class List Endpoint
 The system SHALL expose `GET /api/contracts` returning the supported contract classes as a JSON list of `{key, zh}` objects in `contract_types.json` file order. It SHALL be documented in the `/api/docs` OpenAPI schema.

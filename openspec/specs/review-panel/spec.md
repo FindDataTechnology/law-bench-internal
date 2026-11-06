@@ -1,5 +1,9 @@
-## ADDED Requirements
+# review-panel Specification
 
+## Purpose
+Run multiple reviewer models in parallel with configurable lens-specific prompts and stream their progress to the frontend for triage.
+
+## Requirements
 ### Requirement: Configurable reviewer models from environment
 The system SHALL load reviewer configurations from `.env` file at startup. Each reviewer SHALL have a model identifier, a lens (review perspective), and a display name. The system SHALL support at least 3 concurrent reviewers.
 

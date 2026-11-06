@@ -1,7 +1,8 @@
 # prompt-compare-web Specification
 
 ## Purpose
-TBD - created by syncing change prompt-compare-evaluation. Update Purpose after implementation.
+Expose prompt comparison over a JSON API and a web UI with form validation, localStorage state mirroring, accessibility, and run instrumentation.
+
 ## Requirements
 ### Requirement: Compare JSON API
 The system SHALL provide a JSON API under `/api/compare` in the existing FastAPI app: `POST /api/compare` to create and run a compare (body: contract_type, rubric_name, task_desc, prompt names, mode, n_drafts, and an optional integer `concurrency` bounding parallel draft generation, clamped to [1, 8] with default 1), `GET /api/compare` to list recent compares, `GET /api/compare/{id}` to fetch the full grouped result, and `GET /api/compare/{id}/run/{run_id}/draft` to lazy-fetch a single run's `draft_text`. Each handler SHALL take the standard `db` dependency so tests can point it at a throwaway DB. The `concurrency` field SHALL be additive: requests without it behave exactly as before.
