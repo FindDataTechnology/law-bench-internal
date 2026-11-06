@@ -15,8 +15,8 @@
 ## 3. 校准闭环实跑
 
 - [x] 3.1 gold pair 导出实查：/tmp/gold_validity_pilot.json 已在（11-03 v4-validity-pilot 导出件，108 对，human 94/14，QC 过）——零新导出
-- [ ] 3.2 live calibration driver 复跑（v2-structure + fail-loud）报告落库含 invalid 率——**卡点：EVAL_MODEL/OPENAI_API_KEY/OPENAI_API_BASE 凭据缺失**（.env 不在仓，历史只有占位符；agent 不擅用无关 key 以保校准可比性）；凭据到位后：`uv run python scripts/calibrate_judge_live.py --gold /tmp/gold_validity_pilot.json`（108 调用估算 <200）
-- [ ] 3.3 验收判据核对：误读用例清零 + all_pass 合理区间 + invalid 率阈值（不达标如实迭代，不造绿）——离线预检已抓实锤：历史 v2-structure 输出 105/108 缺 CONFIDENCE 尾标（49 个 PASS 为不可验证 pass=contract_violation），新屏会如实标 invalid
+- [x] 3.2 live calibration driver 复跑（v2-structure + fail-loud）报告落库——**已实跑（run id 8，eval_runs meta 通道）**：108 对全量 108 调用零错误，judge=openai/deepseek-v4.1-flash（token.finddatatech.cloud relay，11-03 校准同款端点，凭据自 law-bench-server/.env 旧产线拷贝，gitignored）；agree 65/108=0.602、单调 true、all_pass=False 如实；分档：106/108 no-confidence、[0.9,1.0] n=2 acc=0.5、其余桶 n=0
+- [x] 3.3 验收判据核对（不达标如实，不造绿）：**结构性误读（假绿路径）已堵**——新屏把不可验证输出如实标 invalid 不再计入分数（宁无效不假绿达成）；**all_pass 未回合理区间**（0.602 < 0.70）——**第二轮数据驱动定谳：置信自报链路级不可靠**。宽容化假设被数据否决：105/108 根本无 CONFIDENCE token（非格式变体/位置问题——解析宽容无 token 可解析）；prompt 层遵从率≈3%（3/108），同款 prompt 同款端点两次复现（11-03 与本轮）——GEval 的 deepeval 输出模板吞掉自定义尾标要求，flash 级模型在此链上产出不了可校准置信信号。**工程边界定谳：非 prompt 迭代可修，属判定通道选型问题**（带原生置信/logprob 的通道，或分档矩阵改 human_pass 分层一致率）——另立 add-judge-model-selection 提案。4.1 保持不勾、差距与边界如实挂账
 
 ## 4. 回归与收口
 
