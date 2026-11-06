@@ -22,4 +22,4 @@
 
 - [x] 4.1 既有评测套件零回归（scores dict 增量兼容：n_invalid/invalid_rate 新键；compare 单稿格 cell 可能带 invalid 字符串如实记录）
 - [x] 4.2 全量回归 1302 绿 + strict 绿（kernel domain-free + public hygiene 双闸 OK）
-- [ ] 4.3 4.1 勾选（验收判据达成后）+ blueprint 台账更新
+- [ ] 4.3 4.1 勾选（**未达成：all_pass 0.602<0.70 如实挂账**；结构性误读清零已达成、校准闭环已跑通——下轮迭代=CONFIDENCE 自报遵从率，另立轮次）+ blueprint 台账更新
