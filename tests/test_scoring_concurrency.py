@@ -129,7 +129,8 @@ class _FakeMetric:
         if outcome == "boom":
             raise RuntimeError("connection reset by peer")
         self.success = True
-        self.reason = "fake pass"
+        # trailing CONFIDENCE mirrors the v2-structure judge output contract
+        self.reason = "fake pass\nCONFIDENCE: 0.90"
 
 
 def _with_fake_metrics(monkeypatch, metrics):
