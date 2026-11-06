@@ -68,3 +68,24 @@
 2. 生产 `EVAL_MODEL` 保持 `openai/deepseek-v4.1-flash` 不动；切换是显式运维动作，选型记录不越权。
 3. 解禁路径（挂账）：①绑更强/更稳定的判官上游（relay 退化是本次全量轮失败的直接原因）②判官口径与 gold 的「过严」偏差另立校准/阈值政策轮（非本 change 范围）③维持 silver-only。
 4. `add-judge-misread-remediation` 4.1 维持不勾：结构性误读已堵、分层门与采样通道已上线并有 run 实证，但 all_pass 合理区间仍无候选达成，差距如实挂账。
+
+## 附录二：出片后 relay 复盘与解禁重跑配方（2026-11-07 凌晨）
+
+**复盘**：镜像 `sha-a41f38d` 上产后，对两个候选判官端点做 3 次全量 payload 探测——`deepseek-v4.1-flash` 三次均 40s 读超时（无 HTTP 响应）；`glm-5.3-flash` 一次 40s 超时、一次 502「Upstream service temporarily unavailable」、一次 503。**relay 退化未恢复**，全量 108 对 bake-off 仍不可跑，4.1 维持不勾、挂账不销。此前 pilot 的结论不受影响（那是 relay 短暂可用窗口内真实落库的 run 4/5/6）。
+
+**重跑配方（relay 恢复后一键执行，不造数据）**：
+
+```bash
+cd /Users/chengsishi/finddata/law-bench-internal
+export database_url="postgresql://app:change-me-please@localhost:5432/law_bench"  # 本地 dev PG；生产库另议
+export DEEPEVAL_PER_ATTEMPT_TIMEOUT_SECONDS=25 DEEPEVAL_RETRY_MAX_ATTEMPTS=1
+# 候选①：现行判官 + 采样通道
+uv run python scripts/calibrate_judge_live.py --gold /tmp/gold_validity_pilot.json \
+  --samples 5 --candidate "flash-vote-k5" --workers 3 --out /tmp/bakeoff_flash_vote_k5.json
+# 候选②：基线另一可服务者
+EVAL_MODEL="openai/glm-5.3-flash" uv run python scripts/calibrate_judge_live.py \
+  --gold /tmp/gold_validity_pilot.json --samples 5 --candidate "glm53-vote-k5" \
+  --workers 3 --out /tmp/bakeoff_glm53_vote_k5.json
+```
+
+driver 已硬化：按 guidance 缓存 GEval evaluation_steps（51 个不同 criterion 只生成一次）、单次调用异常降级为 dropped（绝不伪造 fail 票）、k 必须奇数、`confidence_source` 逐条留痕。判读仍按分层门（balanced_accuracy ≥ 0.70 且分桶单调）；过门才勾 4.1 并由运维显式切 `EVAL_MODEL`，不过门继续如实挂账。
