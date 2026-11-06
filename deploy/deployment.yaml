@@ -67,7 +67,7 @@ spec:
             - lawbench.finddatatech.cloud
       initContainers:
         - name: seed-db
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-53a9513
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-a41f38d
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsUser: 0
@@ -89,7 +89,7 @@ spec:
               ls -la /data
       containers:
         - name: law-bench
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-53a9513
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-a41f38d
           imagePullPolicy: IfNotPresent
           env:
             # Admin-assistant runtime (add-admin-copilot-assistant). Non-secret
