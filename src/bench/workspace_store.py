@@ -30,6 +30,13 @@ Notes on the shape:
 - ``distribution_consumers`` registers machine pull credentials: only the
   credential digest is stored (never a plaintext token), and revocation is a
   soft flag (``revoked_at``) that the lookup layer treats as fail-closed.
+- ``rag_corpora`` registers the retrieval corpus of a workspace: one row per
+  domain (``domain_id`` UNIQUE) naming the search index it owns (``index_name``
+  UNIQUE, so two workspaces can never point at one index), the source
+  declarations (JSONB list of {bucket, prefix} objects; empty = no sources
+  configured), and an optional embedding-model declaration (NULL = the global
+  default). Re-registration replaces the row via upsert; ownership of a row
+  never changes domain.
 """
 
 from __future__ import annotations
@@ -144,5 +151,15 @@ CREATE TABLE IF NOT EXISTS distribution_consumers (
     created_by TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     revoked_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS rag_corpora (
+    id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    domain_id       BIGINT NOT NULL UNIQUE REFERENCES domains(id),
+    index_name      TEXT NOT NULL UNIQUE,
+    sources         JSONB NOT NULL DEFAULT '[]'::jsonb,
+    embedding_model TEXT,
+    registered_by   TEXT NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """

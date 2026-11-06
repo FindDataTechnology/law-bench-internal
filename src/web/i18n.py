@@ -293,7 +293,11 @@ LOCALES: dict[str, dict[str, Any]] = {
             "ph": "搜索合同条款…（如 保密义务）",
             "submit": "搜索",
             "backend_down": "搜索后端不可用",
-            "results": "找到 {n} 条结果"
+            "results": "找到 {n} 条结果",
+            # 域化检索（change add-domain-rag-corpus-service, design D4）。
+            "domain_ph": "语料域（留空 = 默认）",
+            "domain_header": "语料域「{domain}」的检索结果",
+            "domain_unregistered": "该域未登记 RAG 语料"
         },
         "review": {
             "h1": "人工审查",
@@ -533,6 +537,31 @@ LOCALES: dict[str, dict[str, Any]] = {
                 "col_digest": "digest",
                 "col_published_at": "发布时间",
                 "col_published_by": "发布人",
+            },
+            "rag": {
+                # RAG 语料（change add-domain-rag-corpus-service, design D5）。
+                # 登记两道序贯：admin 平台 scope + 该域 lead；admin 直通域检查。
+                # 摄取 fire-and-forget 后台线程，结果落服务日志。
+                "h2": "RAG 语料",
+                "intro": "该域的检索语料登记：ES 索引与 MinIO 语料源。检索按域隔离（/api/search?domain=<域键>，需域成员身份）；登记需平台 admin 权限 + 该域负责人；摄取在后台线程执行，结果见服务日志。",
+                "current_h3": "当前登记",
+                "none_yet": "该域尚未登记 RAG 语料（该域检索/摄取不可用）。",
+                "col_index": "ES 索引",
+                "col_sources": "语料源（bucket/prefix）",
+                "col_embedding": "嵌入模型",
+                "col_registered_by": "登记人",
+                "col_created_at": "登记时间",
+                "default_model": "（全域缺省）",
+                "empty_sources": "（未配置语料源——已摄取内容仍可检索，但无法摄取新语料）",
+                "register_h3": "登记 / 更新",
+                "index_label": "ES 索引名（须以域键为前缀）",
+                "sources_label": "语料源 sources（JSON 数组 [{\"bucket\":…,\"prefix\":…}]）",
+                "embedding_label": "嵌入模型（留空 = 全域缺省）",
+                "register_btn": "登记语料",
+                "ingest_h3": "摄取",
+                "prefix_label": "前缀 prefix（留空 = 全部已登记源）",
+                "ingest_btn": "启动摄取",
+                "search_link": "以该域检索 →",
             },
             "role": {"annotator": "标注员", "expert": "专家", "lead": "负责人"},
         },
@@ -783,6 +812,11 @@ LOCALES: dict[str, dict[str, Any]] = {
             "published": "发布完成：{detail}",
             "published_idempotent": "内容无变更，仍为版本 {detail}，未产生新快照。",
             "publish_failed": "发布失败：{detail}",
+            "rag_registered": "RAG 语料已登记。",
+            "rag_register_failed": "RAG 语料登记失败：{detail}",
+            "rag_sources_invalid": "sources 不是合法的 JSON 数组：{detail}",
+            "rag_ingest_started": "摄取已启动（后台线程执行，结果见服务日志）。",
+            "rag_ingest_failed": "摄取启动失败：{detail}",
         },
         "matrix": {
             "criterion": "评分项",
@@ -1081,7 +1115,11 @@ LOCALES: dict[str, dict[str, Any]] = {
             "ph": "Search contract clauses… (e.g. 保密义务 / confidentiality)",
             "submit": "Search",
             "backend_down": "Search backend unavailable",
-            "results": "{n} result(s)"
+            "results": "{n} result(s)",
+            # Domain-scoped search (change add-domain-rag-corpus-service, D4).
+            "domain_ph": "Corpus domain (empty = default)",
+            "domain_header": "Results for corpus domain '{domain}'",
+            "domain_unregistered": "No RAG corpus registered for this domain"
         },
         "review": {
             "h1": "Human Review",
@@ -1323,6 +1361,32 @@ LOCALES: dict[str, dict[str, Any]] = {
                 "col_digest": "digest",
                 "col_published_at": "Published at",
                 "col_published_by": "Published by",
+            },
+            "rag": {
+                # RAG corpus (change add-domain-rag-corpus-service, design D5).
+                # Two sequential gates: platform admin scope + domain lead;
+                # admins bypass the domain check. Ingest runs in a fire-and-
+                # forget background thread; the outcome lands in the service log.
+                "h2": "RAG corpus",
+                "intro": "This domain's retrieval corpus registration: ES index and MinIO sources. Retrieval is domain-isolated (/api/search?domain=<key>, domain members only); registering requires platform admin + this domain's lead; ingest runs in a background thread — the outcome lands in the service log.",
+                "current_h3": "Current registration",
+                "none_yet": "No RAG corpus registered for this domain (its search/ingest surface is unavailable).",
+                "col_index": "ES index",
+                "col_sources": "Sources (bucket/prefix)",
+                "col_embedding": "Embedding model",
+                "col_registered_by": "Registered by",
+                "col_created_at": "Registered at",
+                "default_model": "(global default)",
+                "empty_sources": "(no sources configured — already-ingested content stays searchable, but new ingest is disabled)",
+                "register_h3": "Register / update",
+                "index_label": "ES index name (must be prefixed with the domain key)",
+                "sources_label": "Sources (JSON array of {\"bucket\": …, \"prefix\": …})",
+                "embedding_label": "Embedding model (empty = global default)",
+                "register_btn": "Register corpus",
+                "ingest_h3": "Ingest",
+                "prefix_label": "Prefix (empty = all registered sources)",
+                "ingest_btn": "Start ingest",
+                "search_link": "Search this domain →",
             },
             "role": {"annotator": "Annotator", "expert": "Expert", "lead": "Lead"},
         },
@@ -1572,6 +1636,11 @@ LOCALES: dict[str, dict[str, Any]] = {
             "published": "Published: {detail}",
             "published_idempotent": "No content changes — still version {detail}; no new snapshot.",
             "publish_failed": "Publish failed: {detail}",
+            "rag_registered": "RAG corpus registered.",
+            "rag_register_failed": "RAG corpus registration failed: {detail}",
+            "rag_sources_invalid": "sources is not a valid JSON array: {detail}",
+            "rag_ingest_started": "Ingest started (background thread; the outcome is logged).",
+            "rag_ingest_failed": "Failed to start ingest: {detail}",
         },
         "matrix": {
             "criterion": "criterion",

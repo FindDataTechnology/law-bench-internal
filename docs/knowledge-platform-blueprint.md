@@ -85,5 +85,5 @@
 |---|---|---|---|
 | C1 `add-ontology-template-and-workspaces` | 模板一等物 + 领域租户 + 邀请/角色 + 管理门页面 | P0 | ✅ 已归档上 spec（2026-11-06，16/16，回归 1199 绿） |
 | C2 `add-expert-authoring-surface` | 模板实例化创作台 + 任务指派 + 变更事件流 | P0/P1 | ✅ 已归档上 spec（2026-11-06，15/15，回归 1233 绿） |
-| C3 `add-knowledge-distribution-contract` | 发布-拉取契约 + 消费者登记 + wire 拉取客户端 + 主键源条款修订 | P1 | ✅ bench 侧已归档上 spec（2026-11-06，14/14，回归 1272 绿）；wire 侧拉取客户端挂 fd-wire 仓姊妹 change |
-| C4 `generalize-rag-corpus-service` | RAG 语料服务通用化 + 按域配置 | P2 | 未开 |
+| C3 `add-knowledge-distribution-contract` | 发布-拉取契约 + 消费者登记 + wire 拉取客户端 + 主键源条款修订 | P1 | ✅ **全链收口（2026-11-06）**：bench 侧归档上 spec；wire 侧 `add-bench-ontology-pull-client` 实弹——生产滚 sha-53a9513/beae0a，legal v1（digest 3586552a）跨 ns 真拉落库幂等，投影可查，失败纪律实弹验证。P1 判据「wire 拉到 v1 本体快照并落库」✅ |
+| C4 `add-domain-rag-corpus-service` | RAG 语料服务通用化 + 按域配置 | P2 | ✅ 已归档上 spec（2026-11-06，13/13，回归 1311 绿；rag-corpus-service 新建 + rag-search +1 域归属需求） |

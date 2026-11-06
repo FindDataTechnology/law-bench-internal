@@ -73,6 +73,71 @@
   </table>
 </div>
 
+{# RAG corpus (change add-domain-rag-corpus-service, design D5): the domain's
+   registered ES index + MinIO sources. Register/update and ingest are lead+
+   admin-gated POSTs (routes/admin.py); ingest fires run_ingest in a daemon
+   thread and only flashes "started" — the outcome lands in the service log.
+   Retrieval with the domain param lives at /search?domain=<key>. #}
+<div class="panel">
+  <h2>{{ t.admin.rag.h2 }}</h2>
+  <p class="muted">{{ t.admin.rag.intro }}</p>
+
+  <h3>{{ t.admin.rag.current_h3 }}</h3>
+  {% if rag_corpus %}
+  <table class="data-table">
+    <tbody>
+      <tr><th>{{ t.admin.rag.col_index }}</th><td><code>{{ rag_corpus.index_name }}</code></td></tr>
+      <tr><th>{{ t.admin.rag.col_sources }}</th><td>
+        {% for s in rag_corpus.sources %}
+        <code>{{ s.bucket }}/{{ s.prefix }}</code>{% if not loop.last %}<br>{% endif %}
+        {% else %}
+        <span class="muted">{{ t.admin.rag.empty_sources }}</span>
+        {% endfor %}
+      </td></tr>
+      <tr><th>{{ t.admin.rag.col_embedding }}</th><td>{{ rag_corpus.embedding_model or t.admin.rag.default_model }}</td></tr>
+      <tr><th>{{ t.admin.rag.col_registered_by }}</th><td>{{ rag_corpus.registered_by }}</td></tr>
+      <tr><th>{{ t.admin.rag.col_created_at }}</th><td class="muted">{{ rag_corpus.created_at }}</td></tr>
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">{{ t.admin.rag.none_yet }}</p>
+  {% endif %}
+
+  <h3>{{ t.admin.rag.register_h3 }}</h3>
+  <form method="POST" action="{{ url_for('admin_domain_rag_register', domain_key=domain.key) }}" class="filter-form">
+    <div class="filter-group">
+      <label>{{ t.admin.rag.index_label }}</label>
+      <input type="text" name="index_name" value="{{ rag_index_value }}" required>
+    </div>
+    <div class="filter-group">
+      <label>{{ t.admin.rag.sources_label }}</label>
+      <textarea name="sources" rows="4" style="min-width:60%">{{ rag_sources_pretty }}</textarea>
+    </div>
+    <div class="filter-group">
+      <label>{{ t.admin.rag.embedding_label }}</label>
+      <input type="text" name="embedding_model" value="{{ rag_embedding_value }}">
+    </div>
+    <div class="filter-group">
+      <label>&nbsp;</label>
+      <button type="submit" class="btn btn-primary">{{ t.admin.rag.register_btn }}</button>
+    </div>
+  </form>
+
+  <h3>{{ t.admin.rag.ingest_h3 }}</h3>
+  <form method="POST" action="{{ url_for('admin_domain_rag_ingest', domain_key=domain.key) }}" class="filter-form">
+    <div class="filter-group">
+      <label>{{ t.admin.rag.prefix_label }}</label>
+      <input type="text" name="prefix" style="min-width:40%">
+    </div>
+    <div class="filter-group">
+      <label>&nbsp;</label>
+      <button type="submit" class="btn btn-primary">{{ t.admin.rag.ingest_btn }}</button>
+    </div>
+  </form>
+
+  <p><a href="{{ url_for('page_search') }}?domain={{ domain.key }}">{{ t.admin.rag.search_link }}</a></p>
+</div>
+
 {# Active members (retired rows stay in history but are not shown here).
    Ops are lead/admin only — the route dependencies enforce that; the forms
    render unconditionally because the page itself is unreachable otherwise. #}

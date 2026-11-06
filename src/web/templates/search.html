@@ -1,15 +1,26 @@
 {% extends "base.html" %}
-{% block title %}{{ t.search.h1 }} · {{ t.nav.brand }}{% endblock %}
+{% block title %}{{ t.search.h1 }}{% if domain %} · {{ domain }}{% endif %} · {{ t.nav.brand }}{% endblock %}
 {% block content %}
 <h1>{{ t.search.h1 }}</h1>
 <p class="muted">{{ t.search.intro }}</p>
 <form method="get" action="{{ url_for('page_search') }}" class="search-form">
   <input type="text" name="q" value="{{ q }}" placeholder="{{ t.search.ph }}" autofocus
-         style="min-width:60%">
+         style="min-width:55%">
+  <input type="text" name="domain" value="{{ domain }}" placeholder="{{ t.search.domain_ph }}"
+         style="min-width:15%">
   <button type="submit" class="btn">{{ t.search.submit }}</button>
 </form>
 
-{% if error %}
+{# Domain-scoped search (change add-domain-rag-corpus-service): the domain is
+   echoed in the results header; an unregistered domain shows the honest
+   「未登记」 error instead of the generic backend-down flash. #}
+{% if domain %}
+<p class="muted">{{ tr('search.domain_header', domain=domain) }}</p>
+{% endif %}
+
+{% if unregistered %}
+  <div class="flash error">{{ t.search.domain_unregistered }}{% if error %}: {{ error }}{% endif %}</div>
+{% elif error %}
   <div class="flash error">{{ t.search.backend_down }}: {{ error }}</div>
 {% elif q %}
   <p class="muted">{{ tr('search.results', n=results|length) }}</p>
