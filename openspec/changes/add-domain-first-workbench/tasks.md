@@ -80,3 +80,20 @@
 - [ ] 8.1 `cadence.turnTimeoutMs` 被 `task-engine.js:683` 硬编码 600s 覆盖 —— paas 发布时修
 - [ ] 8.2 星妍→柏讯供给面摄取停在 2026-11-02 —— 独立处理
 - [ ] 8.3 客户登录 UI / 消费者反向写回 —— 按蓝图 D9 明确不做
+
+## 9. 上产（2026-11-08 真机滚版发现并修）
+
+> 承 §0.2 的「`ensure_schema` 一次建齐」：本机与测试库靠 fixture 显式调用 `ensure_schema`，
+> 生产库从来没有这一步 —— 上产后第一次真登录才发现。
+
+- [x] 9.1 生产库真身核对：`law_bench` 只有 `domains`/`domain_members`（旧形），缺
+  `last_opened_at` 与 C5 的六张表；判据 = 登录态访问 `/d` 整页 500
+  `column m.last_opened_at does not exist`
+- [x] 9.2 修因：新增 `src/eval/bootstrap.py`（`ensure_schema` 的启动壳，失败即非零退出），
+  `scripts/docker-entrypoint.sh` 在 origin 分支 `exec uvicorn` 之前无条件执行；
+  public 只读分支**不跑** DDL（那边是 dump 副本，读面不许改结构）
+- [x] 9.3 单测 `tests/test_boot_schema.py`：空库跑 boot 步骤必须建齐六表 + 列（跨新连接复核已提交）、
+  重复执行幂等、库不可达必须非零退出、entrypoint 两分支的静态断言
+- [x] 9.4 线上补账：pod 内对生产库执行一次 `ensure_schema`，复验六表 + `last_opened_at` 就位
+- [x] 9.5 线上验收（登录态真请求）：`/d` 200「我的域」空态；`/d/legal` 及本体/评测/提案/发布/设置
+  六页全 200 且标题正确；旧深链 `/workbench/legal/...` 302；匿名 `/d` 仍 401

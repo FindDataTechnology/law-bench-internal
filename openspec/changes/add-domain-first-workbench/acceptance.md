@@ -167,3 +167,50 @@ P2（舰队提案目标切换）按提案边界属伴随 change，**未做**；�
    改为内核只持目录机制，包用 `{relation, label_key}` 声明六类资产。
 4. **审计留痕必须准确**：`[admin-override]` 只在豁免真实发生（管理员确认自己提的）时写入。
 5. **digest 只有一个来源**：台账不重算，读 `ontology_publications.digest`；测试同时断言页面与拉取面同值。
+
+## 5. 上产真机验收（2026-11-08，生产 law-bench）
+
+镜像 `ccr.ccs.tencentyun.com/law-bench/law-template:sha-fa1ad20`（build-pool 快照线，源真 sha `3d77097`），
+argocd `law-bench` 同步到 `f448fee` 后 `law-bench` / `law-bench-public` / `law-bench-mcp-assistant` 三工作负载
+全部 1/1 Ready。
+
+### 5.1 上产第一次真登录发现：整站 `/d` 500
+
+判据（登录态真请求，pod 内）：`GET /d` → 500，日志
+
+```
+psycopg.errors.UndefinedColumn: column m.last_opened_at does not exist
+```
+
+真身核对：生产库 `law_bench` 只有 `domains`、`domain_members`（旧形，无 `last_opened_at`），
+C5 的 `domain_assets`/`domain_proposals`/`domain_proposal_events`/`distribution_pull_events`/
+`rag_corpora`/`ontology_publications` 一个都没有。
+
+**根因**：`ensure_schema` 是全部增量 DDL 的唯一住所，但它只被**路由级**防御性调用；本机与测试库靠
+fixture 显式调用，生产库没有任何东西触发它。§0.2 的「一次建齐」只在有 fixture 的库里成立。
+
+**修法**：`src/eval/bootstrap.py` + entrypoint 在 origin 分支 `exec uvicorn` 前无条件执行；
+public 只读分支不跑 DDL（dump 副本，读面不许改结构）；库不可达即非零退出（crash-loop 比半 schema 服务好）。
+
+### 5.2 线上复验（补账后，真实 HTTP）
+
+| 判据 | 结果 |
+|---|---|
+| `GET /d` | 200《我的域 · 知验台》，管理员零成员 → 诚实空态 |
+| `GET /d/legal` | 200《法律域 · 总览 · 知验台》 |
+| `GET /d/legal/ontology` | 200《法律域 · 本体台账 · 知验台》 |
+| `GET /d/legal/bench` | 200《法律域 · 评测资产 · 知验台》 |
+| `GET /d/legal/inbox` | 200《法律域 · 提案箱 · 知验台》 |
+| `GET /d/legal/publish` | 200《法律域 · 发布 · 知验台》 |
+| `GET /d/legal/settings` | 200《法律域 · 设置 · 知验台》 |
+| `GET /d` 匿名 | 401（门没漏） |
+| `GET /workbench/legal/units/belongs_to/x?limit=5` | 302 → `/d/legal/units/belongs_to/x?limit=5`（键与查询串逐字） |
+| `GET /api/public/overview`（public pod `:30620`） | 200，digest `3586552a01b0…`、`as_of` 为数据时间 |
+
+说明：生产只有一个域 `legal` 且 `domain_members` 为空，因此切换器按设计不渲染（>1 域才出现）。
+六区页面在真实 DB 上渲染成功 —— 这是本机验收（§0–§4）覆盖不到的那一段。
+
+### 5.3 发现的第二个事实（不修，登记）
+
+`deploy/mcp-deployment.yaml` 仍钉 `sha-e411d22`，比本次滚的 `sha-fa1ad20` 落后多个版本；
+`law-bench-mcp` 线上就跑这个旧 tag。它不是 `/d` 的承载面，本轮不动 —— 下次 MCP 面迭代时一并对齐。
