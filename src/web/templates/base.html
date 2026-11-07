@@ -85,10 +85,39 @@
   {# Admin assistant (change add-admin-copilot-assistant): floating CopilotKit
      chat island. The script self-mounts on #lawbench-assistant-root and talks
      to the same-origin /copilotkit proxy (admin-scope enforced server-side —
-     this include is UX only, never the enforcement). #}
+     this include is UX only, never the enforcement).
+     Mount presentation (polish-bench-workbench): an in-flow status chip lives
+     INSIDE the mount node — the island's createRoot().render() replaces the
+     node's children on mount, so the chip can never overlap page content; if
+     the bundle fails to load (assets unbuilt or blocked), the script's
+     onerror watchdog flips the chip to the honest failed state instead of a
+     stuck "loading". Mobile collapse stays the island's own CopilotPopup
+     (defaultOpen=false); the vendored island styling remains the sole No-Gloss
+     exception and is untouched here. The chip renders only once the i18n keys
+     (assistant.loading / assistant.failed) exist — no hardcoded copy. #}
+  <style>
+    .assistant-mount-status {
+      max-width: 980px;
+      margin: 0.6rem auto 0;
+      padding: 0.4rem 0.9rem;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+    .assistant-mount-status .assistant-mount-failed { display: none; }
+    .assistant-mount-status.is-failed {
+      background: var(--fail-tint);
+      border-color: var(--fail-border);
+      color: var(--fail-text);
+    }
+    .assistant-mount-status.is-failed .assistant-mount-loading { display: none; }
+    .assistant-mount-status.is-failed .assistant-mount-failed { display: inline; }
+  </style>
   <link rel="stylesheet" href="{{ url_for('static', path='assistant/style.css') }}">
-  <div id="lawbench-assistant-root"></div>
-  <script type="module" src="{{ url_for('static', path='assistant/assistant.js') }}"></script>
+  <div id="lawbench-assistant-root">{% if t.assistant and t.assistant.loading is defined %}<div class="assistant-mount-status" id="lawbench-assistant-status" role="status"><span class="assistant-mount-loading">{{ t.assistant.loading }}</span><span class="assistant-mount-failed">{{ t.assistant.failed }}</span></div>{% endif %}</div>
+  <script type="module" src="{{ url_for('static', path='assistant/assistant.js') }}" onerror="var s=document.getElementById('lawbench-assistant-status');if(s){s.classList.add('is-failed');}"></script>
   {% endif %}
   {% block scripts %}{% endblock %}
 <!-- impeccable-live-start -->

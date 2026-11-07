@@ -7,29 +7,32 @@
 
 {# Lead-only assignment (design D4): the assignee is a DOMAIN member (spec
    「向域内成员指派」), so the form is a select over active memberships. The
-   target kind is vocabulary-driven (out-of-table kinds 404 server-side). #}
+   target kind is vocabulary-driven (out-of-table kinds 404 server-side).
+   Every control carries a for/id label pair; a member-less domain shows the
+   honest cause (no members yet → fix it on the domain detail page) instead
+   of an empty select. #}
 <form method="POST" action="{{ url_for('workbench_task_create', domain_key=domain.key) }}" class="filter-form form-vertical">
   <div class="filter-group">
-    <label>{{ t.workbench.task.assignee_label }}</label>
-    <select name="assignee" required>
+    <label for="task-assignee">{{ t.workbench.task.assignee_label }}</label>
+    <select name="assignee" id="task-assignee" required>
       {% for m in members %}
       <option value="{{ m.user_id }}">{{ m.user_id }} · {{ t.admin.role[m.role] }}</option>
       {% endfor %}
       {% if not members %}<option value=""></option>{% endif %}
     </select>
-    {% if not members %}<span class="muted">{{ t.admin.domains.empty_members }}</span>{% endif %}
+    {% if not members %}<span class="hint">{{ t.workbench.task.no_members_hint }}</span>{% endif %}
   </div>
   <div class="filter-group">
-    <label>{{ t.workbench.task.title_label }}</label>
-    <input type="text" name="title" required>
+    <label for="task-title">{{ t.workbench.task.title_label }}</label>
+    <input type="text" name="title" id="task-title" required>
   </div>
   <div class="filter-group">
-    <label>{{ t.workbench.task.detail_label }}</label>
-    <textarea name="detail" rows="3"></textarea>
+    <label for="task-detail">{{ t.workbench.task.detail_label }}</label>
+    <textarea name="detail" id="task-detail" rows="3"></textarea>
   </div>
   <div class="filter-group">
-    <label>{{ t.workbench.task.target_kind_label }}</label>
-    <select name="target_kind">
+    <label for="task-target-kind">{{ t.workbench.task.target_kind_label }}</label>
+    <select name="target_kind" id="task-target-kind">
       <option value="">{{ t.workbench.task.none_kind }}</option>
       <optgroup label="{{ t.admin.templates.entity_types }}">
         {% for kind in entity_types %}
@@ -44,8 +47,8 @@
     </select>
   </div>
   <div class="filter-group">
-    <label>{{ t.workbench.task.target_key_label }}</label>
-    <input type="text" name="target_key">
+    <label for="task-target-key">{{ t.workbench.task.target_key_label }}</label>
+    <input type="text" name="target_key" id="task-target-key">
   </div>
   <div class="filter-group">
     <label>&nbsp;</label>

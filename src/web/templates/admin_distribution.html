@@ -2,6 +2,15 @@
 {% block title %}{{ t.admin.distribution.title }} · {{ t.nav.brand }}{% endblock %}
 
 {% block content %}
+<style>
+  /* polish-bench-workbench 0.3, this page only: the per-consumer inline
+     action forms (update binding / revoke) flow on one row inside the nowrap
+     action cell, and their text input sizes to content instead of the global
+     width:100% (the cell scrolls at ≤720px). */
+  .data-table td.dl-cell .inline-form { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; margin-right: 0.3rem; vertical-align: middle; }
+  .data-table td.dl-cell .inline-form input[type=text] { width: auto; min-width: 11rem; }
+</style>
+
 <div class="toolbar between">
   <h1>{{ t.admin.distribution.title }}</h1>
 </div>
@@ -15,12 +24,12 @@
     <summary>{{ t.admin.distribution.register_h2 }}</summary>
     <form method="POST" action="{{ url_for('admin_consumer_register') }}" class="filter-form">
       <div class="filter-group">
-        <label>{{ t.admin.distribution.name_label }}</label>
-        <input type="text" name="name" required>
+        <label for="cons-name">{{ t.admin.distribution.name_label }}</label>
+        <input type="text" name="name" id="cons-name" required>
       </div>
       <div class="filter-group">
-        <label>{{ t.admin.distribution.domains_label }}</label>
-        <input type="text" name="domains" placeholder="{{ t.admin.distribution.domains_ph }}" required>
+        <label for="cons-domains">{{ t.admin.distribution.domains_label }}</label>
+        <input type="text" name="domains" id="cons-domains" placeholder="{{ t.admin.distribution.domains_ph }}" required>
       </div>
       <div class="filter-group">
         <label>&nbsp;</label>
@@ -30,6 +39,9 @@
   </details>
 </div>
 
+{# Honest empty: no consumers yet — the register form above stays open and the
+   card names the next step. #}
+{% if consumers %}
 <div class="panel">
   <table class="data-table">
     <thead>
@@ -47,7 +59,7 @@
       <tr>
         <td><strong>{{ c.name }}</strong></td>
         <td>
-          {% for d in c.domains or [] %}<span class="badge"><code>{{ d }}</code></span> {% endfor %}
+          {% for d in c.domains or [] %}<span class="badge"><code>{{ d }}</code></span> {% else %}<span class="muted">{{ t.admin.templates.none }}</span>{% endfor %}
         </td>
         <td>{{ c.created_by }}</td>
         <td class="muted">{{ c.created_at }}</td>
@@ -62,20 +74,24 @@
           {% if not c.revoked_at %}
           <form method="POST" action="{{ url_for('admin_consumer_domains', name=c.name) }}" class="inline-form">
             <input type="text" name="domains" value="{{ (c.domains or []) | join(',') }}"
-                   placeholder="{{ t.admin.distribution.domains_ph }}">
+                   placeholder="{{ t.admin.distribution.domains_ph }}"
+                   aria-label="{{ t.admin.distribution.set_domains_label }}">
             <button type="submit" class="btn btn-sm">{{ t.admin.distribution.set_domains_btn }}</button>
           </form>
           <form method="POST" action="{{ url_for('admin_consumer_revoke', name=c.name) }}" class="inline-form">
-            <button type="submit" class="btn btn-sm">{{ t.admin.distribution.revoke_btn }}</button>
+            <button type="submit" class="btn btn-sm btn-danger">{{ t.admin.distribution.revoke_btn }}</button>
           </form>
           {% endif %}
         </td>
       </tr>
       {% endfor %}
-      {% if not consumers %}
-      <tr><td colspan="6" class="muted">{{ t.admin.distribution.empty }}</td></tr>
-      {% endif %}
     </tbody>
   </table>
 </div>
+{% else %}
+{% with message=t.admin.distribution.empty,
+        hint=t.admin.distribution.empty_hint %}
+  {% include '_empty_state.html' %}
+{% endwith %}
+{% endif %}
 {% endblock %}

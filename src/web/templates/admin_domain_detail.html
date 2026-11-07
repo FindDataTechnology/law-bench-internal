@@ -2,6 +2,15 @@
 {% block title %}{{ t.admin.domains.detail_h1 }} {{ domain.name }} · {{ t.nav.brand }}{% endblock %}
 
 {% block content %}
+<style>
+  /* polish-bench-workbench 0.3, this page only: sibling inline action forms
+     (change role / remove member) flow on one row inside the nowrap action
+     cell instead of stacking as block elements, and their selects size to
+     content instead of the global width:100% (the cell scrolls at ≤720px). */
+  .data-table td.dl-cell .inline-form { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; margin-right: 0.3rem; vertical-align: middle; }
+  .data-table td.dl-cell .inline-form select { width: auto; min-width: 8rem; }
+</style>
+
 <p><a href="{{ url_for('admin_domains') }}">{{ t.admin.domains.back }}</a></p>
 <div class="toolbar between">
   <h1>{{ domain.name }} <code>{{ domain.key }}</code></h1>
@@ -106,16 +115,16 @@
   <h3>{{ t.admin.rag.register_h3 }}</h3>
   <form method="POST" action="{{ url_for('admin_domain_rag_register', domain_key=domain.key) }}" class="filter-form">
     <div class="filter-group">
-      <label>{{ t.admin.rag.index_label }}</label>
-      <input type="text" name="index_name" value="{{ rag_index_value }}" required>
+      <label for="rag-index">{{ t.admin.rag.index_label }}</label>
+      <input type="text" name="index_name" id="rag-index" value="{{ rag_index_value }}" required>
     </div>
     <div class="filter-group">
-      <label>{{ t.admin.rag.sources_label }}</label>
-      <textarea name="sources" rows="4" style="min-width:60%">{{ rag_sources_pretty }}</textarea>
+      <label for="rag-sources">{{ t.admin.rag.sources_label }}</label>
+      <textarea name="sources" id="rag-sources" rows="4" style="min-width:60%">{{ rag_sources_pretty }}</textarea>
     </div>
     <div class="filter-group">
-      <label>{{ t.admin.rag.embedding_label }}</label>
-      <input type="text" name="embedding_model" value="{{ rag_embedding_value }}">
+      <label for="rag-embedding">{{ t.admin.rag.embedding_label }}</label>
+      <input type="text" name="embedding_model" id="rag-embedding" value="{{ rag_embedding_value }}">
     </div>
     <div class="filter-group">
       <label>&nbsp;</label>
@@ -126,8 +135,8 @@
   <h3>{{ t.admin.rag.ingest_h3 }}</h3>
   <form method="POST" action="{{ url_for('admin_domain_rag_ingest', domain_key=domain.key) }}" class="filter-form">
     <div class="filter-group">
-      <label>{{ t.admin.rag.prefix_label }}</label>
-      <input type="text" name="prefix" style="min-width:40%">
+      <label for="rag-prefix">{{ t.admin.rag.prefix_label }}</label>
+      <input type="text" name="prefix" id="rag-prefix" style="min-width:40%">
     </div>
     <div class="filter-group">
       <label>&nbsp;</label>
@@ -140,7 +149,9 @@
 
 {# Active members (retired rows stay in history but are not shown here).
    Ops are lead/admin only — the route dependencies enforce that; the forms
-   render unconditionally because the page itself is unreachable otherwise. #}
+   render unconditionally because the page itself is unreachable otherwise.
+   The row select is labeled via aria-label (an inline action control; a
+   visible per-row label would bloat the table). #}
 <div class="panel">
   <h2>{{ t.admin.domains.members_h2 }}</h2>
   <table class="data-table">
@@ -163,7 +174,7 @@
         <td class="dl-cell">
           <form method="POST" action="{{ url_for('admin_member_role', domain_key=domain.key) }}" class="inline-form">
             <input type="hidden" name="user_id" value="{{ m.user_id }}">
-            <select name="role">
+            <select name="role" aria-label="{{ t.admin.domains.col_role }}">
               {% for r in roles %}
               <option value="{{ r }}"{% if r == m.role %} selected{% endif %}>{{ t.admin.role[r] }}</option>
               {% endfor %}
@@ -172,7 +183,7 @@
           </form>
           <form method="POST" action="{{ url_for('admin_member_remove', domain_key=domain.key) }}" class="inline-form">
             <input type="hidden" name="user_id" value="{{ m.user_id }}">
-            <button type="submit" class="btn btn-sm">{{ t.admin.domains.remove_btn }}</button>
+            <button type="submit" class="btn btn-sm btn-danger">{{ t.admin.domains.remove_btn }}</button>
           </form>
         </td>
       </tr>
@@ -186,12 +197,12 @@
   <h3>{{ t.admin.domains.add_member_h2 }}</h3>
   <form method="POST" action="{{ url_for('admin_member_add', domain_key=domain.key) }}" class="filter-form">
     <div class="filter-group">
-      <label>{{ t.admin.domains.user_id_label }}</label>
-      <input type="text" name="user_id" required>
+      <label for="mem-user-id">{{ t.admin.domains.user_id_label }}</label>
+      <input type="text" name="user_id" id="mem-user-id" required>
     </div>
     <div class="filter-group">
-      <label>{{ t.admin.domains.role_label }}</label>
-      <select name="role">
+      <label for="mem-role">{{ t.admin.domains.role_label }}</label>
+      <select name="role" id="mem-role">
         {% for r in roles %}
         <option value="{{ r }}">{{ t.admin.role[r] }}</option>
         {% endfor %}
@@ -212,16 +223,16 @@
   <h3>{{ t.admin.domains.create_invitation_h2 }}</h3>
   <form method="POST" action="{{ url_for('admin_invitation_create', domain_key=domain.key) }}" class="filter-form">
     <div class="filter-group">
-      <label>{{ t.admin.domains.role_label }}</label>
-      <select name="role">
+      <label for="inv-role">{{ t.admin.domains.role_label }}</label>
+      <select name="role" id="inv-role">
         {% for r in roles %}
         <option value="{{ r }}">{{ t.admin.role[r] }}</option>
         {% endfor %}
       </select>
     </div>
     <div class="filter-group">
-      <label>{{ t.admin.domains.expires_days_label }}</label>
-      <input type="number" name="expires_days" value="7" min="1" max="365">
+      <label for="inv-days">{{ t.admin.domains.expires_days_label }}</label>
+      <input type="number" name="expires_days" id="inv-days" value="7" min="1" max="365">
     </div>
     <div class="filter-group">
       <label>&nbsp;</label>

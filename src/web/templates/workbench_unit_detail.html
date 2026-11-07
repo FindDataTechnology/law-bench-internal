@@ -2,6 +2,13 @@
 {% block title %}{{ t.workbench.unit.detail_h1 }} {{ unit.external_key }} · {{ domain.name }} · {{ t.nav.brand }}{% endblock %}
 
 {% block content %}
+<style>
+  /* polish-bench-workbench 0.3, this page only: kernel-managed JSON
+     (attrs/provenance) keeps its preformat but wraps long lines instead of
+     stretching the panel on narrow screens. */
+  .wb-pre { white-space: pre-wrap; word-break: break-word; margin: 0; }
+</style>
+
 <p><a href="{{ url_for('workbench_browse', domain_key=domain.key, kind=kind) }}">{{ t.workbench.unit.back_browse }}</a></p>
 <h1>{{ t.workbench.unit.detail_h1 }} <code>{{ unit.external_key }}</code> <span class="badge">{{ t.workbench.browse['lane_' ~ lane] }}</span></h1>
 
@@ -19,11 +26,11 @@
       <tr><th>{{ t.workbench.unit.from_key_label }}</th><td><code>{{ unit.attrs.get('from_key', '') }}</code></td></tr>
       <tr><th>{{ t.workbench.unit.to_key_label }}</th><td><code>{{ unit.attrs.get('to_key', '') }}</code></td></tr>
       {% endif %}
-      <tr><th>{{ t.workbench.unit.body_label }}</th><td style="white-space: pre-wrap;">{{ unit.body }}</td></tr>
+      <tr><th>{{ t.workbench.unit.body_label }}</th><td style="white-space: pre-wrap; overflow-wrap: anywhere;">{{ unit.body }}</td></tr>
       <tr><th>{{ t.workbench.unit.field_tags }}</th><td>{% for tk, tv in (unit.tags or {}).items() %}<span class="badge">{{ tk }}={{ tv }}</span> {% else %}<span class="muted">{{ t.admin.templates.none }}</span>{% endfor %}</td></tr>
       <tr><th>{{ t.workbench.unit.field_tier }}</th><td><span class="badge">{{ unit.tier }}</span></td></tr>
-      <tr><th>{{ t.workbench.unit.field_attrs }}</th><td><pre class="muted">{{ attrs_json }}</pre></td></tr>
-      <tr><th>{{ t.workbench.unit.field_provenance }}</th><td><pre class="muted">{{ provenance_json }}</pre></td></tr>
+      <tr><th>{{ t.workbench.unit.field_attrs }}</th><td><pre class="muted wb-pre">{{ attrs_json }}</pre></td></tr>
+      <tr><th>{{ t.workbench.unit.field_provenance }}</th><td><pre class="muted wb-pre">{{ provenance_json }}</pre></td></tr>
       <tr><th>{{ t.workbench.unit.field_created }}</th><td class="muted">{{ unit.created_at }}</td></tr>
       <tr><th>{{ t.workbench.unit.field_updated }}</th><td class="muted">{{ unit.updated_at }}</td></tr>
     </tbody>
@@ -40,17 +47,17 @@
   <h2>{{ t.workbench.unit.edit_h1 }}</h2>
   <form method="POST" action="{{ url_for('workbench_unit_edit', domain_key=domain.key, kind=kind, unit_key=unit.external_key) }}" class="filter-form form-vertical">
     <div class="filter-group">
-      <label>{{ t.workbench.unit.external_key_label }}</label>
-      <input type="text" value="{{ unit.external_key }}" readonly class="muted">
+      <label for="unit-key-ro">{{ t.workbench.unit.external_key_label }}</label>
+      <input type="text" id="unit-key-ro" value="{{ unit.external_key }}" readonly class="muted">
     </div>
     <div class="filter-group">
-      <label>{{ t.workbench.unit.tags_label }}</label>
-      <input type="text" name="tags" value="{{ tags_text }}">
-      <span class="muted">{{ t.workbench.unit.tags_hint }}</span>
+      <label for="unit-tags-edit">{{ t.workbench.unit.tags_label }}</label>
+      <input type="text" name="tags" id="unit-tags-edit" value="{{ tags_text }}">
+      <span class="hint">{{ t.workbench.unit.tags_hint }}</span>
     </div>
     <div class="filter-group">
-      <label>{{ t.workbench.unit.body_label }}</label>
-      <textarea name="body" rows="8" required>{{ unit.body }}</textarea>
+      <label for="unit-body-edit">{{ t.workbench.unit.body_label }}</label>
+      <textarea name="body" id="unit-body-edit" rows="8" required>{{ unit.body }}</textarea>
     </div>
     <div class="filter-group">
       <label>&nbsp;</label>
@@ -64,7 +71,7 @@
 <div class="panel">
   <h2>{{ t.workbench.unit.delete_btn }}</h2>
   <form method="POST" action="{{ url_for('workbench_unit_delete', domain_key=domain.key, kind=kind, unit_key=unit.external_key) }}" data-confirm="{{ t.workbench.unit.delete_confirm }}">
-    <button type="submit" class="btn">{{ t.workbench.unit.delete_btn }}</button>
+    <button type="submit" class="btn btn-danger">{{ t.workbench.unit.delete_btn }}</button>
   </form>
 </div>
 {% endif %}

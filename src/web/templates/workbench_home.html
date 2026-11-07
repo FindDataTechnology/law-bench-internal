@@ -2,18 +2,28 @@
 {% block title %}{{ t.workbench.overview.h1 }} {{ domain.name }} · {{ t.nav.brand }}{% endblock %}
 
 {% block content %}
+<style>
+  /* polish-bench-workbench 0.3, this page only: sibling inline action forms
+     (claim/complete/cancel) flow on one row inside the nowrap action cell
+     instead of stacking as block elements; the cell scrolls at ≤720px. */
+  .data-table td.dl-cell .inline-form { display: inline-flex; margin-right: 0.3rem; vertical-align: middle; }
+</style>
+
 <div class="toolbar between">
   <h1>{{ domain.name }} <code>{{ domain.key }}</code></h1>
   <span class="badge">{% if cap.role == 'admin' %}{{ t.workbench.role.admin }}{% else %}{{ t.admin.role[cap.role] }}{% endif %}</span>
 </div>
 
 {# My tasks (assignee = signed-in member), active statuses first. Claim /
-   complete are the assignee's (write gate); cancel is lead/admin. #}
+   complete are the assignee's (write gate); cancel is lead/admin.
+   Empty = an honest empty-state card with the next step (assign for leads,
+   a plain explanation for members), not a bare table row. #}
 <div class="panel">
   <h2>{{ t.workbench.overview.my_tasks_h2 }}</h2>
   {% if cap.can_assign %}
   <p><a class="btn btn-sm" href="{{ url_for('workbench_task_new', domain_key=domain.key) }}">{{ t.workbench.overview.assign_new }}</a></p>
   {% endif %}
+  {% if my_tasks %}
   <table class="data-table">
     <thead>
       <tr>
@@ -51,18 +61,51 @@
         </td>
       </tr>
       {% endfor %}
-      {% if not my_tasks %}
-      <tr><td colspan="4" class="muted">{{ t.workbench.overview.empty_tasks }}</td></tr>
-      {% endif %}
     </tbody>
   </table>
+  {% else %}
+  {% with message=t.workbench.overview.empty_tasks,
+          hint=t.workbench.overview.empty_tasks_hint,
+          action_href=url_for('workbench_task_new', domain_key=domain.key) if cap.can_assign else none,
+          action_label=t.workbench.overview.assign_new %}
+    {% include '_empty_state.html' %}
+  {% endwith %}
+  {% endif %}
 </div>
 
 {# Domain content overview: one row per in-vocabulary kind (both lanes) with
    its unit count and a browse link — this doubles as the vocabulary display,
-   so experts see exactly the kinds the anchored template allows. #}
+   so experts see exactly the kinds the anchored template allows.
+   Two honest empty layers (the authoring surface's core empties):
+   - no vocabulary at all → the anchored template defines no kinds; next step
+     is a platform admin fixing the template;
+   - vocabulary exists but every count is 0 → real blank content; next step
+     is writing the first unit (creation guidance). #}
+{% set ns = namespace(total=0, first_kind='') %}
+{% for kind in entity_types %}
+  {% set ns.total = ns.total + counts.get(kind, 0) %}
+  {% if not ns.first_kind %}{% set ns.first_kind = kind %}{% endif %}
+{% endfor %}
+{% for kind in relationship_kinds %}
+  {% set ns.total = ns.total + counts.get(kind, 0) %}
+  {% if not ns.first_kind %}{% set ns.first_kind = kind %}{% endif %}
+{% endfor %}
 <div class="panel">
   <h2>{{ t.workbench.overview.content_h2 }}</h2>
+  {% if not entity_types and not relationship_kinds %}
+  {% with message=t.workbench.overview.vocab_empty,
+          hint=t.workbench.overview.vocab_empty_hint %}
+    {% include '_empty_state.html' %}
+  {% endwith %}
+  {% else %}
+  {% if ns.total == 0 %}
+  {% with message=t.workbench.overview.content_empty,
+          hint=t.workbench.overview.content_empty_hint,
+          action_href=url_for('workbench_browse', domain_key=domain.key, kind=ns.first_kind),
+          action_label=t.workbench.overview.browse %}
+    {% include '_empty_state.html' %}
+  {% endwith %}
+  {% endif %}
   <h3>{{ t.admin.templates.entity_types }}</h3>
   <table class="data-table">
     <thead>
@@ -99,6 +142,7 @@
       {% endif %}
     </tbody>
   </table>
+  {% endif %}
 </div>
 
 {% if cap.can_assign %}

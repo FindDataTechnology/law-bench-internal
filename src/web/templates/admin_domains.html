@@ -12,20 +12,20 @@
     <summary>{{ t.admin.domains.create_h2 }}</summary>
     <form method="POST" action="{{ url_for('admin_domain_create') }}" class="filter-form">
       <div class="filter-group">
-        <label>{{ t.admin.domains.key_label }}</label>
-        <input type="text" name="key" required>
+        <label for="dom-key">{{ t.admin.domains.key_label }}</label>
+        <input type="text" name="key" id="dom-key" required>
       </div>
       <div class="filter-group">
-        <label>{{ t.admin.domains.name_label }}</label>
-        <input type="text" name="name" required>
+        <label for="dom-name">{{ t.admin.domains.name_label }}</label>
+        <input type="text" name="name" id="dom-name" required>
       </div>
       <div class="filter-group">
-        <label>{{ t.admin.domains.template_name_label }}</label>
-        <input type="text" name="template_name" required>
+        <label for="dom-template-name">{{ t.admin.domains.template_name_label }}</label>
+        <input type="text" name="template_name" id="dom-template-name" required>
       </div>
       <div class="filter-group">
-        <label>{{ t.admin.domains.template_version_label }} {{ t.admin.domains.template_version_hint }}</label>
-        <input type="number" name="template_version" min="1">
+        <label for="dom-template-version">{{ t.admin.domains.template_version_label }} {{ t.admin.domains.template_version_hint }}</label>
+        <input type="number" name="template_version" id="dom-template-version" min="1">
       </div>
       <div class="filter-group">
         <label>&nbsp;</label>
@@ -35,6 +35,9 @@
   </details>
 </div>
 
+{# Honest empty: no domains yet — the instantiate form above stays open and
+   the card names the next step. #}
+{% if domains %}
 <div class="panel">
   <table class="data-table">
     <thead>
@@ -62,10 +65,13 @@
         <td><a class="btn btn-sm" href="{{ url_for('admin_domain_detail', domain_key=d.key) }}">{{ t.admin.domains.view }}</a></td>
       </tr>
       {% endfor %}
-      {% if not domains %}
-      <tr><td colspan="8" class="muted">{{ t.admin.domains.empty }}</td></tr>
-      {% endif %}
     </tbody>
   </table>
 </div>
+{% else %}
+{% with message=t.admin.domains.empty,
+        hint=t.admin.domains.empty_hint %}
+  {% include '_empty_state.html' %}
+{% endwith %}
+{% endif %}
 {% endblock %}

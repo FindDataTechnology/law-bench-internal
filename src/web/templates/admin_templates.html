@@ -12,12 +12,12 @@
     <summary>{{ t.admin.templates.create_h2 }}</summary>
     <form method="POST" action="{{ url_for('admin_template_create') }}" class="filter-form">
       <div class="filter-group">
-        <label>{{ t.admin.templates.name_label }}</label>
-        <input type="text" name="name" required>
+        <label for="tpl-name">{{ t.admin.templates.name_label }}</label>
+        <input type="text" name="name" id="tpl-name" required>
       </div>
       <div class="filter-group wide">
-        <label>{{ t.admin.templates.schema_label }}</label>
-        <textarea name="schema" rows="14" required
+        <label for="tpl-schema">{{ t.admin.templates.schema_label }}</label>
+        <textarea name="schema" id="tpl-schema" rows="14" required
                   placeholder="{{ t.admin.templates.schema_ph }}"></textarea>
       </div>
       <div class="filter-group">
@@ -28,6 +28,9 @@
   </details>
 </div>
 
+{# Honest empty: no fake rows — the create form above stays open and the card
+   names the next step. #}
+{% if templates %}
 <div class="panel">
   <table class="data-table">
     <thead>
@@ -49,10 +52,13 @@
         <td><a class="btn btn-sm" href="{{ url_for('admin_template_detail', name=tmpl.name) }}">{{ t.admin.templates.view }}</a></td>
       </tr>
       {% endfor %}
-      {% if not templates %}
-      <tr><td colspan="5" class="muted">{{ t.admin.templates.empty }}</td></tr>
-      {% endif %}
     </tbody>
   </table>
 </div>
+{% else %}
+{% with message=t.admin.templates.empty,
+        hint=t.admin.templates.empty_hint %}
+  {% include '_empty_state.html' %}
+{% endwith %}
+{% endif %}
 {% endblock %}
