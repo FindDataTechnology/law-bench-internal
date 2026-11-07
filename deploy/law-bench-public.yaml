@@ -22,7 +22,7 @@ spec:
         - name: tcr-pull
       containers:
         - name: law-bench-public
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-b1d8a66
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-fa1ad20
           imagePullPolicy: IfNotPresent
           env:
             - name: PUBLIC_API
