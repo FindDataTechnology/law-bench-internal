@@ -170,9 +170,10 @@ P2（舰队提案目标切换）按提案边界属伴随 change，**未做**；�
 
 ## 5. 上产真机验收（2026-11-08，生产 law-bench）
 
-镜像 `ccr.ccs.tencentyun.com/law-bench/law-template:sha-fa1ad20`（build-pool 快照线，源真 sha `3d77097`），
-argocd `law-bench` 同步到 `f448fee` 后 `law-bench` / `law-bench-public` / `law-bench-mcp-assistant` 三工作负载
-全部 1/1 Ready。
+两滚：先 `sha-fa1ad20`（源真 sha `3d77097`，argocd `f448fee`）暴露本节 5.1 的缺陷；修复后 `sha-33f6525`
+（源真 sha `0f50cec`，argocd `0ca54e9`）为**当前线上**镜像。两者都走 build-pool 快照线
+（`testaction004/build-pool` → hkccr → relay → ccr）。`law-bench` / `law-bench-public` /
+`law-bench-mcp-assistant` 三工作负载均 1/1 Ready。
 
 ### 5.1 上产第一次真登录发现：整站 `/d` 500
 
@@ -191,6 +192,8 @@ fixture 显式调用，生产库没有任何东西触发它。§0.2 的「一次
 
 **修法**：`src/eval/bootstrap.py` + entrypoint 在 origin 分支 `exec uvicorn` 前无条件执行；
 public 只读分支不跑 DDL（dump 副本，读面不许改结构）；库不可达即非零退出（crash-loop 比半 schema 服务好）。
+上线后在 origin pod 启动日志里读到 `boot: schema ensured on database 'law_bench'` —— 判据是这行，
+不是「代码里加了调用」。
 
 ### 5.2 线上复验（补账后，真实 HTTP）
 
@@ -206,6 +209,9 @@ public 只读分支不跑 DDL（dump 副本，读面不许改结构）；库不�
 | `GET /d` 匿名 | 401（门没漏） |
 | `GET /workbench/legal/units/belongs_to/x?limit=5` | 302 → `/d/legal/units/belongs_to/x?limit=5`（键与查询串逐字） |
 | `GET /api/public/overview`（public pod `:30620`） | 200，digest `3586552a01b0…`、`as_of` 为数据时间 |
+| 公网浏览器语义 `GET /d`（Accept: text/html） | 302 → `/auth/login?next=/d`（门没把人挡在 JSON 里） |
+| `GET /auth/login?next=/d` | 302 → Logto OIDC（PKCE，`redirect_uri` 回本站，scope 含 content:read/write/admin） |
+| `GET /workbench/legal` | 302 → `/d/legal` |
 
 说明：生产只有一个域 `legal` 且 `domain_members` 为空，因此切换器按设计不渲染（>1 域才出现）。
 六区页面在真实 DB 上渲染成功 —— 这是本机验收（§0–§4）覆盖不到的那一段。
