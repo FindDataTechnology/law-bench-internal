@@ -71,7 +71,8 @@
 
 ## 7. P2 跨仓：舰队提案目标切换
 
-- [ ] 7.1 本仓：`POST /api/d/{key}/proposals` 契约文档化（字段、幂等键、错误码），供 fleet 侧对接
+- [x] 7.1 本仓：`POST /api/d/{key}/proposals` 契约文档化（字段、幂等键、错误码、鉴权与关系类端点要求）
+  → `docs/domain-proposal-contract.md`；`tests/test_domain_proposal_contract_doc.py` 双向校验文档与代码不漂
 - [ ] 7.2 伴随 change（`fd-wire`/`paas` 根，另立）：舰队提案岗提交目标从柏讯审批队列切到域提案箱；柏讯审批队列不再新增该类提案
 - [ ] 7.3 判据：舰队一轮真跑 → 域提案箱出现 pending；柏讯审批队列零新增；同键重复提交幂等
 
