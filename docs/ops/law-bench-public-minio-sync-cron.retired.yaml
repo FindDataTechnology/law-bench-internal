@@ -1,10 +1,13 @@
-# 【已退役 2026-11-07；2026-11-08 移出同步范围】本文件放在 deploy/retired/：
-# argocd 的目录源只取 deploy/*.yaml（非递归），因此它不再进入期望状态；CronJob 与
-# 历史失败 Job 已从集群删除。留在 Git 里只为留档（镜像链曾经怎么做）。
+# 【已退役 2026-11-07；2026-11-08 移出 deploy/ 整棵树】
 #
-# 之前的问题：文件虽被标「已退役」，却仍在 deploy/ 顶层，argo 每轮把它同步回来，
-# 集群里每 30 分钟起一个必然失败的 minio-sync job —— 退役要在期望状态层面退役，
-# 光在注释里退役不算。
+# 本文件是留档，不是可部署清单 —— 它在 docs/ops/ 下，argocd 的 app 只读 deploy/，
+# 因此永远不进入期望状态。CronJob 与历史失败 Job 已从集群删除。
+#
+# 踩过的两个坑（写在这里，免得下次再踩）：
+#   1. 只在注释里写「已退役」不算退役：文件还在 deploy/ 顶层时，argo 每轮同步把它
+#      按回集群，每 30 分钟起一个必然失败的 job（origin MinIO svc 早已不存在）。
+#   2. 移进 deploy/retired/ 也不算：该 app 的 directory 源会递归读到子目录里的
+#      *.yaml，于是 argo 又把 CronJob 建了回来。退役 = 移出 deploy/ 这棵树。
 #
 # 【原退役说明 2026-11-07】origin MinIO 实况已死（svc 不存在），无真源可镜像——本清单仅留档，CronJob 已从集群删除；公共读面 MinIO=windows RustFS 直连（见 law-bench-public.yaml env MINIO_PUBLIC_HOST + design D3）。
 # 公共 pod 的 artifacts 镜像链（tasks 1.3）：origin MinIO bucket → windows 数据机 RustFS。
