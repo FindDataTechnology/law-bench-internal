@@ -4,7 +4,7 @@
 
 - [x] 1.1 replica 实例就位（cheap 集群内，Postgres 14+，独立 PVC/凭据）
 - [x] 1.2 数据链=快照轨：cron `pg_dump --clean --if-exists`（15min，Job 失败留痕）覆盖七表，行数对账（api_keys 承重）
-- [ ] 1.3 MinIO artifacts 镜像单独补齐（不阻塞概览门，挂账明示）
+- [x] 1.3 MinIO 面：origin MinIO 实况已死（svc 不存在，下载路径先于本 change 即断）→ windows 数据机 RustFS 直接作为公共读面真源（MINIO_PUBLIC_HOST=100.64.0.5:9000 + RustFS 凭据），canary 往返实弹通过；镜像 cron 退掉（无真源可镜像）
 - [x] 1.4 `law-bench-public` SecretRef 注入（DSN/`AUTH_SESSION_SECRET`/China MinIO 凭据，独立于 origin）
 
 ## 2. 部署
