@@ -1,0 +1,73 @@
+# law-bench public API pod 的 read-replica（数据链=pg_dump cron 快照轨）。
+# 与 origin（ns postgres 共享实例）隔离：独立 PVC/凭据；同步见 law-bench-public-sync-cron.yaml。
+apiVersion: v1
+kind: Secret
+metadata:
+  name: law-bench-public-replica
+  namespace: law-bench
+type: Opaque
+stringData:
+  POSTGRES_DB: law_bench
+  POSTGRES_USER: app
+  POSTGRES_PASSWORD: "lbpub-repl-9f4Kw2mTq7Xv"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: law-bench-public-replica-data
+  namespace: law-bench
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: law-bench-public-replica
+  namespace: law-bench
+  labels:
+    app: law-bench-public-replica
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: law-bench-public-replica
+  template:
+    metadata:
+      labels:
+        app: law-bench-public-replica
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          envFrom:
+            - secretRef:
+                name: law-bench-public-replica
+          ports:
+            - containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "app", "-d", "law_bench"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - mountPath: /var/lib/postgresql/data
+              name: data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: law-bench-public-replica-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: law-bench-public-replica
+  namespace: law-bench
+spec:
+  selector:
+    app: law-bench-public-replica
+  ports:
+    - port: 5432
+      targetPort: 5432

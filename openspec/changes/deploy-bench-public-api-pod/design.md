@@ -9,7 +9,8 @@
 ### D1. 同镜像 + env 选择 app 工厂（沿 spec 既有裁决）
 镜像 ccr `law-template:sha-<current>`；`PUBLIC_API=1` 让 `docker-entrypoint.sh` 选 `create_public_app()`。不做独立构建。
 
-### D2. 数据链按 spec 补真 replica，不走「直连 origin 库」捷径
+### D2. 数据链走快照轨（pg_dump cron），不动共享 origin Postgres
+origin Postgres（ns postgres，postgres:16 STS）为共享实例（readiness 探 appdb），`wal_level=replica`——开 logical replication 须改配置重启共享生产库，爆炸半径不成比例。选文档 fallback A：cron `pg_dump`（15 分钟，`--clean --if-exists` 幂等恢复）→ replica。spec 已修 dual-track（(b) 为 origin 共享实例时的默认轨）。MinIO 镜像单独补齐不阻塞概览门。原裁决标题留档：数据链按 spec 补真 replica，不走「直连 origin 库」捷径
 用户 2026-11-07 否决了「DSN 暂直连 origin 同库」的起步形态（B 裁决后又改 A），定：replica 数据链完整搭建。publication 覆盖 spec 点名七表；cheap 集群内新建 Postgres 实例（复用 cheap3 paper-trading-pg 的部署形态），订阅落位后对账。
 
 ### D3. 端口：新 NodePort（30620 段按集群空闲实选），不复用 30820
@@ -29,7 +30,7 @@ healthz / 概览真值 / sibling 401 / 429 负例，全过才算完成；样本�
 
 ## Migration Plan
 
-replica 先行 → secret 注入 → pod 部署 → Caddy/雷池/证书 → 上线门 → bench 站代理切换 → 真值验收解除挂账。
+replica + cron 快照先行 → secret 注入 → pod 部署 → 上线门 → bench 站代理切新端口（显式路径形态，免第二域名全套）→ 真值验收解除挂账。
 
 ## Open Questions
 

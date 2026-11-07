@@ -20,9 +20,9 @@ cheap 集群 `law-bench` namespace SHALL 运行 `law-bench-public` deployment：
 - **WHEN** 比对两个 deployment 的 envFrom secretRef
 - **THEN** 公共 pod 使用独立的 `law-bench-public` secret，不与 origin 共享任何凭据对象
 
-### Requirement: 数据链（replica + 镜像同步）
+### Requirement: 数据链（replica，双轨机制）
 
-公共 pod 的 Postgres SHALL 为 China-local read-replica：origin 对 `clauses`/`contract_artifacts`/`rubrics`/`criteria`/`prompts`/`tag_dims`/`api_keys` 建 logical replication publication，replica 订阅并保持行数可对账（`api_keys` 为验钥承重表）；China-local MinIO SHALL 镜像 origin 语料 artifacts。replica 停更时公共 pod SHALL 如实降级（503 报因），SHALL NOT 回退陈旧快照冒充新鲜。
+公共 pod 的 Postgres SHALL 为 China-local read-replica，覆盖 `clauses`/`contract_artifacts`/`rubrics`/`criteria`/`prompts`/`tag_dims`/`api_keys`（`api_keys` 为验钥承重表）。数据链机制 SHALL 为双轨之一：**(a) logical replication**（origin publication + replica subscription——origin Postgres 的 `wal_level` SHALL 已为 `logical`）或 **(b) 周期快照**（cron `pg_dump`→restore，同步周期 SHALL ≤30 分钟；origin Postgres 为共享实例且改 `wal_level` 需重启时，(b) 为默认轨）。两轨同责：`api_keys` 行数 SHALL 可对账；同步 SHALL 不可用时公共 pod 按如实降级要求处理（概览端点 503 报因），SHALL NOT 回退陈旧数据冒充新鲜。China-local MinIO 镜像（语料 artifacts 下载面）SHALL 在概览门之外单独补齐，SHALL NOT 阻塞概览上线。
 
 #### Scenario: 承重表对账
 
@@ -31,8 +31,8 @@ cheap 集群 `law-bench` namespace SHALL 运行 `law-bench-public` deployment：
 
 #### Scenario: 停更如实
 
-- **WHEN** replica 订阅断开超过一个同步周期
-- **THEN** 公共概览端点按如实降级要求返回 503 报因，不输出旧数据
+- **WHEN** 快照同步任务连续失败超过两个周期
+- **THEN** 同步任务状态可观测（Job 失败留痕），公共概览端点按如实降级要求返回 503 报因，不输出旧数据
 
 ### Requirement: 端口纪律与上线门
 
