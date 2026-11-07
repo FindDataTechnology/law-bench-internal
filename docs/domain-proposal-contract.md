@@ -38,10 +38,12 @@ Content-Type: application/json
 ## 响应
 
 ```json
-{"id": 42, "state": "pending", "external_key": "ai-corp", "evidence_digest": "9f2c…"}
+{"id": 42, "state": "pending", "external_key": "ai-corp", "evidence_digest": "9f2c…", "created": true}
 ```
 
-- `200` —— 新建，或命中同键已存在的 pending 行（**幂等命中**：返回既有行，不新增、不报错）。
+- `200` —— 新建（`created: true`），或命中同键已存在的 pending 行（`created: false`，
+  **幂等命中**：返回既有行，不新增、不报错）。调用方按 `created` 报「新增 / 幂等命中」，
+  两件事必须能分开，否则一轮的条数对不上。
 - `400` —— 语义拒绝，`detail` 是中文原话，直接可以进报告：
   - `提案必须携带依据` —— 缺 `evidence` 或给了空容器
   - `kind '<k>' 不在模板 v<n> 词表内：entity_types=[…], relationship_kinds=[…]` —— 出表 kind

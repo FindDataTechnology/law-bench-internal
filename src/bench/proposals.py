@@ -353,7 +353,8 @@ def submit(
     evidence: Any,
     impact: str = "",
     submitted_by: str,
-) -> dict:
+    with_created: bool = False,
+):
     """Submit one proposal into the domain's inbox, or return the open one.
 
     The pending row for ``(domain, source, external_key)`` is the submission's
@@ -362,6 +363,11 @@ def submit(
     identity: resubmitting the same key is allowed only with different
     evidence, which is the "new evidence required" rule expressed as a digest
     comparison. Returns the stored proposal dict.
+
+    ``with_created=True`` returns ``(proposal, created)`` instead. An idempotent
+    hit must be tellable apart from a new row: the submitting fleet reports
+    「新增」 vs 「幂等命中」 to its operator, and a report that cannot tell the
+    two apart is not a report.
     """
     domain = _load_domain(conn, domain_key=domain_key)
     _validate_evidence(evidence)
@@ -378,7 +384,8 @@ def submit(
         (domain["id"], source, external_key),
     ).fetchone()
     if pending is not None:
-        return _proposal_to_dict(pending)
+        existing = _proposal_to_dict(pending)
+        return (existing, False) if with_created else existing
 
     same_evidence = conn.execute(
         "SELECT 1 FROM domain_proposals "
@@ -416,7 +423,7 @@ def submit(
         actor=submitted_by,
     )
     conn.commit()
-    return proposal
+    return (proposal, True) if with_created else proposal
 
 
 def confirm(

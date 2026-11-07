@@ -519,7 +519,7 @@ async def console_proposal_submit(
     if not isinstance(payload, dict):
         raise HTTPException(status_code=422, detail="request body must be a JSON object")
     try:
-        proposal = bench_proposals.submit(
+        proposal, created = bench_proposals.submit(
             db,
             domain_key=domain_key,
             source=str(payload.get("source") or "").strip(),
@@ -530,6 +530,7 @@ async def console_proposal_submit(
             impact=str(payload.get("impact") or ""),
             submitted_by=str(payload.get("submitted_by") or "").strip()
             or _operator_of(user),
+            with_created=True,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -538,4 +539,8 @@ async def console_proposal_submit(
         "state": proposal["state"],
         "external_key": proposal["external_key"],
         "evidence_digest": proposal["evidence_digest"],
+        # False = idempotent hit on the existing pending row. The submitting
+        # fleet reports 新增 vs 幂等命中 from this flag; without it both look
+        # identical and the round's count cannot be trusted.
+        "created": created,
     }

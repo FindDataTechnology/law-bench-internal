@@ -385,7 +385,9 @@ def _submit(c: TestClient, *, key: str, evidence: dict, kind: str = "company",
         },
     )
     assert r.status_code == 200, r.text
-    return r.json()
+    body = r.json()
+    assert "created" in body, "the submit response must say new vs idempotent hit"
+    return body
 
 
 def test_inbox_confirm_writes_through_the_kernel(seeded_db):
@@ -394,6 +396,10 @@ def test_inbox_confirm_writes_through_the_kernel(seeded_db):
     _seed_world(seeded_db)
     with _client(seeded_db, _user("alice", _READ_WRITE)) as c:
         proposal = _submit(c, key="ai-corp", evidence={"url": "https://example.test/a"})
+        assert proposal["created"] is True
+        repeat = _submit(c, key="ai-corp", evidence={"url": "https://example.test/a"})
+        assert repeat["created"] is False, "a repeat submission is an idempotent hit"
+        assert repeat["id"] == proposal["id"]
     with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
         inbox = c.get(f"/d/{A_KEY}/inbox")
         assert inbox.status_code == 200

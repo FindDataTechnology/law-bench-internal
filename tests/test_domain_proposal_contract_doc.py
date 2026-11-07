@@ -41,7 +41,9 @@ def test_doc_exists():
 def test_doc_states_the_endpoint_and_its_identity():
     text = DOC.read_text(encoding="utf-8")
     assert "POST /api/d/{domain_key}/proposals" in text
-    for field in ("source", "kind", "external_key", "body", "evidence", "submitted_by"):
+    for field in (
+        "source", "kind", "external_key", "body", "evidence", "submitted_by", "created"
+    ):
         assert f"`{field}`" in text, f"contract field {field!r} undocumented"
 
 
