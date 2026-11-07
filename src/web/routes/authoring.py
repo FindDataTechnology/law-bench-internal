@@ -8,7 +8,7 @@ platform roles) then domain role (``require_domain_role``, the workspace
 membership record is the only source of domain roles; admins bypass the domain
 check):
 
-- workbench READ  (home / browse / unit detail / events)  — ``content:read`` AND domain ``annotator``+;
+- workbench READ  (browse / unit detail / events)         — ``content:read`` AND domain ``annotator``+;
 - content WRITE (create/update/delete unit or relationship, task claim /
   status)                                                 — ``content:write`` AND domain ``expert``+;
 - task ASSIGN (lead assigns, lead/admin cancels)           — ``content:write`` AND domain ``lead``.
@@ -25,6 +25,11 @@ KU upsert with namespace=domain.key, append-only events, tasks); this module
 stays a thin web surface with no direct SQL. Route params are named
 ``domain_key`` on every route because ``require_domain_role`` reads exactly
 that path param.
+
+Every page here lives under the domain console's prefix — ``/d/{domain_key}/…``
+— so the six console areas and the authoring pages they link to share one
+namespace per domain. The pre-C5 ``/workbench/{domain_key}/…`` prefix survives
+only as a 302 (:func:`workbench_legacy_redirect`), never as a second home.
 
 Unit ``external_key`` values contain ``->`` and ``:`` (relationships derive
 ``{from_key}->{kind}:{to_key}``), so every URL carrying a key percent-encodes
@@ -163,7 +168,7 @@ def _path_key(value: str) -> str:
 def _unit_path(domain_key: str, kind: str, unit_key: str) -> str:
     """Percent-safe URL for one unit detail page (keys carry ``->`` and ``:``)."""
     return (
-        f"/workbench/{quote(domain_key, safe='')}/units/"
+        f"/d/{quote(domain_key, safe='')}/units/"
         f"{quote(kind, safe='')}/{quote(unit_key, safe='')}"
     )
 
@@ -209,8 +214,13 @@ def _pretty(value: Any) -> str:
     return json.dumps(value or {}, ensure_ascii=False, indent=2)
 
 
-def _sorted_tasks(tasks: list[dict]) -> list[dict]:
-    """Active statuses first (pending ▶ in_progress), then newest id first."""
+def sorted_tasks(tasks: list[dict]) -> list[dict]:
+    """Active statuses first (pending ▶ in_progress), then newest id first.
+
+    Shared with the domain console overview (`console_overview`), which is the
+    single domain home since C5: the ordering rule must exist in exactly one
+    place, so it lives here next to TASK_STATUSES.
+    """
     order = {status: rank for rank, status in enumerate(TASK_STATUSES)}
     return sorted(
         tasks,
@@ -221,55 +231,50 @@ def _sorted_tasks(tasks: list[dict]) -> list[dict]:
     )
 
 
-# ----------------------------------------------------------------- home #
+# ------------------------------------------------------- legacy /workbench #
+#
+# C5 moved the authoring surface under the domain console (`/d/{domain_key}/…`)
+# so a domain has ONE URL namespace: the console areas and the authoring pages
+# it links to now share a prefix. These two routes keep every old
+# `/workbench/{key}/…` link, bookmark and machine-side deep link working.
+#
+# They carry the same read gates as the pages they replace, so a non-member is
+# still rejected with 403 BEFORE any redirect rather than being bounced to a
+# page that then denies. Only GET is redirected: every in-app form is rendered
+# by our own templates through `url_for`, so it posts to the new path, and a
+# stale POST would be a replay of an old form — 405 is the honest answer.
 
 
 @read_only_router.get(
-    "/workbench/{domain_key}", include_in_schema=False, name="workbench_home",
-    dependencies=_READ_GATES,
+    "/workbench/{domain_key}", include_in_schema=False,
+    name="workbench_legacy_home", dependencies=_READ_GATES,
 )
-def workbench_home(
-    request: Request,
-    domain_key: str,
-    db: DbConn = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    """My tasks + domain content overview grouped by kind + the vocabulary."""
-    domain = _get_domain_or_404(db, domain_key)
-    schema = _anchored_schema(db, domain)
-    entity_types = list(schema.get("entity_types") or [])
-    relationship_kinds = list(schema.get("relationship_kinds") or [])
-    counts: dict[str, int] = {}
-    for kind in entity_types + relationship_kinds:
-        units = bench_authoring.authoring_list_units(
-            db, domain_key=domain_key, kind=kind, limit=200
-        )
-        counts[kind] = len(units)
-    my_tasks = _sorted_tasks(
-        bench_authoring.authoring_list_tasks(
-            db, domain_id=domain["id"], assignee=user.sub
-        )
-    )
-    return _templates.TemplateResponse(
-        request,
-        "workbench_home.html",
-        {
-            "domain": domain,
-            "schema": schema,
-            "entity_types": entity_types,
-            "relationship_kinds": relationship_kinds,
-            "counts": counts,
-            "my_tasks": my_tasks,
-            "cap": _capability(db, domain, user),
-        },
-    )
+@read_only_router.get(
+    "/workbench/{domain_key}/{rest:path}", include_in_schema=False,
+    name="workbench_legacy_path", dependencies=_READ_GATES,
+)
+def workbench_legacy_redirect(
+    request: Request, domain_key: str, rest: str = ""
+) -> RedirectResponse:
+    """302 an old ``/workbench/…`` URL onto its ``/d/…`` home.
+
+    ``rest`` arrives percent-decoded, so each segment is re-encoded on the way
+    out — unit keys carry ``->`` and ``:`` and must survive the hop intact.
+    The query string (filters, ``limit``) is carried over verbatim.
+    """
+    target = f"/d/{quote(domain_key, safe='')}"
+    if rest:
+        target += "/" + "/".join(quote(part, safe="") for part in rest.split("/"))
+    if request.url.query:
+        target += f"?{request.url.query}"
+    return RedirectResponse(target, status_code=302)
 
 
 # ---------------------------------------------------------------- browse #
 
 
 @read_only_router.get(
-    "/workbench/{domain_key}/browse/{kind}", include_in_schema=False,
+    "/d/{domain_key}/browse/{kind}", include_in_schema=False,
     name="workbench_browse", dependencies=_READ_GATES,
 )
 def workbench_browse(
@@ -316,7 +321,7 @@ def workbench_browse(
 
 
 @read_only_router.get(
-    "/workbench/{domain_key}/units/{kind}/new", include_in_schema=False,
+    "/d/{domain_key}/units/{kind}/new", include_in_schema=False,
     name="workbench_unit_new", dependencies=_WRITE_GATES,
 )
 def workbench_unit_new_form(
@@ -355,7 +360,7 @@ def workbench_unit_new_form(
 
 
 @write_router.post(
-    "/workbench/{domain_key}/units/{kind}/new", include_in_schema=False,
+    "/d/{domain_key}/units/{kind}/new", include_in_schema=False,
     name="workbench_unit_create", dependencies=_WRITE_GATES,
 )
 async def workbench_unit_create(
@@ -375,7 +380,7 @@ async def workbench_unit_create(
         )
     form = await request.form()
     body = str(form.get("body") or "").strip()
-    back = f"/workbench/{quote(domain_key, safe='')}/units/{quote(kind, safe='')}/new"
+    back = f"/d/{quote(domain_key, safe='')}/units/{quote(kind, safe='')}/new"
     if not body:
         return _flash(back, "flash.unit_body_required", err=True)
     tags, problem = _parse_tags(str(form.get("tags") or ""))
@@ -407,7 +412,7 @@ async def workbench_unit_create(
 
 
 @read_only_router.get(
-    "/workbench/{domain_key}/units/{kind}/{unit_key}", include_in_schema=False,
+    "/d/{domain_key}/units/{kind}/{unit_key}", include_in_schema=False,
     name="workbench_unit_detail", dependencies=_READ_GATES,
 )
 def workbench_unit_detail(
@@ -455,7 +460,7 @@ def workbench_unit_detail(
 
 
 @write_router.post(
-    "/workbench/{domain_key}/units/{kind}/{unit_key}/edit", include_in_schema=False,
+    "/d/{domain_key}/units/{kind}/{unit_key}/edit", include_in_schema=False,
     name="workbench_unit_edit", dependencies=_WRITE_GATES,
 )
 async def workbench_unit_edit(
@@ -503,7 +508,7 @@ async def workbench_unit_edit(
 
 
 @write_router.post(
-    "/workbench/{domain_key}/units/{kind}/{unit_key}/delete",
+    "/d/{domain_key}/units/{kind}/{unit_key}/delete",
     include_in_schema=False, name="workbench_unit_delete", dependencies=_WRITE_GATES,
 )
 async def workbench_unit_delete(
@@ -531,7 +536,7 @@ async def workbench_unit_delete(
     except ValueError as exc:
         return _flash(back, "flash.unit_failed", err=True, detail=str(exc))
     return _flash(
-        f"/workbench/{quote(domain_key, safe='')}/browse/{quote(kind, safe='')}",
+        f"/d/{quote(domain_key, safe='')}/browse/{quote(kind, safe='')}",
         "flash.unit_deleted",
     )
 
@@ -540,7 +545,7 @@ async def workbench_unit_delete(
 
 
 @read_only_router.get(
-    "/workbench/{domain_key}/tasks/new", include_in_schema=False,
+    "/d/{domain_key}/tasks/new", include_in_schema=False,
     name="workbench_task_new", dependencies=_ASSIGN_GATES,
 )
 def workbench_task_new_form(
@@ -567,7 +572,7 @@ def workbench_task_new_form(
 
 
 @write_router.post(
-    "/workbench/{domain_key}/tasks/new", include_in_schema=False,
+    "/d/{domain_key}/tasks/new", include_in_schema=False,
     name="workbench_task_create", dependencies=_ASSIGN_GATES,
 )
 async def workbench_task_create(
@@ -579,7 +584,7 @@ async def workbench_task_create(
     """Assign a creation/verification task to a domain member (lead-only)."""
     domain = _get_domain_or_404(db, domain_key)
     schema = _anchored_schema(db, domain)
-    back = f"/workbench/{quote(domain_key, safe='')}/tasks/new"
+    back = f"/d/{quote(domain_key, safe='')}/tasks/new"
     form = await request.form()
     assignee = str(form.get("assignee") or "").strip()
     title = str(form.get("title") or "").strip()
@@ -604,13 +609,13 @@ async def workbench_task_create(
     except ValueError as exc:
         return _flash(back, "flash.task_failed", err=True, detail=str(exc))
     return _flash(
-        f"/workbench/{quote(domain_key, safe='')}",
+        f"/d/{quote(domain_key, safe='')}",
         "flash.task_assigned", name=assignee,
     )
 
 
 @write_router.post(
-    "/workbench/{domain_key}/tasks/{task_id}/status", include_in_schema=False,
+    "/d/{domain_key}/tasks/{task_id}/status", include_in_schema=False,
     name="workbench_task_status", dependencies=_WRITE_GATES,
 )
 async def workbench_task_status(
@@ -628,7 +633,7 @@ async def workbench_task_status(
     than leaking that it exists.
     """
     domain = _get_domain_or_404(db, domain_key)
-    back = f"/workbench/{quote(domain_key, safe='')}"
+    back = f"/d/{quote(domain_key, safe='')}"
     task = bench_authoring.authoring_get_task(db, task_id=task_id)
     if task is None or task.get("domain_id") != domain["id"]:
         raise HTTPException(status_code=404, detail="task not found")

@@ -2,7 +2,7 @@
 {% block title %}{{ t.workbench.browse.h1 }} {{ kind }} · {{ domain.name }} · {{ t.nav.brand }}{% endblock %}
 
 {% block content %}
-<p><a href="{{ url_for('workbench_home', domain_key=domain.key) }}">{{ domain.name }}</a></p>
+<p><a href="{{ url_for('console_overview', domain_key=domain.key) }}">{{ domain.name }}</a></p>
 <div class="toolbar between">
   <h1>{{ t.workbench.browse.h1 }} <code>{{ kind }}</code> <span class="badge">{{ t.workbench.browse['lane_' ~ lane] }}</span></h1>
   {% if cap.can_write %}

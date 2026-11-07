@@ -14,7 +14,7 @@ import json
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
 
-from ..settings import COPILOT_RUNTIME_URL
+from ..settings import COPILOT_RUNTIME_URL, OFFICIAL_BENCH_URL
 from .i18n import (
     DEFAULT,
     LABELS,
@@ -116,6 +116,10 @@ def _locale_context(request: Request) -> dict:
         # resolver so the 「我的域」 nav section only queries the DB when a
         # signed-in chrome actually renders it; returns [] on any failure.
         "my_domains": lambda: _my_domains(request),
+        # The marketing site's bench page: the chrome's one "what is this?"
+        # link (and the denied-login page's way back out). External, so the
+        # template renders it with target=_blank/rel=noopener.
+        "official_bench_url": OFFICIAL_BENCH_URL,
         # Admin assistant (change `add-admin-copilot-assistant`): the island is
         # served only to admin sessions AND only when a runtime is configured;
         # unset COPILOT_RUNTIME_URL means the assistant is disabled outright.

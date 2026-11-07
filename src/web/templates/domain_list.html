@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}{{ t.console.list.h1 }} · {{ t.nav.brand }}{% endblock %}
+
+{% block nav_items %}{% endblock %}
+
+{% block content %}
+{#- 域列表 = 账本目录（brief FIRST VIEWPORT：顶栏下 1.5rem 即表格，无欢迎语）。
+    每行一个域：名称（链接）、key、我在这个域的角色、最近进入时间。
+    空态诚实且分权限：普通身份只说「等邀请」，平台管理员额外给平台门。 -#}
+<div class="toolbar between">
+  <h1>{{ t.console.list.h1 }}</h1>
+  {% if domains %}<span class="muted">{{ tr('console.list.count', n=domains | length) }}</span>{% endif %}
+</div>
+
+{% if domains %}
+<p class="hint">{{ t.console.list.intro }}</p>
+<div class="panel">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>{{ t.console.list.col_domain }}</th>
+        <th>{{ t.console.list.col_role }}</th>
+        <th>{{ t.console.list.col_last_opened }}</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in domains %}
+      <tr>
+        <td>
+          <a href="{{ url_for('console_overview', domain_key=d.key) }}">{{ d.name }}</a>
+          <code>{{ d.key }}</code>
+          {% if d.template_name %}<span class="muted">{{ d.template_name }} v{{ d.template_version }}</span>{% endif %}
+        </td>
+        {#- Role badge is neutral (brief: 角色徽章默认灰底); harbor紫 is reserved
+            for the PLATFORM admin identity, which never appears in this column
+            because the list only carries domain memberships. -#}
+        <td><span class="badge">{{ t.console.role[d.role] }}</span></td>
+        <td class="muted">
+          {#- list_member_domains returns ISO TEXT (the kernel's row decoder
+              normalizes timestamps to strings for JSON transport), so slice
+              instead of strftime: "2026-11-08T01:40:12.34+08:00" → "2026-11-08 01:40". -#}
+          {% if d.last_opened_at %}{{ d.last_opened_at[:16] | replace('T', ' ') }}{% else %}{{ t.console.list.never_opened }}{% endif %}
+        </td>
+        <td class="nowrap"><a class="btn btn-sm" href="{{ url_for('console_overview', domain_key=d.key) }}">{{ t.console.list.open }}</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="panel">
+  <h2>{{ t.console.list.empty_h1 }}</h2>
+  <p>{{ t.console.list.empty_body }}</p>
+  {% if platform_admin %}
+  <p class="hint">{{ t.console.list.empty_admin_hint }}</p>
+  <p><a class="btn" href="{{ url_for('admin_domains') }}">{{ t.console.list.platform_gate }}</a></p>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

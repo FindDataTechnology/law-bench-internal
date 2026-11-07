@@ -225,6 +225,73 @@ def get_active_role(conn: Any, *, domain_id: int, user_id: str) -> Optional[str]
     return _scalar(row)
 
 
+def list_invitations(conn: Any, *, domain_id: int, limit: int = 50) -> list[dict]:
+    """Invitations issued for one domain, newest first.
+
+    Carries only what a settings page may show: id, role, issuer, timestamps.
+    ``token_hash`` is deliberately NOT selected — the plaintext token exists
+    solely at creation time (the accept link), and a stored digest has no
+    display value.
+    """
+    cur = conn.execute(
+        "SELECT id, role, invited_by, expires_at, created_at, accepted_at, "
+        "accepted_by FROM domain_invitations "
+        "WHERE domain_id = %s ORDER BY created_at DESC, id DESC LIMIT %s",
+        (domain_id, int(limit)),
+    )
+    return [
+        _row_to_dict(
+            r,
+            (
+                "id",
+                "role",
+                "invited_by",
+                "expires_at",
+                "created_at",
+                "accepted_at",
+                "accepted_by",
+            ),
+        )
+        for r in cur.fetchall()
+    ]
+
+
+def list_member_domains(conn: Any, *, user_id: str) -> list[dict]:
+    """Domains the user may enter, with their role, most recently opened first.
+
+    Backs the C5 domain-first landing (``/d``): one row per active membership,
+    carrying the domain record plus ``role`` and ``last_opened_at``. Ordering is
+    "my own recency first, then never-opened domains by id" so the list is
+    stable for a brand-new identity. ``last_opened_at`` is a per-user navigation
+    hint (see ``WORKSPACE_SCHEMA``), never content.
+    """
+    cur = conn.execute(
+        "SELECT d.id, d.key, d.name, d.template_id, d.template_version, "
+        "t.name AS template_name, d.created_by, d.created_at, "
+        "m.role, m.last_opened_at "
+        "FROM domains d JOIN ontology_templates t ON t.id = d.template_id "
+        "JOIN domain_members m ON m.domain_id = d.id "
+        "WHERE m.user_id = %s AND m.removed_at IS NULL "
+        "ORDER BY m.last_opened_at DESC NULLS LAST, d.id",
+        (user_id,),
+    )
+    return [_row_to_dict(r, _DOMAIN_KEYS + ("role", "last_opened_at")) for r in cur.fetchall()]
+
+
+def touch_last_opened(conn: Any, *, domain_id: int, user_id: str) -> None:
+    """Stamp the user's own recency marker for this domain (no commit).
+
+    Only an ACTIVE membership is touched — a retired row is history and must
+    stay byte-identical. No row matched (e.g. a platform admin browsing without
+    a membership) is a silent no-op: the console never invents a membership.
+    """
+    conn.execute(
+        "UPDATE domain_members SET last_opened_at = now() "
+        "WHERE domain_id = %s AND user_id = %s AND removed_at IS NULL",
+        (domain_id, user_id),
+    )
+
+
 def _deactivate_active_membership(conn: Any, *, domain_id: int, user_id: str) -> None:
     """Retire the active row (no commit -- caller owns the transaction)."""
     conn.execute(

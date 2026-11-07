@@ -189,6 +189,24 @@ def pull_domain_ontology(
 
     manifest = publication.get("manifest") or {}
     domain_row = workspaces.get_domain(db, domain_key=domain_key)
+
+    # C5 pull footprint: record the successful pull (append-only; the consumer
+    # row itself is never updated). Only a pull that actually resolved a
+    # publication reaches this line — a rejected credential or a 404 above
+    # never does, so the trail never claims a pull that did not happen.
+    # Best effort: a footprint write must never turn a served snapshot into a
+    # 500, so a failure here is swallowed by design (the payload is already
+    # computed and remains correct).
+    try:
+        db.execute(
+            "INSERT INTO distribution_pull_events (consumer_id, domain_key, version) "
+            "VALUES (%s, %s, %s)",
+            (consumer["id"], domain_key, publication["version"]),
+        )
+        db.commit()
+    except Exception:  # noqa: BLE001 - see the comment above
+        pass
+
     payload = {
         "domain": manifest.get("domain") or domain_key,
         "template_name": manifest.get("template_name")

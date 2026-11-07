@@ -7,10 +7,15 @@
   <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
 </head>
 <body>
+  {#- 顶栏 = 账本封面（change add-domain-first-workbench）。
+      brand 永远回「我的域」(/d)：域是平台的第一层组织，不是任何一条业务清单。
+      域页面用 console_context 块在 brand 与 nav 之间插入当前域 + 切换器；
+      nav_items 块让域页面收起全局法律链接（它们移到域评测区与全局资产池）。 -#}
   <header class="topbar">
-    <a class="brand" href="{{ url_for('page_list_rubrics') }}">{{ t.nav.brand }}</a>
+    <a class="brand" href="/d">{{ t.nav.brand }}</a>
+    {% block console_context %}{% endblock %}
     <nav>
-      {% if has_scope('content:read') %}
+      {% block nav_items %}{% if has_scope('content:read') %}
       {% set nav_items = [
         (url_for('page_list_rubrics'), '/rubrics', t.nav.rubrics),
         (url_for('page_list_prompts'), '/prompts', t.nav.prompts),
@@ -29,25 +34,25 @@
       <a href="{{ href }}"{% if current_path.startswith(prefix) %} aria-current="page"{% endif %}>{{ label }}</a>
       {% endfor %}
       {% endif %}
-      {# 我的域 (web-rbac delta 「导航按域过滤」): rendered ONLY for domains the
-         signed-in user holds an active membership in — non-members and
-         anonymous users see zero domain entries. The resolver is fail-safe
-         (no DB -> no entries, never a 500); the workbench and admin routes
-         re-enforce membership server-side, so this section is usability, not
-         the gate. Each member domain gets a workbench entry (expert authoring
-         surface, member-gated) next to the C1 admin detail link. #}
+      {# 我的域 (web-rbac delta, C5 域优先): ONE entry point, not two links per
+         domain. The domain list is the primary navigation surface for choosing
+         a domain, and the per-domain switcher lives beside the brand on domain
+         pages. Rendered only for an identity with at least one active
+         membership — anonymous and domain-less users see zero domain entries.
+         The resolver stays fail-safe (no DB -> no entries, never a 500); every
+         console route re-enforces membership server-side, so this is usability,
+         never the gate. #}
       {% if user and user.sub %}
       {% set my_domain_entries = my_domains() %}
       {% if my_domain_entries %}
-      <span class="muted">{{ t.admin.nav_my_domains }}</span>
-      {% for d in my_domain_entries %}
-      <a href="{{ url_for('workbench_home', domain_key=d.key) }}"{% if request.url.path == '/workbench/' ~ d.key %} aria-current="page"{% endif %}>{{ d.name }} · {{ t.workbench.nav_link }}</a>
-      <a href="{{ url_for('admin_domain_detail', domain_key=d.key) }}"{% if request.url.path == '/admin/domains/' ~ d.key %} aria-current="page"{% endif %}>{{ d.name }}</a>
-      {% endfor %}
+      <a href="/d"{% if request.url.path == '/d' %} aria-current="page"{% endif %}>{{ t.admin.nav_my_domains }}</a>
       {% endif %}
       {% endif %}
+      {% endblock %}{# /nav_items #}
       {# 管理门: platform-admin exclusive (templates + all-domain management are
-         admin-scope pages); hidden for every other identity. #}
+         admin-scope pages); hidden for every other identity. Moved OUT of the
+         nav_items block by C5 so it survives on domain pages, which suppress
+         the global asset links: the platform gate is not a domain area. #}
       {% if has_scope('admin') %}
       <span class="muted">{{ t.admin.nav_gate }}</span>
       <a href="{{ url_for('admin_templates') }}"{% if request.url.path.startswith('/admin/templates') %} aria-current="page"{% endif %}>{{ t.admin.templates.title }}</a>
@@ -62,6 +67,9 @@
       <span class="identity">
         <span class="muted">{{ t.auth.signed_in_as }}</span>
         <span class="identity-name">{{ user.name or user.email or user.sub }}</span>
+        {# 互认回链 (C5 P0-D): the workbench is one of five product lines, so the
+           chrome always offers the way back to what it is. External page. #}
+        <a href="{{ official_bench_url }}" target="_blank" rel="noopener noreferrer">{{ t.auth.about_bench }} ↗</a>
         <a href="/auth/logout">{{ t.auth.logout }}</a>
       </span>
       {% else %}
@@ -71,6 +79,9 @@
       {% endif %}
     </nav>
   </header>
+  {#- L2/L3 navigation lives in the SAME 980px column as the page body:
+      full-bleed breadcrumbs read as page chrome from another product. -#}
+  <div class="zone-shell">{% block zone_nav %}{% endblock %}</div>
   <main class="container">
     {% if request.query_params.get('msg') %}
       <div class="flash {{ 'error' if request.query_params.get('err') else 'ok' }}" role="{{ 'alert' if request.query_params.get('err') else 'status' }}">

@@ -1,0 +1,595 @@
+"""Domain proposal inbox: submission snapshots with an explicit review trail.
+
+A proposal is a *snapshot plus workflow state*, never a second ontology store.
+Its row holds what was submitted (kind, external key, body, evidence, impact)
+so reviewers see exactly the material that was proposed even if the outside
+world changes; the row never participates in retrieval and is never read by
+the kernel. Confirmation is the only moment content enters the ontology, and
+it does so through the one kernel path (``src.bench.authoring``), which gates
+the kind against the domain's anchored template vocabulary and appends the
+append-only ``authoring_events`` row. This module deliberately contains no
+``INSERT INTO knowledge_units``: a proposal layer with its own write path
+would silently fork the ontology and break provenance, so the kernel stays the
+single content truth.
+
+Three rules make the workflow auditable rather than best-effort:
+
+- *Evidence is mandatory and digested.* A submission carries machine-readable
+  evidence (a citation, a diff, a source record). Its canonical-JSON sha256
+  is stored alongside so equality of evidence is decidable without trusting
+  the submitter's formatting — resubmission after rejection is accepted only
+  with genuinely new evidence.
+- *Submission is idempotent per key.* The partial unique index on pending
+  ``(domain, source, external_key)`` rows means one open proposal per upstream
+  item; resubmitting the same key returns the existing row unchanged instead
+  of accumulating an ever-growing inbox.
+- *Approval is separated from submission.* A submitter cannot confirm their
+  own proposal (admins may override explicitly), and every state transition
+  appends a row to ``domain_proposal_events`` — an append-only trail with no
+  UPDATE/DELETE code path, so the workflow history stays replayable.
+
+Domain isolation is enforced at every entry point the same way authoring does
+it: resolve the domain first (unknown key is refused), then scope every query
+and write by its id, so one domain's inbox can never be read or decided
+through another domain's key.
+
+Style: borrowed connection (never opened or closed here), ``%s`` placeholders,
+one ``conn.commit()`` at the end of each successful write, JSONB via
+``json.dumps``/``json.loads``. Rows are decoded from either dict-row or plain
+tuple cursors.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from typing import Any, Optional
+
+from . import authoring, templates, workspaces
+
+# Mirror of the CHECK constraint on domain_proposals.state (see
+# src/bench/workspace_store.py).
+PROPOSAL_STATES = ("pending", "confirmed", "rejected")
+
+_PROPOSAL_COLS = (
+    "id, domain_id, source, kind, external_key, body, evidence, "
+    "evidence_digest, impact, state, submitted_by, submitted_at, "
+    "decided_by, decided_at, decision_note"
+)
+_PROPOSAL_KEYS = (
+    "id",
+    "domain_id",
+    "source",
+    "kind",
+    "external_key",
+    "body",
+    "evidence",
+    "evidence_digest",
+    "impact",
+    "state",
+    "submitted_by",
+    "submitted_at",
+    "decided_by",
+    "decided_at",
+    "decision_note",
+)
+
+_EVENT_COLS = "id, proposal_id, from_state, to_state, actor, note, happened_at"
+_EVENT_KEYS = (
+    "id",
+    "proposal_id",
+    "from_state",
+    "to_state",
+    "actor",
+    "note",
+    "happened_at",
+)
+
+# Marker prefixed to the decision note when an admin confirms over the
+# self-confirm ban. Its presence is the audit signal that the normal
+# separation of duties was deliberately waived.
+_ADMIN_OVERRIDE_TAG = "[admin-override]"
+
+
+# ------------------------------------------------------------------ decoding
+
+
+def _iso(val: Any) -> Any:
+    """Return a consistent ISO-8601 string for driver timestamps; pass text through."""
+    if hasattr(val, "isoformat"):
+        return val.isoformat()
+    return val
+
+
+def _decode_jsonb(val: Any) -> Any:
+    if isinstance(val, (dict, list)) or val is None:
+        return val
+    return json.loads(val)
+
+
+def _scalar(row: Any) -> Any:
+    """First value of a single-column row, dict-row or tuple."""
+    if row is None:
+        return None
+    if isinstance(row, dict):
+        return next(iter(row.values()))
+    return row[0]
+
+
+def _proposal_to_dict(row: Any) -> dict:
+    if isinstance(row, dict):
+        values = [row[k] for k in _PROPOSAL_KEYS]
+    else:
+        values = list(row)
+    return {
+        "id": values[0],
+        "domain_id": values[1],
+        "source": values[2],
+        "kind": values[3],
+        "external_key": values[4],
+        "body": values[5],
+        "evidence": _decode_jsonb(values[6]),
+        "evidence_digest": values[7],
+        "impact": values[8],
+        "state": values[9],
+        "submitted_by": values[10],
+        "submitted_at": _iso(values[11]),
+        "decided_by": values[12],
+        "decided_at": _iso(values[13]),
+        "decision_note": values[14],
+    }
+
+
+def _event_to_dict(row: Any) -> dict:
+    if isinstance(row, dict):
+        values = [row[k] for k in _EVENT_KEYS]
+    else:
+        values = list(row)
+    return {
+        "id": values[0],
+        "proposal_id": values[1],
+        "from_state": values[2],
+        "to_state": values[3],
+        "actor": values[4],
+        "note": values[5],
+        "happened_at": _iso(values[6]),
+    }
+
+
+# ------------------------------------------------------------------- helpers
+
+
+def _load_domain(conn: Any, *, domain_key: str) -> dict:
+    """Resolve the domain or refuse the operation (fail-closed isolation)."""
+    domain = workspaces.get_domain(conn, domain_key=domain_key)
+    if domain is None:
+        raise ValueError(f"domain {domain_key!r} not found")
+    return domain
+
+
+def _load_proposal(conn: Any, *, domain_id: int, proposal_id: int) -> Optional[dict]:
+    """Fetch one proposal scoped to its domain; ``None`` when out of scope.
+
+    The domain id is part of the predicate on purpose: a row that exists in
+    another domain is indistinguishable from a missing row here, so a wrong
+    domain key can never leak (or decide) foreign content.
+    """
+    row = conn.execute(
+        f"SELECT {_PROPOSAL_COLS} FROM domain_proposals "
+        "WHERE id = %s AND domain_id = %s",
+        (proposal_id, domain_id),
+    ).fetchone()
+    return _proposal_to_dict(row) if row else None
+
+
+def _record_event(
+    conn: Any,
+    *,
+    proposal_id: int,
+    from_state: Optional[str],
+    to_state: str,
+    actor: str,
+    note: Optional[str] = None,
+) -> None:
+    """Append one state transition (no commit -- the caller owns the transaction)."""
+    conn.execute(
+        "INSERT INTO domain_proposal_events "
+        "(proposal_id, from_state, to_state, actor, note) "
+        "VALUES (%s, %s, %s, %s, %s)",
+        (proposal_id, from_state, to_state, actor, note),
+    )
+
+
+def _require_text(value: Any, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} must be a non-empty string")
+    return value
+
+
+def _validate_evidence(evidence: Any) -> None:
+    """Refuse an evidence payload that carries no information.
+
+    ``None``, the empty string (or whitespace), and the empty container are
+    the same thing from a reviewer's point of view: a claim with nothing
+    behind it. Everything else is accepted -- the payload is opaque to this
+    layer, only its canonical digest is interpreted.
+    """
+    if evidence is None:
+        raise ValueError("提案必须携带依据")
+    if isinstance(evidence, str):
+        if not evidence.strip():
+            raise ValueError("提案必须携带依据")
+        return
+    if isinstance(evidence, (dict, list)):
+        if not evidence:
+            raise ValueError("提案必须携带依据")
+        return
+    raise ValueError("提案必须携带依据")
+
+
+def _lane_for_kind(conn: Any, *, domain: dict, kind: str) -> str:
+    """Decide which kernel entry point a proposal kind belongs to.
+
+    The vocabulary is data: it lives on the exact template version the domain
+    is anchored to. A kind that is in neither list is refused here, naming both
+    vocabularies and the anchored version, before anything is written.
+    """
+    tmpl = templates.get_template_by_id(conn, template_id=domain["template_id"])
+    if tmpl is None:
+        raise ValueError(
+            f"domain {domain['key']!r} anchors template id "
+            f"{domain['template_id']!r}, which does not exist"
+        )
+    schema = tmpl["schema"]
+    if not isinstance(schema, dict):
+        raise ValueError(
+            f"domain {domain['key']!r} template schema is not a dict; "
+            "cannot check the kind vocabulary"
+        )
+    entity_types = schema.get("entity_types")
+    relationship_kinds = schema.get("relationship_kinds")
+    entity_types = entity_types if isinstance(entity_types, list) else []
+    relationship_kinds = (
+        relationship_kinds if isinstance(relationship_kinds, list) else []
+    )
+    if kind in entity_types:
+        return "entity"
+    if kind in relationship_kinds:
+        return "relationship"
+    raise ValueError(
+        f"kind {kind!r} 不在模板 v{domain['template_version']} 词表内："
+        f"entity_types={entity_types}, relationship_kinds={relationship_kinds}"
+    )
+
+
+def _relationship_endpoints(evidence: Any) -> tuple[str, str]:
+    """Read the two endpoint keys a relationship confirmation needs.
+
+    The proposal row has no attrs column, so the endpoints travel inside the
+    evidence payload (``from_key``/``to_key``; ``from``/``to`` accepted as the
+    shorthand). They must be present and non-empty: the kernel derives the
+    relationship external key from them, and guessing them is not an option.
+    """
+    if not isinstance(evidence, dict):
+        raise ValueError(
+            "relationship 提案的 evidence 必须是对象并携带 from_key/to_key"
+        )
+    from_key = evidence.get("from_key") or evidence.get("from")
+    to_key = evidence.get("to_key") or evidence.get("to")
+    if (
+        not isinstance(from_key, str)
+        or not from_key.strip()
+        or not isinstance(to_key, str)
+        or not to_key.strip()
+    ):
+        raise ValueError(
+            "relationship 提案的 evidence 缺少非空的 from_key/to_key 端点"
+        )
+    return from_key, to_key
+
+
+def _write_through_kernel(
+    conn: Any, *, domain: dict, proposal: dict, actor: str
+) -> dict:
+    """Confirm time is the only ontology write, and it goes through the kernel.
+
+    No SQL against ``knowledge_units`` exists in this module by design: the
+    kernel gates the vocabulary, writes the KU in the domain namespace, and
+    appends the ``authoring_events`` row. The kernel commits on its own, so the
+    caller updates the proposal row only after this returns.
+    """
+    kind = proposal["kind"]
+    if _lane_for_kind(conn, domain=domain, kind=kind) == "relationship":
+        from_key, to_key = _relationship_endpoints(proposal["evidence"])
+        attrs = proposal["evidence"].get("attrs")
+        return authoring.authoring_create_relationship(
+            conn,
+            domain_key=domain["key"],
+            kind=kind,
+            from_key=from_key,
+            to_key=to_key,
+            body=proposal["body"],
+            operator=actor,
+            attrs=attrs if isinstance(attrs, dict) else None,
+        )
+    return authoring.authoring_create_unit(
+        conn,
+        domain_key=domain["key"],
+        kind=kind,
+        external_key=proposal["external_key"],
+        body=proposal["body"],
+        operator=actor,
+    )
+
+
+# ------------------------------------------------------------------- digest
+
+
+def canonical_evidence_digest(evidence: dict | list | str) -> str:
+    """Sha256 of the evidence's canonical JSON form.
+
+    Same canonicalization as the publication digest: sorted keys, compact
+    separators, UTF-8 with non-ASCII preserved. Key order in the submitted
+    dict therefore never changes the digest, so two processes (or two
+    submissions months apart) always agree on whether evidence is "the same".
+    """
+    canonical = json.dumps(
+        evidence, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+# ------------------------------------------------------------------ workflow
+
+
+def submit(
+    conn: Any,
+    *,
+    domain_key: str,
+    source: str,
+    kind: str,
+    external_key: str,
+    body: str,
+    evidence: Any,
+    impact: str = "",
+    submitted_by: str,
+) -> dict:
+    """Submit one proposal into the domain's inbox, or return the open one.
+
+    The pending row for ``(domain, source, external_key)`` is the submission's
+    identity: a repeat submission returns it untouched (evidence included), so
+    the inbox cannot grow duplicates. A *rejected* row is history, not an
+    identity: resubmitting the same key is allowed only with different
+    evidence, which is the "new evidence required" rule expressed as a digest
+    comparison. Returns the stored proposal dict.
+    """
+    domain = _load_domain(conn, domain_key=domain_key)
+    _validate_evidence(evidence)
+    _require_text(kind, "kind")
+    _require_text(external_key, "external_key")
+    _require_text(body, "body")
+
+    digest = canonical_evidence_digest(evidence)
+
+    pending = conn.execute(
+        f"SELECT {_PROPOSAL_COLS} FROM domain_proposals "
+        "WHERE domain_id = %s AND source = %s AND external_key = %s "
+        "AND state = 'pending'",
+        (domain["id"], source, external_key),
+    ).fetchone()
+    if pending is not None:
+        return _proposal_to_dict(pending)
+
+    same_evidence = conn.execute(
+        "SELECT 1 FROM domain_proposals "
+        "WHERE domain_id = %s AND source = %s AND external_key = %s "
+        "AND state = 'rejected' AND evidence_digest = %s LIMIT 1",
+        (domain["id"], source, external_key, digest),
+    ).fetchone()
+    if same_evidence is not None:
+        raise ValueError("同键已驳回，需新证据")
+
+    cur = conn.execute(
+        f"INSERT INTO domain_proposals "
+        f"(domain_id, source, kind, external_key, body, evidence, "
+        f"evidence_digest, impact, state, submitted_by) "
+        f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'pending', %s) "
+        f"RETURNING {_PROPOSAL_COLS}",
+        (
+            domain["id"],
+            source,
+            kind,
+            external_key,
+            body,
+            json.dumps(evidence),
+            digest,
+            impact,
+            submitted_by,
+        ),
+    )
+    proposal = _proposal_to_dict(cur.fetchone())
+    _record_event(
+        conn,
+        proposal_id=proposal["id"],
+        from_state=None,
+        to_state="pending",
+        actor=submitted_by,
+    )
+    conn.commit()
+    return proposal
+
+
+def confirm(
+    conn: Any,
+    *,
+    domain_key: str,
+    proposal_id: int,
+    actor: str,
+    admin_override: bool = False,
+) -> dict:
+    """Accept a proposal and write its content through the kernel.
+
+    A confirmed proposal is a completed decision, so confirming it again is
+    idempotent: the same row is returned and neither the kernel nor the event
+    trail is touched a second time. A rejected proposal cannot be confirmed
+    (the submitter must resubmit with new evidence instead), and a submitter
+    cannot confirm their own proposal unless an admin explicitly overrides.
+    """
+    domain = _load_domain(conn, domain_key=domain_key)
+    proposal = _load_proposal(conn, domain_id=domain["id"], proposal_id=proposal_id)
+    if proposal is None:
+        raise ValueError(f"proposal {proposal_id} not found in domain {domain_key!r}")
+
+    if proposal["state"] == "confirmed":
+        return proposal
+    if proposal["state"] != "pending":
+        raise ValueError(
+            f"proposal {proposal_id} is {proposal['state']!r}, not 'pending'; "
+            "a rejected proposal must be resubmitted with new evidence"
+        )
+
+    if proposal["submitted_by"] == actor and not admin_override:
+        raise PermissionError("提案人不得自提自确认")
+
+    _write_through_kernel(conn, domain=domain, proposal=proposal, actor=actor)
+
+    # The tag records a waiver that actually happened: an admin confirming a
+    # proposal THEY submitted. An admin confirming someone else's proposal never
+    # met the separation-of-duties rule, so no tag is written — a note claiming
+    # an override that did not occur is a false audit trail.
+    waived = admin_override and proposal["submitted_by"] == actor
+    note = (
+        f"{_ADMIN_OVERRIDE_TAG} confirmed by admin over the submitter "
+        f"{proposal['submitted_by']!r}"
+        if waived
+        else ""
+    )
+    cur = conn.execute(
+        f"UPDATE domain_proposals SET state = 'confirmed', decided_by = %s, "
+        f"decided_at = now(), decision_note = %s "
+        f"WHERE id = %s AND domain_id = %s AND state = 'pending' "
+        f"RETURNING {_PROPOSAL_COLS}",
+        (actor, note, proposal_id, domain["id"]),
+    )
+    updated = cur.fetchone()
+    if updated is None:
+        raise ValueError(
+            f"proposal {proposal_id} changed state while being confirmed"
+        )
+    _record_event(
+        conn,
+        proposal_id=proposal_id,
+        from_state="pending",
+        to_state="confirmed",
+        actor=actor,
+        note=note or None,
+    )
+    conn.commit()
+    return _proposal_to_dict(updated)
+
+
+def reject(
+    conn: Any, *, domain_key: str, proposal_id: int, actor: str, note: str
+) -> dict:
+    """Reject a pending proposal; the reason is part of the record.
+
+    A bare rejection is not actionable for the submitter, so ``note`` is
+    mandatory. Rejecting an already-rejected proposal returns it unchanged
+    (no second event); a confirmed proposal cannot be rejected -- that would
+    rewrite a decision whose content is already in the ontology.
+    """
+    if not isinstance(note, str) or not note.strip():
+        raise ValueError("驳回必须写明理由")
+
+    domain = _load_domain(conn, domain_key=domain_key)
+    proposal = _load_proposal(conn, domain_id=domain["id"], proposal_id=proposal_id)
+    if proposal is None:
+        raise ValueError(f"proposal {proposal_id} not found in domain {domain_key!r}")
+
+    if proposal["state"] == "rejected":
+        return proposal
+    if proposal["state"] != "pending":
+        raise ValueError(
+            f"proposal {proposal_id} is {proposal['state']!r}, not 'pending'; "
+            "a confirmed proposal cannot be rejected"
+        )
+
+    cur = conn.execute(
+        f"UPDATE domain_proposals SET state = 'rejected', decided_by = %s, "
+        f"decided_at = now(), decision_note = %s "
+        f"WHERE id = %s AND domain_id = %s AND state = 'pending' "
+        f"RETURNING {_PROPOSAL_COLS}",
+        (actor, note, proposal_id, domain["id"]),
+    )
+    updated = cur.fetchone()
+    if updated is None:
+        raise ValueError(
+            f"proposal {proposal_id} changed state while being rejected"
+        )
+    _record_event(
+        conn,
+        proposal_id=proposal_id,
+        from_state="pending",
+        to_state="rejected",
+        actor=actor,
+        note=note,
+    )
+    conn.commit()
+    return _proposal_to_dict(updated)
+
+
+# ---------------------------------------------------------------- read side
+
+
+def list_proposals(
+    conn: Any,
+    *,
+    domain_key: str,
+    state: Optional[str] = None,
+    limit: int = 200,
+) -> list[dict]:
+    """The domain's inbox, newest submission first; state filter is optional."""
+    if state is not None and state not in PROPOSAL_STATES:
+        raise ValueError(f"state must be one of {list(PROPOSAL_STATES)}")
+    domain = _load_domain(conn, domain_key=domain_key)
+    where, params = ["domain_id = %s"], [domain["id"]]
+    if state is not None:
+        where.append("state = %s")
+        params.append(state)
+    params.append(limit)
+    cur = conn.execute(
+        f"SELECT {_PROPOSAL_COLS} FROM domain_proposals "
+        f"WHERE {' AND '.join(where)} "
+        "ORDER BY submitted_at DESC, id DESC LIMIT %s",
+        params,
+    )
+    return [_proposal_to_dict(r) for r in cur.fetchall()]
+
+
+def get(conn: Any, *, domain_key: str, proposal_id: int) -> Optional[dict]:
+    """Fetch one proposal in the domain's inbox; ``None`` when out of scope."""
+    domain = _load_domain(conn, domain_key=domain_key)
+    return _load_proposal(conn, domain_id=domain["id"], proposal_id=proposal_id)
+
+
+def count_pending(conn: Any, *, domain_key: str) -> int:
+    """How many proposals await a decision (the inbox badge)."""
+    domain = _load_domain(conn, domain_key=domain_key)
+    value = _scalar(
+        conn.execute(
+            "SELECT COUNT(*) AS pending_count FROM domain_proposals "
+            "WHERE domain_id = %s AND state = 'pending'",
+            (domain["id"],),
+        ).fetchone()
+    )
+    return int(value or 0)
+
+
+def events_for(conn: Any, *, proposal_id: int) -> list[dict]:
+    """The proposal's transition trail, oldest first (replay order)."""
+    cur = conn.execute(
+        f"SELECT {_EVENT_COLS} FROM domain_proposal_events "
+        "WHERE proposal_id = %s ORDER BY happened_at ASC, id ASC",
+        (proposal_id,),
+    )
+    return [_event_to_dict(r) for r in cur.fetchall()]

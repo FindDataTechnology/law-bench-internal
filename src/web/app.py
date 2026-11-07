@@ -35,6 +35,7 @@ from .paths import STATIC_DIR, TEMPLATES_DIR
 from .routes import (
     admin,
     api,
+    console,
     auth,
     authoring,
     clauses,
@@ -125,6 +126,8 @@ def create_app() -> FastAPI:
     # app-level get_current_user (see auth.deps._EXEMPT_PREFIXES) and does its
     # own X-Consumer-Token auth; not mounted on public_app.
     app.include_router(distribution.router)
+    app.include_router(console.read_only_router)
+    app.include_router(console.write_router)
 
     # Resolve the active locale once per request, stash it for the template
     # context processor, and persist the choice as a cookie so it sticks.
