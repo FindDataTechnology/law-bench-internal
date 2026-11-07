@@ -10,31 +10,34 @@
   {% endif %}
 </div>
 
-<table class="data-table">
-  <thead>
-    <tr>
-      <th>{{ t.workbench.browse.col_key }}</th>
-      <th>{{ t.workbench.browse.col_preview }}</th>
-      <th>{{ t.workbench.browse.col_tier }}</th>
-      <th>{{ t.workbench.browse.col_updated }}</th>
-      <th>{{ t.workbench.browse.col_actions }}</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for unit in rows %}
-    <tr>
-      <td><code>{{ unit.external_key }}</code></td>
-      <td class="muted">{{ unit.body | truncate(120) }}</td>
-      <td><span class="badge">{{ unit.tier }}</span></td>
-      <td class="muted">{{ unit.updated_at }}</td>
-      <td><a href="{{ url_for('workbench_unit_detail', domain_key=domain.key, kind=kind, unit_key=unit.external_key) }}">{{ t.workbench.browse.view }}</a></td>
-    </tr>
-    {% endfor %}
-    {% if not rows %}
-    <tr><td colspan="5" class="muted">{{ t.workbench.browse.empty }}</td></tr>
-    {% endif %}
-  </tbody>
-</table>
+{# Real empty for a kind with no units: honest card + next step (New, for
+   writers), not a bare headerless table row. The list table only renders
+   when there is something to list. #}
+{% if rows %}
+<div class="panel">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>{{ t.workbench.browse.col_key }}</th>
+        <th>{{ t.workbench.browse.col_preview }}</th>
+        <th>{{ t.workbench.browse.col_tier }}</th>
+        <th>{{ t.workbench.browse.col_updated }}</th>
+        <th>{{ t.workbench.browse.col_actions }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for unit in rows %}
+      <tr>
+        <td><code>{{ unit.external_key }}</code></td>
+        <td class="muted">{{ unit.body | truncate(120) }}</td>
+        <td><span class="badge">{{ unit.tier }}</span></td>
+        <td class="muted">{{ unit.updated_at }}</td>
+        <td><a href="{{ url_for('workbench_unit_detail', domain_key=domain.key, kind=kind, unit_key=unit.external_key) }}">{{ t.workbench.browse.view }}</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 
 {# Pager (no total — the kernel list API is windowed): prev/next only. #}
 <div class="pager">
@@ -49,4 +52,12 @@
   <span class="btn btn-sm disabled">{{ t.samples.next_page }}</span>
   {% endif %}
 </div>
+{% else %}
+{% with message=t.workbench.browse.empty,
+        hint=t.workbench.browse.empty_hint,
+        action_href=url_for('workbench_unit_new', domain_key=domain.key, kind=kind) if cap.can_write else none,
+        action_label=t.workbench.browse.new_btn %}
+  {% include '_empty_state.html' %}
+{% endwith %}
+{% endif %}
 {% endblock %}

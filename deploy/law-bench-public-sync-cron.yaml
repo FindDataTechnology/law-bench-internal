@@ -1,0 +1,35 @@
+# 公共 pod 数据链=快照轨（15 分钟 pg_dump --clean --if-exists 幂等恢复）。
+# origin Postgres 为共享实例且 wal_level=replica（开 logical 须重启共享库）——见 change design D2。
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: law-bench-public-sync
+  namespace: law-bench
+spec:
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: sync
+              image: postgres:16-alpine
+              env:
+                - name: PGORIGIN
+                  valueFrom: {secretKeyRef: {name: law-bench-db, key: database_url}}
+                - name: PGREPLICA
+                  valueFrom: {secretKeyRef: {name: law-bench-public, key: database_url}}
+              command:
+                - sh
+                - -c
+                - |
+                  set -e
+                  echo "sync start $(date -Iseconds)"
+                  pg_dump "$PGORIGIN" --no-owner --clean --if-exists > /tmp/seed.sql
+                  psql "$PGREPLICA" -f /tmp/seed.sql > /dev/null
+                  echo "sync done $(date -Iseconds) bytes=$(wc -c < /tmp/seed.sql)"

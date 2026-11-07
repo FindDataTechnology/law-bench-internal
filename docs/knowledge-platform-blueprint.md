@@ -87,8 +87,8 @@
 |---|---|---|---|
 | C1 `add-ontology-template-and-workspaces` | 模板一等物 + 领域租户 + 邀请/角色 + 管理门页面 | P0 | ✅ 已归档上 spec（2026-11-06，16/16，回归 1199 绿） |
 | C2 `add-expert-authoring-surface` | 模板实例化创作台 + 任务指派 + 变更事件流 | P0/P1 | ✅ 已归档上 spec（2026-11-06，15/15，回归 1233 绿） |
-| C3 `add-knowledge-distribution-contract` | 发布-拉取契约 + 消费者登记 + wire 拉取客户端 + 主键源条款修订 | P1 | ✅ bench 侧已归档上 spec（2026-11-06，14/14，回归 1272 绿）；wire 侧拉取客户端 `add-bench-ontology-pull-client` 已提交推送（P1 判据跨 ns 真拉落库幂等实弹达成） |
-| C4 `add-domain-rag-corpus-service` | RAG 语料服务通用化 + 按域配置（resolver 域→索引、legal 缺省逐字兼容、API-key 通道钉死 legal） | P2 | ✅ 已归档上 spec（2026-11-06，39 新测试、回归 1311 绿） |
+| C3 `add-knowledge-distribution-contract` | 发布-拉取契约 + 消费者登记 + wire 拉取客户端 + 主键源条款修订 | P1 | ✅ **全链收口（2026-11-06）**：bench 侧归档上 spec；wire 侧 `add-bench-ontology-pull-client` 实弹——生产滚 sha-53a9513/beae0a，legal v1（digest 3586552a）跨 ns 真拉落库幂等，投影可查，失败纪律实弹验证。P1 判据「wire 拉到 v1 本体快照并落库」✅ |
+| C4 `add-domain-rag-corpus-service` | RAG 语料服务通用化 + 按域配置 | P2 | ✅ 已归档上 spec（2026-11-06，13/13，回归 1311 绿；rag-corpus-service 新建 + rag-search +1 域归属需求） |
 | P3 `add-judge-misread-remediation` | 判官结构性误读 fail-loud + prompt 域化补账 + 校准闭环实跑 | P3 | 🟡 9/10（strict 绿）：3.2/3.3 已勾（run 8：误读清零达成、all_pass 0.602<0.70）；**4.3 未勾=4.1 未达成**，差距与边界如实挂账 |
 | P3 `add-judge-model-selection` | 采样一致率置信通道 + 分层校准门（balanced_accuracy≥0.70）+ bake-off 留痕 | P3 | ✅ 已归档上 spec（2026-11-06，12/12，`judge-channel-selection` +4 需求入主 specs，全量 1325 绿）；bake-off 如实：relay 退化致 k=5 全量轮未跑通、48 条定界 pilot 全 vote_share、无候选过门（采样不稀释判官过严偏置），生产判官未切换 |
 | P3 解禁路径（待拍板） | ①绑更强/更稳定判官上游 ②判官口径与 gold「过严」偏差另立校准轮 ③维持 silver-only | P3 | ⏸ 未开：4.1 挂账不销，选型轮已把差距定谳为链路级而非 prompt 级 |

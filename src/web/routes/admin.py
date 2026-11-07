@@ -36,7 +36,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import secrets
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from urllib.parse import quote
@@ -55,6 +57,8 @@ from ...bench import workspaces
 
 read_only_router = APIRouter(tags=["admin"])
 write_router = APIRouter(tags=["admin"])
+
+logger = logging.getLogger(__name__)
 
 
 def _flash(
@@ -326,6 +330,13 @@ def admin_domain_detail(
     The 发布 (publish/pull) panel's listing comes from the distribution kernel
     (change add-knowledge-distribution-contract): this handler owns the page
     context; the publish POST itself lives in ``routes/distribution.py``.
+
+    The RAG 语料 panel (change add-domain-rag-corpus-service, design D5) shows
+    the domain's registered corpus (``src.search.resolver.get_corpus``); the
+    register/ingest POSTs live in this module. The fetch is fail-safe display
+    sugar (same contract as the chrome's ``my_domains``): a resolver/DB hiccup
+    renders the "not registered" state instead of taking the whole domain page
+    down — the register POST below is where real errors surface.
     """
     domain = workspaces.get_domain(db, domain_key=domain_key)
     if domain is None:
@@ -336,6 +347,13 @@ def admin_domain_detail(
         key=lambda p: p.get("version") or 0,
         reverse=True,
     )
+    rag_corpus: Optional[dict] = None
+    try:
+        from src.search.resolver import get_corpus  # lazy: kernel import
+
+        rag_corpus = get_corpus(db, domain_key=domain_key)
+    except Exception:  # noqa: BLE001 - display sugar must not take the page down
+        rag_corpus = None
     return _templates.TemplateResponse(
         request,
         "admin_domain_detail.html",
@@ -346,6 +364,12 @@ def admin_domain_detail(
             "publications": publications,
             "latest_publication": publications[0] if publications else None,
             "roles": workspaces.ROLES,
+            "rag_corpus": rag_corpus,
+            "rag_index_value": (rag_corpus or {}).get("index_name") or "",
+            "rag_embedding_value": (rag_corpus or {}).get("embedding_model") or "",
+            "rag_sources_pretty": json.dumps(
+                (rag_corpus or {}).get("sources") or [], ensure_ascii=False, indent=2
+            ),
         },
     )
 
@@ -491,6 +515,116 @@ async def admin_invitation_create(
     return _flash(
         back, "flash.invitation_created", detail=f"/admin/invite/{token}"
     )
+
+
+# --------------------------------------------------------------- rag corpus #
+# RAG corpus registry (change add-domain-rag-corpus-service, design D5).
+# Per spec 域语料登记: 登记与管理 SHALL 走 admin 面（admin 平台 scope）+ 该域
+# lead 合成执法 — the same two-gate composition as the publish route, with the
+# platform gate raised to ``admin`` (the registry shapes the platform's
+# retrieval surface). Admins bypass the domain check; a lead additionally needs
+# the ``admin`` platform scope. The data layer is ``src/search/resolver.py``
+# (kernel): it validates the index-name prefix, duplicates and source shapes —
+# its ValueError message names every problem and rides the flash detail.
+
+
+@write_router.post(
+    "/admin/domains/{domain_key}/rag/register", include_in_schema=False,
+    name="admin_domain_rag_register",
+    dependencies=[
+        Depends(require_scope("admin")),
+        Depends(require_domain_role("lead")),
+    ],
+)
+async def admin_domain_rag_register(
+    request: Request,
+    domain_key: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(require_scope("admin")),
+):
+    """Register/replace the domain's RAG corpus (index name + MinIO sources).
+
+    Form: ``index_name`` (must carry the ``{domain_key}-`` prefix per the
+    kernel's cross-tenant guard), ``sources`` (JSON array of
+    ``{"bucket": …, "prefix": …}``), ``embedding_model`` (optional declaration
+    bit; empty = the global default). Re-registration upserts the row.
+    """
+    domain = workspaces.get_domain(db, domain_key=domain_key)
+    if domain is None:
+        raise HTTPException(status_code=404, detail=f"domain {domain_key!r} not found")
+    form = await request.form()
+    index_name = (form.get("index_name") or "").strip()
+    embedding_model = (form.get("embedding_model") or "").strip() or None
+    back = _back_to_domain(domain_key)
+    try:
+        sources = json.loads(form.get("sources") or "[]")
+    except (json.JSONDecodeError, TypeError) as exc:
+        return _flash(back, "flash.rag_sources_invalid", err=True, detail=str(exc))
+    if not isinstance(sources, list):
+        return _flash(back, "flash.rag_sources_invalid", err=True, detail="sources must be a JSON array")
+    from src.search.resolver import register_corpus  # lazy: kernel import
+
+    try:
+        register_corpus(
+            db,
+            domain_key=domain_key,
+            index_name=index_name,
+            sources=sources,
+            registered_by=_operator_of(user),
+            embedding_model=embedding_model,
+        )
+    except ValueError as exc:
+        return _flash(back, "flash.rag_register_failed", err=True, detail=str(exc))
+    return _flash(back, "flash.rag_registered")
+
+
+@write_router.post(
+    "/admin/domains/{domain_key}/rag/ingest", include_in_schema=False,
+    name="admin_domain_rag_ingest",
+    dependencies=[
+        Depends(require_scope("admin")),
+        Depends(require_domain_role("lead")),
+    ],
+)
+async def admin_domain_rag_ingest(
+    request: Request,
+    domain_key: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(require_scope("admin")),
+):
+    """Fire-and-forget corpus ingest in a daemon thread (design D6 风险③).
+
+    ``run_ingest`` pulls the domain's declared MinIO sources, chunks and embeds,
+    then writes the domain's ES index — far too slow for a request thread on
+    real corpora, so the route only validates the registration and hands the
+    work to a daemon thread; the outcome (summary or failure) lands in the
+    service log. The thread opens its own DB connection (the request-scoped one
+    dies with the response); the CLI (``python -m src.search.ingest --domain
+    …``) remains the batch channel.
+    """
+    domain = workspaces.get_domain(db, domain_key=domain_key)
+    if domain is None:
+        raise HTTPException(status_code=404, detail=f"domain {domain_key!r} not found")
+    form = await request.form()
+    prefix = (form.get("prefix") or "").strip() or None
+    back = _back_to_domain(domain_key)
+    from src.search.resolver import get_corpus  # lazy: kernel import
+
+    if get_corpus(db, domain_key=domain_key) is None:
+        # 未登记域如实 (spec 域语料登记): no corpus -> no ingest surface.
+        return _flash(back, "flash.rag_ingest_failed", err=True, detail="该域未登记 RAG 语料")
+
+    def _run() -> None:
+        try:
+            from src.search.ingest import run_ingest
+
+            summary = run_ingest(domain_key, prefix=prefix)
+            logger.info("rag ingest domain=%s outcome=%s", domain_key, summary)
+        except Exception:  # noqa: BLE001 - background task: log, never raise
+            logger.exception("rag ingest domain=%s failed", domain_key)
+
+    threading.Thread(target=_run, name=f"rag-ingest-{domain_key}", daemon=True).start()
+    return _flash(back, "flash.rag_ingest_started")
 
 
 # ---------------------------------------------------------------- invitations #

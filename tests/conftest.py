@@ -89,6 +89,7 @@ _ALL_TABLES = (
     "authoring_tasks",
     "ontology_publications",
     "distribution_consumers",
+    "rag_corpora",
     "domains",
     "ontology_templates",
 )

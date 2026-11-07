@@ -379,6 +379,28 @@ CREATE INDEX IF NOT EXISTS review_tasks_batch_idx ON review_tasks (batch_id, sta
 """
 
 
+# Domain RAG corpus registry (change add-domain-rag-corpus-service). The DDL
+# lives in src.bench.workspace_store.WORKSPACE_SCHEMA (domain-neutral kernel);
+# the one thing that cannot live there is the retro-registration of the
+# pre-registry default corpus, because it names a concrete domain key and the
+# default index name — both belong to the application layer, not the kernel.
+# Seed semantics: if a domain keyed 'legal' exists and has no rag_corpora row
+# yet, insert one pointing at the configured default search index so the
+# zero-migration compat path holds (legal keeps retrieving/ingesting the
+# pre-existing global index). The index name is bound at execute time (not in
+# the constant) so a test monkeypatching src.settings.SEARCH_INDEX_NAME is
+# honored. Fully idempotent: the WHERE guard plus ON CONFLICT DO NOTHING make
+# concurrent/repeated ensures no-ops.
+_RAG_CORPORA_LEGAL_SEED = """
+INSERT INTO rag_corpora (domain_id, index_name, sources, embedding_model, registered_by)
+SELECT d.id, %s, '[]'::jsonb, NULL, 'system:retro-register'
+FROM domains d
+WHERE d.key = 'legal'
+  AND NOT EXISTS (SELECT 1 FROM rag_corpora rc WHERE rc.domain_id = d.id)
+ON CONFLICT DO NOTHING
+"""
+
+
 # The DDL is fully idempotent, so ensure_schema is memoized per database (keyed
 # by dbname): the first call on a given DB creates/migrates; subsequent calls
 # (every store/list/compare) are a cheap no-op. This matters because the store
@@ -421,6 +443,13 @@ def ensure_schema(db_path=DEFAULT_DB) -> None:
 
             conn.execute(BENCH_SCHEMA)
             conn.execute(WORKSPACE_SCHEMA)
+            # Retro-register the legal domain's default corpus (see the seed's
+            # comment). Import at call time so a monkeypatched
+            # src.settings.SEARCH_INDEX_NAME is read, not the import-time
+            # binding of this module.
+            from src.settings import SEARCH_INDEX_NAME
+
+            conn.execute(_RAG_CORPORA_LEGAL_SEED, (SEARCH_INDEX_NAME,))
             conn.execute(_ADDITIVE_COLUMNS)
             conn.commit()
             _ensured_dbs.add(key)

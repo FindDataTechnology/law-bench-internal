@@ -356,3 +356,82 @@ table.data-table td.dl-cell .btn + .btn { margin-left: 0.3rem; }
   margin-top: 1rem;
 }
 .pagination .page-info { color: var(--muted); font-size: 0.9rem; }
+
+/* ---- polish-bench-workbench 0.2: shared tokens + reusable state styles ----
+   Tokens formalize values that previously lived only as literals inside
+   individual rules (fail/pass/info tint pairs, nested paper, matrix header,
+   hover fill, badge fill). Names are new; no existing rule or value is
+   changed — this block is append-only (zero behavior change). */
+:root {
+  --fail-tint: #fef2f2;
+  --fail-border: #fecaca;
+  --fail-text: #b91c1c;
+  --pass-tint: #ecfdf5;
+  --pass-border: #a7f3d0;
+  --info-tint: #eef6ff;
+  --nested-paper: #fbfcfd;
+  --matrix-header: #f5f7fa;
+  --hover-fill: #f0f2f5;
+  --badge-bg: #eef1f5;
+}
+
+/* Keyboard focus baseline (checklist item 5): the flat 2px Bench Blue ring
+   already used by matrix verdict buttons, extended to every focusable surface.
+   :focus-visible only — mouse clicks stay ringless, exactly as before. */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Empty state (_empty_state.html): honest empty data with optional next-step
+   guidance. One tonal nesting step (Nested Paper) inside the panel — flat,
+   no shadow, no icon, muted voice; the data is the loudest thing or nothing. */
+.empty-state {
+  background: var(--nested-paper);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  margin-bottom: 0.6rem;
+}
+.empty-state .empty-state-text { margin: 0; color: var(--muted); }
+.empty-state .empty-state-hint { margin: 0.2rem 0 0; font-size: 0.78rem; color: var(--muted); }
+.empty-state .empty-state-action { margin-top: 0.6rem; }
+
+/* Error card (_error_card.html): in-flow error report with its cause, at the
+   flash.error tint pair (fail tint + deep objection text + #fecaca border). */
+.error-card {
+  background: var(--fail-tint);
+  border: 1px solid var(--fail-border);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.9rem;
+  margin-bottom: 1rem;
+  color: var(--fail-text);
+}
+.error-card .error-card-text { margin: 0; }
+.error-card .error-card-detail { margin: 0.2rem 0 0; font-size: 0.85rem; }
+
+/* Form field error (_form_error.html): the same error tint pair scaled to an
+   inline strip under the offending field (generalizes .rubric-warning, which
+   stays untouched for the compare form). */
+.field-error {
+  margin: 0.3rem 0 0;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--fail-border);
+  border-radius: var(--radius);
+  background: var(--fail-tint);
+  color: var(--fail-text);
+  font-size: 0.85rem;
+}
+
+/* ── polish-bench-workbench sweep additions (2026-11-07, presentational only) ── */
+/* Two-column form rows outside .criterion-row (prompt_form / compare_form /
+   rubric_detail add-criterion form) — density without behavior change. */
+form .grid2 { display: grid; grid-template-columns: 1fr 2fr; gap: 0.6rem; align-items: start; }
+@media (max-width: 720px) { form .grid2 { grid-template-columns: 1fr; } }
+/* Detail-page action rows may wrap on narrow screens instead of cramming. */
+@media (max-width: 560px) { .crit-actions { flex-wrap: wrap; } }
+/* Bare label+input children of .filter-form (no .filter-group wrapper) stack
+   cleanly on narrow screens; desktop inline flow untouched. */
+@media (max-width: 720px) {
+  .filter-form > label,
+  .filter-form > input,
+  .filter-form > select { flex: 1 1 100%; }
+  .filter-form { align-items: stretch; }
+}

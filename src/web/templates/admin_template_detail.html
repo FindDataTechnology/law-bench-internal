@@ -2,6 +2,13 @@
 {% block title %}{{ t.admin.templates.detail_h1 }} {{ template.name }} · {{ t.nav.brand }}{% endblock %}
 
 {% block content %}
+<style>
+  /* polish-bench-workbench 0.3, this page only: the corpus-declaration JSON
+     keeps its preformat but wraps long lines instead of stretching the panel
+     on narrow screens. */
+  .wb-pre { white-space: pre-wrap; word-break: break-word; margin: 0; }
+</style>
+
 <p><a href="{{ url_for('admin_templates') }}">{{ t.admin.templates.back }}</a></p>
 <div class="toolbar between">
   <h1>{{ template.name }} <span class="badge">v{{ template.version }}</span></h1>
@@ -34,7 +41,8 @@
   </table>
 </div>
 
-{# Full three-part schema, rendered readably per design D1. #}
+{# Full three-part schema, rendered readably per design D1. Empty vocabularies
+   say so (muted 「（无）」) instead of a silent blank line. #}
 <div class="panel">
   <h2>{{ t.admin.templates.schema_h2 }}</h2>
   <h3>{{ t.admin.templates.entity_types }}</h3>
@@ -65,15 +73,15 @@
   </p>
   <h3>{{ t.admin.templates.tier_vocabulary }}</h3>
   <p>
-    {% for item in schema.get('tier_vocabulary', []) %}<span class="badge">{{ item }}</span> {% endfor %}
+    {% for item in schema.get('tier_vocabulary', []) %}<span class="badge">{{ item }}</span> {% else %}<span class="muted">{{ t.admin.templates.none }}</span>{% endfor %}
   </p>
   <h3>{{ t.admin.templates.sensitivity_vocabulary }}</h3>
   <p>
-    {% for item in schema.get('sensitivity_vocabulary', []) %}<span class="badge">{{ item }}</span> {% endfor %}
+    {% for item in schema.get('sensitivity_vocabulary', []) %}<span class="badge">{{ item }}</span> {% else %}<span class="muted">{{ t.admin.templates.none }}</span>{% endfor %}
   </p>
   <h3>{{ t.admin.templates.corpus_declaration }}</h3>
   {% if schema.get('corpus_declaration') %}
-  <pre><code>{{ corpus_pretty }}</code></pre>
+  <pre class="wb-pre"><code>{{ corpus_pretty }}</code></pre>
   {% else %}<p class="muted">{{ t.admin.templates.none }}</p>{% endif %}
   <h3>{{ t.admin.templates.rubric_refs }}</h3>
   <p>
@@ -87,8 +95,8 @@
     <summary>{{ t.admin.templates.new_version_h2 }}</summary>
     <form method="POST" action="{{ url_for('admin_template_version_create', name=template.name) }}" class="filter-form">
       <div class="filter-group wide">
-        <label>{{ t.admin.templates.schema_label }}</label>
-        <textarea name="schema" rows="16" required>{{ schema_pretty }}</textarea>
+        <label for="tpl-schema-new">{{ t.admin.templates.schema_label }}</label>
+        <textarea name="schema" id="tpl-schema-new" rows="16" required>{{ schema_pretty }}</textarea>
       </div>
       <div class="filter-group">
         <label>&nbsp;</label>
