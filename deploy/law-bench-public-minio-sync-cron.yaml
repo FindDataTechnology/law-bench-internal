@@ -1,3 +1,4 @@
+# 【已退役 2026-11-07】origin MinIO 实况已死（svc 不存在），无真源可镜像——本清单仅留档，CronJob 已从集群删除；公共读面 MinIO=windows RustFS 直连（见 law-bench-public.yaml env MINIO_PUBLIC_HOST + design D3）。
 # 公共 pod 的 artifacts 镜像链（tasks 1.3）：origin MinIO bucket → windows 数据机 RustFS。
 # 用 python minio client（RustFS S3 兼容；host dl.min.io 的 mc 二进制已 410）。双密钥 secret 隔离。
 apiVersion: batch/v1
