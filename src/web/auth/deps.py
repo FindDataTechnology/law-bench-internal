@@ -97,6 +97,22 @@ def _is_exempt(path: str) -> bool:
     return path in _EXEMPT_PATHS or path.startswith(_EXEMPT_PREFIXES)
 
 
+def _is_app_exempt(request: Request, path: str) -> bool:
+    """App-level precise-path exemption (change add-bench-public-overview-tier).
+
+    An app factory MAY register EXTRA precise-path exemptions on
+    ``app.state.extra_exempt_paths`` (a frozenset of exact paths). The public
+    pod uses this for the anonymous read-only overview route; the origin
+    workbench never sets the attribute. Membership is exact-path only — no
+    prefixes, no wildcards — and any unusable value fail-closes to the empty
+    set, so an app that never opts in behaves exactly as before (401).
+    """
+    extra = getattr(request.app.state, "extra_exempt_paths", frozenset())
+    if not isinstance(extra, (frozenset, set)):
+        return False  # unusable value -> fail closed
+    return path in extra
+
+
 async def get_current_user(request: Request) -> User:
     """Resolve the request to a :class:`User`; raise 401 on no/invalid credential.
 
@@ -104,7 +120,7 @@ async def get_current_user(request: Request) -> User:
     binding rule. Exempt paths get an anonymous sentinel (no 401).
     """
     path = request.url.path
-    if _is_exempt(path):
+    if _is_exempt(path) or _is_app_exempt(request, path):
         request.state.user = User(sub="", channel="anonymous")
         return request.state.user
 
