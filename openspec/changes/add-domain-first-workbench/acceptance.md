@@ -12,7 +12,7 @@ P2（舰队提案目标切换）按提案边界属伴随 change，**未做**；�
 
 | 项 | 结果 |
 |---|---|
-| `pytest` 全量 | **1385 passed / 60 skipped / 1 failed**（唯一失败为既有泄漏门，§3.1） |
+| `pytest` 全量 | **1387 passed / 60 skipped / 0 failed**（泄漏门已修，§3.1） |
 | 新增测试 | 62（assets 10 / ledger 8 / proposals 18 / console 26） |
 | `openspec validate add-domain-first-workbench --strict` | `Change 'add-domain-first-workbench' is valid` |
 | 浏览器走查 | 7 页 × 2 宽度；`document.documentElement.scrollWidth` 全部 == 视口宽（零横向溢出） |
@@ -86,7 +86,7 @@ P2（舰队提案目标切换）按提案边界属伴随 change，**未做**；�
 | 5.1 浏览器链路 | 真 uvicorn + 真 Postgres + Playwright：登录态 → `/d` → 进 legal → 总览/本体/评测/提案/发布/设置 → 切换器；负例：非成员 403、零域空态（截图 7 页 × 2 宽度） |
 | 5.2 digest 单源 | 页面 digest == `ontology_publications.digest` == `GET /api/v1/distribution/legal/ontology` 的 `digest`；本机真库值 `dc6e0bff…1b5ae5` 三处一致（`test_ledger_digest_is_the_published_digest_verbatim`） |
 | 5.3 全链真跑 | 提案 #1（fleet/newco，提交人 expert-a）经控制台确认 → `knowledge_units` 由 3 条增至 4 条（`company/newco`）→ `authoring_events` +1（`op=create`、`via=authoring`、`operator=dev@local`）→ `domain_proposal_events` `pending→confirmed` → 提案箱显示 `已确认` + `影响：新增一条实体`，总览 `本体单元 4 / 待确认提案 1` |
-| 5.4 全量回归 | 1385 passed / 60 skipped / 1 failed（既有泄漏门，§3.1）；新增 62 测试覆盖 §0.3/0.4/0.5 存储层 |
+| 5.4 全量回归 | **1387 passed / 60 skipped / 0 failed**（泄漏门修复后全绿，§3.1）；新增 63 测试覆盖 §0.3/0.4/0.5 存储层 |
 | 5.5 第二域演练 | `finance-demo`（金融演示域）：`/d` 列出 → 总览/本体/提案/评测四页均 200，各自空态正确（`尚无发布`、`提案箱是空的`、`本域还没有归属任何评测资产`），**零代码改动** |
 | 5.6 strict + 报告 | `openspec validate --strict` = valid；本文件 |
 
@@ -121,10 +121,22 @@ P2（舰队提案目标切换）按提案边界属伴随 change，**未做**；�
 
 ## 3. 未清项（如实登记）
 
-**3.1 `tests/test_public_hygiene.py::test_repo_is_clean_at_head` 红 —— 既有，非本次引入。**
-`deploy/law-bench-public-replica.yaml:12` 在 **HEAD** 已有明文
-`POSTGRES_PASSWORD: "lbpub-repl-…"`（由 commit `24316ca` 引入，本 change 未触碰该文件）。
-修它要**轮换一个在跑的凭据**，属对外可见的运维决定，故**只报不动**。
+**3.1 明文口令 —— 已于 2026-11-08 修复并轮换。**
+`deploy/law-bench-public-replica.yaml` 在 HEAD 曾带明文 `POSTGRES_PASSWORD`（commit `24316ca` 引入，
+非本 change 造成），卫生门因此常红。处理：
+
+- **仓库侧**（commit `9ce7c56`，已推 gitee main）：Secret 移出 manifest，只按名字引用；文件头写明
+  口令由集群侧一次性创建、argocd `syncPolicy` 未开 prune 故不会删除线上 Secret，以及 create/patch/
+  ALTER/rollout 四步模板（口令在 shell 生成，任何值不落 Git）。
+- **集群侧**：`ALTER USER app` 换 32 位随机口令 → patch `law-bench-public-replica` 与
+  `law-bench-public.database_url` 两份 Secret → 滚动重启 public pod。
+- **验证（真信号，非同 loopback）**：`pg_hba` 对 127.0.0.1 是 `trust`，所以「旧口令在容器内能连」是假绿；
+  改从 app pod 跨 Service DNS（`scram-sha-256` 规则）取证 —— 旧口令 `FATAL: password authentication failed`，
+  新口令 `select current_user` = `app`。同步 cron 手动跑一轮 `bytes=5355323` 成功，公网概览
+  `entities=1 / legal v1 / digest 3586552a…` 与轮换前一致。
+- 卫生门：`tests/test_public_hygiene.py` **6 passed**。
+- 遗留：GitHub 镜像仓是**独立的开源发布谱系**（非本仓历史镜像），旧值仍在其历史里；口令已换，
+  旧值不可再认证，故不动那段历史（改写公开历史是不可逆的对外动作）。
 
 **3.2 移动端宽表只能在面板内横向滚动，没有滚动提示。**
 `最近变更`、`提案箱`、`版本历史` 在 390 视口下溢出部分需横滑，面板无阴影/渐隐提示。
@@ -133,11 +145,13 @@ P2（舰队提案目标切换）按提案边界属伴随 change，**未做**；�
 **3.3 P2（§7）未做。** 舰队提案目标从柏讯审批队列切到域提案箱，按提案边界属 `fd-wire`/`paas` 根的
 伴随 change；本仓已提供提交面与幂等契约（契约文档化在 `proposals.submit` docstring，§7.1 待另立 change 时补正式文档）。
 
-**3.4 遗留死模板。** `src/web/templates/workbench_home.html` 已无路由引用（`/workbench/{key}` 改 302 后），
-未删以免与并发会话冲突；建议下一轮清理。
+**3.4 ~~遗留死模板~~ —— 已清（2026-11-08）。** `workbench_home.html` 与它的路由一并删除：
+一个域只有一个家（`/d/{key}`），「我的任务」在总览、创作入口在台账策展层。
 
-**3.5 URL 形状不统一。** 控制台是 `/d/{key}/...`，而创作深链仍是 `/workbench/{key}/authoring/...`。
-为避免破坏既有外链与书签，本轮只做 302 归口，未统一前缀。
+**3.5 ~~URL 形状不统一~~ —— 已清（2026-11-08）。** 创作面迁到域的命名空间：
+`/d/{key}/browse|units|tasks`，控制台六区与它链接的创作页现在共享一个前缀。
+旧 `/workbench/{key}/…` 保留为**带同一读闸的 302**（非成员仍先 403），
+带编码键（`ai-corp->belongs_to:acme`）与查询串的深链逐字转交（有测试）。
 
 **3.6 演示域词表与域语义不符。** `finance-demo`（金融演示域）锚定 `legal-domain-template v1`，
 词表是 `company/indicator/belongs_to`。这是 C1 期种子数据，本轮用作第二域演练恰好证明「零代码改动可用」，
