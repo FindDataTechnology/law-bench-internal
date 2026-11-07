@@ -27,4 +27,4 @@
 
 - [x] 4.1 `openspec validate add-bench-public-overview-tier --strict` 过绿
 - [x] 4.2 公共 hygiene 门（`scripts/check_public_hygiene.py`）过——新代码无内部资产泄漏
-- [ ] 4.3 部署注记：公共 pod 滚版（argocd 既有线）；下游 `add-bench-chain-website` 的 Caddy 同源代理以本端点为准
+- [x] 4.3 部署注记：公共 pod 滚版（argocd 既有线）；下游 `add-bench-chain-website` 的 Caddy 同源代理以本端点为准
