@@ -475,6 +475,48 @@ def count_scope(conn: Any, *, domain_path: str) -> dict:
     return out
 
 
+def _source_counts_owned(conn: Any, *, lib: dict, sources: list[dict]) -> dict[str, int]:
+    """Per-source counts for content ingested into this database (one GROUP BY)."""
+    permitted = sorted({s["source_key"] for s in sources})
+    rows = conn.execute(
+        "SELECT source_key, COUNT(*) AS n FROM corpus_chunks "
+        "WHERE library_id = %s AND source_key = ANY(%s) GROUP BY source_key",
+        (lib["id"], permitted),
+    ).fetchall()
+    seen = {r["source_key"]: r["n"] for r in rows}
+    return {s["source_key"]: seen.get(s["source_key"], 0) for s in sources}
+
+
+def _source_counts_external_pg(
+    conn: Any, *, lib: dict, sources: list[dict]
+) -> dict[str, int]:
+    """Per-source counts where a source *is* a table on a foreign database."""
+    import psycopg
+
+    loc = libraries.resolve_location(lib)
+    out: dict[str, int] = {}
+    with psycopg.connect(loc["dsn_env"], connect_timeout=10) as ext:
+        for src in sources:
+            table = src["uri"]
+            if not _IDENT.match(table or ""):
+                raise ValueError(f"unsafe table name: {table!r}")
+            rule = src.get("ingest_rule") or {}
+            if isinstance(rule, str):
+                import json as _json
+
+                rule = _json.loads(rule or "{}")
+            clauses = ["embedding IS NOT NULL"]
+            params: list[Any] = []
+            for col, val in sorted((rule.get("where") or {}).items()):
+                if not _IDENT.match(col):
+                    raise ValueError(f"unsafe filter column: {col!r}")
+                clauses.append(f"{col} = %s")
+                params.append(val)
+            sql = f"SELECT COUNT(*) FROM {table} WHERE {' AND '.join(clauses)}"
+            out[src["source_key"]] = int(ext.execute(sql, tuple(params)).fetchone()[0])
+    return out
+
+
 def _count_qdrant(conn: Any, *, lib: dict, allowed: set[str]) -> int:
     loc = libraries.resolve_location(lib)
     filt = qdrant_filter(libraries.list_sources(conn, library_id=lib["id"]), allowed)
@@ -502,24 +544,31 @@ def _match_values(src: dict) -> dict[str, list[Any]]:
 
 
 def source_counts(conn: Any, *, lib: dict, allowed: set[str]) -> dict[str, int]:
-    """Per-source chunk counts for an external library.
+    """Per-source chunk counts, answered by whatever the backend does best.
 
-    Costs **one** request per payload key instead of one per source: a facet on
-    the key the sources filter by returns every value's count at once, and a
-    source is then the sum of its values. That matters on a page a human opens
-    — 7 sources × a round trip each is a slow panel for no extra truth.
+    Owned content is one ``GROUP BY`` here; a foreign pgvector store is one
+    ``COUNT(*)`` per table; Qdrant is **one** facet request per payload key
+    instead of one per source (7 sources × a round trip each is a slow panel for
+    no extra truth), falling back to per-source counts when the rules do not
+    share a single filter key — a facet cannot answer that shape.
 
-    Falls back to per-source counts when the sources do not share a single
-    filter key (a facet cannot answer that shape), so the numbers stay honest
-    either way.
+    ``source_counts`` is what makes "narrow the subscription to these sources"
+    a decision taken on numbers instead of on source names, so a backend that
+    cannot answer must return ``{}`` rather than zeros.
     """
     sources = [s for s in libraries.list_sources(conn, library_id=lib["id"])
                if not allowed or s["source_key"] in allowed]
-    if (lib.get("backend") or "") != "qdrant":
-        # Only the vector store has a cheap grouping API; owned content is a
-        # plain GROUP BY and is handled by the caller.
-        return {}
     if not sources:
+        return {}
+    backend = lib.get("backend") or "array-cosine"
+    # Owned backends keep their chunks in this database: one GROUP BY, no network.
+    if backend in ("array-cosine", "pgvector"):
+        return _source_counts_owned(conn, lib=lib, sources=sources)
+    # External pgvector: a source *is* a table on someone else's database, so
+    # counting per source is the only shape available there.
+    if backend == "pgvector-external":
+        return _source_counts_external_pg(conn, lib=lib, sources=sources)
+    if backend != "qdrant":
         return {}
 
     rules = {s["source_key"]: _match_values(s) for s in sources}

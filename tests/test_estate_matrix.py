@@ -171,3 +171,34 @@ def test_scope_violation_is_reported_not_silently_zero(conn):
     child_row = [r for r in rows if r["domain"]["key"] == "cr"][0]
     assert "error" in child_row["knowledge"]
     assert "widen" in child_row["knowledge"]["error"] or "widens" in child_row["knowledge"]["error"]
+
+
+def test_unreachable_store_is_unknown_not_a_gap(conn, monkeypatch):
+    """An unreadable corpus must not be reported as a missing one.
+
+    If Qdrant is down, the count fails. Marking the domain as "缺语料" would send
+    an operator to rebuild a corpus that already exists — the opposite of the
+    failure this page exists to prevent. The row still carries the error.
+    """
+    domains = _domains(conn)
+    root = domains[0]
+    libraries.create_library(conn, library_key="law", name="Law", created_by="t",
+                             backend="qdrant", dims=1024,
+                             location={"url_env": "QDRANT_URL", "collection": "law_chunks_v2"})
+    libraries.add_source(conn, library_key="law", source_key="statutes", uri="x", created_by="t")
+    libraries.subscribe(conn, domain_id=root["id"], library_key="law", created_by="t")
+    conn.commit()
+    monkeypatch.setenv("QDRANT_URL", "http://qdrant.test:6333")
+
+    import httpx
+    from src.search import library_index
+
+    def boom(*a, **kw):
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(library_index, "_http_post", boom)
+    rows = estate.matrix(conn, domains=domains)
+    row = rows[0]
+    assert "error" in row["knowledge"]
+    assert "knowledge" not in row["gaps"]      # unknown, not empty
+    assert "connection refused" in row["knowledge"]["error"]

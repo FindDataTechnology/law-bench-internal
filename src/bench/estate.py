@@ -145,8 +145,12 @@ def gaps_for(pillars: dict) -> list[str]:
     if (pillars["ontology"].get("curated_units") or 0) == 0:
         gaps.append("ontology")
     # Zero *chunks* is the gap — a subscription with nothing ingested is not
-    # knowledge, it is a promise.
-    if (pillars["knowledge"].get("chunks") or 0) == 0:
+    # knowledge, it is a promise. But an *unreadable* store is not an empty one:
+    # when the count could not be taken, reporting a gap would send someone to
+    # rebuild a corpus that already exists. Unknown is not a gap; the page shows
+    # the error itself (the row still renders it as a warning badge).
+    knowledge = pillars["knowledge"]
+    if not knowledge.get("error") and (knowledge.get("chunks") or 0) == 0:
         gaps.append("knowledge")
     if (pillars["eval"].get("standards") or 0) == 0:
         gaps.append("eval")

@@ -263,3 +263,32 @@ def test_per_source_counts_fall_back_when_rules_differ(conn, monkeypatch):
     lib = libraries.get_library(conn, library_key="law-library")
     counts = library_index.source_counts(conn, lib=lib, allowed={"judicial", "recent"})
     assert counts == {"judicial": 10, "recent": 20}
+
+
+def test_owned_library_reports_per_source_counts(conn, monkeypatch):
+    """Owned content is one GROUP BY, not a remote round trip."""
+    lib = libraries.create_library(conn, library_key="owned", name="Owned", created_by="t")
+    for s in ("a", "b"):
+        libraries.add_source(conn, library_key="owned", source_key=s, uri="s3://x", created_by="t")
+    conn.execute(
+        "INSERT INTO corpus_chunks (library_id, scope_path, source_key, doc_path, chunk_seq, "
+        "content, content_hash) VALUES (%s,'legal','a','d.md',0,'x','h1'),"
+        "(%s,'legal','a','d2.md',0,'y','h2'),(%s,'legal','b','d3.md',0,'z','h3')",
+        (lib["id"], lib["id"], lib["id"]),
+    )
+    conn.commit()
+    row = libraries.get_library(conn, library_key="owned")
+    counts = library_index.source_counts(conn, lib=row, allowed={"a", "b"})
+    assert counts == {"a": 2, "b": 1}
+
+
+def test_owned_library_counts_do_not_require_the_store(conn, monkeypatch):
+    """No HTTP at all for owned libraries — the counts live in this database."""
+    lib = libraries.create_library(conn, library_key="owned2", name="Owned", created_by="t")
+    libraries.add_source(conn, library_key="owned2", source_key="a", uri="s3://x", created_by="t")
+    conn.commit()
+    def boom(*a, **kw):
+        raise AssertionError("owned libraries must not call out")
+    monkeypatch.setattr(library_index, "_http_post", boom)
+    row = libraries.get_library(conn, library_key="owned2")
+    assert library_index.source_counts(conn, lib=row, allowed={"a"}) == {"a": 0}
