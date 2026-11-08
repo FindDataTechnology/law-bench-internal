@@ -32,7 +32,12 @@
       {% else %}{{ t.console.knowledge.origin_inherited }} · {{ lib.inherited_from }}{% endif %}
     </span>
   </div>
-  <p class="hint">{{ t.console.knowledge.sources_count }} {{ lib.sources|length }}</p>
+  <p class="hint">
+    {{ t.console.knowledge.sources_count }} {{ lib.sources|length }}
+    {% if lib.backend %}· <code>{{ lib.backend }}</code>{% endif %}
+    {% if lib.dims %}· {{ lib.dims }} {{ t.console.knowledge.col_dims }}{% endif %}
+    {% if lib.embedding_model %}· <code>{{ lib.embedding_model }}</code>{% endif %}
+  </p>
   <ul class="plain">
     {% for s in lib.sources %}<li><code>{{ s }}</code></li>{% endfor %}
   </ul>

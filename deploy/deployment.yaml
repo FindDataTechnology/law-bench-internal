@@ -110,6 +110,15 @@ spec:
               value: "http"
             - name: RENDER_SERVICE_URL
               value: "http://render-service.law-bench.svc.cluster.local:8090"
+            # 外部语料库（add-domain-tree-and-shared-libraries）。
+            # 法规 36.5 万块的向量在 Qdrant 里，不是本库摄取的；库表只存**环境
+            # 变量名**，查询时才解析——所以这两个值必须在这里。Service `qdrant`
+            # 是本会话新建的（原生是 hostPort 6333 钉在 cheap-5 的 pod IP 上，
+            # 重建即漂）。embedding-svc 是那条线的嵌入口（Qwen3-0.6B / 1024）。
+            - name: QDRANT_URL
+              value: "http://qdrant.law-rag.svc.cluster.local:6333"
+            - name: LIBRARY_EMBED_LOCAL_URL
+              value: "http://embedding-svc.law-rag.svc.cluster.local:6100"
           envFrom:
             - secretRef:
                 name: law-bench-db

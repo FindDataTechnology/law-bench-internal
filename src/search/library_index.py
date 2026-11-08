@@ -318,6 +318,7 @@ def _search_qdrant(
     if filt is not None:
         body["filter"] = filt
     data = _qdrant_post(url, f"/collections/{collection}/points/search", body)
+    sources = libraries.list_sources(conn, library_id=lib["id"])
     out = []
     for hit in data.get("result") or []:
         payload = hit.get("payload") or {}
@@ -328,7 +329,7 @@ def _search_qdrant(
                 "text": payload.get("chunk_text") or "",
                 "source_path": f"{title}#{chunk_no}" if title else str(hit.get("id")),
                 "score": round(float(hit.get("score") or 0.0), 6),
-                "source_key": _source_for_payload(conn, lib, payload),
+                "source_key": _source_for_payload(sources, payload),
                 "chunk_seq": chunk_no,
                 "scope_path": None,
                 "library_key": lib["library_key"],
@@ -338,16 +339,33 @@ def _search_qdrant(
     return out
 
 
-def _source_for_payload(conn: Any, lib: dict, payload: dict) -> str:
-    """Which library source a hit belongs to (reverse of the payload filter)."""
-    for src in libraries.list_sources(conn, library_id=lib["id"]):
+def _source_for_payload(sources: list[dict], payload: dict) -> str:
+    """Which library source a hit belongs to (the reverse of the payload filter).
+
+    Derived from the payload rather than by asking Qdrant to echo the filter:
+    the source a chunk came from decides its attribution in the console, and it
+    must be the same rule that decided the chunk was in scope.
+    """
+    for src in sources:
         rule = src.get("ingest_rule") or {}
         if isinstance(rule, str):
             import json as _json
 
             rule = _json.loads(rule or "{}")
         match = rule.get("match") or {}
-        if match and all(payload.get(k) == v for k, v in match.items()):
+        if not match:
+            continue
+        hit = True
+        for key, expected in match.items():
+            actual = payload.get(key)
+            if isinstance(expected, (list, tuple, set)):
+                if actual not in expected:
+                    hit = False
+                    break
+            elif actual != expected:
+                hit = False
+                break
+        if hit:
             return src["source_key"]
     return ""
 
@@ -505,15 +523,24 @@ def explain_scope(conn: Any, *, domain_path: str) -> dict:
         (domain_path,),
     ).fetchall()
     own_libs = {r["library_key"] for r in own}
+    libraries_out = []
+    for lib_key, sources in sorted(scope.items()):
+        lib = libraries.get_library(conn, library_key=lib_key) or {}
+        libraries_out.append(
+            {
+                "library_key": lib_key,
+                "sources": sorted(sources),
+                "origin": "own" if lib_key in own_libs else "inherited",
+                "inherited_from": None if lib_key in own_libs else ancestors[0],
+                # Which space this library lives in. Two libraries with equal
+                # `dims` are not necessarily comparable — see embedders.py — so
+                # the model travels with the count.
+                "backend": lib.get("backend"),
+                "dims": lib.get("dims"),
+                "embedding_model": lib.get("embedding_model"),
+            }
+        )
     return {
         "domain_path": domain_path,
-        "libraries": [
-            {
-                "library_key": lib,
-                "sources": sorted(sources),
-                "origin": "own" if lib in own_libs else "inherited",
-                "inherited_from": None if lib in own_libs else ancestors[0],
-            }
-            for lib, sources in sorted(scope.items())
-        ],
+        "libraries": libraries_out,
     }
