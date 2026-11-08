@@ -187,3 +187,74 @@ def test_a_domain_with_content_is_not_dispatched(conn):
     # `legal` has real chunks; `cr` inherits them (ancestor chain); only `solo`
     # is genuinely missing corpus.
     assert [d["key"] for d in planned["will_create"]] == ["solo"]
+
+
+def test_dispatched_task_is_visible_in_the_inbox(conn):
+    """A batch dispatch assigns free-text identities; the overview only lists
+    tasks whose assignee equals the caller's id, so without the inbox list the
+    task is invisible to everyone."""
+    with _client(conn) as c:
+        c.post("/d/dispatch", data={"gap": "knowledge", "assignee": "ops@example.com"},
+               follow_redirects=False)
+    with _client(conn) as c:
+        page = c.get("/d/legal/inbox")
+    assert page.status_code == 200
+    assert "ops@example.com" in page.text
+    assert "补语料" in page.text          # the task title from GAP_TASKS
+
+
+def test_closing_a_task_reopens_the_gap_for_dispatch(conn):
+    """Dispatch is idempotent per open task — so closing must be possible,
+    otherwise a domain can never be dispatched again."""
+    with _client(conn) as c:
+        c.post("/d/dispatch", data={"gap": "knowledge", "assignee": "ops"},
+               follow_redirects=False)
+    task_id = conn.execute("SELECT id FROM authoring_tasks LIMIT 1").fetchone()["id"]
+    with _client(conn) as c:
+        r = c.post(f"/d/legal/inbox/tasks/{task_id}/transition", data={"to": "done"},
+                   follow_redirects=False)
+    assert r.status_code == 303
+    assert conn.execute("SELECT status FROM authoring_tasks WHERE id=%s", (task_id,)).fetchone()["status"] == "done"
+    before = _task_count(conn)
+    with _client(conn) as c:
+        c.post("/d/dispatch", data={"gap": "knowledge", "assignee": "ops"},
+               follow_redirects=False)
+    # Only the domain whose task was closed becomes dispatchable again; `cr`
+    # still has an open task, so exactly one new row appears.
+    assert _task_count(conn) == before + 1
+    # `legal` was re-created (its task is new); `cr` keeps its original task.
+    per_domain = {
+        r["key"]: r["n"]
+        for r in conn.execute(
+            "SELECT d.key, COUNT(*) AS n FROM authoring_tasks t "
+            "JOIN domains d ON d.id=t.domain_id "
+            "WHERE t.status='pending' AND t.target_key='knowledge' GROUP BY d.key"
+        ).fetchall()
+    }
+    assert per_domain == {"legal": 1, "cr": 1}
+
+
+def test_outsider_cannot_close_someone_elses_task(conn):
+    with _client(conn) as c:
+        c.post("/d/dispatch", data={"gap": "knowledge", "assignee": "someone-else"},
+               follow_redirects=False)
+    task_id = conn.execute("SELECT id FROM authoring_tasks LIMIT 1").fetchone()["id"]
+    # A non-admin, non-lead identity that is neither the assignee.
+    with _client(conn, scopes=("content:read", "content:write")) as c:
+        r = c.post(f"/d/legal/inbox/tasks/{task_id}/transition", data={"to": "done"},
+                   follow_redirects=False)
+    assert r.status_code == 403
+    assert conn.execute("SELECT status FROM authoring_tasks WHERE id=%s", (task_id,)).fetchone()["status"] == "pending"
+
+
+def test_task_from_another_domain_is_404(conn):
+    with _client(conn) as c:
+        c.post("/d/dispatch", data={"gap": "knowledge", "assignee": "ops"},
+               follow_redirects=False)
+    task_id = conn.execute(
+        "SELECT t.id FROM authoring_tasks t JOIN domains d ON d.id=t.domain_id WHERE d.key='cr' LIMIT 1"
+    ).fetchone()["id"]
+    with _client(conn) as c:
+        r = c.post(f"/d/legal/inbox/tasks/{task_id}/transition", data={"to": "done"},
+                   follow_redirects=False)
+    assert r.status_code == 404

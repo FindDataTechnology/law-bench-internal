@@ -96,4 +96,47 @@
   {% endif %}
 {% endif %}
 </div>
+
+{#- 派给「人/舰队」的缺口任务。
+
+    总览页只列 assignee 恰好等于本人 id 的任务；批量派单的负责人是自由文本
+    （某人的邮箱、某支舰队），所以不在这里列出来，这些任务就谁看不见——而且
+    它们开着会让幂等检查永久拒绝再次派同一缺口。关闭动作是让这条链路可重跑
+    的那一步。 -#}
+{% if tasks %}
+<div class="panel">
+  <h2>{{ t.console.inbox.tasks_h2 }} <span class="muted">{{ open_tasks|length }}</span></h2>
+  <table class="table">
+    <thead><tr>
+      <th>{{ t.console.inbox.col_task }}</th>
+      <th>{{ t.console.inbox.col_assignee }}</th>
+      <th>{{ t.console.inbox.col_status }}</th>
+      <th></th>
+    </tr></thead>
+    <tbody>
+      {% for task in tasks %}
+      <tr>
+        <td>{{ task.title }}{% if task.target_key %} <span class="muted">· {{ task.target_key }}</span>{% endif %}</td>
+        <td><code>{{ task.assignee }}</code></td>
+        <td>{{ task.status }}</td>
+        <td>
+          {% if task.status in ('pending', 'in_progress') and cap.can_write %}
+          <form method="POST" class="inline"
+                action="{{ url_for('console_task_transition', domain_key=domain.key, task_id=task.id) }}">
+            <input type="hidden" name="to" value="done">
+            <button type="submit" class="btn btn-sm">{{ t.console.inbox.task_done }}</button>
+          </form>
+          <form method="POST" class="inline"
+                action="{{ url_for('console_task_transition', domain_key=domain.key, task_id=task.id) }}">
+            <input type="hidden" name="to" value="cancelled">
+            <button type="submit" class="btn btn-sm">{{ t.console.inbox.task_cancel }}</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 {% endblock %}

@@ -166,6 +166,45 @@ def console_domain_list(
 
 
 @write_router.post(
+    "/d/{domain_key}/inbox/tasks/{task_id}/transition", include_in_schema=False,
+    name="console_task_transition",
+    dependencies=[Depends(require_scope("content:write"))],
+)
+async def console_task_transition(
+    request: Request,
+    domain_key: str,
+    task_id: int,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Close (or start) a dispatched task — assignee or domain lead.
+
+    Without this the batch dispatch is one-way: the task stays open, and the
+    idempotency rule ("already assigned") then blocks ever dispatching that gap
+    again. Closing is what makes the loop re-runnable.
+    """
+    domain = resolve_domain(db, domain_key)
+    task = bench_authoring.authoring_get_task(db, task_id=task_id)
+    if task is None or task["domain_id"] != domain["id"]:
+        raise HTTPException(status_code=404, detail="task not found in this domain")
+    form = await request.form()
+    to_status = (form.get("to") or "").strip()
+    role = workspaces.get_active_role(db, domain_id=domain["id"], user_id=user.sub)
+    mine = task["assignee"] in {user.sub, user.email, user.name}
+    if not (mine or role == "lead" or is_platform_admin(user)):
+        raise HTTPException(status_code=403, detail="only the assignee or a domain lead may update this task")
+    try:
+        bench_authoring.authoring_transition_task(
+            db, task_id=task_id, to_status=to_status,
+            actor=user.email or user.name or user.sub,
+        )
+    except ValueError as exc:
+        return _flash(f"/d/{quote(domain_key)}/inbox", "flash.task_transition_failed",
+                      err=True, detail=str(exc))
+    return _flash(f"/d/{quote(domain_key)}/inbox", "flash.task_transitioned")
+
+
+@write_router.post(
     "/d/{domain_key}/knowledge/narrow", include_in_schema=False,
     name="console_knowledge_narrow",
     dependencies=[Depends(require_scope("content:write"))],
@@ -517,6 +556,12 @@ def console_inbox(
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    # Dispatched work must be visible to *someone*: the overview only lists tasks
+    # whose assignee string equals the caller's id, and a batch dispatch assigns
+    # free-text identities (a person's email, a fleet). Without this list the
+    # tasks exist, block re-dispatch (idempotency), and nobody can see or close
+    # them.
+    tasks = bench_authoring.authoring_list_tasks(db, domain_id=domain["id"])
     return _templates.TemplateResponse(
         request,
         "domain_console_inbox.html",
@@ -524,6 +569,8 @@ def console_inbox(
             **console_context(db, domain, user),
             "proposals": proposals,
             "state_filter": state,
+            "tasks": tasks,
+            "open_tasks": [t for t in tasks if t["status"] in ("pending", "in_progress")],
         },
     )
 
