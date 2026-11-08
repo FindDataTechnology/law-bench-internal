@@ -221,3 +221,20 @@ probe task removed; remaining tasks: 0
 
 结论：这不是漏滚，是三个 pod 各有明确理由。要滚它们须先解决各自的前提
 （MCP 包的构建上下文、公开副本的 schema 同步窗口），不该顺手带上。
+
+## 十七、总走查（`sha-96b36b4`，生产 pod 内真库真路由）
+
+```
+200 /d                        200 /d/legal                 200 /d/new
+200 /admin/libraries          200 /admin/templates
+200 /d/dispatch?gap=knowledge 200 /d/legal/knowledge?q=违约责任
+405 /d/legal/knowledge/narrow（仅 POST，GET 405 正确）
+200 /d/legal/{ontology,knowledge,eval-standards,eval-runs,inbox,publish,settings}
+
+知识区渲染体：law-library ✓ 364916 ✓ 收窄本域取材范围 ✓
+              模板声明的语料需求 ✓ 检索本域语料 ✓
+api: 200  0.761678  judicial（/api/library/search）
+```
+
+收件箱的「已派任务」面板当前不渲染，是因为库里没有任务（探针任务已清理）——面板以
+`{% if tasks %}` 为条件，空态不显示空表。
