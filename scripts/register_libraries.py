@@ -42,7 +42,10 @@ from src.bench import libraries  # noqa: E402
 #: (source_key, human label, payload values). The values are matched with
 #: Qdrant's `any`, so a source can cover several spellings of one class.
 LAW_SOURCES: list[tuple[str, str, list[str]]] = [
-    ("statutes", "法律/宪法", ["法律", "宪法", "法律解释", "有关法律问题和重大问题的决定（部分）"]),
+    # The last value is truncated *in the corpus itself* (20-char column), not
+    # in this file — quoting the untruncated name would silently drop 29 points.
+    ("statutes", "法律/宪法",
+     ["法律", "宪法", "法律解释", "有关法律问题和重大问题的决定（部"]),
     ("administrative", "行政法规", ["行政法规", "法规性决定", "监察法规"]),
     ("judicial", "司法解释", ["司法解释"]),
     ("local", "地方性法规", ["地方性法规", "地方法规"]),
