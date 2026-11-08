@@ -5,6 +5,8 @@ kinds:
   - clause
 components:
   - type: module
+    path: packs/legal/asset_catalog.py
+  - type: module
     path: packs/legal/law_catalog
   - type: module
     path: src/law_api

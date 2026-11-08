@@ -155,7 +155,7 @@ def _create_unit(client: TestClient, kind: str = "company", key: str = "ai-corp"
                  body: str = "人工智能公司条目", tags: str = "status=draft") -> str:
     """POST one entity through the workbench form as the client's user; 303."""
     r = client.post(
-        f"/workbench/{A_KEY}/units/{quote(kind, safe='')}/new",
+        f"/d/{A_KEY}/units/{quote(kind, safe='')}/new",
         data={"external_key": key, "body": body, "tags": tags},
         follow_redirects=False,
     )
@@ -167,7 +167,7 @@ def _create_unit(client: TestClient, kind: str = "company", key: str = "ai-corp"
 def _assign_task(client: TestClient, assignee: str, title: str) -> str:
     """POST one task assignment through the lead form as the client's user."""
     r = client.post(
-        f"/workbench/{A_KEY}/tasks/new",
+        f"/d/{A_KEY}/tasks/new",
         data={"assignee": assignee, "title": title, "detail": "",
               "target_kind": "company", "target_key": ""},
         follow_redirects=False,
@@ -200,7 +200,7 @@ def test_annotator_reads_workbench_but_cannot_write(seeded_db):
     world = _seed_world(seeded_db)
     rae = _user("rae", _READ_WRITE)
     with _client(seeded_db, rae) as c:
-        home = c.get(f"/workbench/{A_KEY}")
+        home = c.get(f"/d/{A_KEY}")
         assert home.status_code == 200
         assert DOMAIN_A_NAME in home.text
         assert '<span class="badge">标注员</span>' in home.text     # active role
@@ -209,10 +209,10 @@ def test_annotator_reads_workbench_but_cannot_write(seeded_db):
         assert "company" in home.text and "indicator" in home.text
         assert "belongs_to" in home.text
         # Read reaches the browse lane too.
-        assert c.get(f"/workbench/{A_KEY}/browse/company").status_code == 200
+        assert c.get(f"/d/{A_KEY}/browse/company").status_code == 200
 
         denied = c.post(
-            f"/workbench/{A_KEY}/units/company/new",
+            f"/d/{A_KEY}/units/company/new",
             data={"external_key": "sneaky", "body": "标注员越权写入"},
             follow_redirects=False,
         )
@@ -234,13 +234,13 @@ def test_expert_creates_unit_via_form_and_lands_raw_provenance(seeded_db):
     with _client(seeded_db, alice) as c:
         location = _create_unit(c, key="ai-corp", body="人工智能公司条目",
                                 tags="status=draft")
-        assert location.startswith(f"/workbench/{A_KEY}/units/company/ai-corp")
+        assert location.startswith(f"/d/{A_KEY}/units/company/ai-corp")
 
         detail = c.get(location)
         assert detail.status_code == 200
         assert "ai-corp" in detail.text
 
-        browse = c.get(f"/workbench/{A_KEY}/browse/company")
+        browse = c.get(f"/d/{A_KEY}/browse/company")
         assert browse.status_code == 200
         assert "ai-corp" in browse.text and "人工智能公司条目" in browse.text
 
@@ -264,14 +264,14 @@ def test_lead_and_admin_also_write_admin_reads_without_membership(seeded_db):
     with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
         location = _create_unit(c, kind="indicator", key="ind-registered-cap",
                                 body="注册资本指标")
-        assert "/workbench/" + A_KEY in location
+        assert "/d/" + A_KEY in location
     with _client(seeded_db, _user("admin-u", ["*"])) as c:
-        home = c.get(f"/workbench/{A_KEY}")
+        home = c.get(f"/d/{A_KEY}")
         assert home.status_code == 200
         assert '<span class="badge">管理员</span>' in home.text  # bypass role badge
         assert DOMAIN_A_NAME in home.text
         location = _create_unit(c, key="adm-unit", body="管理员直通创建")
-        assert location.startswith(f"/workbench/{A_KEY}/units/company/adm-unit")
+        assert location.startswith(f"/d/{A_KEY}/units/company/adm-unit")
 
     keys = {u["external_key"] for u in bench_authoring.authoring_list_units(
         seeded_db, domain_key=A_KEY)}
@@ -286,18 +286,18 @@ def test_non_member_fail_closed_403_not_404_on_every_workbench_route(seeded_db):
     world = _seed_world(seeded_db)
     outsider = _user("outsider", _READ_WRITE)
     with _client(seeded_db, outsider) as c:
-        r = c.get(f"/workbench/{A_KEY}")
+        r = c.get(f"/d/{A_KEY}")
         assert r.status_code == 403  # the permission denial, NOT a 404
         assert r.json()["detail"] == "无该域权限"
         assert DOMAIN_A_NAME not in r.text  # zero exposure of the domain
 
         assert c.post(
-            f"/workbench/{A_KEY}/units/company/new",
+            f"/d/{A_KEY}/units/company/new",
             data={"external_key": "intruder", "body": "x"},
             follow_redirects=False,
         ).status_code == 403
         assert c.post(
-            f"/workbench/{A_KEY}/tasks/1/status", data={"to_status": "done"},
+            f"/d/{A_KEY}/tasks/1/status", data={"to_status": "done"},
             follow_redirects=False,
         ).status_code == 403
 
@@ -314,12 +314,12 @@ def test_scope_gate_runs_first_for_member_without_content_read(seeded_db):
     require_domain_role on every workbench route."""
     _seed_world(seeded_db)
     with _client(seeded_db, _user("alice", ["content:write"])) as c:
-        r = c.get(f"/workbench/{A_KEY}")  # member: the domain gate would pass
+        r = c.get(f"/d/{A_KEY}")  # member: the domain gate would pass
     assert r.status_code == 403
     assert r.json()["detail"] == "missing scope: content:read"
 
     with _client(seeded_db, _user("nobody", [])) as c:
-        r = c.get(f"/workbench/{A_KEY}")  # fails both gates...
+        r = c.get(f"/d/{A_KEY}")  # fails both gates...
     assert r.status_code == 403
     assert r.json()["detail"] == "missing scope: content:read"  # ...scope speaks first
 
@@ -340,12 +340,12 @@ def test_cross_domain_isolation_a_unit_never_reaches_b(seeded_db):
         _create_unit(c, key="iso-unit", body="甲域独有内容标记", tags="")
 
         # Cross-domain read: fail-closed 403, not a 404.
-        r = c.get(f"/workbench/{B_KEY}")
+        r = c.get(f"/d/{B_KEY}")
         assert r.status_code == 403
         assert r.json()["detail"] == "无该域权限"
         # Cross-domain write: the same gate, nothing written.
         w = c.post(
-            f"/workbench/{B_KEY}/units/company/new",
+            f"/d/{B_KEY}/units/company/new",
             data={"external_key": "intruder", "body": "x"},
             follow_redirects=False,
         )
@@ -353,7 +353,7 @@ def test_cross_domain_isolation_a_unit_never_reaches_b(seeded_db):
         assert w.json()["detail"] == "无该域权限"
 
         # Positive control: alice's own domain browse carries the unit.
-        own = c.get(f"/workbench/{A_KEY}/browse/company")
+        own = c.get(f"/d/{A_KEY}/browse/company")
         assert own.status_code == 200
         assert "iso-unit" in own.text and "甲域独有内容标记" in own.text
 
@@ -364,10 +364,10 @@ def test_cross_domain_isolation_a_unit_never_reaches_b(seeded_db):
     bob = _user("bob", _READ_WRITE)
     with _client(seeded_db, bob) as c:
         sweep = [
-            c.get(f"/workbench/{B_KEY}"),
-            c.get(f"/workbench/{B_KEY}/browse/company"),
-            c.get(f"/workbench/{B_KEY}/browse/indicator"),
-            c.get(f"/workbench/{B_KEY}/browse/belongs_to"),
+            c.get(f"/d/{B_KEY}"),
+            c.get(f"/d/{B_KEY}/browse/company"),
+            c.get(f"/d/{B_KEY}/browse/indicator"),
+            c.get(f"/d/{B_KEY}/browse/belongs_to"),
         ]
     for response in sweep:
         assert response.status_code == 200
@@ -391,12 +391,12 @@ def test_out_of_vocab_kind_create_rejected_zero_rows(seeded_db):
     alice = _user("alice", _READ_WRITE)
     with _client(seeded_db, alice) as c:
         entity = c.post(
-            f"/workbench/{A_KEY}/units/mineral/new",
+            f"/d/{A_KEY}/units/mineral/new",
             data={"external_key": "m1", "body": "出表实体"},
             follow_redirects=False,
         )
         relationship = c.post(
-            f"/workbench/{A_KEY}/units/acquires/new",
+            f"/d/{A_KEY}/units/acquires/new",
             data={"from_key": "c1", "to_key": "c2", "body": "出表关系"},
             follow_redirects=False,
         )
@@ -417,9 +417,9 @@ def test_out_of_vocab_kind_browse_is_404(seeded_db):
     _seed_world(seeded_db)
     alice = _user("alice", _READ_WRITE)
     with _client(seeded_db, alice) as c:
-        assert c.get(f"/workbench/{A_KEY}/browse/mineral").status_code == 404
-        assert c.get(f"/workbench/{A_KEY}/browse/acquires").status_code == 404
-        assert c.get(f"/workbench/{A_KEY}/units/mineral/new").status_code == 404
+        assert c.get(f"/d/{A_KEY}/browse/mineral").status_code == 404
+        assert c.get(f"/d/{A_KEY}/browse/acquires").status_code == 404
+        assert c.get(f"/d/{A_KEY}/units/mineral/new").status_code == 404
 
 
 def test_relationship_create_derives_key_round_trip(seeded_db):
@@ -430,7 +430,7 @@ def test_relationship_create_derives_key_round_trip(seeded_db):
     alice = _user("alice", _READ_WRITE)
     with _client(seeded_db, alice) as c:
         r = c.post(
-            f"/workbench/{A_KEY}/units/belongs_to/new",
+            f"/d/{A_KEY}/units/belongs_to/new",
             data={"from_key": "c1", "to_key": "c2", "body": "隶属关系"},
             follow_redirects=False,
         )
@@ -438,7 +438,7 @@ def test_relationship_create_derives_key_round_trip(seeded_db):
         location = r.headers["location"]
         # The derived key, percent-encoded in the URL (-> and : are unsafe).
         assert location.startswith(
-            f"/workbench/{A_KEY}/units/belongs_to/c1-%3Ebelongs_to%3Ac2"
+            f"/d/{A_KEY}/units/belongs_to/c1-%3Ebelongs_to%3Ac2"
         )
         assert _params(location)["msg"] == "flash.unit_created"
 
@@ -487,17 +487,17 @@ def test_event_trail_create_update_delete_visible_on_detail(seeded_db):
         )
         assert deleted.status_code == 303
         assert deleted.headers["location"].startswith(
-            f"/workbench/{A_KEY}/browse/company"
+            f"/d/{A_KEY}/browse/company"
         )
         assert _params(deleted.headers["location"])["msg"] == "flash.unit_deleted"
 
         # Soft delete: excluded from browse...
-        browse = c.get(f"/workbench/{A_KEY}/browse/company")
+        browse = c.get(f"/d/{A_KEY}/browse/company")
         assert browse.status_code == 200
         assert "doc-1" not in browse.text
 
         # ...but detail-direct still renders, with the deleted notice.
-        detail = c.get(f"/workbench/{A_KEY}/units/company/doc-1")
+        detail = c.get(f"/d/{A_KEY}/units/company/doc-1")
         assert detail.status_code == 200
         assert 'role="alert">该条目已软删除' in detail.text
         assert '<h2>变更历史</h2>' in detail.text
@@ -556,26 +556,26 @@ def test_task_lifecycle_assign_claim_complete_with_trail(seeded_db):
     alice = _user("alice", _READ_WRITE)
     with _client(seeded_db, alice) as c:
         # The reader sees the pending assignment with a claim affordance.
-        home = c.get(f"/workbench/{A_KEY}")
+        home = c.get(f"/d/{A_KEY}")
         assert "撰写公司条目" in home.text
         assert '<span class="badge">待领取</span>' in home.text
         assert ">领取</button>" in home.text
 
         claim = c.post(
-            f"/workbench/{A_KEY}/tasks/{task['id']}/status",
+            f"/d/{A_KEY}/tasks/{task['id']}/status",
             data={"to_status": "in_progress"}, follow_redirects=False,
         )
         assert claim.status_code == 303
         assert _params(claim.headers["location"])["msg"] == "flash.task_status_updated"
 
         done = c.post(
-            f"/workbench/{A_KEY}/tasks/{task['id']}/status",
+            f"/d/{A_KEY}/tasks/{task['id']}/status",
             data={"to_status": "done"}, follow_redirects=False,
         )
         assert done.status_code == 303
 
         # The trail is visible to the reader: the task now shows done.
-        after = c.get(f"/workbench/{A_KEY}")
+        after = c.get(f"/d/{A_KEY}")
         assert '<span class="badge">已完成</span>' in after.text
 
     final = bench_authoring.authoring_get_task(seeded_db, task_id=task["id"])
@@ -601,7 +601,7 @@ def test_annotator_cannot_claim_expert_cannot_assign_or_cancel(seeded_db):
     rae = _user("rae", _READ_WRITE)
     with _client(seeded_db, rae) as c:
         r = c.post(
-            f"/workbench/{A_KEY}/tasks/{task['id']}/status",
+            f"/d/{A_KEY}/tasks/{task['id']}/status",
             data={"to_status": "in_progress"}, follow_redirects=False,
         )
     assert r.status_code == 403
@@ -609,9 +609,9 @@ def test_annotator_cannot_claim_expert_cannot_assign_or_cancel(seeded_db):
 
     alice = _user("alice", _READ_WRITE)
     with _client(seeded_db, alice) as c:
-        assert c.get(f"/workbench/{A_KEY}/tasks/new").status_code == 403
+        assert c.get(f"/d/{A_KEY}/tasks/new").status_code == 403
         post = c.post(
-            f"/workbench/{A_KEY}/tasks/new",
+            f"/d/{A_KEY}/tasks/new",
             data={"assignee": "alice", "title": "越权指派"},
             follow_redirects=False,
         )
@@ -619,7 +619,7 @@ def test_annotator_cannot_claim_expert_cannot_assign_or_cancel(seeded_db):
         assert post.json()["detail"] == "无该域权限"
 
         cancel = c.post(
-            f"/workbench/{A_KEY}/tasks/{task['id']}/status",
+            f"/d/{A_KEY}/tasks/{task['id']}/status",
             data={"to_status": "cancelled"}, follow_redirects=False,
         )
     assert cancel.status_code == 303  # in-handler refusal -> error flash
@@ -640,7 +640,7 @@ def test_lead_cancels_task_with_trail(seeded_db):
         _assign_task(c, "rae", "核验指标条目")
         task = _pending_task(seeded_db, "rae")
         r = c.post(
-            f"/workbench/{A_KEY}/tasks/{task['id']}/status",
+            f"/d/{A_KEY}/tasks/{task['id']}/status",
             data={"to_status": "cancelled"}, follow_redirects=False,
         )
     assert r.status_code == 303
@@ -673,18 +673,18 @@ def test_foreign_domain_task_id_is_404_no_leak(seeded_db):
 
     with _client(seeded_db, alice) as c:
         # B is now readable — but carries nothing of A's.
-        assert c.get(f"/workbench/{B_KEY}").status_code == 200
-        browse_b = c.get(f"/workbench/{B_KEY}/browse/company")
+        assert c.get(f"/d/{B_KEY}").status_code == 200
+        browse_b = c.get(f"/d/{B_KEY}/browse/company")
         assert browse_b.status_code == 200
         assert "iso-unit" not in browse_b.text
         # A's unit addressed through B's path: kernel pin -> honest 404.
-        unit404 = c.get(f"/workbench/{B_KEY}/units/company/iso-unit")
+        unit404 = c.get(f"/d/{B_KEY}/units/company/iso-unit")
         assert unit404.status_code == 404
         assert unit404.json()["detail"] == "unit not found"
 
         # A's task id through B's path: 404, no leak, no state change.
         r = c.post(
-            f"/workbench/{B_KEY}/tasks/{task_a['id']}/status",
+            f"/d/{B_KEY}/tasks/{task_a['id']}/status",
             data={"to_status": "done"}, follow_redirects=False,
         )
     assert r.status_code == 404
@@ -699,7 +699,7 @@ def test_assignee_select_lists_only_this_domains_members(seeded_db):
     memberships — alice/rae/lara render as options, B's member does not."""
     _seed_world(seeded_db)
     with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
-        r = c.get(f"/workbench/{A_KEY}/tasks/new")
+        r = c.get(f"/d/{A_KEY}/tasks/new")
     assert r.status_code == 200
     assert 'value="alice"' in r.text
     assert 'value="rae"' in r.text
@@ -713,15 +713,17 @@ def test_assignee_select_lists_only_this_domains_members(seeded_db):
 
 
 def test_nav_workbench_links_follow_membership_and_admin_gate(seeded_db):
-    """导航按域过滤: alice's chrome carries the workbench entry for her member
-    domain A and nothing for B; the membership-less admin sees the 管理门
-    links and zero workbench/我的域 entries."""
+    """导航按域过滤 (C5 域优先): the chrome carries ONE 「我的域」 entry → /d,
+    never a per-domain link list; a member sees it, a membership-less admin
+    does not (and sees the 管理门 links instead). Another domain's key or name
+    never leaks into the chrome."""
     _seed_world(seeded_db)
     with _client(seeded_db, _user("alice", _READ_WRITE)) as c:
         r = c.get("/rubrics")
     assert r.status_code == 200
-    assert f'/workbench/{A_KEY}"' in r.text             # member domain: workbench link
-    assert f"/workbench/{B_KEY}" not in r.text          # non-member domain: nothing
+    assert '>我的域</a>' in r.text                      # the one domain door
+    assert 'href="/d"' in r.text                        # ... pointing at /d
+    assert f"/d/{B_KEY}" not in r.text          # non-member domain: nothing
     assert B_KEY not in r.text and DOMAIN_B_NAME not in r.text
 
     with _client(seeded_db, _user("admin-u", ["*"])) as c:
@@ -730,6 +732,10 @@ def test_nav_workbench_links_follow_membership_and_admin_gate(seeded_db):
     assert 'class="muted">管理门' in r.text
     assert '/admin/templates"' in r.text
     assert '/admin/domains"' in r.text
-    assert "/workbench/" not in r.text                  # no membership -> no workbench
-    assert 'class="muted">我的域' not in r.text
+    assert "/d/" not in r.text                  # no membership -> no domain links
+    assert '>我的域</a>' not in r.text                  # no membership -> no door
+    # Brand + the 「全域」 estate entry: the estate console is a platform-level
+    # surface (content:read), so it shows even without a membership — while the
+    # 「我的域」 door stays membership-only (asserted above).
+    assert r.text.count('href="/d"') == 2
     assert DOMAIN_A_NAME not in r.text and DOMAIN_B_NAME not in r.text

@@ -37,6 +37,14 @@ Notes on the shape:
   configured), and an optional embedding-model declaration (NULL = the global
   default). Re-registration replaces the row via upsert; ownership of a row
   never changes domain.
+- The C5 console tables (change ``add-domain-first-workbench``) are additive and
+  keep the same discipline: ``domain_members.last_opened_at`` is a per-user
+  navigation hint (not content, not audit); ``domain_assets`` is a many-to-many
+  directory over heterogeneous pre-existing asset tables (no FK, never touches
+  the asset); ``domain_proposals`` is a submission snapshot + workflow state
+  (never a second ontology store; confirmation goes through the kernel upsert);
+  ``domain_proposal_events`` and ``distribution_pull_events`` are append-only
+  trails with no UPDATE/DELETE path.
 """
 
 from __future__ import annotations
@@ -162,4 +170,90 @@ CREATE TABLE IF NOT EXISTS rag_corpora (
     registered_by   TEXT NOT NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- C5 add-domain-first-workbench -------------------------------------------------
+-- last_opened_at: the domain list orders by this user's own recency. It is a
+-- per-user navigation hint, never content or an audit record; a removed
+-- membership keeps its timestamp (the partial unique index already guarantees
+-- at most one ACTIVE row per (domain, user)).
+ALTER TABLE IF EXISTS domain_members
+    ADD COLUMN IF NOT EXISTS last_opened_at TIMESTAMPTZ;
+
+-- domain_assets: the domain's catalog of evaluation assets (rubrics, prompts,
+-- compare sets, samples, clauses, law_info ...). Pure directory semantics:
+-- many-to-many, and NO change to any asset table's shape or behaviour. A row
+-- is a claim "this asset belongs in this domain's shelf", not ownership;
+-- unassigning never touches the asset itself. asset_key is the asset's own
+-- stable textual identifier (name / slug / id as text), never a FK, because
+-- the asset tables are heterogeneous and predate domains.
+CREATE TABLE IF NOT EXISTS domain_assets (
+    domain_id   BIGINT NOT NULL REFERENCES domains(id),
+    asset_kind  TEXT NOT NULL,
+    asset_key   TEXT NOT NULL,
+    added_by    TEXT NOT NULL,
+    added_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (domain_id, asset_kind, asset_key)
+);
+CREATE INDEX IF NOT EXISTS domain_assets_asset_idx
+    ON domain_assets (asset_kind, asset_key);
+
+-- domain_proposals: the domain's proposal inbox (blueprint C5). A proposal is a
+-- SUBMISSION SNAPSHOT plus its workflow state — it is never a second ontology
+-- store and never participates in retrieval. Confirmation goes through the one
+-- kernel write path (authoring upsert), so the KU table stays the only content
+-- truth. The partial unique index is the idempotency rule: at most one PENDING
+-- proposal per (domain, source, external_key); a rejected proposal stays on
+-- record and a resubmission is only accepted with a different evidence_digest.
+CREATE TABLE IF NOT EXISTS domain_proposals (
+    id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    domain_id       BIGINT NOT NULL REFERENCES domains(id),
+    source          TEXT NOT NULL,
+    kind            TEXT NOT NULL,
+    external_key    TEXT NOT NULL,
+    body            TEXT NOT NULL,
+    evidence        JSONB NOT NULL,
+    evidence_digest TEXT NOT NULL,
+    impact          TEXT NOT NULL DEFAULT '',
+    state           TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (state IN ('pending', 'confirmed', 'rejected')),
+    submitted_by    TEXT NOT NULL,
+    submitted_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    decided_by      TEXT,
+    decided_at      TIMESTAMPTZ,
+    decision_note   TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS domain_proposals_pending_uk
+    ON domain_proposals (domain_id, source, external_key) WHERE state = 'pending';
+CREATE INDEX IF NOT EXISTS domain_proposals_box_idx
+    ON domain_proposals (domain_id, state, submitted_at DESC);
+
+-- domain_proposal_events: append-only state trail (submit / confirm / reject).
+-- No UPDATE or DELETE path may exist by design, same discipline as
+-- authoring_events: the workflow history must stay replayable.
+CREATE TABLE IF NOT EXISTS domain_proposal_events (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    proposal_id BIGINT NOT NULL REFERENCES domain_proposals(id),
+    from_state  TEXT,
+    to_state    TEXT NOT NULL,
+    actor       TEXT NOT NULL,
+    note        TEXT,
+    happened_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS domain_proposal_events_proposal_idx
+    ON domain_proposal_events (proposal_id, happened_at);
+
+-- distribution_pull_events: append-only pull trail. The consumer row stays
+-- untouched (no last_used_at column, no update contention); the ledger derives
+-- "latest pull" per consumer from this table. Only successful pulls that
+-- resolved a publication are recorded — a rejected credential or a 404 pull
+-- leaves no event, so the trail never claims a pull that did not happen.
+CREATE TABLE IF NOT EXISTS distribution_pull_events (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    consumer_id BIGINT NOT NULL REFERENCES distribution_consumers(id),
+    domain_key  TEXT NOT NULL,
+    version     INTEGER NOT NULL,
+    happened_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS distribution_pull_events_consumer_idx
+    ON distribution_pull_events (consumer_id, happened_at DESC);
 """

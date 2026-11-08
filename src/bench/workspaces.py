@@ -29,7 +29,7 @@ class InvitationError(ValueError):
 
 _DOMAIN_SELECT = (
     "SELECT d.id, d.key, d.name, d.template_id, d.template_version, "
-    "t.name AS template_name, d.created_by, d.created_at "
+    "t.name AS template_name, d.created_by, d.created_at, d.path "
     "FROM domains d JOIN ontology_templates t ON t.id = d.template_id"
 )
 _DOMAIN_KEYS = (
@@ -39,6 +39,7 @@ _DOMAIN_KEYS = (
     "template_id",
     "template_version",
     "template_name",
+    "path",
     "created_by",
     "created_at",
 )
@@ -120,12 +121,18 @@ def instantiate_domain(
     template_name: str,
     template_version: Optional[int],
     created_by: str,
+    parent_key: Optional[str] = None,
 ) -> dict:
     """Create a workspace anchored to one concrete template version.
 
     Refuses a missing template or a structurally incomplete template schema
     (the missing/invalid items are named in the error), and refuses a duplicate
     domain key.
+
+    ``parent_key`` places the domain in the tree: the materialized path becomes
+    ``<parent path>/<key>``. Without it the domain is a root whose path is its
+    own key. A missing parent is refused rather than silently creating a root —
+    a typo must not detach a sub-domain from its industry parent.
     """
     if not key or not name:
         raise ValueError("key and name are required")
@@ -148,15 +155,24 @@ def instantiate_domain(
     if existing:
         raise ValueError(f"domain key {key!r} already exists")
 
+    # Materialized path: a root's path is its key; a sub-domain composes
+    # ``<parent path>/<key>``. Computed here (not by a trigger) so the same rule
+    # holds for the admin form and the console wizard.
+    parent = None
+    if parent_key:
+        parent = get_domain(conn, domain_key=parent_key)
+        if parent is None:
+            raise ValueError(f"parent domain {parent_key!r} not found")
+    path = f"{parent['path']}/{key}" if parent else key
     cur = conn.execute(
         """
-        INSERT INTO domains (key, name, template_id, template_version, created_by)
-        VALUES (%s, %s, %s, %s, %s)
-        RETURNING id, key, name, template_id, template_version, created_by, created_at
+        INSERT INTO domains (key, name, template_id, template_version, created_by, path)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        RETURNING id, key, name, template_id, template_version, created_by, created_at, path
         """,
-        (key, name, tmpl["id"], tmpl["version"], created_by),
+        (key, name, tmpl["id"], tmpl["version"], created_by, path),
     )
-    inserted = _row_to_dict(cur.fetchone(), _DOMAIN_INSERT_KEYS)
+    inserted = _row_to_dict(cur.fetchone(), _DOMAIN_INSERT_KEYS + ("path",))
     conn.commit()
     return {
         "id": inserted["id"],
@@ -165,6 +181,7 @@ def instantiate_domain(
         "template_id": inserted["template_id"],
         "template_version": inserted["template_version"],
         "template_name": tmpl["name"],
+        "path": inserted["path"],
         "created_by": inserted["created_by"],
         "created_at": inserted["created_at"],
     }
@@ -223,6 +240,76 @@ def get_active_role(conn: Any, *, domain_id: int, user_id: str) -> Optional[str]
         (domain_id, user_id),
     ).fetchone()
     return _scalar(row)
+
+
+def list_invitations(conn: Any, *, domain_id: int, limit: int = 50) -> list[dict]:
+    """Invitations issued for one domain, newest first.
+
+    Carries only what a settings page may show: id, role, issuer, timestamps.
+    ``token_hash`` is deliberately NOT selected — the plaintext token exists
+    solely at creation time (the accept link), and a stored digest has no
+    display value.
+    """
+    cur = conn.execute(
+        "SELECT id, role, invited_by, expires_at, created_at, accepted_at, "
+        "accepted_by FROM domain_invitations "
+        "WHERE domain_id = %s ORDER BY created_at DESC, id DESC LIMIT %s",
+        (domain_id, int(limit)),
+    )
+    return [
+        _row_to_dict(
+            r,
+            (
+                "id",
+                "role",
+                "invited_by",
+                "expires_at",
+                "created_at",
+                "accepted_at",
+                "accepted_by",
+            ),
+        )
+        for r in cur.fetchall()
+    ]
+
+
+def list_member_domains(conn: Any, *, user_id: str) -> list[dict]:
+    """Domains the user may enter, with their role, most recently opened first.
+
+    Backs the C5 domain-first landing (``/d``): one row per active membership,
+    carrying the domain record plus ``role`` and ``last_opened_at``. Ordering is
+    "my own recency first, then never-opened domains by id" so the list is
+    stable for a brand-new identity. ``last_opened_at`` is a per-user navigation
+    hint (see ``WORKSPACE_SCHEMA``), never content.
+    """
+    cur = conn.execute(
+        "SELECT d.id, d.key, d.name, d.template_id, d.template_version, "
+        "t.name AS template_name, d.created_by, d.created_at, d.path, "
+        "m.role, m.last_opened_at "
+        "FROM domains d JOIN ontology_templates t ON t.id = d.template_id "
+        "JOIN domain_members m ON m.domain_id = d.id "
+        "WHERE m.user_id = %s AND m.removed_at IS NULL "
+        "ORDER BY m.last_opened_at DESC NULLS LAST, d.id",
+        (user_id,),
+    )
+    return [
+        _row_to_dict(r, _DOMAIN_KEYS + ("path", "role", "last_opened_at"))
+        for r in cur.fetchall()
+    ]
+
+
+def touch_last_opened(conn: Any, *, domain_id: int, user_id: str) -> None:
+    """Stamp the user's own recency marker for this domain (no commit).
+
+    Only an ACTIVE membership is touched — a retired row is history and must
+    stay byte-identical. No row matched (e.g. a platform admin browsing without
+    a membership) is a silent no-op: the console never invents a membership.
+    """
+    conn.execute(
+        "UPDATE domain_members SET last_opened_at = now() "
+        "WHERE domain_id = %s AND user_id = %s AND removed_at IS NULL",
+        (domain_id, user_id),
+    )
 
 
 def _deactivate_active_membership(conn: Any, *, domain_id: int, user_id: str) -> None:

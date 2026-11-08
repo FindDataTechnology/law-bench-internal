@@ -440,9 +440,14 @@ def ensure_schema(db_path=DEFAULT_DB) -> None:
             # knowledge-bench kernel tables (domain-neutral; see src/bench)
             from ..bench.store import BENCH_SCHEMA
             from ..bench.workspace_store import WORKSPACE_SCHEMA
+            from ..bench.libraries import LIBRARY_SCHEMA
 
             conn.execute(BENCH_SCHEMA)
             conn.execute(WORKSPACE_SCHEMA)
+            # Domain tree + shared corpus libraries (add-domain-tree-and-shared-
+            # libraries). Runs after WORKSPACE_SCHEMA because its ALTERs touch
+            # domains / knowledge_units, and it backfills the pre-tree rows.
+            conn.execute(LIBRARY_SCHEMA)
             # Retro-register the legal domain's default corpus (see the seed's
             # comment). Import at call time so a monkeypatched
             # src.settings.SEARCH_INDEX_NAME is read, not the import-time

@@ -300,19 +300,22 @@ def test_admin_create_domain_via_form(seeded_db):
 
 
 def test_nav_shows_only_member_domain_and_no_admin_gate(seeded_db):
-    """导航按域过滤: A-only member sees A's entry, never B nor the admin gate.
+    """导航按域过滤 (C5 域优先): an A-only member sees the single 「我的域」 door
+    (→ /d) and never another domain, and never the admin gate.
 
-    (Label strings live in the ``window.__LOCALE__`` bootstrap on every page,
-    so the assertions target the rendered nav elements — hrefs / section span.)
+    The chrome deliberately does not enumerate domains any more: the domain list
+    IS the /d page, and repeating per-domain links in the top bar is the
+    conflation this change removes. (Label strings live in the
+    ``window.__LOCALE__`` bootstrap on every page, so the assertions target
+    rendered nav elements — hrefs — not bare text.)
     """
     _seed_world(seeded_db)
     with _client(seeded_db, _user("lead-a", ["content:read", "content:write"])) as c:
         r = c.get("/rubrics")
     assert r.status_code == 200
-    assert 'class="muted">我的域' in r.text          # the section renders...
-    assert '/admin/domains/a-key"' in r.text         # ...with exactly the member domain
-    assert DOMAIN_A_NAME in r.text
-    assert '/admin/domains/b-key"' not in r.text
+    assert '>我的域</a>' in r.text                    # the one door renders...
+    assert 'href="/d"' in r.text                      # ...pointing at the domain list
+    assert '/admin/domains/' not in r.text            # no per-domain nav links
     assert DOMAIN_B_NAME not in r.text and "b-key" not in r.text
     assert '/admin/templates"' not in r.text         # no admin gate link
     assert '/admin/domains"' not in r.text           # no all-domains list link
@@ -720,4 +723,7 @@ def test_domain_b_data_never_leaks_to_a_only_member(seeded_db):
 
     assert chrome.status_code == 200
     assert DOMAIN_B_NAME not in chrome.text and "b-key" not in chrome.text
-    assert DOMAIN_A_NAME in chrome.text  # only the member domain is in the nav
+    # The chrome carries the domain DOOR, not a domain enumeration (C5): the
+    # only way A appears in the top bar is through /d, one click away.
+    assert '>我的域</a>' in chrome.text and 'href="/d"' in chrome.text
+    assert DOMAIN_A_NAME not in chrome.text

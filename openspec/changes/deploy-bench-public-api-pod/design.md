@@ -32,6 +32,9 @@ healthz / 概览真值 / sibling 401 / 429 负例，全过才算完成；样本�
 
 replica + cron 快照先行 → secret 注入 → pod 部署 → 上线门 → bench 站代理切新端口（显式路径形态，免第二域名全套）→ 真值验收解除挂账。
 
+### D3. MinIO 裁决（2026-11-07 实况修正）：windows 数据机 RustFS 直接当真源
+origin 的 `minio.minio.svc.cluster.local` 在集群内不存在（DNS rcode=3、无 svc/pod、无部署清单）——origin 自身的 artifacts 下载路径先于本 change 即已断（`_client` list 失败）。用户点名方案=用 windows 数据机（100.64.0.5）的 MinIO/RustFS。落地=公共 pod env `MINIO_PUBLIC_HOST=http://100.64.0.5:9000` + RustFS 凭据（task 5.2 的现成机制），canary 往返实弹通过；双端镜像 cron 退掉（无活真源可镜像）。origin MinIO 的重建属 public-api-service 线另案。
+
 ## Open Questions
 
 - replica 实例落位节点（cheap3 docker vs 集群内 PVC pod）——实施时按磁盘余量实选。
