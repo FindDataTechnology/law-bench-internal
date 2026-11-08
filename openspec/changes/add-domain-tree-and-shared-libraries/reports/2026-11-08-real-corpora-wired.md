@@ -188,3 +188,21 @@ api: 200 [(0.761678,'judicial'), (0.750701,'judicial')]
 
 子域语义（父域没给的源不能引入、空集被拒、非 lead 无权改）由
 `tests/test_knowledge_narrow.py` 7 条守着。
+
+## 十五、派单闭环（镜像 `sha-96b36b4`）
+
+发现的半截功能：派单把 assignee 写成自由文本，而总览页只列
+`assignee == user.sub` 的任务——于是派出去的任务**对任何人不可见**；更麻烦的是
+派单按「同缺口已有未完成任务」幂等，任务没人能关，那个缺口就永久派不出去。
+派单是个只能进不能出的单向门。
+
+补上：收件箱列本域全部任务（含已关闭）带负责人/状态；负责人、本域 lead 或平台
+管理员可置完成/取消；跨域任务 id 返回 404。
+
+生产实测（`sha-96b36b4`，用一条探针任务、验完即删）：
+
+```
+task visible in inbox: True
+close -> 303, status now: done
+probe task removed; remaining tasks: 0
+```
