@@ -127,6 +127,16 @@ def console_domain_list(
     cannot enter.
     """
     domains = workspaces.list_member_domains(db, user_id=user.sub)
+    if not domains and is_platform_admin(user):
+        # A platform admin's visible range is every domain, not just the ones
+        # they hold a membership in: otherwise the estate console (the page that
+        # answers "what is missing where") is empty for the only role that can
+        # act on it. Role is reported as 'admin' — an honest label for a bypass,
+        # not a fabricated membership row.
+        domains = [
+            {**d, "role": "admin", "last_opened_at": None}
+            for d in workspaces.list_domains(db)
+        ]
     # Estate view (add-domain-tree-and-shared-libraries §4.2): the landing page
     # used to be "the domains I belong to". With many sub-domains the operator's
     # real question is "what is missing where", so every row carries its four

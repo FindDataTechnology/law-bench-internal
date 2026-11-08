@@ -176,8 +176,11 @@ def test_domain_list_empty_state_is_honest_and_role_aware(seeded_db):
     with _client(seeded_db, _user("admin-u", ["*"])) as c:
         r = c.get("/d")
     assert r.status_code == 200
-    assert DOMAIN_A_NAME not in r.text and DOMAIN_B_NAME not in r.text
-    assert "/admin/domains" in r.text            # admin's next step, not a domain
+    # An admin's visible range is the whole estate (add-domain-tree-and-shared-
+    # libraries §4.2): the gap matrix is the page, and it is empty for the only
+    # role that can act on the gaps if memberships were required to see it.
+    assert DOMAIN_A_NAME in r.text and DOMAIN_B_NAME in r.text
+    assert "/admin/domains" in r.text            # the platform gate stays available
 
 
 def test_non_member_is_denied_with_the_domain_gate_not_a_disguised_404(seeded_db):
