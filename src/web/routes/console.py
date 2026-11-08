@@ -583,6 +583,16 @@ def console_knowledge(
     domain = resolve_domain(db, domain_key)
     try:
         scope = library_index.explain_scope(db, domain_path=domain["path"])
+        # How much content each library actually holds for this domain, counted
+        # through the same resolver the search uses (an external library is
+        # counted in its own store). "36 万块" has to be measured here — a
+        # source count that happens to look green is exactly what this page
+        # exists to prevent.
+        counted = library_index.count_scope(db, domain_path=domain["path"])
+        for lib in scope["libraries"]:
+            lib["chunks"] = counted["by_library"].get(lib["library_key"])
+        if counted["errors"]:
+            scope["count_error"] = "; ".join(counted["errors"])
     except ValueError as exc:  # a stored subscription that would widen scope
         scope = {"domain_path": domain["path"], "libraries": [], "error": str(exc)}
     return _templates.TemplateResponse(

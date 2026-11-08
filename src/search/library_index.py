@@ -447,7 +447,7 @@ def count_scope(conn: Any, *, domain_path: str) -> dict:
     exists to prevent. A store that cannot be reached reports its error instead
     of a zero.
     """
-    out = {"chunks": 0, "errors": []}
+    out = {"chunks": 0, "by_library": {}, "errors": []}
     scope = libraries.effective_sources(conn, domain_path=domain_path)
     chain = _scope_paths(domain_path)
     for library_key, allowed in scope.items():
@@ -457,9 +457,9 @@ def count_scope(conn: Any, *, domain_path: str) -> dict:
         backend = lib.get("backend") or "array-cosine"
         try:
             if backend == "qdrant":
-                out["chunks"] += _count_qdrant(conn, lib=lib, allowed=allowed)
+                n = _count_qdrant(conn, lib=lib, allowed=allowed)
             elif backend == "pgvector-external":
-                out["chunks"] += _count_external_pg(conn, lib=lib, allowed=allowed)
+                n = _count_external_pg(conn, lib=lib, allowed=allowed)
             else:
                 params: list[Any] = [lib["id"], chain]
                 sql = ("SELECT COUNT(*) AS n FROM corpus_chunks "
@@ -467,7 +467,9 @@ def count_scope(conn: Any, *, domain_path: str) -> dict:
                 if allowed:
                     sql += " AND source_key = ANY(%s)"
                     params.append(sorted(allowed))
-                out["chunks"] += conn.execute(sql, tuple(params)).fetchone()["n"]
+                n = conn.execute(sql, tuple(params)).fetchone()["n"]
+            out["chunks"] += n
+            out["by_library"][library_key] = n
         except Exception as exc:  # unreachable store must not read as "empty"
             out["errors"].append(f"{library_key}: {exc}")
     return out

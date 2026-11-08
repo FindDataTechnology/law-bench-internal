@@ -23,6 +23,12 @@
   <p class="hint">{{ scope.error }}</p>
 </div>
 {% elif scope.libraries %}
+{#- 外部库连不通时不能把「读不到」显示成「没有」：计数错误单列一条。 -#}
+{% if scope.count_error %}
+<div class="panel">
+  <p class="hint">{{ t.console.knowledge.count_error }} {{ scope.count_error }}</p>
+</div>
+{% endif %}
 {% for lib in scope.libraries %}
 <div class="panel">
   <div class="toolbar between">
@@ -34,10 +40,15 @@
   </div>
   <p class="hint">
     {{ t.console.knowledge.sources_count }} {{ lib.sources|length }}
+    {% if lib.chunks is not none %}· <strong>{{ lib.chunks }}</strong> {{ t.console.knowledge.col_blocks }}{% endif %}
     {% if lib.backend %}· <code>{{ lib.backend }}</code>{% endif %}
     {% if lib.dims %}· {{ lib.dims }} {{ t.console.knowledge.col_dims }}{% endif %}
     {% if lib.embedding_model %}· <code>{{ lib.embedding_model }}</code>{% endif %}
   </p>
+  {% if lib.sources|length > 1 %}
+  {#- 源是多选一（OR）的：一个源覆盖该库的一类内容。块数只给库级总数，
+      因为按源分列要再发 N 次计数请求，而这里要回答的是「有多少」。 -#}
+  {% endif %}
   <ul class="plain">
     {% for s in lib.sources %}<li><code>{{ s }}</code></li>{% endfor %}
   </ul>
