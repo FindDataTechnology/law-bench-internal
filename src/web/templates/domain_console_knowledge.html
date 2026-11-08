@@ -151,6 +151,27 @@
     {% for s in lib.sources %}<li><code>{{ s }}</code></li>{% endfor %}
   </ul>
   {% endif %}
+  {% if cap.can_assign %}
+  {#- 收窄是减法：勾掉的源本域就检索不到，父域未授予的源根本不列出来。
+      提交时后端再对父域有效集校验一次，勾选器骗不过去。 -#}
+  <details>
+    <summary>{{ t.console.knowledge.narrow_h2 }}</summary>
+    <form method="POST" action="{{ url_for('console_knowledge_narrow', domain_key=domain.key) }}">
+      <input type="hidden" name="library_key" value="{{ lib.library_key }}">
+      {% for s in lib.sources %}
+      <label class="block">
+        <input type="checkbox" name="source" value="{{ s }}" checked>
+        <code>{{ s }}</code>
+        {% if lib.source_counts and lib.source_counts.get(s) is not none %}
+        <span class="muted">{{ lib.source_counts.get(s) }}</span>
+        {% endif %}
+      </label>
+      {% endfor %}
+      <button type="submit" class="btn">{{ t.console.knowledge.narrow_btn }}</button>
+    </form>
+    <p class="hint">{{ t.console.knowledge.narrow_hint }}</p>
+  </details>
+  {% endif %}
 </div>
 {% endfor %}
 {% else %}

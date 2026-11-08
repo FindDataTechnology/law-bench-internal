@@ -165,6 +165,52 @@ def console_domain_list(
     )
 
 
+@write_router.post(
+    "/d/{domain_key}/knowledge/narrow", include_in_schema=False,
+    name="console_knowledge_narrow",
+    dependencies=[Depends(require_scope("content:write"))],
+)
+async def console_knowledge_narrow(
+    request: Request,
+    domain_key: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Let a domain lead narrow its own corpus scope (subtraction only).
+
+    A sub-domain owner knows what *their* slice needs; asking a platform admin to
+    edit it is the friction this page removes. The write is validated against the
+    parent's effective set at submit time (``libraries.narrow``), so an attempt to
+    widen fails here with a specific message instead of leaving a broken scope for
+    the next page load to trip over. Expanding back happens the same way — pick
+    more sources, up to whatever the parent granted.
+    """
+    from ..auth.domain_rbac import require_domain_role
+
+    domain = resolve_domain(db, domain_key)
+    require_domain_role("lead")(request, user=user, conn=db)
+    form = await request.form()
+    library_key = (form.get("library_key") or "").strip()
+    picked = [s for s in form.getlist("source") if s]
+    try:
+        library_store.narrow(
+            db,
+            domain_id=domain["id"],
+            domain_path=domain["path"],
+            library_key=library_key,
+            sources=picked,
+            created_by=user.email or user.name or user.sub,
+        )
+    except ValueError as exc:
+        return _flash(
+            f"/d/{quote(domain_key)}/knowledge", "flash.narrow_failed", err=True,
+            detail=str(exc),
+        )
+    return _flash(
+        f"/d/{quote(domain_key)}/knowledge", "flash.narrowed", n=len(picked)
+    )
+
+
 # ------------------------------------------------------------- dispatch #
 
 
