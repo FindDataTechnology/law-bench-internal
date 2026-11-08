@@ -246,3 +246,4 @@ def test_inherited_grant_is_counted_once_for_many_domains(conn, monkeypatch):
     rows = estate.matrix(conn, domains=[dict(root)] + kids)
     assert [r["knowledge"]["chunks"] for r in rows] == [42] * 6
     assert calls["n"] == 1
+

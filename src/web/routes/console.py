@@ -143,7 +143,11 @@ def console_domain_list(
     # real question is "what is missing where", so every row carries its four
     # pillar summaries and its gaps.
     gap = (request.query_params.get("gap") or "").strip() or None
-    rows = estate.filter_rows(estate.matrix(db, domains=domains), gap)
+    # One matrix, two views of it. The gap chips used to re-run the whole matrix
+    # (a second external count per domain; /d measured 1465ms warm), which is
+    # also a second chance for the chips and the rows to disagree.
+    all_rows = estate.matrix(db, domains=domains)
+    rows = estate.filter_rows(all_rows, gap)
     return _templates.TemplateResponse(
         request,
         "domain_list.html",
@@ -153,7 +157,7 @@ def console_domain_list(
             "gap": gap,
             "pillars": estate.PILLARS,
             "gap_counts": {
-                key: len([r for r in estate.matrix(db, domains=domains) if key in r["gaps"]])
+                key: len([r for r in all_rows if key in r["gaps"]])
                 for key in ("ontology", "knowledge", "eval")
             },
             "platform_admin": is_platform_admin(user),
