@@ -1,7 +1,8 @@
 # evaluation-rules-web Specification
 
 ## Purpose
-TBD - created by syncing change evaluation-rules-manager. Update Purpose after archive.
+Give operators a web surface to browse, create, edit, and delete local evaluation rubrics and their criteria without touching the database directly.
+
 ## Requirements
 ### Requirement: Browse Evaluation Rubrics
 The system SHALL present a list of all rubrics, each showing its name (rendered as a localized display title per `data-label-i18n`, with the machine `name` retained as the link target), its `context` rendered as a localized label in the active locale (falling back to the raw key when unmapped), its `source` rendered as a localized source label (per the web-i18n Localized Rubric Source Display requirement) rather than the raw source string, and its criterion count. Harbor rubrics (`source` starting with `harbor:`) and local rubrics (`source = local`) SHALL be shown together.

@@ -1,7 +1,8 @@
 # web-auth Specification
 
 ## Purpose
-TBD - created by archiving change refactor-src-add-logto-auth. Update Purpose after archive.
+Enforce authentication across the web surface through one shared dependency: Logto OIDC browser login, signed session cookies, Bearer JWT validation against JWKS, an explicit exemption set, and API key management.
+
 ## Requirements
 ### Requirement: All non-exempt endpoints require authentication
 

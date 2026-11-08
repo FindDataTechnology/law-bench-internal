@@ -1,5 +1,9 @@
-## ADDED Requirements
+# auto-executor Specification
 
+## Purpose
+Apply clause-review recommendations to assembled contracts in a controlled pipeline: load an analysis JSON, dry-run or commit edits behind a confidence threshold, log every operation, and verify the result is assembly-ready.
+
+## Requirements
 ### Requirement: Load analysis JSON
 The system SHALL load recommendations from a JSON file produced by the analyzer.
 

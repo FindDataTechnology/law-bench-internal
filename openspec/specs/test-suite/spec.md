@@ -1,7 +1,8 @@
 # test-suite Specification
 
 ## Purpose
-TBD - created by archiving change refactor-and-add-tests. Update Purpose after archive.
+Keep the test suite hermetic: no external network or LLM calls, no shared development database, deterministic fakes for judge services, and broad coverage of the evaluation engine, drafting pipeline, web layer, and CLI.
+
 ## Requirements
 ### Requirement: Hermetic Test Execution
 The test suite SHALL execute without any external network or LLM calls and SHALL NOT read or mutate the development/shared PostgreSQL database addressed by `database_url`. Every test that needs a database SHALL operate against a throwaway per-test PostgreSQL database (or per-test schema) isolated from every other test. Every test that exercises LLM-judging behavior SHALL inject a deterministic in-process fake judge rather than calling the real model endpoint. The suite SHALL require a reachable local PostgreSQL instance to run database-backed tests, but SHALL NOT require Elasticsearch, MinIO, or OpenRouter (those are faked in tests).

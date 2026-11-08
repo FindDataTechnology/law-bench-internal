@@ -1,7 +1,8 @@
 # law-info-web Specification
 
 ## Purpose
-TBD - created by archiving change add-law-info-web-and-refine-prompts. Update Purpose after archive.
+Bundle, seed idempotently, and browse law-info survey content with Markdown rendering and a legal references index.
+
 ## Requirements
 ### Requirement: Law-Info Storage
 The system SHALL store per-contract-type 法律法规 survey answers in a `law_info` table within the PostgreSQL database addressed by the `database_url` environment variable. Each row SHALL represent one (contract_type, source) pair with columns: `id` (BIGINT identity primary key), `contract_type` (TEXT, the type key e.g. `sale`), `source` (TEXT, `doubao` or `deepseek`), `zh_name` (TEXT, the Chinese contract-type name), `content` (TEXT, the markdown survey body), and `created_at` (TIMESTAMPTZ). The combination of (`contract_type`, `source`) SHALL be unique. The `law_info` table SHALL be created idempotently (`CREATE TABLE IF NOT EXISTS`) by the same schema source of truth that creates `rubrics`/`criteria`/`prompts` (`scripts/extract_harbor_rules.py`'s `SCHEMA`) and by `src/eval/store.py::ensure_schema`, so both the seeder path and the runtime/self-heal path establish it. `contract_type` SHALL be loosely coupled (no foreign key to `rubrics` or `prompts`), matching the existing contract-type discipline.
