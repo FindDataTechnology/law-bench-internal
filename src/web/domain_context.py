@@ -27,7 +27,14 @@ from ..bench import workspaces
 AREAS: tuple[dict, ...] = (
     {"id": "overview", "min_role": "annotator"},
     {"id": "ontology", "min_role": "annotator"},
-    {"id": "bench", "min_role": "annotator"},
+    # The corpus a domain may actually retrieve from, with its inheritance
+    # explanation. Read-only for annotators; subscriptions are lead-gated.
+    {"id": "knowledge", "min_role": "annotator"},
+    # Evaluation standards: own rubrics plus the ones inherited by reference.
+    {"id": "eval-standards", "min_role": "annotator"},
+    # Formerly ``bench``: the shelf of assigned assets plus run history. The old
+    # URL is kept as a 302 so no bookmark or legacy link breaks.
+    {"id": "eval-runs", "min_role": "annotator"},
     {"id": "inbox", "min_role": "annotator"},
     {"id": "publish", "min_role": "annotator"},
     {"id": "settings", "min_role": "lead"},

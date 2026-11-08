@@ -734,5 +734,8 @@ def test_nav_workbench_links_follow_membership_and_admin_gate(seeded_db):
     assert '/admin/domains"' in r.text
     assert "/d/" not in r.text                  # no membership -> no domain links
     assert '>我的域</a>' not in r.text                  # no membership -> no door
-    assert r.text.count('href="/d"') == 1               # brand only, no nav entry
+    # Brand + the 「全域」 estate entry: the estate console is a platform-level
+    # surface (content:read), so it shows even without a membership — while the
+    # 「我的域」 door stays membership-only (asserted above).
+    assert r.text.count('href="/d"') == 2
     assert DOMAIN_A_NAME not in r.text and DOMAIN_B_NAME not in r.text

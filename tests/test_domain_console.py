@@ -242,19 +242,32 @@ def test_domain_switcher_lists_exactly_my_domains(seeded_db):
 # =========================================================================== #
 
 
-def test_annotator_sees_five_areas_and_no_settings(seeded_db):
-    """annotator: read every area except settings (lead-only)."""
+#: The seven areas every member sees; ``settings`` is lead-only.
+MEMBER_AREAS = ("ontology", "knowledge", "eval-standards", "eval-runs", "inbox", "publish")
+
+
+def test_annotator_sees_member_areas_and_no_settings(seeded_db):
+    """annotator: read every area except settings (lead-only).
+
+    ``bench`` became ``eval-runs`` when evaluation standards got their own area
+    (add-domain-tree-and-shared-libraries §4); the old URL 302s, so it must not
+    appear in the nav any more.
+    """
     _seed_world(seeded_db)
     with _client(seeded_db, _user("rae", _READ_WRITE)) as c:
         r = c.get(f"/d/{A_KEY}")
         assert r.status_code == 200
         assert 'class="zone-nav"' in r.text
-        for area in ("ontology", "bench", "inbox", "publish"):
+        for area in MEMBER_AREAS:
             assert f"/d/{A_KEY}/{area}" in r.text
         assert f"/d/{A_KEY}/settings" not in r.text
+        assert f"/d/{A_KEY}/bench" not in r.text, "legacy bench must not be offered as an area"
 
         settings = c.get(f"/d/{A_KEY}/settings")
+        legacy = c.get(f"/d/{A_KEY}/bench", follow_redirects=False)
     assert settings.status_code == 403
+    assert legacy.status_code == 302
+    assert legacy.headers["location"].endswith(f"/d/{A_KEY}/eval-runs")
 
 
 def test_lead_sees_settings(seeded_db):
@@ -274,7 +287,7 @@ def test_platform_admin_without_membership_reaches_every_area(seeded_db):
     with _client(seeded_db, _user("root", ["*"])) as c:
         r = c.get(f"/d/{A_KEY}")
         assert r.status_code == 200
-        for area in ("ontology", "bench", "inbox", "publish", "settings"):
+        for area in (*MEMBER_AREAS, "settings"):
             assert f"/d/{A_KEY}/{area}" in r.text
         assert '<span class="badge">管理员</span>' in r.text
         s = c.get(f"/d/{A_KEY}/settings")

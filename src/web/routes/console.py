@@ -56,7 +56,12 @@ from ...bench import domain_assets as bench_domain_assets
 # import belongs at the app's edge (this module), never inside src/bench.
 from packs.legal import asset_catalog as _legal_asset_catalog  # noqa: F401
 from ...bench import ledger as bench_ledger
+from ...bench import domain_rubrics
+from ...bench import estate
+from ...bench import templates
+from ...bench import libraries as library_store
 from ...bench import proposals as bench_proposals
+from ...search import library_index
 from ...bench import templates as bench_templates
 from ...bench import workspaces
 
@@ -122,11 +127,24 @@ def console_domain_list(
     cannot enter.
     """
     domains = workspaces.list_member_domains(db, user_id=user.sub)
+    # Estate view (add-domain-tree-and-shared-libraries §4.2): the landing page
+    # used to be "the domains I belong to". With many sub-domains the operator's
+    # real question is "what is missing where", so every row carries its four
+    # pillar summaries and its gaps.
+    gap = (request.query_params.get("gap") or "").strip() or None
+    rows = estate.filter_rows(estate.matrix(db, domains=domains), gap)
     return _templates.TemplateResponse(
         request,
         "domain_list.html",
         {
             "domains": domains,
+            "rows": rows,
+            "gap": gap,
+            "pillars": estate.PILLARS,
+            "gap_counts": {
+                key: len([r for r in estate.matrix(db, domains=domains) if key in r["gaps"]])
+                for key in ("ontology", "knowledge", "eval")
+            },
             "platform_admin": is_platform_admin(user),
         },
     )
@@ -162,6 +180,119 @@ def console_switch(
 
 
 # ----------------------------------------------------------------- overview #
+
+
+# ------------------------------------------------------------ new domain #
+
+
+@read_only_router.get(
+    "/d/new", include_in_schema=False, name="console_new_domain",
+    dependencies=[Depends(require_scope("admin"))],
+)
+def console_new_domain(
+    request: Request,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """The sub-domain wizard: pick a parent, preview inheritance, then create.
+
+    Creating a domain is an **admin** action (the same gate as ``/admin``): the
+    wizard exists to make it a five-minute job, not to widen who may do it.
+    """
+    parents = workspaces.list_domains(db)
+    parent_key = (request.query_params.get("parent") or "").strip() or None
+    preview = None
+    if parent_key:
+        parent = workspaces.get_domain(db, domain_key=parent_key)
+        if parent is not None:
+            parent_template = templates.get_template_by_id(
+                db, template_id=parent["template_id"]
+            )
+            try:
+                scope = library_index.explain_scope(db, domain_path=parent["path"])
+            except ValueError as exc:
+                scope = {"libraries": [], "error": str(exc)}
+            preview = {
+                "parent": parent,
+                "template": parent_template,
+                "scope": scope,
+            }
+    return _templates.TemplateResponse(
+        request,
+        "domain_new.html",
+        {
+            "parents": parents,
+            "parent_key": parent_key,
+            "preview": preview,
+            "libraries": library_store.list_libraries(db),
+        },
+    )
+
+
+@write_router.post(
+    "/d/new", include_in_schema=False, name="console_new_domain_create",
+    dependencies=[Depends(require_scope("admin"))],
+)
+async def console_new_domain_create(
+    request: Request,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Create the sub-domain, subscribe it to the chosen sources, land on it.
+
+    Subscriptions are applied **after** creation and are narrowed against the
+    parent: a wizard selection that would widen the parent's scope is refused by
+    ``effective_sources`` and rolled back, so the wizard cannot produce a domain
+    whose scope the retriever would then reject.
+    """
+    form = await request.form()
+    key = (form.get("key") or "").strip()
+    name = (form.get("name") or "").strip()
+    parent_key = (form.get("parent_key") or "").strip() or None
+    selected = form.getlist("source")  # "library_key:source_key"
+    try:
+        created = workspaces.instantiate_domain(
+            db,
+            key=key,
+            name=name,
+            template_name=(form.get("template_name") or "").strip(),
+            template_version=(
+                int(form.get("template_version"))
+                if (form.get("template_version") or "").strip()
+                else None
+            ),
+            created_by=_operator_of(user),
+            parent_key=parent_key,
+        )
+        if selected:
+            by_lib: dict[str, list[str]] = {}
+            for token in selected:
+                lib, _, src = token.partition(":")
+                if lib and src:
+                    by_lib.setdefault(lib, []).append(src)
+            for lib_key, sources in by_lib.items():
+                library_store.subscribe(
+                    db,
+                    domain_id=created["id"],
+                    library_key=lib_key,
+                    created_by=_operator_of(user),
+                    source_filter=sources,
+                )
+            # Prove the result is a legal scope before declaring success: this is
+            # the same resolver retrieval uses, so a bad selection fails here.
+            library_index.explain_scope(db, domain_path=created["path"])
+    except ValueError as exc:
+        db.rollback()
+        return _flash(
+            f"/d/new?parent={quote(parent_key or '', safe='')}",
+            "console.flash.domain_create_failed",
+            err=True,
+            detail=str(exc),
+        )
+    return _flash(
+        f"/d/{quote(created['key'], safe='')}", "console.flash.domain_created",
+        name=created["name"],
+    )
 
 
 @read_only_router.get(
@@ -374,16 +505,21 @@ def console_publish_action(
 
 
 @read_only_router.get(
-    "/d/{domain_key}/bench", include_in_schema=False, name="console_bench",
+    "/d/{domain_key}/eval-runs", include_in_schema=False, name="console_eval_runs",
     dependencies=_READ_GATES,
 )
-def console_bench(
+def console_eval_runs(
     request: Request,
     domain_key: str,
     db: DbConn = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """The domain's evaluation-asset shelf plus the unassigned pool."""
+    """The domain's evaluation-asset shelf plus the unassigned pool.
+
+    Renamed from ``bench`` when the console grew evaluation *standards* as their
+    own area (add-domain-tree-and-shared-libraries §4): the assets/runs view is
+    what ``bench`` always showed, and the old URL now 302s here.
+    """
     domain = resolve_domain(db, domain_key)
     groups = bench_domain_assets.list_for_domain(db, domain_key=domain_key)
     has_orphans = any(
@@ -401,6 +537,79 @@ def console_bench(
                 db, domain_key=domain_key
             ),
             "has_orphans": has_orphans,
+        },
+    )
+
+
+@read_only_router.get(
+    "/d/{domain_key}/bench", include_in_schema=False, name="console_bench_legacy",
+)
+def console_bench_legacy(domain_key: str):
+    """Legacy ``bench`` URL → the renamed evaluation-runs area (302, never 404)."""
+    return RedirectResponse(
+        url=f"/d/{quote(domain_key, safe='')}/eval-runs", status_code=302
+    )
+
+
+# --------------------------------------------------------------- knowledge #
+
+
+@read_only_router.get(
+    "/d/{domain_key}/knowledge", include_in_schema=False, name="console_knowledge",
+    dependencies=_READ_GATES,
+)
+def console_knowledge(
+    request: Request,
+    domain_key: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """The corpus this domain can actually retrieve from, with its provenance.
+
+    The scope is resolved by the same function retrieval uses
+    (``library_index.explain_scope``), so the page cannot claim a range the
+    search would not honour.
+    """
+    domain = resolve_domain(db, domain_key)
+    try:
+        scope = library_index.explain_scope(db, domain_path=domain["path"])
+    except ValueError as exc:  # a stored subscription that would widen scope
+        scope = {"domain_path": domain["path"], "libraries": [], "error": str(exc)}
+    return _templates.TemplateResponse(
+        request,
+        "domain_console_knowledge.html",
+        {
+            **console_context(db, domain, user),
+            "scope": scope,
+            "libraries": library_store.list_libraries(db),
+        },
+    )
+
+
+# --------------------------------------------------------- eval standards #
+
+
+@read_only_router.get(
+    "/d/{domain_key}/eval-standards", include_in_schema=False,
+    name="console_eval_standards", dependencies=_READ_GATES,
+)
+def console_eval_standards(
+    request: Request,
+    domain_key: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Own rubrics plus the ones inherited by reference from ancestors."""
+    domain = resolve_domain(db, domain_key)
+    standards = domain_rubrics.effective_rubrics(db, domain_path=domain["path"])
+    return _templates.TemplateResponse(
+        request,
+        "domain_console_eval_standards.html",
+        {
+            **console_context(db, domain, user),
+            "standards": standards,
+            "own": [s for s in standards if s["origin"] == "own"],
+            "inherited": [s for s in standards if s["origin"] == "inherited"],
         },
     )
 

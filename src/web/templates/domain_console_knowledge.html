@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}{{ domain.name }} · {{ t.console.areas.knowledge }} · {{ t.nav.brand }}{% endblock %}
+
+{% block nav_items %}{% endblock %}
+{% block console_context %}{% include '_domain_switcher.html' %}{% endblock %}
+{% block zone_nav %}{% set area = 'knowledge' %}{% include '_domain_zone_nav.html' %}{% endblock %}
+
+{% block content %}
+{#- 知识库区：本域**实际能检索到的**取材范围。
+
+    这个范围由检索侧同一个函数算出（library_index.explain_scope），所以页面
+    不可能声明一个检索并不遵守的范围。每个库标明来源：本域自订 / 继承自哪一级；
+    被收窄掉的源不在此列——收窄是减法，页面只展示结果与来源。 -#}
+<div class="toolbar between">
+  <div>
+    <h1>{{ t.console.areas.knowledge }}</h1>
+    <p class="hint">{{ domain.path }}</p>
+  </div>
+</div>
+
+{% if scope.error %}
+<div class="panel">
+  <p class="hint">{{ scope.error }}</p>
+</div>
+{% elif scope.libraries %}
+{% for lib in scope.libraries %}
+<div class="panel">
+  <div class="toolbar between">
+    <h2>{{ lib.library_key }}</h2>
+    <span class="badge">
+      {% if lib.origin == 'own' %}{{ t.console.knowledge.origin_own }}
+      {% else %}{{ t.console.knowledge.origin_inherited }} · {{ lib.inherited_from }}{% endif %}
+    </span>
+  </div>
+  <p class="hint">{{ t.console.knowledge.sources_count }} {{ lib.sources|length }}</p>
+  <ul class="plain">
+    {% for s in lib.sources %}<li><code>{{ s }}</code></li>{% endfor %}
+  </ul>
+</div>
+{% endfor %}
+{% else %}
+<div class="panel">
+  <p class="hint">{{ t.console.knowledge.empty }}</p>
+</div>
+{% endif %}
+
+{#- 库台账：全局只读投影，说明每个库有哪些源、被多少域订阅。 -#}
+{% if libraries %}
+<div class="panel">
+  <h2>{{ t.console.knowledge.libraries_h2 }}</h2>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>{{ t.console.knowledge.col_key }}</th>
+        <th>{{ t.console.knowledge.col_backend }}</th>
+        <th>{{ t.console.knowledge.col_sources }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in libraries %}
+      <tr>
+        <td><code>{{ l.library_key }}</code></td>
+        <td>{{ l.backend }}</td>
+        <td>{{ l.source_count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{#- 工具区：法规库/合同模板/条款库这些**语料侧**的旧页面同理——入口留在
+    知识库区，顶栏不再平铺。 -#}
+{% if cap.can_read %}
+<div class="panel">
+  <h2>{{ t.console.knowledge.tools_h2 }}</h2>
+  <p class="hint">{{ t.console.knowledge.tools_hint }}</p>
+  <ul class="plain">
+    <li><a href="{{ url_for('page_law_info') }}">{{ t.nav.law_info }}</a></li>
+    <li><a href="{{ url_for('page_law_references') }}">{{ t.nav.law_references }}</a></li>
+    <li><a href="{{ url_for('page_contracts') }}">{{ t.nav.contracts }}</a></li>
+    <li><a href="{{ url_for('page_samples') }}">{{ t.nav.samples }}</a></li>
+    <li><a href="{{ url_for('page_clauses') }}">{{ t.nav.clauses }}</a></li>
+    <li><a href="{{ url_for('page_search') }}">{{ t.nav.search }}</a></li>
+    <li><a href="/dashboard">{{ t.nav.dashboard }}</a></li>
+  </ul>
+</div>
+{% endif %}
+{% endblock %}

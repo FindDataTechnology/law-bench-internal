@@ -16,23 +16,16 @@
     {% block console_context %}{% endblock %}
     <nav>
       {% block nav_items %}{% if has_scope('content:read') %}
-      {% set nav_items = [
-        (url_for('page_list_rubrics'), '/rubrics', t.nav.rubrics),
-        (url_for('page_list_prompts'), '/prompts', t.nav.prompts),
-        (url_for('page_list_compares'), '/compare', t.nav.compare),
-        (url_for('page_law_info'), '/law-info', t.nav.law_info),
-        (url_for('page_law_references'), '/law-references', t.nav.law_references),
-        (url_for('page_contracts'), '/contracts', t.nav.contracts),
-        (url_for('page_samples'), '/samples', t.nav.samples),
-        (url_for('page_clauses'), '/clauses', t.nav.clauses),
-        ('/dashboard', '/dashboard', t.nav.dashboard),
-        (url_for('page_review'), '/review', t.nav.review),
-        (url_for('page_search'), '/search', t.nav.search),
-      ] %}
-      {% set current_path = request.url.path %}
-      {% for href, prefix, label in nav_items %}
-      <a href="{{ href }}"{% if current_path.startswith(prefix) %} aria-current="page"{% endif %}>{{ label }}</a>
-      {% endfor %}
+      {#- 三层导航（add-domain-tree-and-shared-libraries §5）：全域 → 我的域 → 域内区。
+
+          The eleven-item flat menu that used to live here mixed two information
+          architectures: a legal-tool list (rubrics / prompts / compare / law-info
+          / contracts / samples / clauses / review / search) beside the domain
+          workbench. Those tools are now reached *through* the domain area that
+          owns them (knowledge / eval-standards / eval-runs); the legacy URLs keep
+          working, they are simply no longer offered as top-level navigation.
+          Keeping the old list here would keep teaching users the old model. -#}
+      <a href="/d"{% if request.url.path == '/d' %} aria-current="page"{% endif %}>{{ t.nav.estate }}</a>
       {% endif %}
       {# 我的域 (web-rbac delta, C5 域优先): ONE entry point, not two links per
          domain. The domain list is the primary navigation surface for choosing
