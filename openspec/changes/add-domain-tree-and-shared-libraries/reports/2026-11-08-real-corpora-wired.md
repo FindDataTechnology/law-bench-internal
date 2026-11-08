@@ -116,3 +116,23 @@ local          166,428
 技术上只差：把 `FDTEXT_DATABASE_URL` 复制到 law-bench 命名空间 + 跑一次登记
 （8B + `dimensions=1024`，空间一致性已实测 cos=0.999864）。不做的原因是口径：
 那是文字线的语料与凭据，把它带进法律站的攻击面属于产品决定。
+
+## 十、机器取数接口 `GET /api/library/search`（镜像 `sha-2e9bb8f`）
+
+`/api/search` 仍是旧引擎；新库订阅此前在机器侧完全不可见。新增域化接口，生产实测：
+
+```
+[200] domain=legal q=建设工程价款优先受偿权 -> 3 hits, top 0.761678 (judicial)
+[200] domain=legal q=（空）               -> []
+[404] domain=ghost                        -> {"error":"unknown domain 'ghost'"}
+```
+
+状态码即契约：200（hits 可空）/ 400 未订阅 / 502 上游故障 / 404 未知域。
+域闸沿用 `/api/search` 的 `_effective_domain`，无绕过路径。
+
+## 十一、两处自身缺陷（已修，记录以免重犯）
+
+1. `get_db()` 在 handler 里直调会**绕过依赖注入**：单测单独跑能过，全量跑时拿到
+   真库而不是测试库（1499 条里挂了一条）。改为 `Depends(get_db)`。
+2. `(key,) = next(iter(keys))` 解包后同名变量变成字符串，紧随的 `len(key) != 1`
+   就变成字符串长度判断，永远落进 fallback —— 表现为「facet 没调用、计数全 0」。
