@@ -692,18 +692,19 @@ def console_knowledge(
         declared = {"entries": [], "missing": [], "error": str(exc), "all_satisfied": False}
     try:
         scope = library_index.explain_scope(db, domain_path=domain["path"])
-        # How much content each library actually holds for this domain, counted
-        # through the same resolver the search uses (an external library is
-        # counted in its own store). "36 万块" has to be measured here — a
-        # source count that happens to look green is exactly what this page
-        # exists to prevent.
-        counted = library_index.count_scope(db, domain_path=domain["path"])
+        # How much content each library holds for this domain, counted through
+        # the same resolver the search uses (an external library is counted in
+        # its own store). "36 万块" has to be measured — a source count that
+        # happens to look green is exactly what this page exists to prevent.
+        chain = library_index._scope_paths(domain["path"])
         for lib in scope["libraries"]:
-            lib["chunks"] = counted["by_library"].get(lib["library_key"])
-            # Per-source volume, so "narrow to these sources" is a decision
-            # made on numbers instead of on source names.
+            # Per-source volume first: it is what the page shows, and it is also
+            # where the total comes from. Counting the library separately would
+            # be a second exact scan of the same store (~0.9s each) and a second
+            # source of truth for one number.
             row = library_store.get_library(db, library_key=lib["library_key"])
             granted = set(lib["sources"])
+            lib["chunks"] = None
             if row is not None:
                 try:
                     lib["source_counts"] = library_index.source_counts(
@@ -712,14 +713,15 @@ def console_knowledge(
                 except Exception as exc:
                     lib["source_counts"] = {}
                     scope.setdefault("count_error", f"{lib['library_key']}: {exc}")
-                # When per-source numbers exist, the library total is their sum.
-                # Two numbers for the same thing must not be able to disagree on
-                # one page: a reader adding the rows up and getting a different
-                # total would be right to trust neither.
                 if lib["source_counts"]:
                     lib["chunks"] = sum(lib["source_counts"].values())
-        if counted["errors"]:
-            scope["count_error"] = "; ".join(counted["errors"])
+                else:
+                    try:
+                        lib["chunks"] = library_index.count_for(
+                            db, lib=row, allowed=granted, chain=chain
+                        )
+                    except Exception as exc:
+                        scope.setdefault("count_error", f"{lib['library_key']}: {exc}")
     except ValueError as exc:  # a stored subscription that would widen scope
         scope = {"domain_path": domain["path"], "libraries": [], "error": str(exc)}
     return _templates.TemplateResponse(

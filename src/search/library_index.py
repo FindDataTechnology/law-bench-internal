@@ -438,6 +438,27 @@ def _search_external_pg(
     return out
 
 
+def count_for(conn: Any, *, lib: dict, allowed: set[str], chain: list[str]) -> int:
+    """Count one library's retrievable chunks for a reader on ``chain``.
+
+    Split out of :func:`count_scope` so a caller that already has per-source
+    numbers (the knowledge page) does not pay for a second full scan of the same
+    store — two exact counts over 364k points is most of a second.
+    """
+    backend = lib.get("backend") or "array-cosine"
+    if backend == "qdrant":
+        return _count_qdrant(conn, lib=lib, allowed=allowed)
+    if backend == "pgvector-external":
+        return _count_external_pg(conn, lib=lib, allowed=allowed)
+    params: list[Any] = [lib["id"], chain]
+    sql = ("SELECT COUNT(*) AS n FROM corpus_chunks "
+           "WHERE library_id = %s AND scope_path = ANY(%s)")
+    if allowed:
+        sql += " AND source_key = ANY(%s)"
+        params.append(sorted(allowed))
+    return conn.execute(sql, tuple(params)).fetchone()["n"]
+
+
 def count_scope(conn: Any, *, domain_path: str, cache: Optional[dict] = None) -> dict:
     """How much retrievable content a domain's scope actually holds.
 
@@ -468,18 +489,7 @@ def count_scope(conn: Any, *, domain_path: str, cache: Optional[dict] = None) ->
             out["by_library"][library_key] = n
             continue
         try:
-            if backend == "qdrant":
-                n = _count_qdrant(conn, lib=lib, allowed=allowed)
-            elif backend == "pgvector-external":
-                n = _count_external_pg(conn, lib=lib, allowed=allowed)
-            else:
-                params: list[Any] = [lib["id"], chain]
-                sql = ("SELECT COUNT(*) AS n FROM corpus_chunks "
-                       "WHERE library_id = %s AND scope_path = ANY(%s)")
-                if allowed:
-                    sql += " AND source_key = ANY(%s)"
-                    params.append(sorted(allowed))
-                n = conn.execute(sql, tuple(params)).fetchone()["n"]
+            n = count_for(conn, lib=lib, allowed=allowed, chain=chain)
             if cache_key is not None and backend in ("qdrant", "pgvector-external"):
                 cache[cache_key] = n
             out["chunks"] += n
@@ -604,7 +614,7 @@ def source_counts(conn: Any, *, lib: dict, allowed: set[str]) -> dict[str, int]:
     data = _qdrant_post(
         loc["url_env"],
         f"/collections/{loc['collection']}/facet",
-        {"key": key, "limit": 200, "exact": True},
+        {"key": key, "limit": 1000, "exact": True},
     )
     facet = {h["value"]: int(h["count"]) for h in (data.get("result") or {}).get("hits") or []}
     counts: dict[str, int] = {}

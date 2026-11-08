@@ -313,3 +313,29 @@ def test_library_total_equals_the_sum_of_its_sources(conn, monkeypatch):
         counts = library_index.source_counts(conn, lib=lib,
                                              allowed={"judicial", "local"})
         assert sum(counts.values()) == 3337 + 166428
+
+
+def test_page_does_not_count_the_same_store_twice(conn, monkeypatch):
+    """One exact scan, not two.
+
+    The page used to ask for the library total *and* the per-source breakdown,
+    which on a 364k-point collection is two full exact scans (~0.9s each) and
+    two sources of truth for one number.
+    """
+    _law_library(conn)
+    calls = []
+
+    def stub(url, *, json=None, headers=None, timeout=None):
+        calls.append(url)
+        return httpx.Response(200, json={"result": {"hits": [
+            {"value": "司法解释", "count": 3337}]}},
+            request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(embedders, "_http_post", _embed_stub())
+    monkeypatch.setattr(library_index, "_http_post", stub)
+    with _client(conn) as c:
+        page = c.get("/d/legal/knowledge")
+    assert page.status_code == 200
+    assert len(calls) == 1, calls          # facet only, no /points/count
+    assert "/facet" in calls[0]
+    assert "3337" in page.text
