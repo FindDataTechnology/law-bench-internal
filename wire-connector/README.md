@@ -114,7 +114,7 @@ EOF
 
 **API 可达、身份门工作正常。** 但实体面鉴权只有 console Logto ID token（无
 machine 旁路，见上「鉴权事实」），本机 tailscale 在线、凭据线索排查了
-`law-bench-server/.env`（只有知验台自身 Logto 配置）、`fd-wire/deploy`、
+`law-bench-server/.env`（**该目录已于 2026-11-08 归档到 `attic/law-bench-server-2026-11-08.tar.gz` 并删除**；当时只有知验台自身 Logto 配置）、`fd-wire/deploy`、
 `fd-infra-deploy`——均无可用的 wire console 用户令牌；唯一造 token 的路径是
 `fd-wire/scripts/provision_service_account.py` 往**生产 Logto 用户库插账号**
 （兄弟仓生产写，明令禁止，且新账号客户域内实体为空图谱，也换不来本体舰队的
