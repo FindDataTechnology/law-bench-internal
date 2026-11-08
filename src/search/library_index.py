@@ -265,10 +265,20 @@ def qdrant_filter(sources: list[dict], allowed: Optional[set[str]]) -> Optional[
 
     Returning ``None`` means "no filter" and must only happen when the caller's
     granted set really is the whole collection.
+
+    An empty ``allowed`` set means *unrestricted*, matching the owned backends
+    (``_search_owned`` skips the source filter when the set is empty) — so it
+    degenerates to "no filter", not to "OR of every source rule": the two differ
+    for a library whose sources do not cover the whole collection. Getting this
+    backwards is not cosmetic: treating "no narrowing" as "nothing granted" made
+    the library-wide count report 0 of 364,916 while the per-source counts summed
+    to the full collection.
     """
+    if not allowed:
+        return None
     branches: list[dict] = []
     for src in sources:
-        if allowed is not None and src["source_key"] not in allowed:
+        if src["source_key"] not in allowed:
             continue
         rule = src.get("ingest_rule") or {}
         if isinstance(rule, str):

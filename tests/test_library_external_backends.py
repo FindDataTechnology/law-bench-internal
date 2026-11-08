@@ -163,6 +163,19 @@ def test_a_source_may_cover_several_spellings_of_one_class(conn):
     assert filt["must"][0]["match"] == {"any": ["地方性法规", "地方法规"]}
 
 
+def test_empty_grant_is_unrestricted_not_empty(conn):
+    """`allowed=set()` means "no narrowing" everywhere else in this module.
+
+    Reading it as "nothing granted" made the whole-library count report 0 while
+    the per-source counts summed to the full collection — the two cannot both be
+    true, and the library page showed the wrong one.
+    """
+    _qdrant_library(conn, sources={"admin": {"match": {"category": "行政法规"}}})
+    lib = libraries.get_library(conn, library_key="law-library")
+    srcs = libraries.list_sources(conn, library_id=lib["id"])
+    assert library_index.qdrant_filter(srcs, set()) is None
+
+
 def test_ungranted_source_cannot_smuggle_a_whole_collection(conn):
     """A rule-less source means 'whole collection'; granting nothing must not
     inherit that."""

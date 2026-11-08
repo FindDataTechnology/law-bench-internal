@@ -61,18 +61,24 @@ def register_law_library(conn, *, domain_key: str = "legal", dry_run: bool = Fal
     existing = libraries.get_library(conn, library_key="law-library")
     if existing is None:
         if dry_run:
+            # Nothing is written, so there is no row to read the sources from —
+            # report the plan and stop. (Reading it back here was the first
+            # draft's TypeError: dry-run must not depend on its own writes.)
             print("  would create library law-library (qdrant, 1024, Qwen3-Embedding-0.6B)")
-        else:
-            libraries.create_library(
-                conn,
-                library_key="law-library",
-                name="法规大库",
-                created_by="register_libraries",
-                backend="qdrant",
-                embedding_model="Qwen/Qwen3-Embedding-0.6B",
-                dims=1024,
-                location={"url_env": "QDRANT_URL", "collection": "law_chunks_v2"},
-            )
+            for key, label, values in LAW_SOURCES:
+                print(f"  would add source {key:15s} {label} -> {values}")
+            print(f"  would subscribe {domain_key} to every source of law-library")
+            return {"library": "law-library", "sources": len(LAW_SOURCES), "dry_run": True}
+        libraries.create_library(
+            conn,
+            library_key="law-library",
+            name="法规大库",
+            created_by="register_libraries",
+            backend="qdrant",
+            embedding_model="Qwen/Qwen3-Embedding-0.6B",
+            dims=1024,
+            location={"url_env": "QDRANT_URL", "collection": "law_chunks_v2"},
+        )
         existing = libraries.get_library(conn, library_key="law-library")
 
     have = {s["source_key"] for s in libraries.list_sources(conn, library_id=existing["id"])}
