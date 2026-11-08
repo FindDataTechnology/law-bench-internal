@@ -673,6 +673,23 @@ def console_knowledge(
             search_error = str(exc)
         except Exception as exc:  # an unreachable store is an error, not "no match"
             search_error = f"{type(exc).__name__}: {exc}"
+    # What this domain *declares* it needs vs what its scope actually grants.
+    # The declaration is the only place a domain states intent, so drift here is
+    # the drift worth showing: a declared source nobody subscribed is invisible
+    # everywhere else.
+    from ...bench import declarations as bench_declarations
+    from ...bench import templates as bench_templates
+
+    decl = {}
+    tmpl = bench_templates.get_template_by_id(db, template_id=domain["template_id"])
+    if tmpl:
+        decl = (tmpl.get("schema") or {}).get("corpus_declaration") or {}
+    try:
+        declared = bench_declarations.resolve(
+            db, domain_path=domain["path"], decl=decl
+        )
+    except ValueError as exc:
+        declared = {"entries": [], "missing": [], "error": str(exc), "all_satisfied": False}
     try:
         scope = library_index.explain_scope(db, domain_path=domain["path"])
         # How much content each library actually holds for this domain, counted
@@ -697,6 +714,7 @@ def console_knowledge(
             "q": q,
             "hits": hits,
             "search_error": search_error,
+            "declared": declared,
         },
     )
 

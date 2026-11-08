@@ -51,6 +51,7 @@ from ..auth.deps import User, require_scope
 from ..auth.domain_rbac import require_domain_role
 from ..deps import DbConn, get_db
 from ..templating import templates as _templates
+from ...bench import declarations as bench_declarations
 from ...bench import distribution as bench_distribution
 from ...bench import templates as bench_templates
 from ...bench import workspaces
@@ -220,6 +221,10 @@ async def admin_template_create(
     if problem is not None:
         return _flash("/admin/templates", "flash.template_json_invalid", err=True, detail=problem)
     try:
+        # A declaration naming a library source that does not exist is a promise
+        # nobody can keep; refuse it here rather than discover it later as
+        # "why is this domain still missing corpus".
+        bench_declarations.check_refs(db, schema.get("corpus_declaration"))
         bench_templates.create_template(
             db, name=name, schema=schema, created_by=_operator_of(user)
         )
@@ -249,6 +254,7 @@ async def admin_template_version_create(
             err=True, detail=problem,
         )
     try:
+        bench_declarations.check_refs(db, schema.get("corpus_declaration"))
         bench_templates.update_template(
             db, name=name, schema=schema, created_by=_operator_of(user)
         )

@@ -59,12 +59,51 @@
   {% endif %}
 </div>
 
+{#- 声明 vs 现状：模板里声明的语料需求，是否真被本域的取材范围覆盖。
+
+    声明是域表达意图的唯一地方，所以这里的漂移最值得显示：一个「声明了但没
+    订阅」的源，在别处完全看不见。自由文本标签（旧的管道名）不判健康——把
+    「出现过」当成「已覆盖」正是盖住缺口的绿。 -#}
+{% if declared.entries %}
+<div class="panel">
+  <h2>{{ t.console.knowledge.declared_h2 }}</h2>
+  {% if declared.error %}
+  <p class="hint">{{ declared.error }}</p>
+  {% endif %}
+  <table class="table">
+    <thead><tr>
+      <th>{{ t.console.knowledge.col_declared }}</th>
+      <th>{{ t.console.knowledge.col_status }}</th>
+    </tr></thead>
+    <tbody>
+      {% for e in declared.entries %}
+      <tr>
+        <td><code>{{ e.entry }}</code></td>
+        <td>
+          {% if e.satisfied %}
+            <span class="badge">{{ t.console.knowledge.declared_ok }}</span>
+          {% elif e.satisfied is none %}
+            <span class="muted">{{ t.console.knowledge.declared_unknown }}</span>
+          {% else %}
+            <span class="badge badge-warn">{{ t.console.knowledge.declared_missing }}</span>
+            <span class="muted">{{ e.reason }}</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if declared.missing %}
+  <p class="hint">{{ t.console.knowledge.declared_hint }}</p>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if scope.error %}
 <div class="panel">
   <p class="hint">{{ scope.error }}</p>
 </div>
-{% elif scope.libraries %}
-{#- 外部库连不通时不能把「读不到」显示成「没有」：计数错误单列一条。 -#}
+{% elif scope.libraries %}{#- 外部库连不通时不能把「读不到」显示成「没有」：计数错误单列一条。 -#}
 {% if scope.count_error %}
 <div class="panel">
   <p class="hint">{{ t.console.knowledge.count_error }} {{ scope.count_error }}</p>
