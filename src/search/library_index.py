@@ -16,6 +16,14 @@ Similarity is cosine over ``REAL[]`` computed in Python after a SQL-scoped
 filter. That is a deliberate compromise: the deployed Postgres image carries no
 pgvector (see ``src/bench/libraries.py``), and at this corpus size the filtered
 set is small. If a library outgrows it, only ``_rank`` changes.
+
+**External libraries** (``qdrant`` / ``pgvector-external``) are read where they
+already live: 364,916 law chunks in Qdrant and the text engine's pgvector
+verticals are far too large to copy, and they are maintained by their own
+pipelines. For those, the source filter — not ``scope_path`` — is the access
+control: a subscriber sees exactly the sources its chain granted, and nothing is
+ingested locally. Each library embeds its query with **its own** model
+(``src.search.embedders``) because equal dims does not mean equal space.
 """
 
 from __future__ import annotations
@@ -25,7 +33,10 @@ import math
 import re
 from typing import Any, Callable, Iterable, Optional
 
+import httpx
+
 from src.bench import libraries
+from src.search import embedders as _embedders
 
 #: How many filtered rows a single search is willing to rank in Python. Sized
 #: for "one library, a few hundred thousand chunks, filtered to a subtree"; past
@@ -33,6 +44,10 @@ from src.bench import libraries
 MAX_RANK_ROWS = 20_000
 
 _TOKEN = re.compile(r"[\w\u4e00-\u9fff]+", re.UNICODE)
+
+#: HTTP seam for external stores. Tests replace it to state the protocol without
+#: a network; production uses plain httpx.
+_http_post = httpx.post
 
 
 class NotSubscribed(ValueError):
@@ -156,10 +171,14 @@ def search(
     *,
     domain_path: str,
     query: str,
-    embed: Callable[[list[str]], list[list[float]]],
+    embed: Optional[Callable[[list[str]], list[list[float]]]] = None,
     top_k: int = 5,
 ) -> list[dict]:
     """Cosine search restricted to a domain's effective subscription scope.
+
+    ``embed`` overrides the per-library embedder (kept for callers that already
+    hold vectors and for tests); by default each library is queried with the
+    model that built it.
 
     Raises :class:`NotSubscribed` when the domain resolves to no source at all —
     the caller must be able to tell "nothing to search" from "no match".
@@ -170,46 +189,300 @@ def search(
     if not (query or "").strip():
         return []
 
-    rows: list[dict] = []
+    results: list[dict] = []
     for library_key, allowed in scope.items():
         lib = libraries.get_library(conn, library_key=library_key)
         if lib is None:
             continue
-        chain = _scope_paths(domain_path)
-        params: list[Any] = [lib["id"], chain]
-        sql = (
-            "SELECT library_id, scope_path, source_key, doc_path, chunk_seq, content, embedding "
-            "FROM corpus_chunks WHERE library_id = %s "
-            "AND scope_path = ANY(%s)"
-        )
-        if allowed:
-            sql += " AND source_key = ANY(%s)"
-            params.append(sorted(allowed))
-        sql += " LIMIT %s"
-        params.append(MAX_RANK_ROWS)
-        rows.extend(dict(r) for r in conn.execute(sql, tuple(params)).fetchall())
+        # One embedder per library: several libraries may each live in a
+        # different space, so a single query vector for all of them is wrong.
+        embed_fn = embed or _embedders.embedder_for_library(lib)
+        qvec = embed_fn([query])[0]
+        backend = lib.get("backend") or "array-cosine"
+        if backend == "qdrant":
+            results.extend(_search_qdrant(conn, lib=lib, allowed=allowed,
+                                          qvec=qvec, top_k=top_k))
+        elif backend == "pgvector-external":
+            results.extend(_search_external_pg(conn, lib=lib, allowed=allowed,
+                                               qvec=qvec, top_k=top_k))
+        else:
+            results.extend(_search_owned(conn, lib=lib, domain_path=domain_path,
+                                         allowed=allowed, qvec=qvec))
+    results.sort(key=lambda h: h["score"], reverse=True)
+    return results[: max(1, top_k)]
 
-    if not rows:
-        return []
-    qvec = embed([query])[0]
-    scored = []
+
+def _search_owned(
+    conn: Any, *, lib: dict, domain_path: str, allowed: set[str], qvec: list[float]
+) -> list[dict]:
+    """Score this database's own ``corpus_chunks`` for one library."""
+    params: list[Any] = [lib["id"], _scope_paths(domain_path)]
+    sql = (
+        "SELECT library_id, scope_path, source_key, doc_path, chunk_seq, content, embedding "
+        "FROM corpus_chunks WHERE library_id = %s "
+        "AND scope_path = ANY(%s)"
+    )
+    if allowed:
+        sql += " AND source_key = ANY(%s)"
+        params.append(sorted(allowed))
+    sql += " LIMIT %s"
+    params.append(MAX_RANK_ROWS)
+    rows = [dict(r) for r in conn.execute(sql, tuple(params)).fetchall()]
+
+    out = []
     for r in rows:
         emb = r.get("embedding")
         if isinstance(emb, str):  # defensive: some drivers hand back the text form
             emb = [float(x) for x in emb.strip("{}").split(",") if x]
-        scored.append((_cosine(qvec, list(emb or [])), r))
-    scored.sort(key=lambda p: p[0], reverse=True)
-    return [
-        {
-            "text": r["content"],
-            "source_path": r["doc_path"],
-            "score": round(score, 6),
-            "source_key": r["source_key"],
-            "chunk_seq": r["chunk_seq"],
-            "scope_path": r["scope_path"],
-        }
-        for score, r in scored[: max(1, top_k)]
-    ]
+        score = _cosine(qvec, list(emb or []))
+        out.append(
+            {
+                "text": r["content"],
+                "source_path": r["doc_path"],
+                "score": round(score, 6),
+                "source_key": r["source_key"],
+                "chunk_seq": r["chunk_seq"],
+                "scope_path": r["scope_path"],
+                "library_key": lib["library_key"],
+            }
+        )
+    return out
+
+
+# ── external stores ──────────────────────────────────────────────────────────
+
+
+def qdrant_filter(sources: list[dict], allowed: Optional[set[str]]) -> Optional[dict]:
+    """Translate library sources into one Qdrant payload filter.
+
+    A source's ``ingest_rule`` looks like ``{"match": {"category": "行政法规"}}``
+    — every key/value pair must match. A **list** value means "any of these",
+    because the corpus spells the same class more than one way (地方性法规 and
+    地方法规 are 166,428 points between them; neither name alone is the class).
+
+    Allowed sources are OR-ed (``should``); if any allowed source carries no rule
+    it means "the whole collection", which makes the filter unnecessary.
+
+    Returning ``None`` means "no filter" and must only happen when the caller's
+    granted set really is the whole collection.
+    """
+    branches: list[dict] = []
+    for src in sources:
+        if allowed is not None and src["source_key"] not in allowed:
+            continue
+        rule = src.get("ingest_rule") or {}
+        if isinstance(rule, str):
+            import json as _json
+
+            rule = _json.loads(rule or "{}")
+        match = rule.get("match") or {}
+        if not match:
+            return None
+        must = []
+        for key, value in sorted(match.items()):
+            if isinstance(value, (list, tuple, set)):
+                values = [v for v in value]
+                if not values:
+                    continue
+                must.append({"key": str(key), "match": {"any": values}})
+            else:
+                must.append({"key": str(key), "match": {"value": value}})
+        branches.append({"must": must})
+    if not branches:
+        # Nothing granted: an impossible filter beats an unfiltered search.
+        return {"must": [{"key": "source_key", "match": {"value": "__none__"}}]}
+    if len(branches) == 1:
+        return branches[0]
+    # Qdrant's `should` is OR: any granted source's match may hit.
+    return {"should": branches}
+
+
+def _qdrant_post(url: str, path: str, body: dict, timeout: float = 30.0) -> dict:
+    resp = _http_post(f"{url.rstrip('/')}{path}", json=body, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _search_qdrant(
+    conn: Any, *, lib: dict, allowed: set[str], qvec: list[float], top_k: int
+) -> list[dict]:
+    loc = libraries.resolve_location(lib)
+    url = loc["url_env"]
+    collection = loc["collection"]
+    filt = qdrant_filter(libraries.list_sources(conn, library_id=lib["id"]), allowed)
+    body: dict[str, Any] = {
+        "vector": list(qvec),
+        "limit": max(1, top_k),
+        "with_payload": True,
+    }
+    if filt is not None:
+        body["filter"] = filt
+    data = _qdrant_post(url, f"/collections/{collection}/points/search", body)
+    out = []
+    for hit in data.get("result") or []:
+        payload = hit.get("payload") or {}
+        title = payload.get("title") or ""
+        chunk_no = payload.get("chunk_no")
+        out.append(
+            {
+                "text": payload.get("chunk_text") or "",
+                "source_path": f"{title}#{chunk_no}" if title else str(hit.get("id")),
+                "score": round(float(hit.get("score") or 0.0), 6),
+                "source_key": _source_for_payload(conn, lib, payload),
+                "chunk_seq": chunk_no,
+                "scope_path": None,
+                "library_key": lib["library_key"],
+                "meta": payload,
+            }
+        )
+    return out
+
+
+def _source_for_payload(conn: Any, lib: dict, payload: dict) -> str:
+    """Which library source a hit belongs to (reverse of the payload filter)."""
+    for src in libraries.list_sources(conn, library_id=lib["id"]):
+        rule = src.get("ingest_rule") or {}
+        if isinstance(rule, str):
+            import json as _json
+
+            rule = _json.loads(rule or "{}")
+        match = rule.get("match") or {}
+        if match and all(payload.get(k) == v for k, v in match.items()):
+            return src["source_key"]
+    return ""
+
+
+_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _search_external_pg(
+    conn: Any, *, lib: dict, allowed: set[str], qvec: list[float], top_k: int
+) -> list[dict]:
+    """Filtered ``<=>`` search over a pgvector table this app does not own.
+
+    ``uri`` names the table; ``ingest_rule`` may carry ``{"where": {...}}`` for
+    equality filters. Both are validated/shape-checked because the table name
+    cannot be parameterised.
+    """
+    import psycopg
+
+    loc = libraries.resolve_location(lib)
+    sources = [s for s in libraries.list_sources(conn, library_id=lib["id"])
+               if not allowed or s["source_key"] in allowed]
+    out: list[dict] = []
+    with psycopg.connect(loc["dsn_env"], connect_timeout=10) as ext:
+        for src in sources:
+            table = src["uri"]
+            if not _IDENT.match(table or ""):
+                raise ValueError(f"source {src['source_key']!r} has an unsafe table name: {table!r}")
+            rule = src.get("ingest_rule") or {}
+            if isinstance(rule, str):
+                import json as _json
+
+                rule = _json.loads(rule or "{}")
+            where = rule.get("where") or {}
+            clauses = ["embedding IS NOT NULL"]
+            params: list[Any] = []
+            for col, val in sorted(where.items()):
+                if not _IDENT.match(col):
+                    raise ValueError(f"unsafe filter column: {col!r}")
+                clauses.append(f"{col} = %s")
+                params.append(val)
+            sql = (
+                f"SELECT chunk_text, chunk_no, document_id, embedding <=> %s::vector AS dist "
+                f"FROM {table} WHERE {' AND '.join(clauses)} "
+                f"ORDER BY embedding <=> %s::vector LIMIT %s"
+            )
+            args = [list(qvec), *params, list(qvec), max(1, top_k)]
+            for row in ext.execute(sql, tuple(args)).fetchall():
+                text, chunk_no, doc_id, dist = row
+                out.append(
+                    {
+                        "text": text or "",
+                        "source_path": f"{src['source_key']}#{doc_id}:{chunk_no}",
+                        "score": round(1.0 - float(dist), 6),
+                        "source_key": src["source_key"],
+                        "chunk_seq": chunk_no,
+                        "scope_path": None,
+                        "library_key": lib["library_key"],
+                    }
+                )
+    return out
+
+
+def count_scope(conn: Any, *, domain_path: str) -> dict:
+    """How much retrievable content a domain's scope actually holds.
+
+    Owned libraries are counted in ``corpus_chunks``; external libraries are
+    counted **in their own store**, because a subscription to 364,916 law chunks
+    that reports "0 chunks" would be exactly the false gap the estate matrix
+    exists to prevent. A store that cannot be reached reports its error instead
+    of a zero.
+    """
+    out = {"chunks": 0, "errors": []}
+    scope = libraries.effective_sources(conn, domain_path=domain_path)
+    chain = _scope_paths(domain_path)
+    for library_key, allowed in scope.items():
+        lib = libraries.get_library(conn, library_key=library_key)
+        if lib is None:
+            continue
+        backend = lib.get("backend") or "array-cosine"
+        try:
+            if backend == "qdrant":
+                out["chunks"] += _count_qdrant(conn, lib=lib, allowed=allowed)
+            elif backend == "pgvector-external":
+                out["chunks"] += _count_external_pg(conn, lib=lib, allowed=allowed)
+            else:
+                params: list[Any] = [lib["id"], chain]
+                sql = ("SELECT COUNT(*) AS n FROM corpus_chunks "
+                       "WHERE library_id = %s AND scope_path = ANY(%s)")
+                if allowed:
+                    sql += " AND source_key = ANY(%s)"
+                    params.append(sorted(allowed))
+                out["chunks"] += conn.execute(sql, tuple(params)).fetchone()["n"]
+        except Exception as exc:  # unreachable store must not read as "empty"
+            out["errors"].append(f"{library_key}: {exc}")
+    return out
+
+
+def _count_qdrant(conn: Any, *, lib: dict, allowed: set[str]) -> int:
+    loc = libraries.resolve_location(lib)
+    filt = qdrant_filter(libraries.list_sources(conn, library_id=lib["id"]), allowed)
+    body: dict[str, Any] = {"exact": True}
+    if filt is not None:
+        body["filter"] = filt
+    data = _qdrant_post(loc["url_env"], f"/collections/{loc['collection']}/points/count", body)
+    return int((data.get("result") or {}).get("count") or 0)
+
+
+def _count_external_pg(conn: Any, *, lib: dict, allowed: set[str]) -> int:
+    import psycopg
+
+    loc = libraries.resolve_location(lib)
+    total = 0
+    with psycopg.connect(loc["dsn_env"], connect_timeout=10) as ext:
+        for src in libraries.list_sources(conn, library_id=lib["id"]):
+            if allowed and src["source_key"] not in allowed:
+                continue
+            table = src["uri"]
+            if not _IDENT.match(table or ""):
+                raise ValueError(f"unsafe table name: {table!r}")
+            rule = src.get("ingest_rule") or {}
+            if isinstance(rule, str):
+                import json as _json
+
+                rule = _json.loads(rule or "{}")
+            where = rule.get("where") or {}
+            clauses = ["embedding IS NOT NULL"]
+            params: list[Any] = []
+            for col, val in sorted(where.items()):
+                if not _IDENT.match(col):
+                    raise ValueError(f"unsafe filter column: {col!r}")
+                clauses.append(f"{col} = %s")
+                params.append(val)
+            sql = f"SELECT COUNT(*) FROM {table} WHERE {' AND '.join(clauses)}"
+            total += int(ext.execute(sql, tuple(params)).fetchone()[0])
+    return total
 
 
 def explain_scope(conn: Any, *, domain_path: str) -> dict:

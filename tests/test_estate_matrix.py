@@ -116,9 +116,22 @@ def test_populated_pillars_are_not_gaps(conn):
     )
     conn.commit()
 
+    # Now ingest one chunk so the corpus pillar is genuinely satisfied — the
+    # gap is about retrievable content, not about a subscription row.
+    lib = libraries.get_library(conn, library_key="law")
+    conn.execute(
+        "INSERT INTO corpus_chunks (library_id, scope_path, source_key, doc_path, "
+        "chunk_seq, content, content_hash) VALUES (%s, %s, 'statutes', 'd.md', 0, 'b', 'h')",
+        (lib["id"], root["path"]),
+    )
+    conn.commit()
+
     rows = estate.matrix(conn, domains=domains)
     assert rows[0]["gaps"] == []
-    assert rows[0]["knowledge"] == {"libraries": 1, "sources": 1}
+    assert rows[0]["knowledge"]["chunks"] == 1
+    assert rows[0]["knowledge"]["libraries"] == 1
+    assert rows[0]["knowledge"]["sources"] == 1
+
     assert rows[0]["eval"]["standards"] == 1
     # The child inherits the standard and the corpus, but has no units of its own.
     assert rows[1]["gaps"] == ["ontology"]

@@ -46,6 +46,19 @@ def _pillar_ontology(conn: Any, domain: dict) -> dict:
 
 
 def _pillar_knowledge(conn: Any, domain: dict) -> dict:
+    """Subscribed scope **and** how much of it is actually retrievable.
+
+    The gap is about retrievable content, not about paperwork: a domain that
+    subscribed two sources but ingested nothing is still a gap, and reporting it
+    green would be exactly the kind of "the report looks better than reality"
+    failure this page exists to prevent.
+
+    External libraries (Qdrant, the text engine's pgvector) are counted **in
+    their own store** — see ``library_index.count_scope``. Counting only
+    ``corpus_chunks`` here would mark 364,916 law chunks as a missing corpus.
+    """
+    from src.search import library_index
+
     try:
         scope = libraries.effective_sources(
             conn, domain_path=domain.get("path") or domain["key"]
@@ -53,11 +66,18 @@ def _pillar_knowledge(conn: Any, domain: dict) -> dict:
     except ValueError as exc:
         # A stored subscription that would widen its parent's scope: report the
         # breakage instead of pretending the domain has no corpus.
-        return {"libraries": 0, "sources": 0, "error": str(exc)}
-    return {
+        return {"libraries": 0, "sources": 0, "chunks": 0, "error": str(exc)}
+
+    counted = library_index.count_scope(conn, domain_path=domain.get("path") or domain["key"])
+    out = {
         "libraries": len(scope),
         "sources": sum(len(v) for v in scope.values()),
+        "chunks": counted["chunks"],
     }
+    if counted["errors"]:
+        # An unreachable store is not an empty one: surface it next to the count.
+        out["error"] = "; ".join(counted["errors"])
+    return out
 
 
 def _pillar_eval(conn: Any, domain: dict) -> dict:
@@ -98,20 +118,21 @@ def matrix(conn: Any, *, domains: list[dict]) -> list[dict]:
         # (the backfill only touches rows present when it runs). A root's path
         # is its key, so this cannot invent a false hierarchy.
         path = domain.get("path") or domain["key"]
+        # Computed once: the knowledge pillar may call out to an external store,
+        # and asking twice per row would double that round trip.
+        ontology = _pillar_ontology(conn, domain)
+        knowledge = _pillar_knowledge(conn, domain)
+        evaluation = _pillar_eval(conn, domain)
         rows.append(
             {
                 "domain": {**domain, "path": path},
                 "depth": max(0, path.count("/")),
-                "ontology": _pillar_ontology(conn, domain),
-                "knowledge": _pillar_knowledge(conn, domain),
-                "eval": _pillar_eval(conn, domain),
+                "ontology": ontology,
+                "knowledge": knowledge,
+                "eval": evaluation,
                 "inbox": _pillar_inbox(conn, domain),
                 "gaps": gaps_for(
-                    {
-                        "ontology": _pillar_ontology(conn, domain),
-                        "knowledge": _pillar_knowledge(conn, domain),
-                        "eval": _pillar_eval(conn, domain),
-                    }
+                    {"ontology": ontology, "knowledge": knowledge, "eval": evaluation}
                 ),
             }
         )
@@ -123,7 +144,9 @@ def gaps_for(pillars: dict) -> list[str]:
     gaps = []
     if (pillars["ontology"].get("curated_units") or 0) == 0:
         gaps.append("ontology")
-    if (pillars["knowledge"].get("sources") or 0) == 0:
+    # Zero *chunks* is the gap — a subscription with nothing ingested is not
+    # knowledge, it is a promise.
+    if (pillars["knowledge"].get("chunks") or 0) == 0:
         gaps.append("knowledge")
     if (pillars["eval"].get("standards") or 0) == 0:
         gaps.append("eval")

@@ -14,7 +14,23 @@ Change ``add-domain-tree-and-shared-libraries``. Three ideas, one module:
   NARROW them. A child may not subscribe a library its parent does not have —
   that would let a sub-domain reach content the parent never granted.
 
-The vector column is ``float4[]`` and similarity is computed in SQL, because
+A library is either **owned** or **external**:
+
+- ``array-cosine`` / ``pgvector`` — owned. Content is ingested into
+  ``corpus_chunks`` here, one vector per library, scope = the ingesting domain.
+- ``qdrant`` / ``pgvector-external`` — external. The vectors already exist in a
+  store this app does not own (the law corpus in Qdrant, the text engine's
+  pgvector verticals); the library only records *where* to read (``location``)
+  and each source says *which slice* (``ingest_rule``). Nothing is copied, and
+  no row is written to ``corpus_chunks`` — so the gap matrix counts the remote
+  store instead (``library_index.count_scope``).
+
+``location`` never contains a secret: it names **environment variables**
+(``{"url_env": "QDRANT_URL"}``, ``{"dsn_env": "FDTEXT_DATABASE_URL"}``) that are
+resolved at query time. Credentials in the database would leak into dump
+restores, console pages and commit history.
+
+The vector column is ``float4[]`` and similarity is computed in Python, because
 the deployed Postgres image (``postgres:16-alpine``) carries no pgvector
 extension. This is a deliberate, documented compromise: the observable contract
 (one shared embedding per library, subtree-scoped filtered retrieval) is the
@@ -33,9 +49,15 @@ from typing import Any, Iterable, Optional
 from psycopg.types.json import Jsonb
 
 #: Accepted retrieval backends for a library. ``array-cosine`` is what this
-#: deployment can actually serve today (no pgvector in the image); the value is
-#: stored explicitly so a later backend move is a data change, not a guess.
-BACKENDS = ("array-cosine", "pgvector")
+#: deployment can actually serve for *owned* content (no pgvector in the image);
+#: the value is stored explicitly so a later backend move is a data change, not
+#: a guess. ``qdrant``/``pgvector-external`` are read-only adapters onto stores
+#: that already hold vectors (the law corpus, the text engine's verticals).
+BACKENDS = ("array-cosine", "pgvector", "qdrant", "pgvector-external")
+
+#: Backends whose content lives outside this database. Nothing is ingested for
+#: them and ``corpus_chunks`` stays empty by design.
+EXTERNAL_BACKENDS = ("qdrant", "pgvector-external")
 
 
 LIBRARY_SCHEMA = """
@@ -60,13 +82,37 @@ CREATE TABLE IF NOT EXISTS libraries (
     id               BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     library_key      TEXT NOT NULL UNIQUE,
     name             TEXT NOT NULL,
-    backend          TEXT NOT NULL DEFAULT 'array-cosine'
-                     CHECK (backend IN ('array-cosine', 'pgvector')),
+    backend          TEXT NOT NULL DEFAULT 'array-cosine',
     embedding_model  TEXT,
     dims             INTEGER NOT NULL DEFAULT 2048 CHECK (dims > 0),
     created_by       TEXT NOT NULL,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Backends grew from two to four when the real corpora were registered
+-- (Qdrant law corpus, the text engine's pgvector verticals). The first release
+-- shipped a CHECK with only the owned backends, so a deployed table would
+-- reject every external library — widen it in place rather than recreate.
+-- ADD CONSTRAINT is not idempotent, so both the drop and the add are guarded.
+ALTER TABLE IF EXISTS libraries DROP CONSTRAINT IF EXISTS libraries_backend_check;
+DO $lib$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conname = 'libraries_backend_check'
+           AND conrelid = to_regclass('public.libraries')
+    ) THEN
+        EXECUTE 'ALTER TABLE libraries ADD CONSTRAINT libraries_backend_check
+                 CHECK (backend IN (''array-cosine'', ''pgvector'',
+                                    ''qdrant'', ''pgvector-external''))';
+    END IF;
+END
+$lib$;
+
+-- Where an external library reads from. Holds **env var names**, never a DSN or
+-- a key: this column is dumped, rendered and committed around, so a secret here
+-- would leak through all three. Owned libraries keep this empty.
+ALTER TABLE IF EXISTS libraries ADD COLUMN IF NOT EXISTS location JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 -- One source = one addressable slice with its own ingest rule. uri is opaque
 -- to this module (object-store prefix, dataset id, …); source_kind says which
@@ -180,8 +226,17 @@ def create_library(
     backend: str = "array-cosine",
     embedding_model: Optional[str] = None,
     dims: int = 2048,
+    location: Optional[dict] = None,
 ) -> dict:
-    """Create one library. The key is the stable identity and never changes."""
+    """Create one library. The key is the stable identity and never changes.
+
+    ``location`` addresses an external store with env var *names*:
+
+    - ``qdrant``: ``{"url_env": "QDRANT_URL", "collection": "law_chunks_v2"}``
+    - ``pgvector-external``: ``{"dsn_env": "FDTEXT_DATABASE_URL"}``
+
+    Environment names, not values: see the module docstring.
+    """
     library_key = (library_key or "").strip()
     if not library_key:
         raise ValueError("library_key is required")
@@ -189,17 +244,34 @@ def create_library(
         raise ValueError(f"backend must be one of {list(BACKENDS)}")
     if not isinstance(dims, int) or dims <= 0:
         raise ValueError("dims must be a positive integer")
+    loc = dict(location or {})
+    if backend in EXTERNAL_BACKENDS:
+        needed = "url_env" if backend == "qdrant" else "dsn_env"
+        if not loc.get(needed):
+            raise ValueError(f"{backend} library requires location[{needed!r}] (env var name)")
+        if backend == "qdrant" and not loc.get("collection"):
+            raise ValueError("qdrant library requires location['collection']")
     cur = conn.execute(
         """
-        INSERT INTO libraries (library_key, name, backend, embedding_model, dims, created_by)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        RETURNING id, library_key, name, backend, embedding_model, dims, created_by, created_at
+        INSERT INTO libraries
+            (library_key, name, backend, embedding_model, dims, location, created_by)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        RETURNING id, library_key, name, backend, embedding_model, dims, location,
+                  created_by, created_at
         """,
-        (library_key, name or library_key, backend, embedding_model, dims, created_by),
+        (
+            library_key,
+            name or library_key,
+            backend,
+            embedding_model,
+            dims,
+            Jsonb(loc),
+            created_by,
+        ),
     )
     row = _row(cur.fetchone())
     conn.commit()
-    return row
+    return _with_location(row)
 
 
 def add_source(
@@ -240,21 +312,24 @@ def add_source(
 
 
 def get_library(conn: Any, *, library_key: str) -> Optional[dict]:
-    return _row(
-        conn.execute(
-            "SELECT id, library_key, name, backend, embedding_model, dims FROM libraries "
-            "WHERE library_key = %s",
-            (library_key,),
-        ).fetchone()
+    return _with_location(
+        _row(
+            conn.execute(
+                "SELECT id, library_key, name, backend, embedding_model, dims, location "
+                "FROM libraries WHERE library_key = %s",
+                (library_key,),
+            ).fetchone()
+        )
     )
 
 
 def list_libraries(conn: Any) -> list[dict]:
     """Every registered library with its source count, for the console."""
     return [
-        dict(r)
+        _with_location(dict(r))
         for r in conn.execute(
             "SELECT l.id, l.library_key, l.name, l.backend, l.embedding_model, l.dims, "
+            "       l.location, "
             "       (SELECT COUNT(*) FROM library_sources s WHERE s.library_id = l.id) "
             "       AS source_count "
             "FROM libraries l ORDER BY l.library_key"
@@ -398,3 +473,40 @@ def _row(row: Any) -> Optional[dict]:
     if row is None:
         return None
     return dict(row) if isinstance(row, dict) else dict(row)
+
+
+def _with_location(row: Optional[dict]) -> Optional[dict]:
+    """Decode ``location`` from JSONB text (psycopg may hand back a string)."""
+    if not row:
+        return row
+    loc = row.get("location")
+    if isinstance(loc, (str, bytes)):
+        row["location"] = json.loads(loc or "{}")
+    elif loc is None:
+        row["location"] = {}
+    return row
+
+
+def resolve_location(lib: dict, *, env: Any = None) -> dict:
+    """Turn a library's env *names* into the values a client needs.
+
+    Raises ``ValueError`` naming the missing variable rather than returning a
+    half-filled location — a library that cannot be resolved must fail loudly at
+    query time, not silently search nothing.
+    """
+    import os
+
+    source = env if env is not None else os.environ
+    loc = dict(lib.get("location") or {})
+    resolved = dict(loc)
+    for key in ("url_env", "dsn_env"):
+        name = loc.get(key)
+        if name:
+            value = source.get(name)
+            if not value:
+                raise ValueError(
+                    f"library {lib.get('library_key')!r} needs environment variable {name!r}, "
+                    "which is not set"
+                )
+            resolved[key] = value
+    return resolved
