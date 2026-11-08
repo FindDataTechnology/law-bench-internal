@@ -67,4 +67,4 @@
 - [x] 7.8 端到端检索实证（生产 pod 内）：`建设工程价款优先受偿权` → 三部司法解释 0.7617/0.7507/0.7417，源归属 `judicial`；`违约责任如何认定` → 民法典/民法通则
 - [ ] 7.9 `fd_text` 四垂域登记为库：需要在 law-bench 部署里注入 `FDTEXT_DATABASE_URL`（跨命名空间，secret 要复制一份）+ 在 pod 侧验 8B 空间；**待人工确认是否要把文字垂域并进法律站**（它们是别的产品线的语料）
 - [x] 7.10 控制台补「登记外部库」入口：`/admin/libraries`（admin 独占）建库/加源/订阅；外部库只填环境变量名，表单里没有 DSN/口令字段；`match` 解析失败拒存（空规则=整库，手滑会放大范围）；验证＝`tests/test_admin_libraries.py` 8 条
-- [ ] 7.11 `packs` 里的 corpus declaration 与外部库对齐：域模板声明 `source_types` 时应当能引用外部库的源类型
+- [x] 7.11 语料声明可校验：`source_types` 支持 `library:<lib>/<src>` 绑定真实库源；保存模板时校验引用存在（库/源不在即拒）；知识区显示「声明 vs 现状」（已覆盖 / 未覆盖+原因 / 自由文本标签不判健康）；验证＝`tests/test_corpus_declarations.py` 10 条
