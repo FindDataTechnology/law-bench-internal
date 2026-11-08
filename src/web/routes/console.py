@@ -700,6 +700,18 @@ def console_knowledge(
         counted = library_index.count_scope(db, domain_path=domain["path"])
         for lib in scope["libraries"]:
             lib["chunks"] = counted["by_library"].get(lib["library_key"])
+            # Per-source volume, so "narrow to these sources" is a decision
+            # made on numbers instead of on source names.
+            row = library_store.get_library(db, library_key=lib["library_key"])
+            granted = set(lib["sources"])
+            if row is not None:
+                try:
+                    lib["source_counts"] = library_index.source_counts(
+                        db, lib=row, allowed=granted
+                    )
+                except Exception as exc:
+                    lib["source_counts"] = {}
+                    scope.setdefault("count_error", f"{lib['library_key']}: {exc}")
         if counted["errors"]:
             scope["count_error"] = "; ".join(counted["errors"])
     except ValueError as exc:  # a stored subscription that would widen scope

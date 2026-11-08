@@ -485,6 +485,81 @@ def _count_qdrant(conn: Any, *, lib: dict, allowed: set[str]) -> int:
     return int((data.get("result") or {}).get("count") or 0)
 
 
+def _match_values(src: dict) -> dict[str, list[Any]]:
+    """A source's rule as ``{payload_key: [allowed values]}`` (lists normalised)."""
+    rule = src.get("ingest_rule") or {}
+    if isinstance(rule, str):
+        import json as _json
+
+        rule = _json.loads(rule or "{}")
+    out: dict[str, list[Any]] = {}
+    for key, value in (rule.get("match") or {}).items():
+        if isinstance(value, (list, tuple, set)):
+            out[str(key)] = list(value)
+        else:
+            out[str(key)] = [value]
+    return out
+
+
+def source_counts(conn: Any, *, lib: dict, allowed: set[str]) -> dict[str, int]:
+    """Per-source chunk counts for an external library.
+
+    Costs **one** request per payload key instead of one per source: a facet on
+    the key the sources filter by returns every value's count at once, and a
+    source is then the sum of its values. That matters on a page a human opens
+    — 7 sources × a round trip each is a slow panel for no extra truth.
+
+    Falls back to per-source counts when the sources do not share a single
+    filter key (a facet cannot answer that shape), so the numbers stay honest
+    either way.
+    """
+    sources = [s for s in libraries.list_sources(conn, library_id=lib["id"])
+               if not allowed or s["source_key"] in allowed]
+    if (lib.get("backend") or "") != "qdrant":
+        # Only the vector store has a cheap grouping API; owned content is a
+        # plain GROUP BY and is handled by the caller.
+        return {}
+    if not sources:
+        return {}
+
+    rules = {s["source_key"]: _match_values(s) for s in sources}
+    keys = {tuple(sorted(r)) for r in rules.values()}
+    if len(keys) != 1 or not next(iter(keys)):
+        # Mixed or keyless rules: no single facet can answer, count per source.
+        return {s["source_key"]: _count_qdrant(conn, lib=lib, allowed={s["source_key"]})
+                for s in sources}
+
+    key_tuple = next(iter(keys))
+    if len(key_tuple) != 1:
+        return {s["source_key"]: _count_qdrant(conn, lib=lib, allowed={s["source_key"]})
+                for s in sources}
+    # A facet groups by ONE payload key; `key_tuple` is the tuple of the keys the
+    # rules filter on, so unwrap it only after the width check above.
+    key = key_tuple[0]
+
+    loc = libraries.resolve_location(lib)
+    data = _qdrant_post(
+        loc["url_env"],
+        f"/collections/{loc['collection']}/facet",
+        {"key": key, "limit": 200, "exact": True},
+    )
+    facet = {h["value"]: int(h["count"]) for h in (data.get("result") or {}).get("hits") or []}
+    counts: dict[str, int] = {}
+    covered: set[Any] = set()
+    for src in sources:
+        values = rules[src["source_key"]].get(key, [])
+        n = 0
+        for v in values:
+            if v in facet:
+                n += facet[v]
+                covered.add(v)
+        counts[src["source_key"]] = n
+    # A value in the facet that belongs to no granted source is unreachable for
+    # this subscription; it is not part of any source's count, and the caller
+    # reports the difference against the library total.
+    return counts
+
+
 def _count_external_pg(conn: Any, *, lib: dict, allowed: set[str]) -> int:
     import psycopg
 

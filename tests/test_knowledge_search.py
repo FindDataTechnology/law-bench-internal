@@ -182,7 +182,7 @@ def test_page_without_a_query_does_not_search(conn, monkeypatch):
     # Opening the page may *count* (that is the blocker number it shows) but it
     # must never embed a query or rank chunks.
     assert embed_stub.calls == []
-    assert all("/points/count" in c["url"] for c in store_stub.calls)
+    assert not any("/points/search" in c["url"] for c in store_stub.calls)
 
 
 def test_search_obeys_the_narrowed_source_set(conn, monkeypatch):
@@ -201,3 +201,65 @@ def test_search_obeys_the_narrowed_source_set(conn, monkeypatch):
     sent = json.dumps(body.get("filter") or {}, ensure_ascii=False)
     assert "司法解释" in sent
     assert "地方性法规" not in sent
+
+
+def test_per_source_counts_come_from_one_facet_call(conn, monkeypatch):
+    """Seven sources must not cost seven round trips, and the numbers must add up.
+
+    The facet returns every payload value at once; a source is the sum of its
+    values. A value belonging to no granted source is simply absent from the
+    per-source rows — it is unreachable for this subscription, not zero.
+    """
+    _law_library(conn)  # grants only `judicial`
+    libraries.add_source(conn, library_key="law-library", source_key="local",
+                         uri="x", created_by="t",
+                         ingest_rule={"match": {"category": ["地方性法规", "地方法规"]}})
+    conn.commit()
+    stub = _Stub(lambda url, body: {"result": {"hits": [
+        {"value": "司法解释", "count": 3337},
+        {"value": "地方性法规", "count": 121225},
+        {"value": "地方法规", "count": 45203},
+        {"value": "规章", "count": 117343},
+    ]}})
+    monkeypatch.setattr(library_index, "_http_post", stub)
+    lib = libraries.get_library(conn, library_key="law-library")
+    counts = library_index.source_counts(conn, lib=lib, allowed={"judicial", "local"})
+    assert counts == {"judicial": 3337, "local": 166428}
+    assert len(stub.calls) == 1
+    assert stub.calls[0]["url"].endswith("/facet")
+    assert stub.calls[0]["body"]["key"] == "category"
+
+
+def test_per_source_counts_skip_ungranted_sources(conn, monkeypatch):
+    _law_library(conn)
+    libraries.add_source(conn, library_key="law-library", source_key="local",
+                         uri="x", created_by="t",
+                         ingest_rule={"match": {"category": ["地方性法规"]}})
+    conn.commit()
+    stub = _Stub(lambda url, body: {"result": {"hits": [
+        {"value": "司法解释", "count": 3337},
+        {"value": "地方性法规", "count": 121225},
+    ]}})
+    monkeypatch.setattr(library_index, "_http_post", stub)
+    lib = libraries.get_library(conn, library_key="law-library")
+    counts = library_index.source_counts(conn, lib=lib, allowed={"judicial"})
+    assert counts == {"judicial": 3337}   # `local` not granted -> no row
+
+
+def test_per_source_counts_fall_back_when_rules_differ(conn, monkeypatch):
+    """A facet cannot answer mixed filter keys; per-source counts stay correct."""
+    _law_library(conn)
+    libraries.add_source(conn, library_key="law-library", source_key="recent",
+                         uri="x", created_by="t",
+                         ingest_rule={"match": {"publish": ["2025", "2026"]}})
+    conn.commit()
+    counts_by_filter = {}
+    def answer(url, body):
+        if url.endswith("/facet"):
+            raise AssertionError("facet must not be used for mixed keys")
+        sent = json.dumps(body.get("filter") or {}, ensure_ascii=False)
+        return {"result": {"count": 10 if "司法解释" in sent else 20}}
+    monkeypatch.setattr(library_index, "_http_post", _Stub(answer))
+    lib = libraries.get_library(conn, library_key="law-library")
+    counts = library_index.source_counts(conn, lib=lib, allowed={"judicial", "recent"})
+    assert counts == {"judicial": 10, "recent": 20}
