@@ -24,6 +24,13 @@
 <div class="toolbar gap" role="group" aria-label="{{ t.console.estate.gap_filter }}">
   <a class="btn btn-sm{% if not gap %} btn-primary{% endif %}"
      href="{{ url_for('console_domain_list') }}">{{ t.console.estate.all }}</a>
+  {% if gap %}
+  {#- 派单入口只在筛出缺口后出现：它作用于「当前这一屏缺这个的域」，
+      不是一个独立功能。目标页只读，写发生在确认页。 -#}
+  <a class="btn btn-sm" href="{{ url_for('console_dispatch_preview') }}?gap={{ gap }}">
+    {{ t.console.dispatch.title }} ({{ rows|length }})
+  </a>
+  {% endif %}
   {% for key in ('ontology', 'knowledge', 'eval') %}
   <a class="btn btn-sm{% if gap == key %} btn-primary{% endif %}"
      href="{{ url_for('console_domain_list') }}?gap={{ key }}">

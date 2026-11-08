@@ -57,6 +57,7 @@ from ...bench import domain_assets as bench_domain_assets
 from packs.legal import asset_catalog as _legal_asset_catalog  # noqa: F401
 from ...bench import ledger as bench_ledger
 from ...bench import domain_rubrics
+from ...bench import dispatch
 from ...bench import estate
 from ...bench import templates
 from ...bench import libraries as library_store
@@ -157,6 +158,83 @@ def console_domain_list(
             },
             "platform_admin": is_platform_admin(user),
         },
+    )
+
+
+# ------------------------------------------------------------- dispatch #
+
+
+def _estate_domains(db, user) -> list[dict]:
+    """The domains this caller can see on the estate page — one definition.
+
+    Shared by the matrix and the dispatch planner so a task can never be created
+    for a domain the caller could not see in the first place.
+    """
+    domains = workspaces.list_member_domains(db, user_id=user.sub)
+    if not domains and is_platform_admin(user):
+        domains = [
+            {**d, "role": "admin", "last_opened_at": None}
+            for d in workspaces.list_domains(db)
+        ]
+    return domains
+
+
+@read_only_router.get(
+    "/d/dispatch", include_in_schema=False, name="console_dispatch_preview",
+    dependencies=[Depends(require_scope("content:read"))],
+)
+def console_dispatch_preview(
+    request: Request,
+    gap: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Confirmation step — **read-only**, by design.
+
+    A batch that created tasks while rendering a filtered list would be one
+    refresh away from duplicates, so the plan is shown here and written only on
+    the POST below.
+    """
+    domains = _estate_domains(db, user)
+    try:
+        rows = dispatch.rows_for_gap(db, domains=domains, gap=gap)
+        plan = dispatch.plan(db, rows=rows, gap=gap, assignee="")
+    except ValueError as exc:
+        return _flash("/d", str(exc), err=True)
+    return _templates.TemplateResponse(
+        request,
+        "domain_dispatch.html",
+        {"plan": plan, "platform_admin": is_platform_admin(user)},
+    )
+
+
+@write_router.post(
+    "/d/dispatch", include_in_schema=False, name="console_dispatch_confirm",
+    dependencies=[Depends(require_scope("content:write"))],
+)
+async def console_dispatch_confirm(
+    request: Request,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Create one task per domain still missing the gap (idempotent per pillar)."""
+    form = await request.form()
+    gap = (form.get("gap") or "").strip()
+    assignee = (form.get("assignee") or "").strip()
+    domains = _estate_domains(db, user)
+    try:
+        rows = dispatch.rows_for_gap(db, domains=domains, gap=gap)
+        result = dispatch.dispatch(
+            db, rows=rows, gap=gap, assignee=assignee,
+            created_by=user.email or user.name or user.sub,
+        )
+    except ValueError as exc:
+        return _flash("/d", str(exc), err=True)
+    return _flash(
+        f"/d?gap={quote(gap)}",
+        "flash.dispatch_done",
+        n=len(result["created"]),
+        skipped=len(result["already_open"]),
     )
 
 
