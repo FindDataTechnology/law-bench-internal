@@ -659,6 +659,20 @@ def console_knowledge(
     search would not honour.
     """
     domain = resolve_domain(db, domain_key)
+    # Retrieval lives here, next to the scope it obeys: the search box on this
+    # page calls the same resolver the filter uses, so what the page says the
+    # domain can see is exactly what a query can return. Before this existed the
+    # registered corpora (364,916 law chunks) were reachable by no screen at all.
+    q = (request.query_params.get("q") or "").strip()
+    hits: list[dict] = []
+    search_error = None
+    if q:
+        try:
+            hits = library_index.search(db, domain_path=domain["path"], query=q, top_k=10)
+        except library_index.NotSubscribed as exc:
+            search_error = str(exc)
+        except Exception as exc:  # an unreachable store is an error, not "no match"
+            search_error = f"{type(exc).__name__}: {exc}"
     try:
         scope = library_index.explain_scope(db, domain_path=domain["path"])
         # How much content each library actually holds for this domain, counted
@@ -680,6 +694,9 @@ def console_knowledge(
             **console_context(db, domain, user),
             "scope": scope,
             "libraries": library_store.list_libraries(db),
+            "q": q,
+            "hits": hits,
+            "search_error": search_error,
         },
     )
 

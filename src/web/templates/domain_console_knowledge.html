@@ -18,6 +18,47 @@
   </div>
 </div>
 
+{#- 检索入口：这是「取材」真正发生的地方。
+
+    走的就是下面这份范围的同一个解析器（library_index.search 内部用
+    effective_sources），所以「页面说能取到什么」与「查询实际返回什么」
+    不可能分叉。命中带库与源，才能判断一条内容算哪一类知识。 -#}
+<div class="panel">
+  <form method="GET" action="{{ url_for('console_knowledge', domain_key=domain.key) }}" class="toolbar gap">
+    <label for="kb-q">{{ t.console.knowledge.search_label }}</label>
+    <input type="text" name="q" id="kb-q" value="{{ q }}" placeholder="{{ t.console.knowledge.search_placeholder }}">
+    <button type="submit" class="btn btn-primary">{{ t.console.knowledge.search_btn }}</button>
+  </form>
+  {% if search_error %}
+  {#- 检索失败与「没命中」必须分开：连不通时显示空结果会让人以为语料里没有。 -#}
+  <p class="hint">{{ t.console.knowledge.search_error }} {{ search_error }}</p>
+  {% elif q %}
+  <h2>{{ t.console.knowledge.results_h2 }} {{ hits|length }}</h2>
+  {% if hits %}
+  <table class="table">
+    <thead><tr>
+      <th>{{ t.console.knowledge.col_score }}</th>
+      <th>{{ t.console.knowledge.col_source }}</th>
+      <th>{{ t.console.knowledge.col_locator }}</th>
+      <th>{{ t.console.knowledge.col_text }}</th>
+    </tr></thead>
+    <tbody>
+      {% for h in hits %}
+      <tr>
+        <td>{{ '%.3f'|format(h.score) }}</td>
+        <td><code>{{ h.source_key }}</code>{% if h.library_key %}<br><span class="muted">{{ h.library_key }}</span>{% endif %}</td>
+        <td>{{ h.source_path }}</td>
+        <td>{{ h.text[:180] }}{% if h.text|length > 180 %}…{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="hint">{{ t.console.knowledge.no_hits }}</p>
+  {% endif %}
+  {% endif %}
+</div>
+
 {% if scope.error %}
 <div class="panel">
   <p class="hint">{{ scope.error }}</p>
