@@ -136,3 +136,23 @@ local          166,428
    真库而不是测试库（1499 条里挂了一条）。改为 `Depends(get_db)`。
 2. `(key,) = next(iter(keys))` 解包后同名变量变成字符串，紧随的 `len(key) != 1`
    就变成字符串长度判断，永远落进 fallback —— 表现为「facet 没调用、计数全 0」。
+
+## 十二、两处「显示与事实不符」的修正（镜像 `sha-35140a5`）
+
+1. **读不到 ≠ 没有**：向量库连不通时，缺口矩阵原先把「计数失败」判成「缺语料」，
+   会让人去补一个已经存在的语料。`gaps_for` 现在只在「没出错且计数为 0」时判缺口；
+   错误仍在行上以告警渲染。验证＝`test_unreachable_store_is_unknown_not_a_gap`。
+2. **自有库也能按源出数**：按源块数原来只对 qdrant 有效，自有库一律「—」。现在
+   按后端各用最合适的方式：自有内容本地一条 `GROUP BY`、外部 pgvector 一表一源
+   各一条 `COUNT`、Qdrant 单次 facet（过滤键不统一时退回逐源）；答不了的后端
+   返回 `{}` 而不是一堆 0。修一个写错的分支：`backend not in ("qdrant","pgvector")`
+   把默认的 `array-cosine` 送进外部 pg 路径（`KeyError: 'dsn_env'`）。
+
+生产实测（`sha-35140a5`）：
+
+```
+estate: legal {'libraries': 1, 'sources': 7, 'chunks': 364916} gaps=[]
+per-source: administrative 8304 / amendment 3920 / departmental 117343 / judicial 3337
+            local 166428 / statutes 6202 / unclassified 59382   → sum 364916
+api: 200 [(0.761678,'judicial'), (0.750701,'judicial')]
+```
