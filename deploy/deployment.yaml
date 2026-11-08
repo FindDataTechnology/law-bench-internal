@@ -67,7 +67,7 @@ spec:
             - lawbench.finddatatech.cloud
       initContainers:
         - name: seed-db
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-40e299a
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-dd904af
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsUser: 0
@@ -89,10 +89,12 @@ spec:
               ls -la /data
       containers:
         - name: law-bench
-          # sha-40e299a（源 525db08 / 快照 40e299a）：提案箱提交回带 created——
-          # 舰队据此区分「新增」与「幂等命中」。三镜像同 bump；核过 ccr digest
-          # 2c5b0ffe 与构建时刻 20:03:05Z。
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-40e299a
+          # sha-dd904af（源 1a30e81 / 快照 dd904af）：行业大库 + 细分域树
+          # （change add-domain-tree-and-shared-libraries）——域树/库订阅/检索按
+          # 祖先链过滤/本体与评测域化/八区控制台/L0 缺口矩阵/建域向导。
+          # 三镜像同 bump；核过 ccr digest d28cca39 与构建时刻 07:12:41Z。
+          # 回滚=sha-40e299a（提案箱 created 那版）。
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-dd904af
           imagePullPolicy: IfNotPresent
           env:
             # Admin-assistant runtime (add-admin-copilot-assistant). Non-secret
