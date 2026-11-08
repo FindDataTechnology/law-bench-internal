@@ -206,3 +206,18 @@ task visible in inbox: True
 close -> 303, status now: done
 probe task removed; remaining tasks: 0
 ```
+
+## 十六、镜像版本漂移（已知，且大部分有意）
+
+同一命名空间里五个 Deployment 用同一镜像的不同 tag：
+
+| Deployment | tag | 判断 |
+|---|---|---|
+| `law-bench`（主应用） | `sha-96b36b4` | 现役 |
+| `law-bench-mcp` | `sha-e411d22` | **有意不动**：该 pod 用 `PYTHONPATH=/opt/mcp/lib/pkgs` 补 MCP 包，tag 是为这个变通选的；本轮只加了 REST 接口、没新增 MCP 工具，旧镜像对全增量 schema 照常工作 |
+| `law-bench-mcp-assistant` | `sha-2180036` | 同上（同一变通） |
+| `law-bench-public` | `sha-2180036` | **有意不动**：`PUBLIC_API=1` 走 `public_app`，入口脚本明确「读面不得跑 DDL」，其库是 15 分钟同步的快照副本；在副本 schema 落后窗口里换新代码，只会让新 SELECT 撞上还没同步到的列 |
+| `copilot-runtime` / `render-service` | 各自镜像 | 不同镜像，与本次无关 |
+
+结论：这不是漏滚，是三个 pod 各有明确理由。要滚它们须先解决各自的前提
+（MCP 包的构建上下文、公开副本的 schema 同步窗口），不该顺手带上。
