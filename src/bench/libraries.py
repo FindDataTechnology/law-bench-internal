@@ -137,9 +137,19 @@ UPDATE knowledge_units SET namespace = (
 -- rubrics had no owner at all; evaluation standards are per-domain now.
 -- eval_runs learns which rubric (and thus which domain) each run actually used;
 -- nullable because legacy runs predate ownership and must not be re-attributed.
-ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS rubric_domain_id BIGINT REFERENCES domains(id);
-ALTER TABLE IF EXISTS rubrics ADD COLUMN IF NOT EXISTS domain_id BIGINT REFERENCES domains(id);
-ALTER TABLE IF EXISTS rubrics ADD COLUMN IF NOT EXISTS derived_from BIGINT REFERENCES rubrics(id);
+-- `domain_id`/`derived_from` are plain BIGINT, not foreign keys: the deployed
+-- `rubrics` table has no primary key (legacy script), and a boot-time FK here
+-- crash-looped production on 2026-11-08. Referential integrity for the fork
+-- link is by convention; the parent domain's own PK is still enforced where it
+-- lives (domains).
+ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS rubric_domain_id BIGINT;
+ALTER TABLE IF EXISTS rubrics ADD COLUMN IF NOT EXISTS domain_id BIGINT;
+-- Soft reference, deliberately NOT a foreign key: the deployed `rubrics` table
+-- was created by a legacy script and carries no primary key at all (verified in
+-- production 2026-11-08), so `REFERENCES rubrics(id)` fails the unique-constraint
+-- requirement and takes the whole boot down. A fork pointing at a since-deleted
+-- parent is still meaningful history, so integrity here is by convention.
+ALTER TABLE IF EXISTS rubrics ADD COLUMN IF NOT EXISTS derived_from BIGINT;
 ALTER TABLE IF EXISTS rubrics ADD COLUMN IF NOT EXISTS fork_diff JSONB;
 
 -- rubrics is created by a legacy schema constant that may run after this one
