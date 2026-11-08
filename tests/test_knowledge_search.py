@@ -292,3 +292,24 @@ def test_owned_library_counts_do_not_require_the_store(conn, monkeypatch):
     monkeypatch.setattr(library_index, "_http_post", boom)
     row = libraries.get_library(conn, library_key="owned2")
     assert library_index.source_counts(conn, lib=row, allowed={"a"}) == {"a": 0}
+
+
+def test_library_total_equals_the_sum_of_its_sources(conn, monkeypatch):
+    """Two numbers for one quantity must never disagree on the same page."""
+    _law_library(conn)
+    libraries.add_source(conn, library_key="law-library", source_key="local",
+                         uri="x", created_by="t",
+                         ingest_rule={"match": {"category": ["地方性法规", "地方法规"]}})
+    legal = conn.execute("SELECT id FROM domains WHERE key='legal'").fetchone()["id"]
+    libraries.subscribe(conn, domain_id=legal, library_key="law-library", created_by="t")
+    conn.commit()
+    monkeypatch.setattr(embedders, "_http_post", _embed_stub())
+    monkeypatch.setattr(library_index, "_http_post", _Stub(lambda url, body:
+        {"result": {"hits": [{"value": "司法解释", "count": 3337},
+                             {"value": "地方性法规", "count": 121225},
+                             {"value": "地方法规", "count": 45203}]}}))
+    with _client(conn) as c:
+        lib = libraries.get_library(conn, library_key="law-library")
+        counts = library_index.source_counts(conn, lib=lib,
+                                             allowed={"judicial", "local"})
+        assert sum(counts.values()) == 3337 + 166428

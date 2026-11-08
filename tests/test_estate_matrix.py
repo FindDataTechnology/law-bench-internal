@@ -202,3 +202,47 @@ def test_unreachable_store_is_unknown_not_a_gap(conn, monkeypatch):
     assert "error" in row["knowledge"]
     assert "knowledge" not in row["gaps"]      # unknown, not empty
     assert "connection refused" in row["knowledge"]["error"]
+
+
+def test_inherited_grant_is_counted_once_for_many_domains(conn, monkeypatch):
+    """Ten sub-domains inheriting one grant must not mean ten store round trips.
+
+    The memo is per-request, so this is a latency fix, never a stale number: a
+    fresh call always re-counts.
+    """
+    templates.create_template(conn, name="tpl2", schema=_schema(), created_by="t")
+    tid = conn.execute("SELECT id FROM ontology_templates ORDER BY id DESC LIMIT 1").fetchone()["id"]
+    root = conn.execute(
+        "INSERT INTO domains (key,name,template_id,template_version,created_by,path) "
+        "VALUES ('top','Top',%s,1,'t','top') RETURNING id, key, name, path, template_id",
+        (tid,),
+    ).fetchone()
+    kids = []
+    for i in range(5):
+        kids.append(dict(conn.execute(
+            "INSERT INTO domains (key,name,template_id,template_version,created_by,parent_id,path) "
+            "VALUES (%s,%s,%s,1,'t',%s,%s) RETURNING id, key, name, path, template_id",
+            (f"k{i}", f"K{i}", tid, root["id"], f"top/k{i}"),
+        ).fetchone()))
+    conn.commit()
+    libraries.create_library(conn, library_key="law", name="Law", created_by="t",
+                             backend="qdrant", dims=1024,
+                             location={"url_env": "QDRANT_URL", "collection": "law_chunks_v2"})
+    libraries.add_source(conn, library_key="law", source_key="s1", uri="x", created_by="t")
+    libraries.subscribe(conn, domain_id=root["id"], library_key="law", created_by="t")
+    conn.commit()
+
+    monkeypatch.setenv("QDRANT_URL", "http://qdrant.test:6333")
+    import httpx
+    from src.search import library_index as li
+
+    calls = {"n": 0}
+
+    def stub(url, *, json=None, headers=None, timeout=None):
+        calls["n"] += 1
+        return httpx.Response(200, json={"result": {"count": 42}}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(li, "_http_post", stub)
+    rows = estate.matrix(conn, domains=[dict(root)] + kids)
+    assert [r["knowledge"]["chunks"] for r in rows] == [42] * 6
+    assert calls["n"] == 1

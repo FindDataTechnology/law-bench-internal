@@ -712,6 +712,12 @@ def console_knowledge(
                 except Exception as exc:
                     lib["source_counts"] = {}
                     scope.setdefault("count_error", f"{lib['library_key']}: {exc}")
+                # When per-source numbers exist, the library total is their sum.
+                # Two numbers for the same thing must not be able to disagree on
+                # one page: a reader adding the rows up and getting a different
+                # total would be right to trust neither.
+                if lib["source_counts"]:
+                    lib["chunks"] = sum(lib["source_counts"].values())
         if counted["errors"]:
             scope["count_error"] = "; ".join(counted["errors"])
     except ValueError as exc:  # a stored subscription that would widen scope

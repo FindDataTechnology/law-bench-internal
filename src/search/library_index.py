@@ -438,7 +438,7 @@ def _search_external_pg(
     return out
 
 
-def count_scope(conn: Any, *, domain_path: str) -> dict:
+def count_scope(conn: Any, *, domain_path: str, cache: Optional[dict] = None) -> dict:
     """How much retrievable content a domain's scope actually holds.
 
     Owned libraries are counted in ``corpus_chunks``; external libraries are
@@ -446,6 +446,12 @@ def count_scope(conn: Any, *, domain_path: str) -> dict:
     that reports "0 chunks" would be exactly the false gap the estate matrix
     exists to prevent. A store that cannot be reached reports its error instead
     of a zero.
+
+    ``cache`` is a **per-request** memo shared by callers that loop over many
+    domains (the estate matrix). An external library's count depends only on
+    ``(library, granted sources)`` — not on the reader's path — so ten
+    sub-domains inheriting the same grant need one round trip, not ten. Owned
+    counts stay uncached: they depend on the reader's ancestor chain.
     """
     out = {"chunks": 0, "by_library": {}, "errors": []}
     scope = libraries.effective_sources(conn, domain_path=domain_path)
@@ -455,6 +461,12 @@ def count_scope(conn: Any, *, domain_path: str) -> dict:
         if lib is None:
             continue
         backend = lib.get("backend") or "array-cosine"
+        cache_key = (library_key, tuple(sorted(allowed))) if cache is not None else None
+        if cache_key is not None and cache_key in cache:
+            n = cache[cache_key]
+            out["chunks"] += n
+            out["by_library"][library_key] = n
+            continue
         try:
             if backend == "qdrant":
                 n = _count_qdrant(conn, lib=lib, allowed=allowed)
@@ -468,6 +480,8 @@ def count_scope(conn: Any, *, domain_path: str) -> dict:
                     sql += " AND source_key = ANY(%s)"
                     params.append(sorted(allowed))
                 n = conn.execute(sql, tuple(params)).fetchone()["n"]
+            if cache_key is not None and backend in ("qdrant", "pgvector-external"):
+                cache[cache_key] = n
             out["chunks"] += n
             out["by_library"][library_key] = n
         except Exception as exc:  # unreachable store must not read as "empty"

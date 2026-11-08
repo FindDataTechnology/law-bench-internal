@@ -45,7 +45,7 @@ def _pillar_ontology(conn: Any, domain: dict) -> dict:
     }
 
 
-def _pillar_knowledge(conn: Any, domain: dict) -> dict:
+def _pillar_knowledge(conn: Any, domain: dict, *, cache: Optional[dict] = None) -> dict:
     """Subscribed scope **and** how much of it is actually retrievable.
 
     The gap is about retrievable content, not about paperwork: a domain that
@@ -68,7 +68,9 @@ def _pillar_knowledge(conn: Any, domain: dict) -> dict:
         # breakage instead of pretending the domain has no corpus.
         return {"libraries": 0, "sources": 0, "chunks": 0, "error": str(exc)}
 
-    counted = library_index.count_scope(conn, domain_path=domain.get("path") or domain["key"])
+    counted = library_index.count_scope(
+        conn, domain_path=domain.get("path") or domain["key"], cache=cache
+    )
     out = {
         "libraries": len(scope),
         "sources": sum(len(v) for v in scope.values()),
@@ -113,6 +115,9 @@ def _pillar_inbox(conn: Any, domain: dict) -> dict:
 def matrix(conn: Any, *, domains: list[dict]) -> list[dict]:
     """One row per domain: identity + tree depth + the four pillar summaries."""
     rows = []
+    # One memo for the whole matrix: sub-domains inheriting the same grant must
+    # not each re-count the same external store (ten rows, one round trip).
+    scope_cache: dict = {}
     for domain in domains:
         # A domain row written before the tree existed may still have no path
         # (the backfill only touches rows present when it runs). A root's path
@@ -121,7 +126,7 @@ def matrix(conn: Any, *, domains: list[dict]) -> list[dict]:
         # Computed once: the knowledge pillar may call out to an external store,
         # and asking twice per row would double that round trip.
         ontology = _pillar_ontology(conn, domain)
-        knowledge = _pillar_knowledge(conn, domain)
+        knowledge = _pillar_knowledge(conn, domain, cache=scope_cache)
         evaluation = _pillar_eval(conn, domain)
         rows.append(
             {
