@@ -34,12 +34,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from ..auth.deps import require_scope
 from ..auth.domain_rbac import require_domain_role
-from ..deps import get_db
+from ..deps import DbConn, get_db
 from ..templating import templates as _templates
 
 router = APIRouter(tags=["search"])
@@ -109,6 +109,57 @@ def search_api(request: Request, q: str, top_k: int = 5, domain: str | None = No
         return do_search(q, top_k=top_k)  # legacy call shape — byte-compat
     except Exception as e:
         return JSONResponse(status_code=503, content={"error": str(e)})
+
+
+@router.get("/api/library/search")
+def library_search_api(
+    request: Request,
+    q: str,
+    top_k: int = 5,
+    domain: str = DEFAULT_DOMAIN,
+    db: DbConn = Depends(get_db),
+):
+    """Domain-scoped retrieval over the shared libraries (JSON).
+
+    This is the machine-facing counterpart of the knowledge area's search box:
+    it resolves the caller's **effective** subscription (inheritance, narrowing)
+    and queries each library with the model that built it. Nothing is copied —
+    an external library is read where it lives.
+
+    Status code contract, so a caller can tell the three outcomes apart:
+
+    - ``200`` + hits (possibly ``[]``: a miss inside a real corpus);
+    - ``400`` + ``{"error": ...}`` when the domain subscribes to no corpus at
+      all — "nothing to search" is not "no match";
+    - ``502`` + ``{"error": ...}`` when an upstream store or embedder fails,
+      because that is not the caller's mistake and not an empty result.
+    """
+    from src.search import library_index
+
+    if not q:
+        return []
+    # Injected, never fetched directly: `get_db()` called inside a handler
+    # bypasses dependency overrides, so a test would silently hit the real
+    # database while the rest of the request used the overridden one.
+    conn = db
+    gated = _effective_domain(request, domain, conn)
+    target = gated or domain or DEFAULT_DOMAIN
+    row = conn.execute(
+        "SELECT path FROM domains WHERE key = %s", (target,)
+    ).fetchone()
+    if row is None:
+        return JSONResponse(status_code=404, content={"error": f"unknown domain {target!r}"})
+    try:
+        hits = library_index.search(
+            conn, domain_path=row["path"], query=q, top_k=max(1, min(top_k, 50))
+        )
+    except library_index.NotSubscribed as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
+    except Exception as exc:
+        return JSONResponse(
+            status_code=502, content={"error": f"{type(exc).__name__}: {exc}"}
+        )
+    return {"domain": target, "q": q, "hits": hits}
 
 
 @router.get("/search", include_in_schema=False, name="page_search")
