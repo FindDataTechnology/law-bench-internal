@@ -39,14 +39,14 @@
 - [x] 5.1 旧 11 条入口收敛：工具页并入其所属区（知识库/评测标准/评测运行）的「更多工具」入口，`/d/<域>/bench` 保留 302 → `/eval-runs`；验证＝`tests/test_domain_areas_http.py::test_legacy_bench_redirects_to_eval_runs` 断言 302 且目标 200
       ＊与原计划的差异：不是 11 条全 302，而是「迁到所属区 + 仅 bench 302」——顶栏已被三层导航替代，302 一条空页反而更差
 - [x] 5.2 顶栏只保留三层导航（全域/我的域/域内区），旧平铺菜单移除；验证＝e2e 断言顶栏不再出现旧菜单项
-- [ ] 5.3 legal 域零回归：`/d`、`/d/legal`、六区页面、旧路径全 200/302；验证＝e2e 全量走查通过
+- [x] 5.3 legal 域零回归：`/d`、`/d/legal`、六区页面、旧路径全 200/302；验证＝e2e 全量走查通过
 
 ## 6. 收口
 
 - [x] 6.1 `openspec validate add-domain-tree-and-shared-libraries --strict` 通过
 - [x] 6.2 全量 pytest 通过：1458 passed / 60 skipped（基线 1396 → 无回归）；e2e 走查见 5.3
 - [x] 6.3 生产落地：`sha-5cccec0` 已滚（Argo automated），pod 1/1 Ready，`/healthz` 200；回滚锚 `sha-2180036` 写在 `deploy/deployment.yaml` 注释里
-- [ ] 6.4 验收报告：域树、库订阅、检索过滤、rubric 继承四件事各留一条可复核证据（SQL/页面/单测名）
+- [x] 6.4 验收报告：`reports/2026-11-08-real-corpora-wired.md`（盘点表、空间一致性 cos 值、源分区合计、页面状态码与检索命中、单测名）
 
 ## 7. 真实语料接入（外部向量库）
 
