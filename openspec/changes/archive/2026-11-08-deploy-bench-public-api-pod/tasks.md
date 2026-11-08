@@ -16,7 +16,7 @@
 ## 3. 出口（显式路径形态——spec「独立域名或显式路径」二选一取后者）
 
 - [x] 3.1 bench 站 Caddy 同源代理 `/api/public/overview` 后端切新 NodePort（免第二域名 DNS/雷池/证书全套）
-- [ ] 3.2 独立域名（bench-api）留档为后续机器消费面选项，不在本 change
+- [x] 3.2 独立域名（bench-api）留档为后续机器消费面选项，不在本 change —— **本条即留档本身**（同源代理已覆盖需求，见 3.1）；将来要机器消费面时另立 change
 
 ## 4. 上线门（evidence 落档）
 
