@@ -156,3 +156,20 @@ per-source: administrative 8304 / amendment 3920 / departmental 117343 / judicia
             local 166428 / statutes 6202 / unclassified 59382   → sum 364916
 api: 200 [(0.761678,'judicial'), (0.750701,'judicial')]
 ```
+
+## 十三、落地页耗时（镜像 `sha-7ff7e1a`）
+
+暖机实测（生产 pod，TestClient，同进程）：
+
+| 页面 | 修前 | 修后 |
+|---|---|---|
+| `/d`（全域运营台，落地页） | 1465 ms | **475 ms** |
+| `/d/legal/knowledge` | 295 ms | 275 ms |
+| `/d/legal/settings` / `inbox` | 94 / 86 ms | 83 / 86 ms |
+
+原因不是向量库（facet exact 562ms、count exact 190ms，都只在需要的页面上发生），
+而是 `/d` **把整个矩阵算了两遍**：一次给行，又一次给三个缺口 chip 的计数。同一个
+页面有两个来源回答「哪些域缺什么」，chip 与行也能互相打脸。现在一次矩阵两个视图。
+
+外置库的计数按请求 memo（同一 (库, 授权源集) 只查一次），十个子域继承同一授权
+不会变成十次往返；自有内容不缓存（依赖祖先链），因此不会出现陈旧数字。
