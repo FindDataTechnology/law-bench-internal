@@ -32,7 +32,7 @@
 - [x] 4.4 「评测标准」区：本域 rubric + 继承自父域分组 + fork 入口（要求填差异）；验证＝e2e：fork 一条后出现在本域分组且带差异摘要
 - [x] 4.5 「评测运行」区：历史运行 + 结果，按域过滤；验证＝造两条不同域的运行，页面只显示本域
 - [x] 4.6 新建细分域向导：选父域 → 预览继承词表 → 勾选订阅源 → 生成缺口清单 → 提交创建；验证＝e2e：5 步走完在 L0 出现新域，缺口如实
-- [ ] 4.7 批量派单（按缺口筛选后派给负责人/舰队）需二次确认，页面加载零写操作；验证＝e2e：未确认前无任务创建
+- [x] 4.7 批量派单（按缺口筛选后派给负责人/舰队）需二次确认，页面加载零写操作；验证＝`tests/test_dispatch.py`：加载 `/d?gap=` 与确认页后 `authoring_tasks` 仍为 0；确认后按域数建单；二次确认不重复（报 skipped）
 
 ## 5. 旧路径收敛与兼容
 
@@ -66,5 +66,5 @@
 - [x] 7.7 生产登记 `law-library` 并让 `legal` 订阅；验证＝`scripts/register_libraries.py` 自检 `ok=True`：7 个源合计 364,916 = 整库计数；`estate.matrix` 得出 `legal knowledge={libraries:1, sources:7, chunks:364916} gaps=[]`
 - [x] 7.8 端到端检索实证（生产 pod 内）：`建设工程价款优先受偿权` → 三部司法解释 0.7617/0.7507/0.7417，源归属 `judicial`；`违约责任如何认定` → 民法典/民法通则
 - [ ] 7.9 `fd_text` 四垂域登记为库：需要在 law-bench 部署里注入 `FDTEXT_DATABASE_URL`（跨命名空间，secret 要复制一份）+ 在 pod 侧验 8B 空间；**待人工确认是否要把文字垂域并进法律站**（它们是别的产品线的语料）
-- [ ] 7.10 控制台补「登记外部库」入口：目前只能跑 `scripts/register_libraries.py`；库的登记是平台级动作，需要一个 admin 表单（含 location 的环境变量名字段）
+- [x] 7.10 控制台补「登记外部库」入口：`/admin/libraries`（admin 独占）建库/加源/订阅；外部库只填环境变量名，表单里没有 DSN/口令字段；`match` 解析失败拒存（空规则=整库，手滑会放大范围）；验证＝`tests/test_admin_libraries.py` 8 条
 - [ ] 7.11 `packs` 里的 corpus declaration 与外部库对齐：域模板声明 `source_types` 时应当能引用外部库的源类型
