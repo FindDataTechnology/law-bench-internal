@@ -173,3 +173,18 @@ api: 200 [(0.761678,'judicial'), (0.750701,'judicial')]
 
 外置库的计数按请求 memo（同一 (库, 授权源集) 只查一次），十个子域继承同一授权
 不会变成十次往返；自有内容不缓存（依赖祖先链），因此不会出现陈旧数字。
+
+## 十四、域负责人自收窄（镜像 `sha-9f540a3`）
+
+知识库区每个库面板多了「收窄本域取材范围」表单，只对本域 lead（或平台 admin）显示。
+写入时按父域有效集校验，不放行到下一页才炸。生产实测（`/d/legal/knowledge`）：
+
+```
+收窄表单渲染：True   表单内列出的源：7（administrative/amendment/departmental/
+                     judicial/local/statutes/unclassified）
+越权提交（勾选不存在的 ghost）→ 303 flash.narrow_failed，detail 指明 unknown
+取材范围未被改动：True
+```
+
+子域语义（父域没给的源不能引入、空集被拒、非 lead 无权改）由
+`tests/test_knowledge_narrow.py` 7 条守着。
