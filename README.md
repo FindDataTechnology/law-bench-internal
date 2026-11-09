@@ -157,6 +157,14 @@ tests/           pytest 套件（本地 PG 即可运行，无外部网络依赖�
 
 law-bench 是**寻数·识律**（FindData 法律 AI 产品线）的合同评测与起草基座，由寻数团队（[FindDataTechnology](https://github.com/FindDataTechnology)）维护。识律产品线的对外服务部署于 `*.finddatatech.cloud`；本仓库为其核心引擎与工作台的开源版本，公开镜像位于 [FindDataTechnology/law-bench](https://github.com/FindDataTechnology/law-bench)。
 
+## 案卷产物契约（跨仓共用）
+
+本仓的链路商业工具（装配 / 条款 / 法条引用 / 审查共 19 件）在登记为案卷产物时，须满足
+`../fd-lex/contracts/lex-artifact.schema.json`：四项必填 `producer` / `refs` / `sha256` / `payload`，
+结论性输出另需 `provenance` 三件套（`source` / `stable_id` / `as_of`）。输出结构声明
+（`tool-surface.json` 的 `output_structure.declared`）须来自真实调用采集，不得凭代码阅读推定
+（change `lex-matter-spine`）。
+
 ## License
 
 [MIT](LICENSE) © 2026 FindDataTechnology（寻数·识律）。
