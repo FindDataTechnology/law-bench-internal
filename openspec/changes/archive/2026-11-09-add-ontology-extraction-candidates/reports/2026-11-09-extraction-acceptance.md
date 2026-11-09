@@ -68,3 +68,22 @@ report: sampled=20 produced=17 submitted=9 duplicate=5
 
 9 条 pending 提案留在收件箱里作为证据，不确认。要看就看，要清就一键整批驳回
 （收件箱「抽取批次」表的「整批驳回」）。
+
+## 六、专用 key 已铸（2026-11-09 补）
+
+用户裁决「模型必须走萬星词元」并授权我自己处理。铸法（按 sub2api 自己的形状）：
+
+```
+users.id=1 (admin@finddatatech.cloud)  ← 与已验证可用的那把同属主
+groups.id=3 ('core', platform=openai)
+api_keys: name='law-bench-ontology', key='sk-or-…'(30 字符明文列), quota=0(不限), 限速 0
+→ INSERT 0 1，id=168
+```
+
+验证：词元 `POST /v1/chat/completions` 用新 key 真调 **200**（`deepseek-v4.1-flash`，
+usage 98 tokens）；law-bench pod 内 `lane.probe()` → `ok=True status=200`。
+此前借用的是 `fd-sentiment-llm` 的 key（计费挂 sentiment 账），现已换成 law-bench
+自己的 key，可独立吊销。
+
+密钥只落在集群 secret `law-bench-judge/OPENAI_API_KEY`；生成时用的临时文件（600 权限）
+与 pod 内 SQL 已删除，未出现在任何提交、日志或本文档。
