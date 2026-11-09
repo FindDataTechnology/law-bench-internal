@@ -256,4 +256,31 @@ CREATE TABLE IF NOT EXISTS distribution_pull_events (
 );
 CREATE INDEX IF NOT EXISTS distribution_pull_events_consumer_idx
     ON distribution_pull_events (consumer_id, happened_at DESC);
+
+-- agent_runs: 每轮智能体运行一行。这是"昨晚干了什么"的唯一答案，也是
+-- `thin` 与 `failed` 必须分开的地方——前者升级给人，后者不得用重试掩盖。
+--
+-- 刻意不存推理过程：存的是**可复算的输入摘要 + 计数 + 产物引用**。运行结论文本
+-- 没有审计价值，反而会诱使后来者把它当证据。`remaining` 单独成列，是因为
+-- "批次不收敛"是实测过的失败模式，必须能被机械检测（见 src/bench/agent_runs.py）。
+CREATE TABLE IF NOT EXISTS agent_runs (
+    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    role          TEXT NOT NULL,
+    domain_key    TEXT NOT NULL,
+    task_id       BIGINT REFERENCES authoring_tasks(id),
+    run_key       TEXT,
+    outcome       TEXT NOT NULL DEFAULT 'running'
+                  CHECK (outcome IN ('running','ok','thin','failed','stopped')),
+    input_digest  TEXT,
+    counts        JSONB NOT NULL DEFAULT '{}'::jsonb,
+    remaining     BIGINT,
+    artifact_refs JSONB NOT NULL DEFAULT '[]'::jsonb,
+    detail        TEXT,
+    started_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ended_at      TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS agent_runs_domain_idx
+    ON agent_runs (domain_key, started_at DESC);
+CREATE INDEX IF NOT EXISTS agent_runs_outcome_idx
+    ON agent_runs (domain_key, outcome, started_at DESC);
 """
