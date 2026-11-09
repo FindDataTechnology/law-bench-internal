@@ -210,7 +210,10 @@ def register_text_library(conn, *, dry_run: bool = False) -> dict:
     try:
         counts = library_index.source_counts(
             conn, lib=libraries.get_library(conn, library_key="text-library"),
-            allowed={s["source_key"] for s in TEXT_SOURCES},
+            # TEXT_SOURCES holds tuples, not source row dicts — subscripting them
+            # by name raised `tuple indices must be integers`, which the count
+            # step swallowed as "counts unavailable". Take the first element.
+            allowed={key for key, _label, _table in TEXT_SOURCES},
         )
     except Exception as exc:  # unreachable DSN must not read as "empty"
         print(f"  !! counts unavailable: {type(exc).__name__}: {exc}", file=sys.stderr)

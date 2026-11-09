@@ -124,3 +124,22 @@ def test_check_refs_rejects_unknown_source(conn):
 def test_check_refs_accepts_known_refs(conn):
     _library(conn)
     declarations.check_refs(conn, {"source_types": ["library:law-library/statutes"]})
+
+
+def test_text_sources_are_tuples_not_rows(conn):
+    """`register_libraries.TEXT_SOURCES` holds tuples; the count step must not
+    subscript them by name (that raised `tuple indices must be integers` and was
+    swallowed as "counts unavailable")."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    try:
+        import register_libraries as rl
+    finally:
+        sys.path.pop(0)
+
+    assert all(isinstance(row, tuple) and len(row) == 3 for row in rl.TEXT_SOURCES)
+    # Exactly the expression the script now uses.
+    allowed = {key for key, _label, _table in rl.TEXT_SOURCES}
+    assert allowed == {"gov", "news", "papers", "screenplay"}
