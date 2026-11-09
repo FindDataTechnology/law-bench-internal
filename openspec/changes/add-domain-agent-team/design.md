@@ -52,7 +52,24 @@ G3 平台策略（admin）       模板版本、开新域、登记新库
 - 智能体是域成员：`agent:<role>@<domain>`，`domain_members.role = expert`，**不带 `admin`/`*`**。
 - 事件里 `operator` 记 `agent:<role>@<domain>`，发布快照可审计"这条是机器写的还是人写的"。
 - 提案 `source` 记 `agent:<role>@<domain>`，与舰队的 `fleet:<id>/<post>` 并存。
-- **堵口子**：`proposals.confirm` 的 admin 豁免对 `submitted_by` 以 `agent:` 开头的提案一律 403。现有代码只禁止"自己确认自己"，而 admin 可豁免——智能体若带 admin 就能自签，这条必须堵。
+
+**已核实的机制（读代码确认，不是设想）**：`verify_key` 返回 `{"sub": user_id, "name": "", "email": "", "scopes": [...]}`
+（`src/web/auth/apikey.py:150`），也就是说**身份就是 `api_keys.user_id`，权限就是那一行的 `scopes`**。
+所以"智能体不是管理员"是可以在铸凭据时物理保证的，不需要靠约定。三处闸点：
+
+| 闸点 | 位置 | 现状 | 要加什么 |
+|---|---|---|---|
+| 铸凭据 | `apikey.create_key`（`apikey.py:99`） | 接受任意 `user_id` + `scopes` | `user_id` 以 `agent:` 开头且 `scopes` 含 `admin`/`*` → 拒 |
+| 确认提案 | `proposals.confirm`（`proposals.py:429`） | 只在 `submitted_by == actor and not admin_override` 时拒 | `submitted_by` 以 `agent:` 开头 → 无论 `admin_override` 一律 403 |
+| 域角色 | `domain_members`（`role='expert'`） | 按 `user_id` 判定 | 无改动；智能体就是一普通成员 |
+
+**这条口子是实打实的**：路由两处都把 `admin_override=is_platform_admin(user)` 直接传下去
+（`console.py:248` 批量确认、`console.py:1049` 单条确认），而 `is_platform_admin` 只看 `admin`/`*` scope。
+所以一个带 admin scope 的智能体身份，确认自己提交的提案会成功，只在 `decision_note` 里留一句
+`[admin-override]`。这不是"可能"，是当前代码的确定行为。
+
+审计的另一半：智能体**不需要** Logto 用户——API key 通道的 `sub` 就是 `api_keys.user_id`，
+所以登记一个 `agent:concept@legal` 只需两行数据（key 一行、成员一行），不需要改 IdP。
 
 ## 6. 跨生产者去重（现状是漏洞）
 

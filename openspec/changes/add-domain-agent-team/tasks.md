@@ -2,8 +2,8 @@
 
 ## 1. 身份与闸门（先立规矩，再放机器人）
 
-- [ ] 1.1 智能体身份模型：`agent:<role>@<domain>` 作为 `domain_members` 普通成员（`role=expert`，禁 `admin`/`*`），提供登记/停用入口
-- [ ] 1.2 `proposals.confirm` 补一道：`submitted_by` 以 `agent:` 开头时，admin 豁免一律 403（现有代码只拦"自提自确认"）
+- [ ] 1.1 智能体身份模型：`agent:<role>@<domain>` = 一行 `api_keys`（`user_id` 即身份，`scopes` 只给 `content:read/write`）+ 一行 `domain_members`（`role=expert`）；提供登记/停用入口
+- [ ] 1.2 两处闸：`apikey.create_key` 拒给 `agent:` 身份铸 `admin`/`*` scope；`proposals.confirm` 对 `submitted_by` 以 `agent:` 开头的提案，无论 `admin_override` 一律 403（`console.py:248` 批量与 `:1049` 单条都把 `admin_override` 直接传下去，必须在内核侧堵）
 - [ ] 1.3 巡检核对：持有 `admin` scope 的成员中是否混入 `agent:` 身份，为真即出缺口任务
 - [ ] 1.4 测试：agent 身份自确认被拒、admin 豁免对 agent 无效、普通成员可被 lead 确认
 
