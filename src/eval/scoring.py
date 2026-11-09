@@ -491,8 +491,12 @@ def evaluate_contract(
     n_total = len(valid_results)
     n_passed = sum(1 for r in valid_results if r["verdict"] == "pass")
     all_pass = n_passed == n_total
-    if criteria_results and not valid_results:
-        # Every criterion invalid: never read as ALL PASS.
+    # **有 invalid 行就绝不算 ALL PASS**（2026-11-09，审计 03 §4 连带发现）。
+    # 把 judge 调用失败改判 invalid 之后出现一个新假绿面：`[pass, invalid]` 的
+    # 分母只剩 1、分子 1 → `all_pass=True`。那是拿"没测成"当"通过了"，
+    # 恰恰是本文件「宁无效不假绿」要防的。原来只有"全部 invalid"这一种兜底，
+    # 漏掉"部分 invalid"。
+    if invalid_count:
         all_pass = False
     n_rows = len(criteria_results)
     invalid_rate = round(invalid_count / n_rows, 4) if n_rows else 0.0

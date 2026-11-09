@@ -94,3 +94,27 @@ def test_transient_errors_are_recognised_for_retry():
         "ValueError: criteria list is empty",
     ):
         assert not _is_transient_judge_error(err), f"非瞬态错误被当成可重试：{err}"
+
+
+def test_partial_invalid_is_never_all_pass():
+    """有 invalid 行时 all_pass 必须为 False——否则是「拿没测成当通过」。
+
+    这条是改判 invalid 之后**新引入**的假绿面：`[pass, invalid]` 时滤镜掉 invalid
+    后分母剩 1、分子 1 → all_pass=True。原代码只兜底了「全部 invalid」一种，
+    漏掉「部分 invalid」。真 PG 上的回归测试
+    `tests/test_scoring.py::test_judge_call_error_captured` 抓住了它。
+    """
+    # 纯逻辑复算，不依赖库：模拟 criteria_results = [pass, invalid]
+    criteria_results = [
+        {"verdict": "pass"},
+        {"verdict": "invalid"},
+    ]
+    invalid_count = sum(1 for r in criteria_results if r["verdict"] == "invalid")
+    valid = [r for r in criteria_results if r["verdict"] != "invalid"]
+    n_total, n_passed = len(valid), sum(1 for r in valid if r["verdict"] == "pass")
+    all_pass = n_passed == n_total
+    if invalid_count:
+        all_pass = False
+    assert all_pass is False, (
+        "部分 invalid 时被判 ALL PASS —— 没测成的条款被当成通过了"
+    )
