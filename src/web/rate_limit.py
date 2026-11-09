@@ -162,16 +162,30 @@ def _caller_id(request: Request) -> str:
     Prefer the API-key prefix (first 16 chars of ``X-API-Key``) so a legitimate
     keyed caller is throttled per-key, not per-IP — multiple callers behind one
     NAT would otherwise share an IP bucket and unfairly trip each other's limit.
-    Falls back to the client IP (honoring ``X-Forwarded-For`` for an ingress/
-    gateway in front) when no key is presented. The public pod is key-only in
-    practice, but the IP fallback keeps the limiter sensible if a key is absent.
+
+    Falls back to the client IP when no key is presented. For the forwarded
+    case we take the **last** hop, not the first:
+
+        客户端伪造成    X-Forwarded-For: 1.2.3.4
+        代理追加真实源 → X-Forwarded-For: 1.2.3.4, <真实源>
+
+    前面那层代理（cheap1 的雷池 nginx）用的是 ``$proxy_add_x_forwarded_for``，
+    即**追加**语义。所以 ``split(",")[0]`` 取到的正是客户端自己写的假值——
+    每次请求换一个假 IP 就是一批新桶，速率限制形同不存在，而且还会把桶表灌满、
+    触发淘汰把别人正在限流的桶挤掉（审计 03 §7）。取 ``[-1]`` 才是离我们最近、
+    由我们自己代理写入的那一跳，客户端改不了。
+
+    前提：前面确实只有一层可信代理且用追加语义。将来加层或改成覆盖语义时，
+    这条要跟着调（那时应改为"信任前 N 跳"或按可信网段白名单解析）。
     """
     key = request.headers.get("X-API-Key", "")
     if key:
         return f"k:{key[:16]}"
     forwarded = request.headers.get("X-Forwarded-For", "")
     if forwarded:
-        return f"i:{forwarded.split(',')[0].strip()}"
+        hops = [h.strip() for h in forwarded.split(",") if h.strip()]
+        if hops:
+            return f"i:{hops[-1]}"
     client = request.client.host if request.client else "unknown"
     return f"i:{client}"
 
