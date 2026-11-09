@@ -36,10 +36,14 @@
 ### Modified Capabilities
 
 - `domain-estate-console`: 缺口矩阵除四柱状态外 SHALL 给出上述质量比；派单 SHALL 能针对"最薄的比率"而不是只针对空柱。
+- `domain-team-runtime`: 执行面是壹座（每岗位一个 pack agent，persona 收窄工具面），权限由**工具是否存在**兜底；节奏由平台定时任务承载；每回合工具调用可追溯；无容器主机的原生自启。
+- `domain-team-memory`: 记忆面是永忆——捕获在 **MCP 服务端担保**（不靠 agent 自觉）、三层各司其职、按（域, 岗位）隔离、且**记忆是顾问不是权威**。
 - `ontology-key-scheme`: 归名下沉到写入边界——内核落单位与收提案时 SHALL 用该域注册的规则归名；未归名的键不得原样写入（原写法记 `aliases`）。现状是五个写入方只有两个（取目录、抽取）记得归名。
 
 ## Impact
 
+- 执行面：windows-admin（tailnet 100.64.0.5）上的壹座实例（账号 aloadtree@gmail.com）；该机**无容器运行时**、系统盘余量紧张，两个服务按原生进程 + 计划任务自启，装到余量充足的盘。
+- 记忆面：同机自托管的永忆（`fd-memory serve`，SQLite+FTS，无外部依赖），命名空间按（域, 岗位）。
 - 代码：`src/bench/dispatch.py`（派单目标从"空柱"扩到"薄比率"）、`src/bench/estate.py`（质量比投影）、`src/bench/proposals.py` + `workspace_store.py`（去重身份与 agent 身份闸）、新增 `src/bench/agent_team.py`（岗位注册表读取 + 运行台账）、`src/web/routes/console.py`（值班长视图与台账入口）。
 - 数据：`domain_proposals` 增加去重口径（迁移既有 pending 行需一次性合并）；新增运行台账表；`domain_members` 增加智能体成员（`agent:` 前缀）。
 - 不改：内核写入路径（`authoring_*`）、键方案、模板词表、分发契约、检索路径。

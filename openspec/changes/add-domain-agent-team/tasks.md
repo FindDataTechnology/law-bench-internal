@@ -1,5 +1,13 @@
 # Tasks — add-domain-agent-team
 
+## 0. 底座接线（壹座 + 永忆）
+
+- [ ] 0.1 windows-admin 接入：确认可登录账号与密钥（当前 `loadtree@100.64.0.5` 公钥被拒），确认该系统盘/数据盘余量与 Node 版本
+- [ ] 0.2 永忆：`fd-memory serve` 原生进程 + 计划任务自启，装到数据盘；铸 platform/person/deployment 三级令牌，凭据 0600 落盘、不入库不入仓
+- [ ] 0.3 壹座：本机实例起来（无容器，Node 原生 + 计划任务自启），以 aloadtree@gmail.com 登录，确认 `AUTH_MODE` 与端口
+- [ ] 0.4 打通工具面：把 `team_*` 工具挂进壹座（本地 MCP 可直接挂，无需市场凭据）
+- [ ] 0.5 验收：一个空跑回合在 `/trace` 里能看到工具调用；停掉永忆后工具仍成功且捕获失败被上报
+
 ## 1. 身份与闸门（先立规矩，再放机器人）
 
 - [ ] 1.1 智能体身份模型：`agent:<role>@<domain>` = 一行 `api_keys`（`user_id` 即身份，`scopes` 只给 `content:read/write`）+ 一行 `domain_members`（`role=expert`）；提供登记/停用入口
