@@ -169,6 +169,15 @@ def get_knowledge_unit(
     return _row_to_dict(row) if row else None
 
 
+#: Hard ceiling on rows this listing will materialise. The workbench route asks
+#: for ``offset + limit + 1`` (one overlapping page) so the cap has to be well
+#: above a page; it exists so that no caller — present or future — can turn a
+#: user-supplied number into "ask Postgres for fifty million rows and fetchall
+#: them". The route additionally caps ``offset`` so absurd input gets a 422
+#: instead of being silently clamped.
+MAX_LIST_UNITS = 20000
+
+
 def list_knowledge_units(
     conn: Any,
     *,
@@ -177,7 +186,15 @@ def list_knowledge_units(
     tier: Optional[str] = None,
     limit: int = 200,
 ) -> list[dict]:
-    """List units, most recently updated first; filters are optional."""
+    """List units, most recently updated first; filters are optional.
+
+    ``limit`` is clamped to :data:`MAX_LIST_UNITS` at this boundary: the value
+    is parameterised into ``LIMIT`` (no injection) but the rows are all
+    materialised by ``fetchall``, so an unbounded value is a memory hazard.
+    """
+    # Clamp here, not only at the route: this is the single place every caller
+    # funnels through, and the hazard is the fetchall, not the SQL.
+    limit = max(1, min(int(limit), MAX_LIST_UNITS))
     where, params = [], []
     if kind is not None:
         where.append("kind = %s")
