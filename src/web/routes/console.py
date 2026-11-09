@@ -57,6 +57,10 @@ from ...bench import domain_assets as bench_domain_assets
 # The kernel stays domain-free; this app IS the legal deployment, so the pack
 # import belongs at the app's edge (this module), never inside src/bench.
 from packs.legal import asset_catalog as _legal_asset_catalog  # noqa: F401
+# Same rule for the second line: importing the gov pack registers its key-fold
+# rules, so a gov title folds the same way in the catalog, the ontology and
+# extraction. The pack itself stays outside src/bench.
+from packs import gov as _gov_pack  # noqa: F401
 from ...bench import ledger as bench_ledger
 from ...bench import domain_rubrics
 from ...bench import dispatch
