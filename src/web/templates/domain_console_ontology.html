@@ -228,6 +228,8 @@
   </dl>
 </div>
 
+{% include '_ontology_graph.html' %}
+
 <div class="panel">
   <h2>{{ t.console.ontology.units_h2 }}</h2>
   <form method="GET" action="{{ url_for('console_ontology', domain_key=domain.key) }}" class="toolbar gap">
@@ -249,6 +251,7 @@
         <th>{{ t.console.ontology.col_kind }}</th>
         <th>{{ t.console.ontology.col_key }}</th>
         <th>{{ t.console.ontology.col_body }}</th>
+        <th>{{ t.console.ontology.col_grounding }}</th>
         <th>{{ t.console.ontology.col_tier }}</th>
         <th></th>
       </tr>
@@ -258,7 +261,23 @@
       <tr>
         <td>{{ u.kind }}</td>
         <td><code>{{ u.external_key }}</code></td>
-        <td>{{ u.body[:80] }}</td>
+        <td>{{ u.body[:60] }}</td>
+        <td>
+          {% set gl = grounding.get(u.external_key) or [] %}
+          {% if gl %}
+            {% for g in gl %}
+            <span class="onto-grounding">
+              <span class="onto-grounding__kind">{{ g.kind }}</span>
+              {% if g.direction == 'out' %}→{% else %}←{% endif %}
+              <code>{{ g.other }}</code>
+            </span>
+            {% endfor %}
+          {% elif u.attrs and u.attrs.definition %}
+            <span class="hint">{{ u.attrs.definition[:40] }}</span>
+          {% else %}
+            <span class="badge bad">{{ t.console.ontology.grounding_none }}</span>
+          {% endif %}
+        </td>
         <td>{{ u.tier }}</td>
         <td>
           {% if u.tags and u.tags.deleted %}<span class="badge badge-warn">{{ t.console.ontology.deleted_tag }}</span>{% endif %}

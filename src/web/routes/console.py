@@ -649,8 +649,70 @@ def console_ontology(
             "events": bench_authoring.authoring_events_for(
                 db, domain_id=domain["id"], limit=20
             ),
+            "graph": _ontology_graph(units),
+            "grounding": _grounding_map(units),
         },
     )
+
+
+def _grounding_map(units: list[dict]) -> dict:
+    """Per-unit "what this rests on", keyed by the unit's external key.
+
+    Built once for the page rather than one lookup per row: with a few dozen
+    units the difference is latency, with a few hundred it is whether the page
+    loads at all. Only relationship units carry endpoints, so this is a single
+    pass over the list the page already has.
+    """
+    out: dict[str, list[dict]] = {}
+    for unit in units:
+        attrs = unit.get("attrs") or {}
+        frm, to = attrs.get("from_key"), attrs.get("to_key")
+        if not frm or not to:
+            continue
+        out.setdefault(frm, []).append({"kind": unit["kind"], "other": to, "direction": "out"})
+        out.setdefault(to, []).append({"kind": unit["kind"], "other": frm, "direction": "in"})
+    return out
+
+
+def _ontology_graph(units: list[dict], *, limit: int = 60) -> dict:
+    """Two-column node/edge projection for the graph view.
+
+    Concepts on one side, documents (laws, clauses) on the other, edges being the
+    relationships between them. Deterministic ordering (by kind then key) so the
+    same ontology always draws the same picture — a graph that reshuffles on
+    reload cannot be read as a structure.
+
+    Anything without an edge is returned as ``isolated``: an ungrounded unit is
+    the single most useful thing this view can show, and drawing it floating in
+    space would hide it.
+    """
+    live = [u for u in units if not (u.get("tags") or {}).get("deleted")]
+    # A unit with both endpoints *is* an edge. Deciding by shape rather than by
+    # a kind name keeps this independent of the domain's vocabulary — and stops
+    # a relationship from being drawn as a node (which it did at first).
+    edge_units = [u for u in live if (u.get("attrs") or {}).get("from_key")
+                  and (u.get("attrs") or {}).get("to_key")]
+    node_units = [u for u in live if u not in edge_units]
+    nodes = sorted(node_units, key=lambda u: (u["kind"], u["external_key"]))[:limit]
+    by_key = {u["external_key"]: u for u in nodes}
+    edges: list[dict] = []
+    linked: set[str] = set()
+    for unit in edge_units:
+        attrs = unit.get("attrs") or {}
+        frm, to = attrs.get("from_key"), attrs.get("to_key")
+        if frm in by_key and to in by_key:
+            edges.append({"from": frm, "to": to, "kind": unit["kind"]})
+            linked.update((frm, to))
+    concepts = [u for u in nodes if u["kind"] == "concept"]
+    documents = [u for u in nodes if u["kind"] != "concept"]
+    return {
+        "concepts": concepts,
+        "documents": documents,
+        "edges": edges,
+        "isolated": [u for u in nodes if u["external_key"] not in linked],
+        "truncated": len(node_units) > limit,
+        "limit": limit,
+    }
 
 
 # -------------------------------------------------------------- ontology writes #
