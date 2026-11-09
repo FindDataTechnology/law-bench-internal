@@ -175,9 +175,21 @@ def list_knowledge_units(
     kind: Optional[str] = None,
     namespace: Optional[str] = None,
     tier: Optional[str] = None,
+    query: Optional[str] = None,
+    include_deleted: bool = True,
     limit: int = 200,
 ) -> list[dict]:
-    """List units, most recently updated first; filters are optional."""
+    """List units, most recently updated first; filters are optional.
+
+    ``query`` matches the external key or the body (case-insensitive substring)
+    — the page's one search box has to find a unit by the name a person knows it
+    by, which is usually the key.
+
+    ``include_deleted`` defaults to **True** here so the store stays a plain
+    projection of the table; callers that mean "live units only" say so. The
+    default used to be implicit (everything) and the authoring layer filtered —
+    that is preserved, just made explicit.
+    """
     where, params = [], []
     if kind is not None:
         where.append("kind = %s")
@@ -188,6 +200,11 @@ def list_knowledge_units(
     if tier is not None:
         where.append("tier = %s")
         params.append(tier)
+    if query:
+        where.append("(external_key ILIKE %s OR body ILIKE %s)")
+        params.extend([f"%{query}%", f"%{query}%"])
+    if not include_deleted:
+        where.append("COALESCE(tags->>'deleted', 'false') <> 'true'")
     sql = f"SELECT {_UNIT_COLS} FROM knowledge_units"
     if where:
         sql += " WHERE " + " AND ".join(where)

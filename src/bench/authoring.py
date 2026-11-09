@@ -182,6 +182,19 @@ def _gate_kind(conn: Any, *, domain: dict, kind: str, vocab_key: str) -> None:
         )
 
 
+def _vocabulary(conn: Any, *, domain: dict, key: str) -> list[str]:
+    """The declared vocabulary list for ``key`` (``[]`` when unusable).
+
+    Read-only sibling of :func:`_gate_kind`: the pickers and the importer need
+    the list itself, not a pass/fail verdict, and they must read it from the
+    same template row the gate uses.
+    """
+    tmpl = templates.get_template_by_id(conn, template_id=domain["template_id"])
+    schema = (tmpl or {}).get("schema") or {}
+    vocab = schema.get(key) if isinstance(schema, dict) else None
+    return [str(v) for v in vocab] if isinstance(vocab, list) else []
+
+
 def _record_event(
     conn: Any,
     *,
@@ -456,20 +469,98 @@ def authoring_list_units(
     *,
     domain_key: str,
     kind: Optional[str] = None,
+    tier: Optional[str] = None,
+    query: Optional[str] = None,
     include_deleted: bool = False,
     limit: int = 200,
 ) -> list[dict]:
     """List the domain's units, most recently updated first.
 
-    Soft-deleted units are excluded unless ``include_deleted`` is set.
+    Soft-deleted units are excluded unless ``include_deleted`` is set. The
+    filtering happens in SQL rather than in Python so a ``limit`` means "the
+    newest N matching units" — filtering after a LIMIT returned a short page
+    that looked like an empty domain.
     """
     domain = _load_domain(conn, domain_key=domain_key)
-    units = store.list_knowledge_units(
-        conn, kind=kind, namespace=domain["key"], limit=limit
+    return store.list_knowledge_units(
+        conn,
+        kind=kind,
+        tier=tier,
+        query=query,
+        namespace=domain["key"],
+        include_deleted=include_deleted,
+        limit=limit,
     )
-    if include_deleted:
-        return units
-    return [u for u in units if not (u.get("tags") or {}).get("deleted")]
+
+
+def authoring_live_entities(
+    conn: Any, *, domain_key: str, limit: int = 1000
+) -> list[dict]:
+    """The domain's entity units that are not soft-deleted.
+
+    This is the candidate list a relationship picker offers and the set a bulk
+    import resolves its endpoints against — one function so the two cannot
+    disagree about which entities "exist".
+    """
+    domain = _load_domain(conn, domain_key=domain_key)
+    rows = store.list_knowledge_units(
+        conn, namespace=domain["key"], include_deleted=False, limit=limit
+    )
+    entities = set(_vocabulary(conn, domain=domain, key="entity_types") or ())
+    return [u for u in rows if u["kind"] in entities]
+
+
+def authoring_unit_detail(
+    conn: Any, *, domain_key: str, kind: str, external_key: str
+) -> Optional[dict]:
+    """One unit plus the relationships that touch it.
+
+    A relationship stores its endpoints in ``attrs`` (``from_key``/``to_key``),
+    so "what is this entity connected to" is a scan over the relationship units
+    in the same namespace. Relations whose other end is soft-deleted are still
+    returned with ``dangling=True`` — hiding them would make a deleted entity
+    look unreferenced.
+    """
+    domain = _load_domain(conn, domain_key=domain_key)
+    unit = store.get_knowledge_unit(
+        conn, kind=kind, external_key=external_key, namespace=domain["key"]
+    )
+    if unit is None:
+        return None
+    rel_kinds = set(_vocabulary(conn, domain=domain, key="relationship_kinds") or ())
+    rels = [
+        u
+        for u in store.list_knowledge_units(conn, namespace=domain["key"], limit=2000)
+        if u["kind"] in rel_kinds
+        and external_key
+        in (
+            (u.get("attrs") or {}).get("from_key"),
+            (u.get("attrs") or {}).get("to_key"),
+        )
+    ]
+    live = {
+        u["external_key"]
+        for u in store.list_knowledge_units(
+            conn, namespace=domain["key"], include_deleted=False, limit=2000
+        )
+    }
+    related = []
+    for rel in rels:
+        attrs = rel.get("attrs") or {}
+        other = attrs.get("to_key") if attrs.get("from_key") == external_key else attrs.get("from_key")
+        related.append(
+            {
+                "kind": rel["kind"],
+                "external_key": rel["external_key"],
+                "from_key": attrs.get("from_key"),
+                "to_key": attrs.get("to_key"),
+                "other": other,
+                "deleted": bool((rel.get("tags") or {}).get("deleted")),
+                "dangling": other not in live,
+            }
+        )
+    return {"unit": unit, "related": related,
+            "deleted": bool((unit.get("tags") or {}).get("deleted"))}
 
 
 # ------------------------------------------------------------------- events

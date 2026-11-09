@@ -31,6 +31,8 @@ usability; these dependencies are the enforcement.
 
 from __future__ import annotations
 
+import json
+
 from typing import Optional
 from urllib.parse import quote
 
@@ -521,15 +523,264 @@ def console_ontology(
     db: DbConn = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """The four-layer ontology ledger plus the consistency reconciliation."""
+    """The ontology ledger **and** its editing surface.
+
+    The ledger answers "what is declared vs what is curated"; the editing parts
+    answer "put something in". Both live here because a page that reports an
+    empty ontology without offering a way to fill it is a dead end.
+
+    ``kind`` / ``q`` / ``deleted`` are list filters; the write forms render only
+    when ``cap.can_write``.
+    """
+    from ...bench import ontology_import
+
     domain = resolve_domain(db, domain_key)
     ledger = bench_ledger.ledger(db, domain=domain)
+    cap = capability(db, domain, user)
+    kind = (request.query_params.get("kind") or "").strip() or None
+    query = (request.query_params.get("q") or "").strip() or None
+    show_deleted = (request.query_params.get("deleted") or "") == "1"
+    units = bench_authoring.authoring_list_units(
+        db, domain_key=domain_key, kind=kind, query=query,
+        include_deleted=show_deleted, limit=200,
+    )
+    live_entities = bench_authoring.authoring_live_entities(db, domain_key=domain_key)
+    # Declared-but-empty types and smoke leftovers are different facts: the first
+    # is a coverage gap, the second is junk that should be cleaned. Showing them
+    # as one list would invite "just delete the gaps".
+    declared = (ledger["declaration"] or {}).get("entity_types") or []
+    used = {u["kind"] for u in units if not (u.get("tags") or {}).get("deleted")}
+    vocab_gaps = [k for k in declared if k not in used]
+    smoke = [u for u in units if ontology_import.is_smoke(u)]
     return _templates.TemplateResponse(
         request,
         "domain_console_ontology.html",
         {
             **console_context(db, domain, user),
             **ledger,
+            "units": units,
+            "live_entities": live_entities,
+            "vocab_gaps": vocab_gaps,
+            "smoke_units": smoke,
+            "filters": {"kind": kind or "", "q": query or "", "deleted": show_deleted},
+            "entity_types": (ledger["declaration"] or {}).get("entity_types") or [],
+            "relationship_kinds": (ledger["declaration"] or {}).get("relationship_kinds") or [],
+            "events": bench_authoring.authoring_events_for(
+                db, domain_id=domain["id"], limit=20
+            ),
+        },
+    )
+
+
+# -------------------------------------------------------------- ontology writes #
+
+
+def _ontology_redirect(domain_key: str, msg: str, err: bool = False, **interp):
+    return _flash(f"/d/{quote(domain_key)}/ontology", msg, err=err, **interp)
+
+
+@write_router.post(
+    "/d/{domain_key}/ontology/units", include_in_schema=False,
+    name="console_ontology_unit_write",
+    dependencies=[Depends(require_scope("content:write"))],
+)
+async def console_ontology_unit_write(
+    request: Request,
+    domain_key: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Create or update one entity. All writes go through the kernel.
+
+    ``create`` vs ``update`` is decided by whether the unit exists — the same
+    rule the kernel uses to label its event, so the page cannot claim "created"
+    for something that was overwritten.
+    """
+    domain = resolve_domain(db, domain_key)
+    cap = capability(db, domain, user)
+    if not cap["can_write"]:
+        raise HTTPException(status_code=403, detail="write requires expert or above")
+    form = await request.form()
+    kind = (form.get("kind") or "").strip()
+    key = (form.get("external_key") or "").strip()
+    body = (form.get("body") or "").strip()
+    operator = user.email or user.name or user.sub
+    existed = bench_authoring.authoring_get_unit(
+        db, domain_key=domain_key, kind=kind, external_key=key
+    )
+    try:
+        if existed:
+            bench_authoring.authoring_update_unit(
+                db, domain_key=domain_key, kind=kind, external_key=key,
+                body=body, operator=operator,
+            )
+        else:
+            bench_authoring.authoring_create_unit(
+                db, domain_key=domain_key, kind=kind, external_key=key,
+                body=body, operator=operator,
+            )
+    except ValueError as exc:
+        return _ontology_redirect(domain_key, "flash.ontology_write_failed",
+                                  err=True, detail=str(exc))
+    return _ontology_redirect(
+        domain_key, "flash.ontology_unit_saved", key=key,
+        op="updated" if existed else "created",
+    )
+
+
+@write_router.post(
+    "/d/{domain_key}/ontology/units/delete", include_in_schema=False,
+    name="console_ontology_unit_delete",
+    dependencies=[Depends(require_scope("content:write"))],
+)
+async def console_ontology_unit_delete(
+    request: Request,
+    domain_key: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Soft-delete one unit. Deleting is a lead action: it is a semantic asset.
+
+    Relationships are **not** cascaded — a cascade would silently widen the blast
+    radius. The page shows how many relations referenced the entity, and those
+    relations become visibly dangling instead of vanishing.
+    """
+    domain = resolve_domain(db, domain_key)
+    cap = capability(db, domain, user)
+    if not cap["can_assign"]:
+        raise HTTPException(status_code=403, detail="deleting requires the domain lead")
+    form = await request.form()
+    kind = (form.get("kind") or "").strip()
+    key = (form.get("external_key") or "").strip()
+    detail = bench_authoring.authoring_unit_detail(
+        db, domain_key=domain_key, kind=kind, external_key=key
+    )
+    try:
+        bench_authoring.authoring_delete_unit(
+            db, domain_key=domain_key, kind=kind, external_key=key,
+            operator=user.email or user.name or user.sub,
+        )
+    except ValueError as exc:
+        return _ontology_redirect(domain_key, "flash.ontology_write_failed",
+                                  err=True, detail=str(exc))
+    return _ontology_redirect(
+        domain_key, "flash.ontology_unit_deleted", key=key,
+        related=len((detail or {}).get("related") or []),
+    )
+
+
+@write_router.post(
+    "/d/{domain_key}/ontology/relations", include_in_schema=False,
+    name="console_ontology_relation_create",
+    dependencies=[Depends(require_scope("content:write"))],
+)
+async def console_ontology_relation_create(
+    request: Request,
+    domain_key: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Create a relationship between two entities that exist right now.
+
+    Endpoints arrive as ``external_key`` values chosen from the picker; they are
+    re-resolved here so a hand-edited form cannot point at a deleted or invented
+    entity.
+    """
+    domain = resolve_domain(db, domain_key)
+    cap = capability(db, domain, user)
+    if not cap["can_write"]:
+        raise HTTPException(status_code=403, detail="write requires expert or above")
+    form = await request.form()
+    kind = (form.get("kind") or "").strip()
+    from_key = (form.get("from_key") or "").strip()
+    to_key = (form.get("to_key") or "").strip()
+    body = (form.get("body") or "").strip() or f"{from_key} {kind} {to_key}"
+    live = {
+        e["external_key"]
+        for e in bench_authoring.authoring_live_entities(db, domain_key=domain_key)
+    }
+    for label, key in (("from", from_key), ("to", to_key)):
+        if key not in live:
+            return _ontology_redirect(
+                domain_key, "flash.ontology_write_failed", err=True,
+                detail=f"{label} endpoint {key!r} is not a live entity of this domain",
+            )
+    try:
+        bench_authoring.authoring_create_relationship(
+            db, domain_key=domain_key, kind=kind, from_key=from_key,
+            to_key=to_key, body=body,
+            operator=user.email or user.name or user.sub,
+        )
+    except ValueError as exc:
+        return _ontology_redirect(domain_key, "flash.ontology_write_failed",
+                                  err=True, detail=str(exc))
+    return _ontology_redirect(
+        domain_key, "flash.ontology_relation_saved", kind=kind,
+        from_key=from_key, to_key=to_key,
+    )
+
+
+@write_router.post(
+    "/d/{domain_key}/ontology/import", include_in_schema=False,
+    name="console_ontology_import",
+    dependencies=[Depends(require_scope("content:write"))],
+)
+async def console_ontology_import(
+    request: Request,
+    domain_key: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Bulk import: ``dry=1`` previews every row; otherwise it writes them.
+
+    Both modes call the same planner, so the preview cannot promise something the
+    write refuses. The preview is the default when the flag is absent **for
+    humans** — an accidental Enter must not write 200 units — so only an explicit
+    ``dry=0`` (or the confirm button) writes.
+    """
+    from ...bench import ontology_import
+
+    domain = resolve_domain(db, domain_key)
+    cap = capability(db, domain, user)
+    if not cap["can_write"]:
+        raise HTTPException(status_code=403, detail="import requires expert or above")
+    form = await request.form()
+    raw = (form.get("payload") or "").strip()
+    dry = (form.get("dry") or "1").strip() not in ("0", "false", "no")
+    try:
+        payload = json.loads(raw) if raw else {}
+    except json.JSONDecodeError as exc:
+        return _ontology_redirect(domain_key, "flash.ontology_import_failed",
+                                  err=True, detail=f"payload is not JSON: {exc}")
+    try:
+        planned = ontology_import.plan(db, domain_key=domain_key, payload=payload)
+    except ontology_import.ImportPayloadError as exc:
+        return _ontology_redirect(domain_key, "flash.ontology_import_failed",
+                                  err=True, detail=str(exc))
+    if dry:
+        summary = ontology_import.summarise(planned)
+        return _templates.TemplateResponse(
+            request,
+            "domain_console_ontology_import.html",
+            {
+                **console_context(db, domain, user),
+                "summary": summary,
+                "payload": raw,
+                "dry": True,
+            },
+        )
+    result = ontology_import.apply(
+        db, domain_key=domain_key, rows=planned,
+        operator=user.email or user.name or user.sub,
+    )
+    return _templates.TemplateResponse(
+        request,
+        "domain_console_ontology_import.html",
+        {
+            **console_context(db, domain, user),
+            "summary": result,
+            "payload": raw,
+            "dry": False,
         },
     )
 
