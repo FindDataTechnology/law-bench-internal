@@ -2,7 +2,7 @@
 
 ## 0. 底座接线（壹座 + 永忆）
 
-- [ ] 0.1 windows-admin 接入：确认可登录账号与密钥（当前 `loadtree@100.64.0.5` 公钥被拒），确认该系统盘/数据盘余量与 Node 版本
+- [ ] 0.1 windows-admin 接入：**当前阻塞** —— `loadtree@100.64.0.5` 与 Administrator/admin 均 publickey 被拒，`~/.ssh/windows-admin-control` 拒、`~/.ssh/windows_admin_key` 格式无效、`tailscale ssh` 未在该节点启用（主机跑 Win32-OpenSSH 10.4，允许 publickey/keyboard-interactive）。需要可用私钥或把开发机公钥加入 `loadtree` 的 authorized_keys；未进机前不得声称已确认 Node 版本与盘位
 - [ ] 0.2 永忆：`fd-memory serve` 原生进程 + 计划任务自启，装到数据盘；铸 platform/person/deployment 三级令牌，凭据 0600 落盘、不入库不入仓
 - [ ] 0.3 壹座：本机实例起来（无容器，Node 原生 + 计划任务自启），以 aloadtree@gmail.com 登录，确认 `AUTH_MODE` 与端口
 - [ ] 0.4 打通工具面：把 `team_*` 工具挂进壹座（本地 MCP 可直接挂，无需市场凭据）

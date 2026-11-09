@@ -208,3 +208,26 @@ run: { id, role, domain_key, task_id?, started_at, ended_at,
 ### 12.7 一条硬纪律：记忆是顾问
 
 本项目反复栽过的坑是"把缓存/记忆当权威"。所以：任何写前检查回源到库；记忆与库不一致时以库为准，并记一条偏差。授权（放宽范围、确认提案、发布）永远不来自记忆。
+
+## 13. 工具契约（执行面与权威面之间的唯一接口）
+
+工具是这套东西的**唯一动词表**。下表就是实现的验收清单：多一个工具等于多一份权限，少一个工具等于岗位干不了活。
+
+| 工具 | 入参 | 返回 | 拒绝（带原话） |
+|---|---|---|---|
+| `team_estate` | `domain` | 四柱 + 六项质量比 + 待确认计数 | 域不存在 |
+| `team_documents` | `domain`,`source`,`q?`,`offset?`,`limit?` | 行 + total + partial | 来源未声明文档结构 / 存储不可达 |
+| `team_document_chunks` | `domain`,`source`,`doc_id` | 块 + truncated | 存储不可达 |
+| `team_adopt` | `domain`,`source`,`doc_id`,`mode=document\|clauses` | key、adopted、remaining、capped | 词表外类型 / 键不合规 / 整批回滚原因 |
+| `team_proposal_submit` | `domain`,`kind`,`external_key`,`body`,`evidence`,`batch`,`summary` | id、created | 证据为空 / 词表外 / 同键同证据 |
+| `team_proposal_list` | `domain`,`batch?`,`state?` | 行 | — |
+| `team_task_list` | `domain`,`state?` | 任务 | — |
+| `team_task_transition` | `task_id`,`to_status` | 任务 | 非法状态迁移 |
+
+三条硬约束：
+
+1. **没有任何工具接受 `admin_override`**。自签不可能，不是"被拒"。
+2. **每个工具调用写一条 L0 捕获**：`{role, domain, run_id, tool, args_digest, outcome, ids}`。`run_id` 可由调用方给（批次名），缺省由服务端生成并在返回值里回传，便于同一轮后续调用复用。
+3. **拒绝用固定词表**（`refused_vocabulary` / `refused_evidence` / `refused_key` / `store_unreachable` / `nothing_new` / `capped`），岗位据此决定自己该 `thin` 还是 `failed`，不靠猜。
+
+`team_adopt` 的 `mode=clauses` 必须透传 `remaining`：上一轮的教训是"批次不收敛"会让智能体一直点下去，而 remaining 是它能自己看见的唯一进度信号。
