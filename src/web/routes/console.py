@@ -168,6 +168,36 @@ def console_domain_list(
 
 
 @write_router.post(
+    "/d/{domain_key}/eval-runs/lane-probe", include_in_schema=False,
+    name="console_lane_probe",
+    dependencies=[Depends(require_scope("content:write"))],
+)
+async def console_lane_probe(
+    request: Request,
+    domain_key: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Ask the model lane one question and show its own answer.
+
+    Deliberately a POST and deliberately manual: probing on page load would
+    hammer a dead endpoint and turn every view into a latency trap. The result
+    is passed back as a short query param so it is shown once and not stored —
+    a cached "last known good" would become the next lie.
+    """
+    from ...bench import lane as bench_lane
+
+    domain = resolve_domain(db, domain_key)
+    require_domain_role("lead")(request, user=user, conn=db)
+    result = bench_lane.probe()
+    summary = "ok" if result["ok"] else f"{result['status'] or 'err'}: {result['detail'][:160]}"
+    return _flash(
+        f"/d/{quote(domain_key)}/eval-runs", "flash.lane_probe", err=not result["ok"],
+        detail=summary,
+    )
+
+
+@write_router.post(
     "/d/{domain_key}/inbox/batch", include_in_schema=False,
     name="console_proposal_batch",
     dependencies=[Depends(require_scope("content:write"))],
@@ -1017,6 +1047,9 @@ def console_eval_runs(
         for group in groups["groups"]
         for item in group["items"]
     )
+    from ...bench import lane as bench_lane
+
+    lane_state = bench_lane.describe()
     return _templates.TemplateResponse(
         request,
         "domain_console_bench.html",
@@ -1027,6 +1060,11 @@ def console_eval_runs(
                 db, domain_key=domain_key
             ),
             "has_orphans": has_orphans,
+            # Whether the thing that evaluates can be reached at all. Without
+            # this an empty run list reads as "nobody has evaluated yet", which
+            # on 2026-11-09 was false in the worst way: the lane was dead and no
+            # run had ever succeeded.
+            "lane": lane_state,
         },
     )
 
