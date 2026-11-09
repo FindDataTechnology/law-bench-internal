@@ -29,7 +29,7 @@ class InvitationError(ValueError):
 
 _DOMAIN_SELECT = (
     "SELECT d.id, d.key, d.name, d.template_id, d.template_version, "
-    "t.name AS template_name, d.created_by, d.created_at, d.path "
+    "t.name AS template_name, d.created_by, d.created_at, d.path, d.archived_at "
     "FROM domains d JOIN ontology_templates t ON t.id = d.template_id"
 )
 _DOMAIN_KEYS = (
@@ -42,6 +42,7 @@ _DOMAIN_KEYS = (
     "path",
     "created_by",
     "created_at",
+    "archived_at",
 )
 _DOMAIN_INSERT_KEYS = (
     "id",
@@ -150,9 +151,17 @@ def instantiate_domain(
         raise ValueError("template schema is invalid: " + "; ".join(problems))
 
     existing = conn.execute(
-        "SELECT 1 FROM domains WHERE key = %s LIMIT 1", (key,)
+        "SELECT archived_at FROM domains WHERE key = %s LIMIT 1", (key,)
     ).fetchone()
     if existing:
+        # An archived key is still taken: history (proposals, runs, events) refers
+        # to a key that must keep meaning the same domain forever. Reusing it
+        # would splice two generations of a line into one record.
+        if existing["archived_at"] is not None:
+            raise ValueError(
+                f"domain key {key!r} belongs to an archived domain — restore it, "
+                "or choose a different key"
+            )
         raise ValueError(f"domain key {key!r} already exists")
 
     # Materialized path: a root's path is its key; a sub-domain composes
@@ -168,7 +177,8 @@ def instantiate_domain(
         """
         INSERT INTO domains (key, name, template_id, template_version, created_by, path)
         VALUES (%s, %s, %s, %s, %s, %s)
-        RETURNING id, key, name, template_id, template_version, created_by, created_at, path
+        RETURNING id, key, name, template_id, template_version, created_by,
+                  created_at, path, archived_at
         """,
         (key, name, tmpl["id"], tmpl["version"], created_by, path),
     )
@@ -204,19 +214,55 @@ def get_domain(
     return _row_to_dict(row, _DOMAIN_KEYS) if row else None
 
 
-def list_domains(conn: Any, *, user_id: Optional[str] = None) -> list[dict]:
-    """All domains, or only those where ``user_id`` has an active membership."""
-    if user_id is None:
-        cur = conn.execute(_DOMAIN_SELECT + " ORDER BY d.id")
-    else:
-        cur = conn.execute(
-            _DOMAIN_SELECT
-            + " WHERE EXISTS (SELECT 1 FROM domain_members m "
-            "WHERE m.domain_id = d.id AND m.user_id = %s "
-            "AND m.removed_at IS NULL) ORDER BY d.id",
-            (user_id,),
+def list_domains(
+    conn: Any, *, user_id: Optional[str] = None, include_archived: bool = False
+) -> list[dict]:
+    """All domains, or only those where ``user_id`` has an active membership.
+
+    Archived domains are excluded by default. This is the single filter point for
+    the estate, the switcher and the gap matrix — filtering at each call site
+    would drift into several definitions of "a domain".
+    """
+    where, params = [], []
+    if not include_archived:
+        where.append("d.archived_at IS NULL")
+    if user_id is not None:
+        where.append(
+            "EXISTS (SELECT 1 FROM domain_members m "
+            "WHERE m.domain_id = d.id AND m.user_id = %s AND m.removed_at IS NULL)"
         )
+        params.append(user_id)
+    sql = _DOMAIN_SELECT + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY d.id"
+    cur = conn.execute(sql, tuple(params))
     return [_row_to_dict(r, _DOMAIN_KEYS) for r in cur.fetchall()]
+
+
+def archive_domain(conn: Any, *, domain_key: str, actor: str) -> dict:
+    """Soft-exit a domain: hide it from the estate, keep everything it holds.
+
+    Only ``archived_at`` is written. Idempotent — archiving twice keeps the first
+    timestamp, because "when did this line stop" should not move.
+    """
+    domain = get_domain(conn, domain_key=domain_key)
+    if domain is None:
+        raise ValueError(f"domain {domain_key!r} not found")
+    if domain.get("archived_at") is not None:
+        return domain
+    conn.execute(
+        "UPDATE domains SET archived_at = now() WHERE id = %s", (domain["id"],)
+    )
+    conn.commit()
+    return get_domain(conn, domain_key=domain_key)
+
+
+def restore_domain(conn: Any, *, domain_key: str, actor: str) -> dict:
+    """Undo an archive: clear the timestamp, nothing else."""
+    domain = get_domain(conn, domain_key=domain_key)
+    if domain is None:
+        raise ValueError(f"domain {domain_key!r} not found")
+    conn.execute("UPDATE domains SET archived_at = NULL WHERE id = %s", (domain["id"],))
+    conn.commit()
+    return get_domain(conn, domain_key=domain_key)
 
 
 # ---------------------------------------------------------------- membership
@@ -282,13 +328,15 @@ def list_member_domains(conn: Any, *, user_id: str) -> list[dict]:
     stable for a brand-new identity. ``last_opened_at`` is a per-user navigation
     hint (see ``WORKSPACE_SCHEMA``), never content.
     """
+    # Archived domains are not listed here either: a retired line must not keep
+    # appearing on the landing page just because its members still exist.
     cur = conn.execute(
         "SELECT d.id, d.key, d.name, d.template_id, d.template_version, "
-        "t.name AS template_name, d.created_by, d.created_at, d.path, "
+        "t.name AS template_name, d.created_by, d.created_at, d.path, d.archived_at, "
         "m.role, m.last_opened_at "
         "FROM domains d JOIN ontology_templates t ON t.id = d.template_id "
         "JOIN domain_members m ON m.domain_id = d.id "
-        "WHERE m.user_id = %s AND m.removed_at IS NULL "
+        "WHERE m.user_id = %s AND m.removed_at IS NULL AND d.archived_at IS NULL "
         "ORDER BY m.last_opened_at DESC NULLS LAST, d.id",
         (user_id,),
     )

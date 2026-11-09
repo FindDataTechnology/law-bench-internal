@@ -68,6 +68,12 @@ LIBRARY_SCHEMA = """
 ALTER TABLE IF EXISTS domains ADD COLUMN IF NOT EXISTS parent_id BIGINT REFERENCES domains(id);
 ALTER TABLE IF EXISTS domains ADD COLUMN IF NOT EXISTS path TEXT;
 
+-- Archiving is a soft exit: the domain leaves the estate, its data stays put.
+-- A timestamp (not a boolean) because "when did this line stop" is the question
+-- that actually gets asked later, and it matches the other soft-deletes in this
+-- schema (domain_members.removed_at).
+ALTER TABLE IF EXISTS domains ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+
 -- Backfill: a pre-tree domain is a root whose path is its own key. Idempotent —
 -- only rows that have never been assigned a path are touched again.
 UPDATE domains SET path = key WHERE path IS NULL OR path = '';

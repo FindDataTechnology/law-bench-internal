@@ -129,8 +129,16 @@ def console_domain_list(
     gate: the page never invents a domain, and never lists a domain the caller
     cannot enter.
     """
+    include_archived = (request.query_params.get("archived") or "") == "1"
     domains = workspaces.list_member_domains(db, user_id=user.sub)
-    if not domains and is_platform_admin(user):
+    if include_archived and is_platform_admin(user):
+        # The archive view is an admin's roll-call of retired lines; it is not a
+        # place to work, so it lists every domain regardless of membership.
+        domains = [
+            {**d, "role": "admin", "last_opened_at": None}
+            for d in workspaces.list_domains(db, include_archived=True)
+        ]
+    elif not domains and is_platform_admin(user):
         # A platform admin's visible range is every domain, not just the ones
         # they hold a membership in: otherwise the estate console (the page that
         # answers "what is missing where") is empty for the only role that can
@@ -157,6 +165,7 @@ def console_domain_list(
             "domains": domains,
             "rows": rows,
             "gap": gap,
+            "include_archived": include_archived,
             "pillars": estate.PILLARS,
             "gap_counts": {
                 key: len([r for r in all_rows if key in r["gaps"]])
@@ -333,17 +342,55 @@ async def console_knowledge_narrow(
     )
 
 
+@write_router.post(
+    "/d/{domain_key}/archive", include_in_schema=False, name="console_domain_archive",
+    dependencies=[Depends(require_scope("admin"))],
+)
+async def console_domain_archive(
+    request: Request,
+    domain_key: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Retire a domain: it leaves the estate, everything it holds stays.
+
+    Admin-only on purpose. A domain lead retiring their own line would remove it
+    from the operator's roll-call while the platform still believed it healthy.
+    """
+    form = await request.form()
+    restore = (form.get("restore") or "") == "1"
+    try:
+        if restore:
+            workspaces.restore_domain(db, domain_key=domain_key, actor=user.sub)
+        else:
+            workspaces.archive_domain(db, domain_key=domain_key, actor=user.sub)
+    except ValueError as exc:
+        return _flash("/d?archived=1", "flash.domain_archive_failed", err=True, detail=str(exc))
+    return _flash(
+        "/d" if not restore else "/d?archived=1",
+        "flash.domain_restored" if restore else "flash.domain_archived",
+        key=domain_key,
+    )
+
+
 # ------------------------------------------------------------- dispatch #
 
 
-def _estate_domains(db, user) -> list[dict]:
+def _estate_domains(db, user, *, include_archived: bool = False) -> list[dict]:
     """The domains this caller can see on the estate page — one definition.
 
     Shared by the matrix and the dispatch planner so a task can never be created
-    for a domain the caller could not see in the first place.
+    for a domain the caller could not see in the first place. ``include_archived``
+    is the admin's roll-call of retired lines; dispatch never uses it (you do not
+    hand out work on a domain that has left the estate).
     """
     domains = workspaces.list_member_domains(db, user_id=user.sub)
-    if not domains and is_platform_admin(user):
+    if include_archived and is_platform_admin(user):
+        domains = [
+            {**d, "role": "admin", "last_opened_at": None}
+            for d in workspaces.list_domains(db, include_archived=True)
+        ]
+    elif not domains and is_platform_admin(user):
         domains = [
             {**d, "role": "admin", "last_opened_at": None}
             for d in workspaces.list_domains(db)

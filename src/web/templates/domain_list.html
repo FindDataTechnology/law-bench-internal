@@ -31,6 +31,12 @@
     {{ t.console.dispatch.title }} ({{ rows|length }})
   </a>
   {% endif %}
+  {% if platform_admin %}
+  <a class="btn btn-sm{% if include_archived %} btn-primary{% endif %}"
+     href="{{ url_for('console_domain_list') }}{% if include_archived %}{% else %}?archived=1{% endif %}">
+    {{ t.console.estate.archived_toggle }}
+  </a>
+  {% endif %}
   {% for key in ('ontology', 'knowledge', 'eval') %}
   <a class="btn btn-sm{% if gap == key %} btn-primary{% endif %}"
      href="{{ url_for('console_domain_list') }}?gap={{ key }}">
@@ -58,6 +64,13 @@
         <td>
           {% if r.depth %}<span class="muted">{{ '　' * r.depth }}└</span>{% endif %}
           <a href="{{ url_for('console_overview', domain_key=r.domain.key) }}">{{ r.domain.name }}</a>
+          {% if r.domain.archived_at %}
+          <span class="badge bad">{{ t.console.estate.archived_badge }}</span>
+          <form method="POST" class="inline" action="{{ url_for('console_domain_archive', domain_key=r.domain.key) }}">
+            <input type="hidden" name="restore" value="1">
+            <button type="submit" class="btn btn-sm">{{ t.console.estate.restore_btn }}</button>
+          </form>
+          {% endif %}
           <code>{{ r.domain.path }}</code>
           {% for g in r.gaps %}
           <span class="badge badge-warn">{{ t.console.estate['gap_' + g] }}</span>
@@ -89,6 +102,11 @@
         <td><span class="badge">{{ t.console.role[r.domain.role] }}</span></td>
         <td class="nowrap">
           <a class="btn btn-sm" href="{{ url_for('console_overview', domain_key=r.domain.key) }}">{{ t.console.list.open }}</a>
+          {% if platform_admin and not r.domain.archived_at %}
+          <form method="POST" class="inline" action="{{ url_for('console_domain_archive', domain_key=r.domain.key) }}">
+            <button type="submit" class="btn btn-sm">{{ t.console.estate.archive_btn }}</button>
+          </form>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}
