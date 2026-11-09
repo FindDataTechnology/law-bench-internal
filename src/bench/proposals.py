@@ -557,15 +557,33 @@ def batches(conn: Any, *, domain_key: str) -> list[dict]:
         "GROUP BY 1, 2 ORDER BY 1 DESC",
         (domain["id"],),
     ).fetchall()
+    rates = {
+        r["batch"]: r["rate"]
+        for r in conn.execute(
+            "SELECT evidence->>'batch' AS batch, MAX(evidence->>'usable_rate') AS rate "
+            "FROM domain_proposals WHERE domain_id = %s AND evidence ? 'usable_rate' "
+            "GROUP BY 1",
+            (domain["id"],),
+        ).fetchall()
+    }
     merged: dict[str, dict] = {}
     for row in rows:
         name = row["batch"]
         if not name:
             continue
         entry = merged.setdefault(name, {"batch": name, "pending": 0, "confirmed": 0,
-                                         "rejected": 0, "total": 0})
+                                         "rejected": 0, "total": 0,
+                                         "usable_rate": None, "low_yield": False})
         entry[row["state"]] = row["n"]
         entry["total"] += row["n"]
+    for name, entry in merged.items():
+        raw = rates.get(name)
+        if raw:
+            try:
+                entry["usable_rate"] = float(raw)
+                entry["low_yield"] = entry["usable_rate"] < 0.5
+            except (TypeError, ValueError):
+                pass
     return [merged[k] for k in sorted(merged, reverse=True)]
 
 

@@ -32,8 +32,10 @@ SCHEMA = {
 
 GOOD = {
     "units": [
-        {"kind": "clause", "external_key": "a", "body": "条款 A"},
-        {"kind": "clause", "external_key": "b", "body": "条款 B"},
+        # `party`, not `clause`: a clause needs a parent-qualified key and these
+        # cases are about plan/apply mechanics, not key rules.
+        {"kind": "party", "external_key": "a", "body": "甲"},
+        {"kind": "party", "external_key": "b", "body": "乙"},
     ],
     "relationships": [
         {"kind": "cites", "from_key": "a", "to_key": "b"},
@@ -90,8 +92,8 @@ def test_plan_reports_mixed_outcomes(conn):
     """
     payload = {
         "units": [
-            {"kind": "clause", "external_key": "a", "body": "条款 A"},
-            {"kind": "clause", "external_key": "b", "body": "条款 B"},
+            {"kind": "party", "external_key": "a", "body": "甲"},
+            {"kind": "party", "external_key": "b", "body": "乙"},
             {"kind": "spaceship", "external_key": "x", "body": "坏 kind"},
         ],
         "relationships": [
@@ -165,3 +167,20 @@ def test_smoke_units_are_detectable(conn):
     assert ontology_import.is_smoke({"external_key": "smoke-clause-001"})
     assert ontology_import.is_smoke({"external_key": "x", "body": "冒烟订单"})
     assert not ontology_import.is_smoke({"external_key": "gb-50011", "body": "防火规范"})
+
+
+def test_bare_clause_key_is_refused_on_import(conn):
+    """Hand-written imports obey the same key rule as extraction: an article
+    number alone is not an address."""
+    payload = {"units": [{"kind": "clause", "external_key": "第十二条", "body": "…"}],
+               "relationships": []}
+    rows = ontology_import.plan(conn, domain_key="legal", payload=payload)
+    assert rows[0]["action"] == "error"
+    assert "parent" in (rows[0]["reason"] or "")
+
+
+def test_qualified_clause_key_is_accepted_on_import(conn):
+    payload = {"units": [{"kind": "clause", "external_key": "合同法#第12条", "body": "…"}],
+               "relationships": []}
+    rows = ontology_import.plan(conn, domain_key="legal", payload=payload)
+    assert rows[0]["action"] == "create"

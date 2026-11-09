@@ -13,6 +13,8 @@ import json
 
 import pytest
 
+import packs.legal  # noqa: F401  — importing the pack registers its key rules,
+                     # exactly as the web app does; without it nothing folds.
 from src.bench import authoring, extraction, libraries, templates, workspaces
 from src.bench.promotion import SENSITIVITY_LEVELS
 from src.bench.tiers import TIERS
@@ -49,13 +51,15 @@ def _fake_qdrant(chunks):
 
     def post(url, path, body, timeout=30.0):
         calls["n"] += 1
-        points = [
-            {"id": c["chunk_id"],
-             "payload": {"chunk_text": c["text"], "title": c.get("title", ""),
-                         "law_id": c.get("law_id", 1), "chunk_no": c.get("chunk_no", 0),
-                         "category": "法律"}}
-            for c in (chunks if calls["n"] == 1 else [])
-        ]
+        points = []
+        for c in (chunks if calls["n"] == 1 else []):
+            payload = {"chunk_text": c["text"], "category": "法律"}
+            # Only carry what the chunk declares: defaulting `law_id` here would
+            # silently give every block a parent document.
+            for field in ("title", "law_id", "chunk_no"):
+                if c.get(field) is not None:
+                    payload[field] = c[field]
+            points.append({"id": c["chunk_id"], "payload": payload})
         return {"result": {"points": points, "next_page_offset": None}}
 
     return post, calls
@@ -88,11 +92,15 @@ def _run(conn, monkeypatch, answer, *, chunks=None, **kw):
 
 
 def test_good_candidates_land_as_pending_proposals(conn, monkeypatch):
+    # The name has to be the document this block belongs to — that is the gate
+    # added by fix-ontology-extraction-quality, not a loosened test.
     answer = {"entities": [
-        {"kind": "law", "name": "合同法", "chunk_id": "c1", "quote": "为了规范合同的订立"}],
-        "relationships": []}
+        {"kind": "law", "name": "中华人民共和国合同法", "chunk_id": "c1",
+         "quote": "为了规范合同的订立"}], "relationships": []}
     before = conn.execute("SELECT COUNT(*) AS n FROM knowledge_units").fetchone()["n"]
-    report = _run(conn, monkeypatch, answer)
+    report = _run(conn, monkeypatch, answer,
+                  chunks=[{"chunk_id": "c1", "text": CHUNK_TEXT,
+                           "title": "中华人民共和国合同法", "law_id": 1, "chunk_no": 0}])
     after = conn.execute("SELECT COUNT(*) AS n FROM knowledge_units").fetchone()["n"]
     assert report["submitted"] == 1 and report["skipped"]["bad_quote"] == 0
     assert after == before, "extraction must never write the ontology"
@@ -134,25 +142,30 @@ def test_relationship_needs_a_closed_endpoint(conn, monkeypatch):
 def test_same_batch_entity_closes_the_endpoint(conn, monkeypatch):
     """`A→B` must be proposable when B is nominated in the same batch."""
     answer = {"entities": [
-        {"kind": "law", "name": "合同法", "chunk_id": "c1", "quote": "规范合同的订立"},
-        {"kind": "law", "name": "民法典", "chunk_id": "c1", "quote": "合同应当采用书面形式"}],
+        {"kind": "clause", "name": "第一条", "chunk_id": "c1", "quote": "规范合同的订立"},
+        {"kind": "clause", "name": "第二条", "chunk_id": "c1", "quote": "合同应当采用书面形式"}],
         "relationships": [
-        {"kind": "cites_law", "from_name": "合同法", "to_name": "民法典",
+        {"kind": "cites_law", "from_name": "第一条", "to_name": "第二条",
          "chunk_id": "c1", "quote": "合同应当采用书面形式"}]}
-    report = _run(conn, monkeypatch, answer, max_per_chunk=8)
+    report = _run(conn, monkeypatch, answer, max_per_chunk=8,
+                  chunks=[{"chunk_id": "c1", "text": CHUNK_TEXT,
+                           "title": "中华人民共和国合同法", "law_id": 1, "chunk_no": 0}])
     assert report["submitted"] == 3
     assert report["skipped"]["bad_endpoint"] == 0
 
 
 def test_rerun_is_idempotent(conn, monkeypatch):
     answer = {"entities": [
-        {"kind": "law", "name": "合同法", "chunk_id": "c1", "quote": "规范合同的订立"}],
-        "relationships": []}
-    first = _run(conn, monkeypatch, answer)
+        {"kind": "law", "name": "中华人民共和国合同法", "chunk_id": "c1",
+         "quote": "规范合同的订立"}], "relationships": []}
+    first = _run(conn, monkeypatch, answer,
+                 chunks=[{"chunk_id": "c1", "text": CHUNK_TEXT,
+                          "title": "中华人民共和国合同法", "law_id": 1, "chunk_no": 0}])
     assert first["submitted"] == 1
     # The library already exists from _run; only reset the scroll stub so the
     # second run samples the same chunk again.
-    post, _ = _fake_qdrant([{"chunk_id": "c1", "text": CHUNK_TEXT, "title": "某法"}])
+    post, _ = _fake_qdrant([{"chunk_id": "c1", "text": CHUNK_TEXT,
+                             "title": "中华人民共和国合同法", "law_id": 1, "chunk_no": 0}])
     monkeypatch.setattr(extraction, "_post", post)
     second = extraction.run(conn, domain_key="legal",
                             complete_fn=lambda p: json.dumps(answer))
@@ -279,3 +292,84 @@ def test_complete_sends_an_explicit_token_budget(monkeypatch):
     extraction.complete("prompt")
     assert seen["json"]["max_tokens"] >= 1000
     assert seen["timeout"] >= 60
+
+
+def _chunk(title, text=CHUNK_TEXT, cid="c1"):
+    return {"chunk_id": cid, "text": text, "title": title, "law_id": 1, "chunk_no": 0}
+
+
+def _run_on(conn, monkeypatch, answer, *, chunk):
+    _library(conn)
+    post, _calls = _fake_qdrant([chunk])
+    monkeypatch.setenv("TEST_QDRANT", "http://qdrant.test:6333")
+    monkeypatch.setattr(extraction, "_post", post)
+    return extraction.run(conn, domain_key="legal", max_chunks=1, max_total=10,
+                          complete_fn=lambda p: json.dumps(answer))
+
+
+def test_clause_candidate_gets_a_parent_qualified_key(conn, monkeypatch):
+    answer = {"entities": [{"kind": "clause", "name": "第十二条", "chunk_id": "c1",
+                            "quote": "合同应当采用书面形式"}], "relationships": []}
+    report = _run_on(conn, monkeypatch, answer, chunk=_chunk("中华人民共和国宪法（2018年修正文本）"))
+    assert report["submitted"] == 1
+    row = conn.execute("SELECT external_key, evidence FROM domain_proposals").fetchone()
+    assert row["external_key"] == "宪法#第12条"
+    assert row["evidence"]["law_key"] == "宪法" and row["evidence"]["clause_no"] == 12
+
+
+def test_structural_name_is_not_accepted_as_a_clause(conn, monkeypatch):
+    answer = {"entities": [{"kind": "clause", "name": "序　言", "chunk_id": "c1",
+                            "quote": "合同应当采用书面形式"}], "relationships": []}
+    report = _run_on(conn, monkeypatch, answer, chunk=_chunk("中华人民共和国宪法"))
+    assert report["submitted"] == 0
+    assert report["skipped"]["not_clause"] == 1
+
+
+def test_missing_parent_is_reported(conn, monkeypatch):
+    """A block with neither title nor law_id cannot host a clause."""
+    answer = {"entities": [{"kind": "clause", "name": "第十二条", "chunk_id": "c1",
+                            "quote": "合同应当采用书面形式"}], "relationships": []}
+    report = _run_on(conn, monkeypatch, answer,
+                     chunk={"chunk_id": "c1", "text": CHUNK_TEXT, "title": None})
+    assert report["submitted"] == 0
+    assert report["skipped"]["missing_parent"] == 1
+
+
+def test_a_country_name_is_not_a_law(conn, monkeypatch):
+    answer = {"entities": [{"kind": "law", "name": "中华人民共和国", "chunk_id": "c1",
+                            "quote": "规范合同的订立"}], "relationships": []}
+    report = _run_on(conn, monkeypatch, answer,
+                     chunk=_chunk("中华人民共和国宪法修正案（2018年）"))
+    assert report["submitted"] == 0
+    assert report["skipped"]["type_mismatch"] == 1
+
+
+def test_the_real_document_name_passes(conn, monkeypatch):
+    answer = {"entities": [{"kind": "law", "name": "中华人民共和国宪法", "chunk_id": "c1",
+                            "quote": "规范合同的订立"}], "relationships": []}
+    report = _run_on(conn, monkeypatch, answer,
+                     chunk=_chunk("中华人民共和国宪法（2018年修正文本）"))
+    assert report["submitted"] == 1
+    row = conn.execute("SELECT external_key FROM domain_proposals").fetchone()
+    assert row["external_key"] == "宪法"          # canonical key
+
+
+def test_two_spellings_of_one_entity_yield_one_proposal(conn, monkeypatch):
+    answer = {"entities": [
+        {"kind": "law", "name": "宪法", "chunk_id": "c1", "quote": "规范合同的订立"},
+        {"kind": "law", "name": "中华人民共和国宪法", "chunk_id": "c1",
+         "quote": "合同应当采用书面形式"}], "relationships": []}
+    report = _run_on(conn, monkeypatch, answer, chunk=_chunk("中华人民共和国宪法"))
+    assert report["submitted"] == 1
+    assert report["skipped"]["normalised"] == 1
+
+
+def test_usable_rate_and_low_yield_flag(conn, monkeypatch):
+    answer = {"entities": [
+        {"kind": "law", "name": "中华人民共和国", "chunk_id": "c1", "quote": "规范合同的订立"},
+        {"kind": "law", "name": "中华人民共和国宪法", "chunk_id": "c1",
+         "quote": "合同应当采用书面形式"}], "relationships": []}
+    report = _run_on(conn, monkeypatch, answer, chunk=_chunk("中华人民共和国宪法"))
+    assert report["produced"] == 2 and report["submitted"] == 1
+    assert report["usable_rate"] == 0.5
+    assert report["low_yield"] is False        # threshold is 0.5, not strictly greater

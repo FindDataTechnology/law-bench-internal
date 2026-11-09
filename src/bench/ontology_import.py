@@ -77,6 +77,16 @@ def plan(conn: Any, *, domain_key: str, payload: Any) -> list[dict]:
             rows.append({**label, "action": "error",
                          "reason": "kind, external_key and body are required"})
             continue
+        # Same key discipline as extraction: a clause is never addressable by its
+        # article number alone. Hand-written imports must not smuggle in keys the
+        # extractor is no longer allowed to produce.
+        from . import keys as key_mod
+
+        if kind.endswith("clause") and "#" not in key:
+            rows.append({**label, "action": "error",
+                         "reason": "a clause key must be '<parent>#第N条'; a bare article "
+                                   "number matches nearly every document"})
+            continue
         try:
             # Ask the kernel's own gate rather than re-implementing the rule.
             authoring._gate_kind(

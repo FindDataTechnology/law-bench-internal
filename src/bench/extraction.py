@@ -29,7 +29,7 @@ from typing import Any, Callable, Optional
 
 import httpx
 
-from src.bench import authoring, libraries, ontology_import, proposals
+from src.bench import authoring, keys, libraries, ontology_import, proposals
 
 #: Bumped whenever the prompt changes — recorded on every proposal so a batch can
 #: be traced back to the instruction that produced it.
@@ -288,6 +288,87 @@ def normalize_entity_key(name: str) -> str:
     return key[:80] or "unnamed"
 
 
+# ── key & normalisation gates (§§1-2 of fix-ontology-extraction-quality) ─────
+
+
+def canonical_name(name: str, *, domain_key: str = "") -> str:
+    """Normalise an entity name to the spelling its key is built from.
+
+    Rules come from the kernel registry (a pack registers them on import); with
+    nothing registered nothing is folded, which is the safe direction —
+    under-merging is recoverable, over-merging destroys a distinction.
+    """
+    stripped = keys.strip_trailing_qualifier(name or "")
+    folded, _applied = keys.fold(stripped, keys.rules_for(domain_key))
+    return folded.strip() or (name or "").strip()
+
+
+def law_name_matches(name: str, title: str, *, domain_key: str = "") -> bool:
+    """Does ``name`` really designate the document whose ``title`` this is?
+
+    Exact match after both sides are canonicalised — **not** a substring test.
+    "中华人民共和国" is a true prefix of "中华人民共和国宪法修正案", and a substring
+    check would wave through exactly the kind of mis-typing this gate exists to
+    stop.
+    """
+    left = canonical_name(name, domain_key=domain_key)
+    right = canonical_name(title, domain_key=domain_key)
+    if not left or not right:
+        return False
+    if left == right:
+        return True
+    # A document may carry a suffix that makes it a *different* instrument; that
+    # is a legitimate distinct name, not a match for the bare stem.
+    is_distinct = keys.distinct_document_for(domain_key)
+    if is_distinct and is_distinct(right) and not is_distinct(left):
+        return False
+    return False
+
+
+def clause_parent(chunk: dict, *, domain_key: str = "") -> tuple[str, str]:
+    """The parent document key for a clause in ``chunk``.
+
+    Prefers the human-readable title; falls back to the corpus id when a block
+    has no title, and says which was used so the provenance is explicit.
+    """
+    title = (chunk.get("title") or "").strip()
+    if title:
+        return keys.slug(canonical_name(title, domain_key=domain_key)), "title"
+    law_id = chunk.get("law_id")
+    if law_id is not None:
+        return f"lawid-{law_id}", "law_id"
+    return "", "none"
+
+
+def resolve_entity_key(name: str, *, kind: str, chunk: dict,
+                       domain_key: str = "") -> tuple[Optional[str], Optional[str], dict]:
+    """The key an entity name must have, plus why it has none.
+
+    Used for entities *and* for relationship endpoints — if the two paths
+    disagreed, a clause could be submitted as `contract_law#第1条` while the
+    relation pointing at it looked for `第一条`, and every clause-to-clause
+    relation would be rejected as "endpoint missing".
+
+    Returns ``(key, rejection, meta)``; ``rejection`` is one of
+    ``not_clause`` / ``missing_parent`` when the name cannot be keyed.
+    """
+    meta: dict = {}
+    raw = (name or "").strip()
+    number = keys.clause_no(raw)
+    if kind.endswith("clause") or number is not None:
+        if number is None:
+            return None, "not_clause", meta
+        parent_key, parent_source = clause_parent(chunk, domain_key=domain_key)
+        if not parent_key:
+            return None, "missing_parent", meta
+        meta.update(law_key=parent_key, clause_no=number, parent_source=parent_source)
+        return keys.clause_key(parent_key, number), None, meta
+    canon = canonical_name(raw, domain_key=domain_key)
+    if canon != raw:
+        meta.update(canonical_name=canon, raw_name=raw)
+    return normalize_entity_key(canon), None, meta
+
+
 # ── model call (injectable) ─────────────────────────────────────────────────
 
 
@@ -368,7 +449,16 @@ def run(
         "produced": 0,
         "submitted": 0,
         "duplicate": 0,
-        "skipped": {"bad_quote": 0, "bad_kind": 0, "bad_endpoint": 0, "bad_row": 0},
+        "skipped": {
+            "bad_quote": 0,      # the model quoted something not in the chunk
+            "bad_kind": 0,       # kind outside the declared vocabularies
+            "bad_endpoint": 0,   # relation endpoint neither live nor nominated
+            "bad_row": 0,        # malformed row / refused by the proposal layer
+            "missing_parent": 0,  # clause with no identifiable parent document
+            "not_clause": 0,     # a structural name (preface/chapter) posing as a clause
+            "type_mismatch": 0,  # a "law" whose name is not the block's title
+            "normalised": 0,     # folded into an earlier candidate of this batch
+        },
         "by_kind": {},
         "stopped": None,
         "cursor": sampled["cursor"],
@@ -412,8 +502,17 @@ def run(
                 "prompt_version": PROMPT_VERSION,
             }
             if is_relation:
-                from_key = normalize_entity_key(str(row.get("from_name")))
-                to_key = normalize_entity_key(str(row.get("to_name")))
+                from_key, from_rej, _m1 = resolve_entity_key(
+                    str(row.get("from_name")), kind=str(row.get("from_kind") or "entity"),
+                    chunk=source_chunk, domain_key=domain_key,
+                )
+                to_key, to_rej, _m2 = resolve_entity_key(
+                    str(row.get("to_name")), kind=str(row.get("to_kind") or "entity"),
+                    chunk=source_chunk, domain_key=domain_key,
+                )
+                if from_rej or to_rej or not from_key or not to_key:
+                    report["skipped"]["bad_endpoint"] += 1
+                    continue
                 missing = [k for k in (from_key, to_key) if k not in live and k not in nominated]
                 if missing:
                     report["skipped"]["bad_endpoint"] += 1
@@ -424,9 +523,32 @@ def run(
                 body = f"{row.get('from_name')} {kind} {row.get('to_name')}"
                 evidence["from_key"], evidence["to_key"] = from_key, to_key
             else:
-                external_key = normalize_entity_key(str(row.get("name")))
-                body = str(row.get("name"))
+                name = str(row.get("name"))
+                # A candidate typed as a document must actually be the document
+                # whose text it quotes; "中华人民共和国" is a prefix of the title
+                # but not the title.
+                if kind in ("law", "statute", "regulation") and not law_name_matches(
+                    name, source_chunk.get("title") or "", domain_key=domain_key
+                ):
+                    report["skipped"]["type_mismatch"] += 1
+                    continue
+                external_key, rejection, meta = resolve_entity_key(
+                    name, kind=kind, chunk=source_chunk, domain_key=domain_key
+                )
+                if rejection:
+                    report["skipped"][rejection] += 1
+                    continue
+                evidence.update(meta)
+                if external_key in nominated:
+                    # Same entity, another spelling, same batch: one proposal,
+                    # never two keys for one thing.
+                    report["skipped"]["normalised"] += 1
+                    continue
+                body = name
                 nominated.add(external_key)
+            evidence["usable_rate"] = round(
+                report["submitted"] / max(1, report["produced"]), 3
+            )
             try:
                 _proposal, created = proposals.submit(
                     conn,
@@ -448,6 +570,13 @@ def run(
                 report["by_kind"][kind] = report["by_kind"].get(kind, 0) + 1
             else:
                 report["duplicate"] += 1
+    # A ratio, not a verdict: below the threshold the right move is "don't scale
+    # this up yet", and the refusal reasons say whether to fix the prompt or the
+    # key rules.
+    threshold = float(os.environ.get("EXTRACT_MIN_USABLE_RATE", "0.5"))
+    report["usable_rate"] = round(report["submitted"] / report["produced"], 3) if report["produced"] else 0.0
+    report["low_yield"] = report["usable_rate"] < threshold
+    report["usable_threshold"] = threshold
     return report
 
 
