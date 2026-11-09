@@ -95,19 +95,23 @@ def sample_chunks(
             continue
         loc = libraries.resolve_location(lib)
         filt = _filter_for(conn, lib=lib, allowed=wanted)
-        body: dict[str, Any] = {"limit": max(1, limit - len(collected)), "with_payload": True}
+        # Fetch a wider window than the page size: spreading across documents
+        # needs candidates beyond the first few, and scroll is document-ordered.
+        want = max(1, limit - len(collected))
+        body: dict[str, Any] = {"limit": min(MAX_CHUNKS, want * 4), "with_payload": True}
         if filt is not None:
             body["filter"] = filt
         if next_cursor is not None:
             body["offset"] = next_cursor
         data = _post(loc["url_env"], f"/collections/{loc['collection']}/points/scroll", body)
         result = data.get("result") or {}
+        window: list[dict] = []
         for point in result.get("points") or []:
             payload = point.get("payload") or {}
             text = payload.get("chunk_text") or ""
             if not text or ontology_import.is_smoke({"external_key": str(point.get("id")), "body": text}):
                 continue
-            collected.append(
+            window.append(
                 {
                     "chunk_id": str(point.get("id")),
                     "library": library_key,
@@ -119,9 +123,53 @@ def sample_chunks(
                 }
             )
         next_cursor = result.get("next_page_offset")
+        collected.extend(_spread(window, limit - len(collected)))
         if len(collected) >= limit:
             break
     return {"chunks": collected[:limit], "cursor": next_cursor}
+
+
+def _spread(chunks: list[dict], limit: int, *, per_doc: int = 2) -> list[dict]:
+    """Pick chunks spread across documents instead of in ingest order.
+
+    Qdrant scroll is ordered by point id, and points are written document by
+    document — so a naive page of 20 chunks can be 2 laws (measured: 20 chunks
+    from 2 `law_id`s). Extraction wants coverage, so take at most ``per_doc``
+    chunks from each document, round robin, until the page is full.
+
+    Chunks left over in the window are dropped rather than re-queued: this is
+    sampling, not an exhaustive walk, and the cursor already moved past them.
+    """
+    if limit <= 0:
+        return []
+    by_doc: dict[Any, list[dict]] = {}
+    order: list[Any] = []
+    for chunk in chunks:
+        doc = chunk.get("law_id") or chunk.get("chunk_id")
+        if doc not in by_doc:
+            by_doc[doc] = []
+            order.append(doc)
+        if len(by_doc[doc]) < per_doc:
+            by_doc[doc].append(chunk)
+    picked: list[dict] = []
+    for round_no in range(per_doc):
+        for doc in order:
+            if round_no < len(by_doc[doc]):
+                picked.append(by_doc[doc][round_no])
+                if len(picked) >= limit:
+                    return picked
+    if len(picked) < limit:
+        # The window was dominated by a few documents: top up in window order so
+        # the caller still gets the page size it asked for. A short page here
+        # would silently reduce coverage without saying so.
+        taken = {id(c) for c in picked}
+        for chunk in chunks:
+            if id(chunk) in taken:
+                continue
+            picked.append(chunk)
+            if len(picked) >= limit:
+                break
+    return picked
 
 
 def _filter_for(conn: Any, *, lib: dict, allowed: set[str]) -> Optional[dict]:

@@ -221,3 +221,33 @@ def test_parse_counts_bad_rows_without_failing():
                                    {"kind": "law"}], "relationships": []})
     parsed = extraction.parse_candidates(raw)
     assert len(parsed["entities"]) == 1 and parsed["bad_rows"] == 1
+
+
+def test_sampling_spreads_across_documents():
+    """Scroll is ordered by point id, and points are written document by
+    document: a naive page of N chunks can be 1–2 laws (measured in production:
+    20 chunks from 2 law_ids). `_spread` takes at most 2 per document, round
+    robin, so a page covers many documents."""
+    chunks = []
+    for law in range(1, 6):                     # 5 documents
+        for no in range(5):                     # 5 chunks each, consecutive ids
+            chunks.append({"chunk_id": f"{law}-{no}", "law_id": law, "text": "t"})
+    picked = extraction._spread(chunks, 8)
+    assert len(picked) == 8
+    assert len({c["law_id"] for c in picked}) == 5      # every document represented
+    # Never more than two per document on the first pass.
+    from collections import Counter
+    assert max(Counter(c["law_id"] for c in picked).values()) <= 2
+
+
+def test_spread_returns_everything_when_the_page_is_large_enough():
+    chunks = [{"chunk_id": f"{law}-0", "law_id": law, "text": "t"} for law in range(3)]
+    assert len(extraction._spread(chunks, 10)) == 3
+
+
+def test_spread_tolerates_a_document_rich_window():
+    """If one document dominates the window, fill the page from it rather than
+    returning a short page."""
+    chunks = [{"chunk_id": f"1-{i}", "law_id": 1, "text": "t"} for i in range(10)]
+    picked = extraction._spread(chunks, 4)
+    assert len(picked) == 4
