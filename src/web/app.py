@@ -200,6 +200,26 @@ def create_app() -> FastAPI:
         except Exception:  # noqa: BLE001
             pass
 
+    @app.on_event("startup")
+    def _reap_stale_generation_jobs() -> None:
+        """把上个进程遗留的 pending/running 生成任务收成 failed（审计 03 §10）。
+
+        `generation_jobs` 的终态只有后台任务自己在同一进程里写；滚动部署 / OOM /
+        驱逐 / SIGTERM 落在 202 与收尾之间，就会留下永远「还在跑」的行。启动时本
+        进程还没有任何任务，所以凡是非终态行必是上一进程遗留，可无条件收掉。
+        Best-effort：数据库打嗝不该拦住启动（下次重启还会再扫）。
+        """
+        try:
+            from ..eval.store import reap_stale_generation_jobs
+
+            n = reap_stale_generation_jobs()
+            if n:
+                logger.warning(
+                    "reaped %s stale generation job(s) from a previous process", n
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("stale generation-job sweep skipped: %s", exc)
+
     return app
 
 
