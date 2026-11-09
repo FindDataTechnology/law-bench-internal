@@ -349,3 +349,7 @@ READONLY_REPLICA = _env("READONLY_REPLICA", "0") == "1"
 RATE_LIMIT_ENABLED = _env("RATE_LIMIT_ENABLED", "0") == "1"
 RATE_LIMIT_RPS = float(_env("RATE_LIMIT_RPS", "10"))    # sustained tokens/sec refill
 RATE_LIMIT_BURST = int(_env("RATE_LIMIT_BURST", "20"))  # bucket capacity (max burst)
+# Ceiling on tracked caller buckets. A key-flood (fresh X-API-Key per request)
+# would otherwise grow the dict without bound — the middleware runs before auth,
+# so it never rejects an unknown key. Sized for ~50k live callers on one pod.
+RATE_LIMIT_MAX_BUCKETS = int(_env("RATE_LIMIT_MAX_BUCKETS", "50000"))
