@@ -47,6 +47,10 @@ DECLARATIONS = {
     ("law-library", "local"): LAW_DOCUMENT,
     ("law-library", "departmental"): LAW_DOCUMENT,
     ("law-library", "amendment"): LAW_DOCUMENT,
+    # "unclassified" is crawl residue by label (重下载/新法速递/规范性文件) but the
+    # payload is the same shape, and it is where newly issued instruments land
+    # first — the source a curator most wants to browse.
+    ("law-library", "unclassified"): LAW_DOCUMENT,
 }
 
 
