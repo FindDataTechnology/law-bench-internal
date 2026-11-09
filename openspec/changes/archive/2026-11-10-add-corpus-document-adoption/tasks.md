@@ -32,14 +32,14 @@
 
 ## 5. 数据登记（生产）
 
-- [ ] 5.1 为 `law-library` 七个来源补 `ingest_rule.document` 映射（幂等 UPDATE，可回滚）
-- [ ] 5.2 生产实测：目录可见文档、总数与库一致；取入一部法 + 其条款；重复取幂等
-- [ ] 5.3 生产实测：取条款后抽一次概念，`bad_endpoint` 不再因条款缺失而计
+- [x] 5.1 为 `law-library` 七个来源补 `ingest_rule.document` 映射（幂等 UPDATE，可回滚）
+- [x] 5.2 生产实测：目录可见文档（statutes 468 篇，民法典 355 块→1208 条）、总数与库一致；取入 4 部法 + 其条款；重复取幂等（nothing_new）
+- [x] 5.3 生产实测：取条款后抽一次概念，`bad_endpoint` 不再因条款缺失而计（探针产出 concept + defines→民法典#第585条 双 pending，bad_endpoint=0；探针提案已以理由驳回）
 
 ## 6. 验证与收口
 
 - [x] 6.1 单测：目录（含错误/空态/未声明映射）、切分（跨块/截断/无条款）、取用（幂等/上限/回滚）
 - [x] 6.2 全量回归绿（基线 1647 passed / 60 skipped）
 - [x] 6.3 `openspec validate add-corpus-document-adoption --strict`
-- [ ] 6.4 上产：build → relay → 部署 → 生产闭环实测
-- [ ] 6.5 归档 change 并更新蓝图台账 C6
+- [x] 6.4 上产：build → relay → 部署 → 生产闭环实测
+- [x] 6.5 归档 change 并更新蓝图台账 C6
