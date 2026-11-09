@@ -180,14 +180,14 @@ def documents(
             "not in a foreign store, so there are no external documents to browse"
         )
 
-    adopted: dict[str, str] = {}
+    adopted: set[str] = set()
     if domain_key:
-        adopted = {
-            u["external_key"]: u["kind"]
-            for u in authoring.authoring_live_entities(conn, domain_key=domain_key)
-        }
+        # Unbounded on purpose: the page answers "is this document already in the
+        # ontology", and a capped list would start answering "no" past the cap.
+        adopted = authoring.authoring_live_keys(conn, domain_key=domain_key)
     for row in out["rows"]:
-        row["adopted_as"] = adopted.get(_canonical(row["title"], domain_key))
+        key = _canonical(row["title"], domain_key)
+        row["adopted_as"] = key if key in adopted else None
     out.update({"library": library_key, "source": source_key, "query": query})
     return out
 
@@ -600,11 +600,10 @@ def adopt_clauses(
     # reader would click, see 200 written, and still be 1000 short. So the batch
     # is the articles that are not in the ontology yet, and a second click
     # continues where the first stopped.
-    existing = {
-        u["external_key"]
-        for u in authoring.authoring_live_entities(conn, domain_key=domain_key)
-        if u["kind"] == mapping["clause_kind"]
-    }
+    existing = authoring.authoring_live_keys(
+        conn, domain_key=domain_key, kind=mapping["clause_kind"],
+        prefix=f"{parent}#",
+    )
     todo = [c for c in clauses if keys.clause_key(parent, c["no"]) not in existing]
     if not todo:
         return {"adopted": 0, "key": parent, "reason": "nothing_new", "capped": False,

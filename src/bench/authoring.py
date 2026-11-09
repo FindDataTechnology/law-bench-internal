@@ -582,6 +582,37 @@ def authoring_live_entities(
     return [u for u in rows if u["kind"] in entities]
 
 
+def authoring_live_keys(
+    conn: Any,
+    *,
+    domain_key: str,
+    kind: Optional[str] = None,
+    prefix: Optional[str] = None,
+) -> set[str]:
+    """Every live unit key in the domain — optionally one kind, one key prefix.
+
+    Deliberately *not* ``authoring_live_entities``: that one is capped at 1000
+    rows because it feeds a picker, and reading it as "these exist" silently
+    stops being true past the cap. Measured 2026-11-10: adopting a 1,208-article
+    code read the first 1000 units, concluded the rest were missing every time,
+    and rewrote the same 200 articles until the cap — the loop could never
+    finish. A set membership question needs the whole set.
+    """
+    domain = _load_domain(conn, domain_key=domain_key)
+    sql = (
+        "SELECT external_key FROM knowledge_units "
+        "WHERE namespace = %s AND (tags->>'deleted') IS NULL"
+    )
+    params: list[Any] = [domain["key"]]
+    if kind:
+        sql += " AND kind = %s"
+        params.append(kind)
+    if prefix:
+        sql += " AND external_key LIKE %s"
+        params.append(prefix.replace("%", r"\%").replace("_", r"\_") + "%")
+    return {r["external_key"] for r in conn.execute(sql, tuple(params)).fetchall()}
+
+
 def authoring_unit_detail(
     conn: Any, *, domain_key: str, kind: str, external_key: str
 ) -> Optional[dict]:

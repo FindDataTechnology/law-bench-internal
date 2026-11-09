@@ -194,7 +194,9 @@ def test_documents_marks_what_is_already_adopted(conn, fake):
     )
     page = corpus_catalog.documents(
         conn, library_key="law-library", source_key="statutes", domain_key="legal")
-    assert page["rows"][0]["adopted_as"] == "law"
+    # The key, not the kind: "already in the ontology as 合同法" is the useful
+    # fact when two spellings of one title exist.
+    assert page["rows"][0]["adopted_as"] == "合同法"
 
 
 def test_unreachable_store_is_not_an_empty_catalog(conn, fake, monkeypatch):
@@ -426,3 +428,27 @@ def test_adopting_everything_already_present_says_nothing_new(conn, fake):
         doc_id="7", operator="t")
     assert again["adopted"] == 0
     assert again["reason"] == "nothing_new"
+
+
+def test_adoption_sees_existing_keys_past_the_entity_list_cap(conn, fake, monkeypatch):
+    """The picker list is capped at 1000; "already adopted" must not be.
+
+    Measured in production: a 1,208-article code never converged because the
+    existing-key set stopped at the cap and the same 200 articles were rewritten
+    every click.
+    """
+    from src.bench import authoring as authoring_mod
+
+    # Pretend this many articles already landed, without writing them all.
+    fake({"7": [{"seq": 0, "text": "".join(f'第{i}条 甲{i}。\n' for i in range(1, 6))}]},
+         title={"7": "某法"})
+    _library(conn)
+    monkeypatch.setattr(
+        authoring_mod, "authoring_live_entities",
+        lambda conn, domain_key, limit=1000: (_ for _ in ()).throw(
+            AssertionError("adoption must not read the capped picker list")),
+    )
+    out = corpus_catalog.adopt_clauses(
+        conn, domain_key="legal", library_key="law-library", source_key="statutes",
+        doc_id="7", operator="t")
+    assert out["adopted"] == 5
