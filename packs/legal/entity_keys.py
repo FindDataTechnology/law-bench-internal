@@ -15,6 +15,8 @@ than a similarity threshold.
 
 from __future__ import annotations
 
+import re
+
 from src.bench.keys import FoldRule, register_rules
 
 #: Prefixes that name the issuing state rather than the instrument. Dropping them
@@ -54,9 +56,55 @@ CASE_CATEGORY_LABELS: frozenset[str] = frozenset({
 CONCEPT_LIKE_SUFFIXES: tuple[str, ...] = ("责任", "义务", "权利", "合同", "行为", "原则", "制度")
 
 
+#: Party roles and deictic references: they tie a phrase to one case.
+FACTUAL_MARKERS: tuple[str, ...] = (
+    "被告", "原告", "上诉人", "被上诉人", "申请人", "被申请人",
+    "本院", "本案", "本决定", "本判决", "该决定", "涉案", "上述", "下列",
+)
+
+#: Predicate verbs: a concept is a noun phrase, so a name carrying one of these
+#: is a *sentence* about a case ("行政处罚违反法定程序"), not an abstraction.
+#: Note this deliberately does not include 数额: 「较大数额财产」 is a real legal
+#: standard, and banning the word would reject the concept along with the noise.
+STATEMENT_MARKERS: tuple[str, ...] = (
+    "违反", "构成", "属于", "应当", "不得", "予以", "系于", "即应", "判处",
+)
+
+#: A concrete amount ("1395228.6元", "500万元") pins a phrase to one case.
+_AMOUNT = re.compile(r"\d[\d,.]*\s*(?:万?亿元?|万?元)")
+
+#: Suffixes that mark a document/decision type rather than a concept. A concept
+#: may contain these words; it may not *end* with them.
+DOCUMENT_LIKE_SUFFIXES: tuple[str, ...] = ("决定", "判决", "裁定", "通知", "批复", "答复")
+
+
 def is_case_category(name: str) -> bool:
     """True when ``name`` is a case category rather than a legal concept."""
     return (name or "").strip() in CASE_CATEGORY_LABELS
+
+
+def concept_reject(name: str) -> bool:
+    """The pack's full "not a concept" verdict.
+
+    Three ways a string fails: it is a case category (民事/执行), it is a
+    statement about one case (contains 数额/被告/本案…), or it ends in a document
+    type (…决定/…判决). The concept layer's whole value is that it holds reusable
+    abstractions, so admitting any of these silently degrades it.
+    """
+    value = (name or "").strip()
+    if not value:
+        return True
+    if value in CASE_CATEGORY_LABELS:
+        return True
+    if any(marker in value for marker in FACTUAL_MARKERS):
+        return True
+    if any(marker in value for marker in STATEMENT_MARKERS):
+        return True
+    if _AMOUNT.search(value):
+        return True
+    if any(value.endswith(suffix) for suffix in DOCUMENT_LIKE_SUFFIXES):
+        return True
+    return False
 
 
 def canonical_name(name: str) -> tuple[str, list[str]]:
@@ -84,5 +132,17 @@ CONCEPT_EXAMPLES: tuple[str, ...] = (
     "违约责任", "连带清偿责任", "居间合同", "举证责任", "清算义务",
 )
 
-register_rules("legal", RULES, is_distinct_document, is_case_category,
-               CONCEPT_EXAMPLES)
+#: Shown alongside the positives so the model sees the boundary, not just the
+#: target. Measured 2026-11-09: with positives only, it produced
+#: 「没收较大数额涉案财产的行政处罚决定」 — a case description.
+CONCEPT_COUNTER_EXAMPLES: tuple[str, ...] = (
+    "没收较大数额涉案财产的行政处罚决定", "行政处罚违反法定程序", "民事", "执行",
+)
+
+register_rules("legal", RULES, is_distinct_document, concept_reject,
+               CONCEPT_EXAMPLES, CONCEPT_COUNTER_EXAMPLES)
+
+
+def concept_counters() -> tuple[str, ...]:
+    """Negative examples for the prompt (kept here, not in the kernel)."""
+    return CONCEPT_COUNTER_EXAMPLES

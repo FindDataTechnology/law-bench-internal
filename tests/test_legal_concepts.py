@@ -80,9 +80,13 @@ def test_concept_mode_prompt_asks_for_concepts_and_grounding():
     concept = extraction.build_prompt(schema=schema, chunks=[chunk], concept_mode=True,
                                      domain_key="legal")
     plain = extraction.build_prompt(schema=schema, chunks=[chunk], concept_mode=False)
-    assert "法律概念" in concept and "依据的条文" in concept
-    # The examples come from the pack, so this also proves the registration ran.
-    assert "居间合同" in concept
+    assert "法律概念" in concept
+    # The criteria are the point of this prompt: without them the model proposed
+    # case descriptions as concepts.
+    assert "名词短语" in concept and "可跨案复用" in concept
+    # Examples (positive *and* negative) come from the pack, so this also proves
+    # the registration ran.
+    assert "居间合同" in concept and "没收较大数额" in concept
     assert "法律概念" not in plain
     assert "defines" in concept and "concept" in concept
 
@@ -224,3 +228,32 @@ def test_missing_column_is_an_error_not_an_empty_page(monkeypatch):
     with pytest.raises(ValueError, match="no column"):
         extraction._sample_text_tables(None, lib={"id": 1, "library_key": "case-library"},
                                        allowed={"guide_cases"}, limit=2)
+
+
+def test_concept_shape_and_fact_markers_reject_real_bad_candidates():
+    """The two candidates the live run actually produced, pinned.
+
+    2026-11-09: with positives only and no shape rules, extraction proposed
+    「没收较大数额涉案财产的行政处罚决定」 and 「行政处罚违反法定程序」 as concepts —
+    both are statements about one case.
+    """
+    for bad in ("没收较大数额涉案财产的行政处罚决定", "行政处罚违反法定程序",
+                "罚款1395228元", "民事"):
+        key, reason, _meta = extraction.resolve_entity_key(
+            bad, kind="concept", chunk={}, domain_key="legal")
+        assert key is None and reason == "not_concept", bad
+
+
+def test_real_concepts_survive_the_gate():
+    """「较大数额财产」 is a legal standard — banning the word 数额 would kill it."""
+    for good in ("听证程序", "较大数额财产", "违约责任", "清算义务", "连带清偿责任"):
+        key, reason, meta = extraction.resolve_entity_key(
+            good, kind="concept", chunk={}, domain_key="legal")
+        assert key == good and reason is None, good
+
+
+def test_sentence_shaped_names_fail_on_shape_alone():
+    """Generic rule: a concept is a noun phrase; length/punctuation catch the rest."""
+    assert keys.concept_shape_ok("听证程序") is True
+    assert keys.concept_shape_ok("这是一个非常长的描述性句子用来验证长度上限确实生效了") is False
+    assert keys.concept_shape_ok("程序违法，应当撤销") is False

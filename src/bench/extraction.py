@@ -297,6 +297,14 @@ def verify_quote(quote: str, chunk_text: str) -> bool:
 # ── prompt & parsing ────────────────────────────────────────────────────────
 
 
+def _concept_counters(domain_key: str) -> list[str]:
+    """Negative examples the pack offers (what looks like a concept but is not)."""
+    try:
+        return list(keys.concept_counters_for(domain_key))
+    except Exception:
+        return []
+
+
 def _concept_examples(domain_key: str) -> list[str]:
     """Names the pack offers as concept examples (empty when it offers none)."""
     try:
@@ -328,11 +336,16 @@ def build_prompt(*, schema: dict, chunks: list[dict], concept_mode: bool = False
         # Examples come from the pack: the kernel must not carry domain
         # vocabulary (there is a gate). It only knows *how* to ask.
         examples = _concept_examples(domain_key)
-        sample = f"（如 {('、'.join(examples))}）" if examples else ""
+        counters = _concept_counters(domain_key)
+        sample = f"正例：{('、'.join(examples))}。" if examples else ""
+        counter = f"反例：{('、'.join(counters))}。" if counters else ""
         concept_instruction = (
-            f"这份语料是裁判说理/裁判要点。请优先抽取**法律概念**{sample}，"
-            "并为每个概念指出它依据的条文（用 quote 逐字引用原文里的条文表述）。"
-            "不要抽取案件类别这类归档标签。"
+            "这份语料是裁判说理/裁判要点。请抽取**法律概念**——判据是："
+            "①名词短语（不是一句话），②可跨案复用，③不含具体数额、当事人名称或"
+            "「本案/本决定」这类指向。"
+            f"{sample}{counter}"
+            "并为每个概念用 quote 逐字引用原文里确立它的那句表述。"
+            "案件类别（归档标签）与个案事实描述都不要。"
         )
     return f"""你是本体候选抽取器（prompt_version={PROMPT_VERSION}）。
 
@@ -489,6 +502,13 @@ def resolve_entity_key(name: str, *, kind: str, chunk: dict,
         # A concept is addressable by its name alone — it is *cross-instrument*
         # ("违约责任" means the same thing in every statute that mentions it),
         # which is the opposite of a clause, whose address must carry its parent.
+        #
+        # Two independent gates: a generic shape check (a concept is a noun
+        # phrase, not a sentence) and the pack's own verdict (case categories,
+        # party roles, concrete amounts). Measured 2026-11-09: with neither, the
+        # model proposed 「没收较大数额涉案财产的行政处罚决定」 as a concept.
+        if not keys.concept_shape_ok(canon):
+            return None, "not_concept", meta
         reject = keys.concept_reject_for(domain_key)
         if reject and reject(canon):
             return None, "not_concept", meta

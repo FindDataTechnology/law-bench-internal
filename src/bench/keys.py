@@ -155,11 +155,12 @@ _RULES: dict[str, tuple] = {}
 _DISTINCT: dict[str, object] = {}
 _CONCEPT_REJECT: dict[str, object] = {}
 _CONCEPT_EXAMPLES: dict[str, tuple] = {}
+_CONCEPT_COUNTERS: dict[str, tuple] = {}
 
 
 def register_rules(domain_key: str, rules: Iterable["FoldRule"],
                    distinct_document=None, concept_reject=None,
-                   concept_examples=()) -> None:
+                   concept_examples=(), concept_counters=()) -> None:
     """Register a domain's key rules (called by a pack on import).
 
     ``concept_reject`` answers "is this name a category label rather than a
@@ -175,6 +176,8 @@ def register_rules(domain_key: str, rules: Iterable["FoldRule"],
         _CONCEPT_REJECT[domain_key] = concept_reject
     if concept_examples:
         _CONCEPT_EXAMPLES[domain_key] = tuple(concept_examples)
+    if concept_counters:
+        _CONCEPT_COUNTERS[domain_key] = tuple(concept_counters)
 
 
 def rules_for(domain_key: str) -> tuple:
@@ -199,6 +202,34 @@ def concept_examples_for(domain_key: str) -> tuple:
     return _CONCEPT_EXAMPLES.get(domain_key, ())
 
 
+def concept_counters_for(domain_key: str) -> tuple:
+    """Negative examples: what *looks* like a concept but is not one."""
+    return _CONCEPT_COUNTERS.get(domain_key, ())
+
+
 def registered() -> list[str]:
     """Domain keys with registered rules (for diagnostics)."""
     return sorted(_RULES)
+
+
+#: A concept name is a noun phrase, not a description of one case. These are
+#: *generic* shape rules (length, sentence punctuation) — the domain-specific
+#: markers live in a pack, because "数额" or "被告" mean nothing to the kernel.
+CONCEPT_MAX_CHARS = 24
+_SENTENCE_PUNCT = re.compile(r"[。；;：:！!？?，,、]")
+
+
+def concept_shape_ok(name: str) -> bool:
+    """Is ``name`` shaped like a concept rather than a sentence about a case?
+
+    Measured problem this fixes (2026-11-09): the extractor proposed
+    「没收较大数额涉案财产的行政处罚决定」 — a description of what happened, not a
+    concept. Length and sentence punctuation catch that class without any domain
+    vocabulary; the pack adds the rest ("数额"/"被告"/"本决定").
+    """
+    value = (name or "").strip()
+    if not value or len(value) > CONCEPT_MAX_CHARS:
+        return False
+    if _SENTENCE_PUNCT.search(value):
+        return False
+    return True
