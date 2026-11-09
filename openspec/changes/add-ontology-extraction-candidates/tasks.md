@@ -32,5 +32,5 @@
 
 - [x] 6.1 `openspec validate add-ontology-extraction-candidates --strict` 通过
 - [x] 6.2 全量 pytest 不回归（基线 1545 passed / 60 skipped）
-- [ ] 6.3 生产小样：**被模型通道阻断**——评测所用 Volcengine AgentPlan 订阅过期（InvalidSubscription），抽取与评测共用这条通道。已留证 `reports/2026-11-09-extraction-blocked-by-model-lane.md`；代码可注入 `complete_fn`，换通道不需要改代码。待裁决通道后再跑
-- [ ] 6.4 验收报告：待 6.3 能跑后再出（逐字闸拦下多少、类型越界多少、幂等命中多少、按 kind 的产量分布）
+- [x] 6.3 生产小样：通道切到萬星词元后跑通（20 块 `statutes`，sampled=20/produced=17/submitted=9/duplicate=5/bad_quote=3），本体零变化。**同时发现候选质量不合格**（条款键丢父法、同实体多键、类型判错），已记 `reports/2026-11-09-extraction-acceptance.md`，后续另开变更
+- [x] 6.4 验收报告：`reports/2026-11-09-extraction-acceptance.md`（五条约束逐条对证 + 产量分布 + 质量评估 + 三项后续）
