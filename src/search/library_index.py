@@ -194,6 +194,12 @@ def search(
         lib = libraries.get_library(conn, library_key=library_key)
         if lib is None:
             continue
+        # A library whose sources are all text tables holds no vectors: it exists
+        # for extraction, and asking it for neighbours would either fail on the
+        # embedder or return nothing. Skip it rather than fail the whole search —
+        # one line's dead weight must not take another line's retrieval down.
+        if _text_only(conn, lib):
+            continue
         # One embedder per library: several libraries may each live in a
         # different space, so a single query vector for all of them is wrong.
         embed_fn = embed or _embedders.embedder_for_library(lib)
@@ -210,6 +216,12 @@ def search(
                                          allowed=allowed, qvec=qvec))
     results.sort(key=lambda h: h["score"], reverse=True)
     return results[: max(1, top_k)]
+
+
+def _text_only(conn: Any, lib: dict) -> bool:
+    """True when a library's sources are text tables — nothing to search."""
+    sources = libraries.list_sources(conn, library_id=lib["id"])
+    return bool(sources) and all(s.get("source_kind") == "text-table" for s in sources)
 
 
 def _search_owned(
@@ -529,14 +541,20 @@ def _source_counts_external_pg(
                 import json as _json
 
                 rule = _json.loads(rule or "{}")
-            clauses = ["embedding IS NOT NULL"]
+            clauses: list[str] = []
             params: list[Any] = []
+            if "embedding" in table_columns(ext, table):
+                # Only a vector table can be filtered on having a vector; a text
+                # table has no such column and every row counts.
+                clauses.append("embedding IS NOT NULL")
             for col, val in sorted((rule.get("where") or {}).items()):
                 if not _IDENT.match(col):
                     raise ValueError(f"unsafe filter column: {col!r}")
                 clauses.append(f"{col} = %s")
                 params.append(val)
-            sql = f"SELECT COUNT(*) FROM {table} WHERE {' AND '.join(clauses)}"
+            sql = f"SELECT COUNT(*) FROM {table}"
+            if clauses:
+                sql += " WHERE " + " AND ".join(clauses)
             out[src["source_key"]] = int(ext.execute(sql, tuple(params)).fetchone()[0])
     return out
 
@@ -631,6 +649,15 @@ def source_counts(conn: Any, *, lib: dict, allowed: set[str]) -> dict[str, int]:
     # this subscription; it is not part of any source's count, and the caller
     # reports the difference against the library total.
     return counts
+
+
+def table_columns(ext: Any, table: str) -> set[str]:
+    """The table's column names (one catalog query, cached per call site)."""
+    rows = ext.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+        (table,),
+    ).fetchall()
+    return {r[0] for r in rows}
 
 
 def _count_external_pg(conn: Any, *, lib: dict, allowed: set[str]) -> int:
