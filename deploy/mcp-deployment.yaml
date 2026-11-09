@@ -35,10 +35,14 @@ spec:
       labels:
         app: law-bench-mcp
     spec:
-      # See deploy/deployment.yaml: node-pinned because the image and the
-      # site-packages overlay below both live on that node's disk.
+      # See deploy/deployment.yaml: node-pinned because the site-packages overlay
+      # below lives on that node's disk.
+      # 2026-11-09：清单原先钉 cheap-4，线上实际跑在 liuliangdmh1xr0w9ryu（cheap-2）。
+      # 已实测**两个节点都挂着 /opt/lawbench-mcp-pkgs**（cheap-4 上 202 个条目，cheap-2 同样存在），
+      # 所以这不是可运行性问题，只是放置选择。此处对齐线上现实，纳入 Argo 时零移动；
+      # 若确要搬回 cheap-4，改这一行并由该线自己滚——不要由收编动作代为搬迁。
       nodeSelector:
-        kubernetes.io/hostname: cheap-4
+        kubernetes.io/hostname: liuliangdmh1xr0w9ryu
       # Same node resolv.conf pollution as the origin pod (see
       # deploy/deployment.yaml): pin kube-dns + the clean search list so
       # cluster-internal names (postgres, minio) resolve. No hostAliases here —
