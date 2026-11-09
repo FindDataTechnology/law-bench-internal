@@ -613,6 +613,24 @@ def authoring_live_keys(
     return {r["external_key"] for r in conn.execute(sql, tuple(params)).fetchall()}
 
 
+def authoring_live_key_kinds(conn: Any, *, domain_key: str) -> dict[str, str]:
+    """``{external_key: kind}`` for every live unit — same reason as above.
+
+    The extractor closes a relationship's endpoints against this map, so a capped
+    version silently turns existing clauses into "missing endpoints": measured
+    2026-11-10, the legal domain had 1,923 clause units and the first 1000 held no
+    article of the code in question at all, so every grounding proposal was
+    refused.
+    """
+    domain = _load_domain(conn, domain_key=domain_key)
+    rows = conn.execute(
+        "SELECT external_key, kind FROM knowledge_units "
+        "WHERE namespace = %s AND (tags->>'deleted') IS NULL",
+        (domain["key"],),
+    ).fetchall()
+    return {r["external_key"]: r["kind"] for r in rows}
+
+
 def authoring_unit_detail(
     conn: Any, *, domain_key: str, kind: str, external_key: str
 ) -> Optional[dict]:

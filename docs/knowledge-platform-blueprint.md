@@ -87,3 +87,5 @@
 | C2 `add-expert-authoring-surface` | 模板实例化创作台 + 任务指派 + 变更事件流 | P0/P1 | ✅ 已归档上 spec（2026-11-06，15/15，回归 1233 绿） |
 | C3 `add-knowledge-distribution-contract` | 发布-拉取契约 + 消费者登记 + wire 拉取客户端 + 主键源条款修订 | P1 | ✅ **全链收口（2026-11-06）**：bench 侧归档上 spec；wire 侧 `add-bench-ontology-pull-client` 实弹——生产滚 sha-53a9513/beae0a，legal v1（digest 3586552a）跨 ns 真拉落库幂等，投影可查，失败纪律实弹验证。P1 判据「wire 拉到 v1 本体快照并落库」✅ |
 | C4 `add-domain-rag-corpus-service` | RAG 语料服务通用化 + 按域配置 | P2 | ✅ 已归档上 spec（2026-11-06，13/13，回归 1311 绿；rag-corpus-service 新建 + rag-search +1 域归属需求） |
+| C5 `add-domain-first-workbench` | 域优先工作台：`/d` 我的域、域控制台六区导航、本体台账、域提案箱、评测资产按域归属 | P0/P1 | 🔄 51/56：六区与导航、台账、提案箱、资产归属已上产；剩余 7.2/7.3（舰队提案目标改域提案箱，跨仓）与 8.x（paas 侧 timeout、星妍供给面） |
+| C6 `add-corpus-document-adoption` | 大库→子域取材：语料文档目录（按文档而非按块、派生不落表）、来源自述文档结构、取文档/取条款进本体（确定性切分、逐字原文、批量事务） | P2 | 🔄 上产 sha-fe81215：目录按文档列出（statutes 468 篇、省级/规章未列）、取入民法典 1208 条 + 合同法 428 + 公司法 266 条；两处实测修正（批次须收敛不重写、already-adopted 不能读 1000 行上限）；待办 5.3 概念 defines 端点闭环实测 + 归档 |

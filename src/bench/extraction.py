@@ -34,7 +34,7 @@ from src.search import library_index
 
 #: Bumped whenever the prompt changes — recorded on every proposal so a batch can
 #: be traced back to the instruction that produced it.
-PROMPT_VERSION = "2026-11-09.1"
+PROMPT_VERSION = "2026-11-10.1"
 
 #: Hard ceilings. The parameters can lower them, never raise them.
 MAX_CHUNKS = 200
@@ -357,6 +357,8 @@ def build_prompt(*, schema: dict, chunks: list[dict], concept_mode: bool = False
 1. 每条候选必须给出 quote 字段，且 quote 必须是所引块里**逐字出现**的一段原文（不要改写、不要概括、不要拼接跨段内容）。
 2. 实体候选：kind 必须属于 entity_types，name 用原文里的称呼。
 3. 关系候选：kind 必须属于 relationship_kinds，from_name/to_name 用实体候选或已有实体的名称。
+   要指向**别的文档**里的条款时，把 to_name 写成「<文档名>#<第N条>」，
+   不要只写条文号——只写条文号会被归到当前语料块所属文档下。
 4. 不确定就不要输出。宁少不滥。
 
 {concept_instruction}
@@ -486,6 +488,19 @@ def resolve_entity_key(name: str, *, kind: str, chunk: dict,
     """
     meta: dict = {}
     raw = (name or "").strip()
+    # An explicitly addressed article: "<document>#第N条". Needed because the
+    # parent otherwise comes from the *chunk's* title — which is right for a
+    # statute block and nonsense for a judgment block. Without this form a
+    # concept extracted from a case could only ever point at an article "of that
+    # case", so every grounding proposal read as a missing endpoint (measured
+    # 2026-11-10, after the article base existed and it still could not land).
+    if "#" in raw:
+        parent_raw, _, clause_part = raw.partition("#")
+        number = keys.clause_no(clause_part)
+        if number is not None and parent_raw.strip():
+            parent_key = keys.slug(canonical_name(parent_raw, domain_key=domain_key))
+            meta.update(law_key=parent_key, clause_no=number, parent_source="explicit")
+            return keys.clause_key(parent_key, number), None, meta
     number = keys.clause_no(raw)
     if kind.endswith("clause") or number is not None:
         if number is None:
@@ -612,9 +627,11 @@ def run(
         "cursor": sampled["cursor"],
     }
 
-    live_units = authoring.authoring_live_entities(conn, domain_key=domain_key)
-    live = {e["external_key"] for e in live_units}
-    live_kinds = {e["external_key"]: e["kind"] for e in live_units}
+    # Unbounded on purpose: this is the set a relationship's endpoints are
+    # resolved against, and a 1000-row cap would make every clause past the cap
+    # look nonexistent (so a correct grounding proposal reads as bad_endpoint).
+    live_kinds = authoring.authoring_live_key_kinds(conn, domain_key=domain_key)
+    live = set(live_kinds)
     nominated: set[str] = set()
     nominated_kinds: dict[str, str] = {}
     total = 0

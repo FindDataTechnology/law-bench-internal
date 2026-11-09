@@ -373,3 +373,46 @@ def test_usable_rate_and_low_yield_flag(conn, monkeypatch):
     assert report["produced"] == 2 and report["submitted"] == 1
     assert report["usable_rate"] == 0.5
     assert report["low_yield"] is False        # threshold is 0.5, not strictly greater
+
+
+def test_endpoint_closure_sees_units_past_the_picker_cap(conn, monkeypatch):
+    """A relationship to an existing clause must resolve even past 1000 units.
+
+    Measured 2026-11-10 in production: the legal domain held 1,923 clause units
+    and the first 1000 contained no 民法典 clause, so grounding proposals were
+    refused as bad_endpoint purely because the endpoint set was capped.
+    """
+    from src.bench import authoring
+
+    _library(conn)
+    # 1,001 placeholder clauses whose keys sort *before* 民法典, so any capped
+    # list is guaranteed not to contain the target below.
+    authoring.authoring_create_units(
+        conn, domain_key="legal", operator="t",
+        units=[{"kind": "clause", "external_key": f"甲法#第{i}条", "body": "占位"}
+               for i in range(1, 1002)],
+    )
+    authoring.authoring_create_unit(
+        conn, domain_key="legal", kind="clause", external_key="民法典#第585条",
+        body="第五百八十五条 违约金", operator="t",
+    )
+    # `clause` is in this schema's vocabulary; the target below exists in the
+    # ontology but sits past the 1000-row picker cap.
+    answer = {"entities": [
+        {"kind": "clause", "name": "第二条", "chunk_id": "c1",
+         "quote": "合同应当采用书面形式"}],
+        "relationships": []}
+    post, _calls = _fake_qdrant([{"chunk_id": "c1", "text": CHUNK_TEXT, "title": "某法"}])
+    monkeypatch.setenv("TEST_QDRANT", "http://qdrant.test:6333")
+    monkeypatch.setattr(extraction, "_post", post)
+
+    answer["relationships"] = [
+        {"kind": "cites_law", "from_name": "第二条", "to_name": "民法典#第585条",
+         "to_kind": "clause",
+         "chunk_id": "c1", "quote": "合同应当采用书面形式"}]
+    report = extraction.run(
+        conn, domain_key="legal",
+        complete_fn=lambda prompt: json.dumps(answer),
+        max_per_chunk=8,
+    )
+    assert report["skipped"]["bad_endpoint"] == 0, json.dumps(report, ensure_ascii=False)
