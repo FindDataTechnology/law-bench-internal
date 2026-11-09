@@ -238,3 +238,36 @@ api: 200  0.761678  judicial（/api/library/search）
 
 收件箱的「已派任务」面板当前不渲染，是因为库里没有任务（探针任务已清理）——面板以
 `{% if tasks %}` 为条件，空态不显示空表。
+
+## 十八、文字垂域库：只登记、不订阅（裁决 2026-11-09，镜像 `sha-b2a988e`）
+
+裁决内容：文字引擎四个垂域**登记为库但不订阅任何域**；`unclassified` 59,382 块
+**保持对 legal 可见**（未动订阅）。
+
+登记结果（`scripts/register_libraries.py --only text`，生产 pod 内跑）：
+
+```
+library: text-library  pgvector-external  1024  Qwen/Qwen3-Embedding-8B
+location keys: ['dsn_env']        ← 只存环境变量名，不存连接串
+sources: gov→corpus_chunks_gov  news→corpus_chunks_news
+         papers→corpus_chunks_papers  screenplay→corpus_chunks_screenplay
+counts: gov 2,160  news 54,032  papers 82  screenplay 2,305  = 58,579
+subscribers: 0
+```
+
+未影响任何人的检索范围（同一次探测里验的）：
+
+```
+ledger lists text-library: True
+estate: legal {'libraries': 1, 'sources': 7, 'chunks': 364916} gaps=[]
+legal scope libraries: ['law-library']
+```
+
+两点值得记住：
+
+- `news` 已从 11-08 的 2,942 涨到 **54,032** —— 该垂域在持续摄取，写下的数字都是快照。
+- 真要订阅检索还需要 `LIBRARY_EMBED_GATEWAY_KEY`（8B 走网关且必须显式
+  `dimensions=1024`）。现在不注入：缺键时检索会明确报错，不会静默降质。
+- 顺带修一个自身缺陷：脚本里把 `TEXT_SOURCES` 元组当行对象取键，抛
+  `tuple indices must be integers`，被外层 except 吞成「counts unavailable」——
+  库和源都写进去了，只有计数没打出来。已改为按位解包并加测试钉住元组形状。

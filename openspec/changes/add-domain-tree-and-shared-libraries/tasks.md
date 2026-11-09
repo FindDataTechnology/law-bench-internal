@@ -65,6 +65,8 @@
 - [x] 7.6 缺口矩阵按外部库自数（`count_scope`），连不通报 error 不报 0；验证＝`test_count_scope_counts_the_remote_store` / `test_unreachable_store_reports_an_error_instead_of_zero`
 - [x] 7.7 生产登记 `law-library` 并让 `legal` 订阅；验证＝`scripts/register_libraries.py` 自检 `ok=True`：7 个源合计 364,916 = 整库计数；`estate.matrix` 得出 `legal knowledge={libraries:1, sources:7, chunks:364916} gaps=[]`
 - [x] 7.8 端到端检索实证（生产 pod 内）：`建设工程价款优先受偿权` → 三部司法解释 0.7617/0.7507/0.7417，源归属 `judicial`；`违约责任如何认定` → 民法典/民法通则
-- [ ] 7.9（**待裁决，非遗漏**）`fd_text` 四垂域登记为库：需要在 law-bench 部署里注入 `FDTEXT_DATABASE_URL`（跨命名空间，secret 要复制一份）+ 在 pod 侧验 8B 空间；**待人工确认是否要把文字垂域并进法律站**（它们是别的产品线的语料）
+- [x] 7.9（裁决：**只登记、不订阅**，2026-11-09）`text-library` 已登记：backend `pgvector-external`、1024、`Qwen/Qwen3-Embedding-8B`，四源各对应一张表（gov/news/papers/screenplay）；secret `law-bench-fdtext` 只含一个键 `FDTEXT_DATABASE_URL`（从 fd-prod 复制）。验证＝`register_libraries.py --only text` 输出 `counts {gov:2160, news:54032, papers:82, screenplay:2305}` 且 `subscribers: 0`；`legal` 的 `knowledge` 仍为 `{libraries:1, sources:7, chunks:364916}`，`effective_sources` 只含 `law-library`
+      ＊真要订阅检索时还需 `LIBRARY_EMBED_GATEWAY_KEY`（8B 走网关 + 显式 `dimensions=1024`），缺键会明确报错而非静默降质
+      ＊`news` 已从 11-08 的 2,942 涨到 54,032——该垂域在持续摄取，写下的任何数字都是快照
 - [x] 7.10 控制台补「登记外部库」入口：`/admin/libraries`（admin 独占）建库/加源/订阅；外部库只填环境变量名，表单里没有 DSN/口令字段；`match` 解析失败拒存（空规则=整库，手滑会放大范围）；验证＝`tests/test_admin_libraries.py` 8 条
 - [x] 7.11 语料声明可校验：`source_types` 支持 `library:<lib>/<src>` 绑定真实库源；保存模板时校验引用存在（库/源不在即拒）；知识区显示「声明 vs 现状」（已覆盖 / 未覆盖+原因 / 自由文本标签不判健康）；验证＝`tests/test_corpus_declarations.py` 10 条
