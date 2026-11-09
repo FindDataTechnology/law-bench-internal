@@ -452,3 +452,61 @@ def test_adoption_sees_existing_keys_past_the_entity_list_cap(conn, fake, monkey
         conn, domain_key="legal", library_key="law-library", source_key="statutes",
         doc_id="7", operator="t")
     assert out["adopted"] == 5
+
+
+# ── corpora whose documents and chunks are different tables ──────────────────
+
+
+@pytest.fixture()
+def split_tables(conn):
+    """A document table + a chunk table, the shape most text corpora have."""
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS t_docs ("
+        "  id bigint PRIMARY KEY, domain text, title text, content text, status text)"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS t_chunks ("
+        "  id bigint PRIMARY KEY, document_id bigint, chunk_no int, chunk_text text)"
+    )
+    conn.execute("DELETE FROM t_docs")
+    conn.execute("DELETE FROM t_chunks")
+    conn.execute(
+        "INSERT INTO t_docs VALUES (1,'gov','某市政务公开要点','第一条 公开范围\n第二条 公开方式','现行')"
+    )
+    conn.execute(
+        "INSERT INTO t_chunks VALUES (10,1,0,'第一条 公开范围'),(11,1,1,'第二条 公开方式')"
+    )
+    conn.commit()
+    libraries.create_library(
+        conn, library_key="text-library", name="text-library", created_by="t",
+        backend="pgvector-external", embedding_model="m", dims=1024,
+        location={"dsn_env": "database_url"},
+    )
+    libraries.add_source(
+        conn, library_key="text-library", source_key="gov", uri="t_chunks",
+        created_by="t", source_kind="external-table",
+        ingest_rule={"document": {"table": "t_docs", "id": "id", "title": "title",
+                                  "text": "content", "status": "status",
+                                  "doc_ref": "document_id", "unit_kind": "law"},
+                     "where": {"domain": "gov"}},
+    )
+    dom = conn.execute("SELECT id FROM domains WHERE key='legal'").fetchone()
+    libraries.subscribe(conn, domain_id=dom["id"], library_key="text-library", created_by="t")
+    conn.commit()
+
+
+def test_documents_come_from_the_document_table_and_count_chunks(conn, split_tables):
+    page = corpus_catalog.documents(conn, library_key="text-library", source_key="gov")
+    assert page["total"] == 1
+    row = page["rows"][0]
+    assert row["title"] == "某市政务公开要点"
+    assert row["chunks"] == 2          # counted from the chunk table, not the doc table
+
+
+def test_a_document_row_is_its_own_text(conn, split_tables):
+    fetched = corpus_catalog.document_chunks(
+        conn, library_key="text-library", source_key="gov", doc_id="1")
+    assert len(fetched["chunks"]) == 1
+    assert fetched["chunks"][0]["text"].startswith("第一条 公开范围")
+    split = corpus_catalog.split_clauses(fetched["chunks"])
+    assert [c["no"] for c in split["clauses"]] == [1, 2]

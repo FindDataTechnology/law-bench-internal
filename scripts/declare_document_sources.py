@@ -39,6 +39,19 @@ LAW_DOCUMENT = {
     "clause_kind": "clause",
 }
 
+#: Corpora where the document row lives in its own table, joined by a doc id.
+#: ``table`` names it; ``doc_ref`` is the join column on the chunk side; ``where``
+#: keeps one library's generic table from spilling another domain's documents.
+TEXT_DOCUMENT = {
+    "table": "corpus_documents",
+    "id": "id",
+    "title": "title",
+    "text": "content",
+    "status": "status",
+    "doc_ref": "document_id",
+    "unit_kind": "document",
+}
+
 #: (library_key, source_key) → mapping to merge into that source's ingest_rule.
 DECLARATIONS = {
     ("law-library", "statutes"): LAW_DOCUMENT,
@@ -51,7 +64,11 @@ DECLARATIONS = {
     # payload is the same shape, and it is where newly issued instruments land
     # first — the source a curator most wants to browse.
     ("law-library", "unclassified"): LAW_DOCUMENT,
+    ("text-library", "gov"): TEXT_DOCUMENT,
 }
+
+#: Extra `where` clauses so a shared document table reports one line's documents.
+WHERE = {("text-library", "gov"): {"domain": "gov"}}
 
 
 def merge(rule: dict, document: dict) -> dict:
@@ -87,6 +104,9 @@ def main(argv: list[str] | None = None) -> int:
             rule = row["ingest_rule"] or {}
             if isinstance(rule, str):
                 rule = json.loads(rule)
+            extra_where = WHERE.get((lib_key, src_key))
+            if extra_where:
+                rule = {**rule, "where": {**(rule.get("where") or {}), **extra_where}}
             before = json.dumps(rule.get("document"), sort_keys=True)
             after = json.dumps(document, sort_keys=True)
             if before == after:

@@ -30,6 +30,8 @@ import json
 import re
 from typing import Any, Optional
 
+from psycopg.rows import dict_row
+
 from src.bench import authoring, keys, libraries
 from src.search import library_index
 
@@ -76,6 +78,11 @@ def document_mapping(src: dict) -> dict:
     ``unit_kind``/``clause_kind`` are part of the declaration for the same reason
     as the field names: which entity type a corpus document becomes is a
     property of the data line, not of this kernel.
+
+    ``table`` is for corpora whose **chunks and documents live in different
+    tables** — a common shape: one row per document, many rows per chunk, joined
+    by the document id. It names where the *document* row lives; the source's own
+    uri stays what retrieval reads, so declaring it changes nothing about search.
     """
     doc = _rule(src).get("document")
     if not isinstance(doc, dict):
@@ -97,11 +104,19 @@ def document_mapping(src: dict) -> dict:
                 f"source {src.get('source_key')!r} document mapping has an unsafe "
                 f"field name {value!r}"
             )
+    table = doc.get("table")
+    if table is not None and not _IDENT.match(str(table)):
+        raise DocumentMappingError(
+            f"source {src.get('source_key')!r} document mapping has an unsafe "
+            f"table name {table!r}"
+        )
     return {
         "id": doc["id"],
         "title": doc["title"],
         "text": doc["text"],
         "order": doc.get("order") or "id",
+        "table": table,
+        "doc_ref": doc.get("doc_ref"),
         "kind": doc.get("kind"),
         "status": doc.get("status"),
         "publish": doc.get("publish"),
@@ -307,11 +322,15 @@ def _pg_documents(
         if mapping_src is None:
             raise DocumentMappingError("pick a source: this library holds several")
     mapping = document_mapping(mapping_src)
-    table = mapping_src["uri"]
-    if not _IDENT.match(table or ""):
-        raise ValueError(f"source {mapping_src['source_key']!r} has an unsafe table name")
-    cols = [mapping["id"], mapping["title"], mapping["text"], mapping["order"]]
+    doc_table = mapping.get("table") or mapping_src["uri"]
+    chunk_table = mapping_src["uri"]
+    for name in (doc_table, chunk_table):
+        if not _IDENT.match(name or ""):
+            raise ValueError(f"source {mapping_src['source_key']!r} has an unsafe table name")
+    cols = [mapping["id"], mapping["title"], mapping["text"]]
     cols += [mapping[k] for k in ("kind", "status", "publish") if mapping.get(k)]
+    if not mapping.get("table"):
+        cols.append(mapping["order"])
     for col in cols:
         if not _IDENT.match(col or ""):
             raise DocumentMappingError(f"unsafe column name {col!r}")
@@ -319,17 +338,36 @@ def _pg_documents(
     loc = libraries.resolve_location(lib)
     where, params = _pg_where(mapping_src, mapping, q=q)
     visible = [c for c in (mapping.get("kind"), mapping.get("status"), mapping.get("publish")) if c]
-    select_extra = "".join(f", MIN({c}) AS {name}" for c, name in zip(
+    select_extra = "".join(f", {c} AS {name}" for c, name in zip(
         visible, [n for n in ("kind", "status", "published") if mapping.get(n)]))
-    sql = (
-        f"SELECT {mapping['id']} AS doc_id, MIN({mapping['title']}) AS title, "
-        f"COUNT(*) AS chunks{select_extra} FROM {table}{where} "
-        f"GROUP BY {mapping['id']} ORDER BY COUNT(*) DESC, doc_id LIMIT %s OFFSET %s"
-    )
-    count_sql = f"SELECT COUNT(DISTINCT {mapping['id']}) FROM {table}{where}"
+    if mapping.get("table"):
+        # Documents live in their own table; the chunk count is the only thing
+        # the chunk table has to contribute here.
+        ref = mapping.get("doc_ref") or mapping["id"]
+        if not _IDENT.match(str(ref)):
+            raise DocumentMappingError(f"unsafe join column {ref!r}")
+        chunks_expr = (
+            f"(SELECT COUNT(*) FROM {chunk_table} c "
+            f"WHERE c.{ref} = d.{mapping['id']})"
+        )
+        sql = (
+            f"SELECT d.{mapping['id']} AS doc_id, d.{mapping['title']} AS title, "
+            f"{chunks_expr} AS chunks{select_extra} FROM {doc_table} d{where} "
+            f"ORDER BY chunks DESC, doc_id LIMIT %s OFFSET %s"
+        )
+        count_sql = f"SELECT COUNT(*) AS count FROM {doc_table} d{where}"
+    else:
+        sql = (
+            f"SELECT {mapping['id']} AS doc_id, MIN({mapping['title']}) AS title, "
+            f"COUNT(*) AS chunks{select_extra} FROM {doc_table}{where} "
+            f"GROUP BY {mapping['id']} ORDER BY COUNT(*) DESC, doc_id LIMIT %s OFFSET %s"
+        )
+        count_sql = (f"SELECT COUNT(DISTINCT {mapping['id']}) AS count "
+                     f"FROM {doc_table}{where}")
     try:
-        with psycopg.connect(loc["dsn_env"], connect_timeout=10) as ext:
-            total = int(ext.execute(count_sql, tuple(params)).fetchone()[0])
+        with psycopg.connect(loc["dsn_env"], connect_timeout=10,
+                             row_factory=dict_row) as ext:
+            total = int(ext.execute(count_sql, tuple(params)).fetchone()["count"])
             rows = ext.execute(sql, tuple(params) + (limit, offset)).fetchall()
     except Exception as exc:
         raise StoreError(f"{library_key_name(lib)}: {exc}") from exc
@@ -434,7 +472,10 @@ def _order_value(value: Any) -> float:
 def _pg_chunks(lib: dict, src: dict, mapping: dict, *, doc_id: str, limit: int) -> list[dict]:
     import psycopg
 
-    table = src["uri"]
+    # When documents live in their own table, that row is the whole document
+    # text — reading the chunk table instead would return fragments with no
+    # title and force the cutter to reassemble what was never split.
+    table = mapping.get("table") or src["uri"]
     if not _IDENT.match(table or ""):
         raise ValueError(f"unsafe table name {table!r}")
     id_col = mapping.get("id") or "id"
@@ -443,22 +484,25 @@ def _pg_chunks(lib: dict, src: dict, mapping: dict, *, doc_id: str, limit: int) 
         for k, name in (("kind", "kind"), ("status", "status"), ("publish", "published"))
         if mapping.get(k)
     )
+    order_col = mapping["order"] if not mapping.get("table") else "0"
+    ordering = f" ORDER BY {mapping['order']}" if not mapping.get("table") else ""
     sql = (
-        f"SELECT {mapping['text']} AS text, {mapping['order']} AS ord, "
+        f"SELECT {mapping['text']} AS text, {order_col} AS ord, "
         f"{mapping['title']} AS title{extras} FROM {table} "
-        f"WHERE {id_col} = %s ORDER BY {mapping['order']} LIMIT %s"
+        f"WHERE {id_col} = %s{ordering} LIMIT %s"
     )
     loc = libraries.resolve_location(lib)
     try:
-        with psycopg.connect(loc["dsn_env"], connect_timeout=10) as ext:
+        with psycopg.connect(loc["dsn_env"], connect_timeout=10,
+                             row_factory=dict_row) as ext:
             rows = ext.execute(sql, (doc_id, limit)).fetchall()
     except Exception as exc:
         raise StoreError(f"{library_key_name(lib)}: {exc}") from exc
     return [
         {"chunk_id": f"{doc_id}#{r['ord']}", "order": _order_value(r["ord"]),
          "text": str(r["text"] or ""), "title": str(r["title"] or ""),
-         "kind": dict(r).get("kind"), "status": dict(r).get("status"),
-         "published": dict(r).get("published")}
+         "kind": r.get("kind"), "status": r.get("status"),
+         "published": r.get("published")}
         for r in rows
     ]
 
