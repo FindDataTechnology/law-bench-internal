@@ -68,3 +68,27 @@ prompt：len=1402，含 entity_types/clause/law 与 cites_law，含 prompt_versi
 已改为**按文档分层**：一个窗口内每部法最多取 2 块、轮转铺开；窗口被少数文档占满
 时再按原序补足页大小（避免静默短页）。测试钉住三种情形：5 部法铺满 8 块、
 页够大时全取、单文档窗口仍能补满。
+
+## 附二：通道状态现在在界面上可见（镜像 `sha-9139657`）
+
+上一节留证之后补的：不能让「通道挂了」只活在一份 markdown 里。
+
+`src/bench/lane.py` 把两个问题分开回答：
+
+- `describe()` 只看配置（便宜、永远准确、不声称「坏了」）
+- `probe()` 发一次真实调用，**只在人点「检查通道」时**发——每次开页都探会把一个
+  挂掉的端点变成页面卡顿；结果不落库不缓存（存一个「上次是好的」会成为下一条谎）
+
+生产实测（`sha-9139657`，pod 内真调用）：
+
+```
+describe: configured=True  base=https://ark.cn-beijing.volces.com/api/plan/v3
+          model=deepseek-v4-flash  missing=[]
+probe:     ok=False  status=400
+           detail={"error":{"code":"InvalidSubscription","message":"Your account
+                   (2100005685) does not have a valid AgentPlan subscription…"}}
+page:      「模型通道」面板已渲染，显示 deepseek-v4-flash
+```
+
+一处自我纠正：我最初写了 `lane.last_error()` 去读 `eval_runs.error_message`，
+但该表没有这个列、失败运行压根不落行。已删除，只保留上面两条准确信息。
