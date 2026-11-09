@@ -251,3 +251,31 @@ def test_spread_tolerates_a_document_rich_window():
     chunks = [{"chunk_id": f"1-{i}", "law_id": 1, "text": "t"} for i in range(10)]
     picked = extraction._spread(chunks, 4)
     assert len(picked) == 4
+
+
+def test_complete_sends_an_explicit_token_budget(monkeypatch):
+    """Reasoning models with no budget spend it all on reasoning and answer with
+    `finish_reason=length` / `content=None` — which looks like a timeout."""
+    seen = {}
+
+    class _Resp:
+        status_code = 200
+        text = ""
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"choices": [{"message": {"content": "{}"}}]}
+
+    def fake_post(url, **kw):
+        seen.update(kw)
+        return _Resp()
+
+    monkeypatch.setenv("OPENAI_API_BASE", "https://x/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
+    monkeypatch.setenv("EVAL_MODEL", "openai/m")
+    monkeypatch.setattr(extraction, "httpx", type("h", (), {"post": staticmethod(fake_post)}))
+    extraction.complete("prompt")
+    assert seen["json"]["max_tokens"] >= 1000
+    assert seen["timeout"] >= 60

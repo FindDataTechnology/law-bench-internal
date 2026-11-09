@@ -66,6 +66,7 @@
         <td>
           {% if r.ontology.declared_types is not none %}
             {{ r.ontology.declared_types }} / {{ r.ontology.curated_units }}
+            {% if r.ontology.smoke_units %}<span class="muted">（{{ t.console.estate.smoke_excluded }} {{ r.ontology.smoke_units }}）</span>{% endif %}
           {% else %}—{% endif %}
         </td>
         <td>

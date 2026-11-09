@@ -28,6 +28,17 @@ PILLARS = ("ontology", "knowledge", "eval", "inbox")
 
 
 def _pillar_ontology(conn: Any, domain: dict) -> dict:
+    """Declared vocabulary size and how much of it is actually curated.
+
+    Smoke-test rows are **excluded** from ``curated_units`` and reported
+    separately. On 2026-11-09 this pillar read "1 unit" for the legal domain —
+    and that unit was ``smoke-clause-001``, so the matrix reported a curated
+    ontology where there was only left-over test data. Excluding it is not
+    deletion (the row stays, and the page names the count); it keeps the number
+    answering "did a human curate anything here".
+    """
+    from . import ontology_import
+
     declared = conn.execute(
         "SELECT COUNT(*) AS n FROM ("
         "  SELECT jsonb_array_elements_text(schema::jsonb -> 'entity_types') "
@@ -35,13 +46,16 @@ def _pillar_ontology(conn: Any, domain: dict) -> dict:
         ") t",
         (domain["template_id"],),
     ).fetchone()
-    curated = conn.execute(
-        "SELECT COUNT(*) AS n FROM knowledge_units WHERE namespace = %s",
+    rows = conn.execute(
+        "SELECT kind, external_key, body FROM knowledge_units WHERE namespace = %s",
         (domain.get("path") or domain["key"],),
-    ).fetchone()
+    ).fetchall()
+    smoke = [r for r in rows if ontology_import.is_smoke({"external_key": r["external_key"],
+                                                          "body": r["body"]})]
     return {
         "declared_types": declared["n"] if declared else None,
-        "curated_units": curated["n"] if curated else None,
+        "curated_units": len(rows) - len(smoke),
+        "smoke_units": len(smoke),
     }
 
 

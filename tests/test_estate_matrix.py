@@ -247,3 +247,36 @@ def test_inherited_grant_is_counted_once_for_many_domains(conn, monkeypatch):
     assert [r["knowledge"]["chunks"] for r in rows] == [42] * 6
     assert calls["n"] == 1
 
+
+
+def test_smoke_rows_do_not_count_as_curated_ontology(conn):
+    """A smoke-test row must not make an empty ontology look curated.
+
+    Measured 2026-11-09: the legal domain's only unit was `smoke-clause-001`, and
+    the matrix reported a curated ontology. The row is still there (nothing is
+    deleted); it simply does not count, and the count of excluded rows is
+    reported so the number stays auditable.
+    """
+    domains = _domains(conn)
+    conn.execute(
+        "INSERT INTO knowledge_units (kind, namespace, external_key, body, created_at, updated_at) "
+        "VALUES ('clause','legal','smoke-clause-001','冒烟条款','now','now')"
+    )
+    conn.commit()
+    rows = estate.matrix(conn, domains=domains)
+    row = rows[0]
+    assert row["ontology"]["curated_units"] == 0
+    assert row["ontology"]["smoke_units"] == 1
+    assert "ontology" in row["gaps"], "smoke data must not close the ontology gap"
+
+
+def test_real_units_still_count(conn):
+    domains = _domains(conn)
+    conn.execute(
+        "INSERT INTO knowledge_units (kind, namespace, external_key, body, created_at, updated_at) "
+        "VALUES ('clause','legal','gb-50011-3.1.1','建筑设计防火规范','now','now')"
+    )
+    conn.commit()
+    row = estate.matrix(conn, domains=domains)[0]
+    assert row["ontology"]["curated_units"] == 1
+    assert row["ontology"]["smoke_units"] == 0

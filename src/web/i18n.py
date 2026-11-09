@@ -1018,6 +1018,7 @@ LOCALES: dict[str, dict[str, Any]] = {
                 "col_inbox": "待确认提案",
                 "no_run": "未运行",
                 "scope_error": "范围越权",
+                "smoke_excluded": "疑似测试数据不计：",
                 "none_matching": "没有符合该缺口的域。",
             },
             "knowledge": {
@@ -2319,6 +2320,7 @@ LOCALES: dict[str, dict[str, Any]] = {
                 "col_inbox": "Pending proposals",
                 "no_run": "never",
                 "scope_error": "scope violation",
+                "smoke_excluded": "test data excluded:",
                 "none_matching": "No domain has that gap.",
             },
             "knowledge": {

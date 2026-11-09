@@ -302,12 +302,19 @@ def complete(prompt: str) -> str:
             "(or the OPENROUTER_* / EXTRACT_MODEL equivalents)"
         )
     name = model.split("/", 1)[1] if model.startswith("openai/") else model
+    # ``max_tokens`` is not optional here. The lane's models are reasoning
+    # models: with no explicit budget they spend the allowance on the chain of
+    # thought and return ``finish_reason=length`` with ``content=None``
+    # (observed on 词元, 2026-11-09). The caller then sees what looks like a
+    # timeout and goes hunting for a slow model instead of a short payload.
+    budget = int(os.environ.get("EXTRACT_MAX_TOKENS", "1500"))
+    call_timeout = float(os.environ.get("EXTRACT_TIMEOUT", "240"))
     resp = httpx.post(
         f"{base.rstrip('/')}/chat/completions",
         headers={"Authorization": f"Bearer {key}"},
-        json={"model": name, "temperature": 0.0,
+        json={"model": name, "temperature": 0.0, "max_tokens": budget,
               "messages": [{"role": "user", "content": prompt}]},
-        timeout=180.0,
+        timeout=call_timeout,
     )
     resp.raise_for_status()
     choices = resp.json().get("choices") or []
