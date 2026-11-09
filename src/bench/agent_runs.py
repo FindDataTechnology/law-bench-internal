@@ -67,7 +67,7 @@ def start(
     if workspaces.get_domain(conn, domain_key=domain_key) is None:
         raise ValueError(f"domain {domain_key!r} not found")
     row = conn.execute(
-        "INSERT INTO agent_runs (role, domain_key, task_id, run_key, input_digest) "
+        "INSERT INTO domain_agent_runs (role, domain_key, task_id, run_key, input_digest) "
         "VALUES (%s, %s, %s, %s, %s) "
         "RETURNING id, role, domain_key, task_id, run_key, outcome, input_digest, "
         "          counts, remaining, artifact_refs, detail, started_at, ended_at",
@@ -101,7 +101,7 @@ def finish(
     if current["outcome"] != "running":
         return current  # 已收尾：不改写
     row = conn.execute(
-        "UPDATE agent_runs SET outcome = %s, counts = %s::jsonb, remaining = %s, "
+        "UPDATE domain_agent_runs SET outcome = %s, counts = %s::jsonb, remaining = %s, "
         "artifact_refs = %s::jsonb, detail = %s, ended_at = now() "
         "WHERE id = %s AND outcome = 'running' "
         "RETURNING id, role, domain_key, task_id, run_key, outcome, input_digest, "
@@ -123,7 +123,7 @@ def get(conn: Any, *, run_id: int) -> Optional[dict]:
     row = conn.execute(
         "SELECT id, role, domain_key, task_id, run_key, outcome, input_digest, "
         "       counts, remaining, artifact_refs, detail, started_at, ended_at "
-        "FROM agent_runs WHERE id = %s",
+        "FROM domain_agent_runs WHERE id = %s",
         (run_id,),
     ).fetchone()
     return dict(row) if row else None
@@ -135,7 +135,7 @@ def list_runs(
     sql = (
         "SELECT id, role, domain_key, task_id, run_key, outcome, input_digest, "
         "       counts, remaining, artifact_refs, detail, started_at, ended_at "
-        "FROM agent_runs WHERE domain_key = %s"
+        "FROM domain_agent_runs WHERE domain_key = %s"
     )
     params: list[Any] = [domain_key]
     if role:
@@ -149,13 +149,13 @@ def list_runs(
 def summary(conn: Any, *, domain_key: str) -> dict:
     """按结局分组 + 最近一轮：值班长一眼要看的两件事。"""
     rows = conn.execute(
-        "SELECT outcome, COUNT(*) AS n FROM agent_runs WHERE domain_key = %s "
+        "SELECT outcome, COUNT(*) AS n FROM domain_agent_runs WHERE domain_key = %s "
         "GROUP BY outcome",
         (domain_key,),
     ).fetchall()
     by_outcome = {r["outcome"]: r["n"] for r in rows}
     last = conn.execute(
-        "SELECT id, role, outcome, started_at, ended_at, detail FROM agent_runs "
+        "SELECT id, role, outcome, started_at, ended_at, detail FROM domain_agent_runs "
         "WHERE domain_key = %s ORDER BY started_at DESC LIMIT 1",
         (domain_key,),
     ).fetchone()
