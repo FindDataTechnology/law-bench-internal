@@ -612,8 +612,11 @@ def run(
         "cursor": sampled["cursor"],
     }
 
-    live = {e["external_key"] for e in authoring.authoring_live_entities(conn, domain_key=domain_key)}
+    live_units = authoring.authoring_live_entities(conn, domain_key=domain_key)
+    live = {e["external_key"] for e in live_units}
+    live_kinds = {e["external_key"]: e["kind"] for e in live_units}
     nominated: set[str] = set()
+    nominated_kinds: dict[str, str] = {}
     total = 0
 
     for chunk in chunks:
@@ -669,6 +672,15 @@ def run(
                 if missing:
                     report["skipped"]["bad_endpoint"] += 1
                     continue
+                # Direction is the pack's call; the kinds come from what this run
+                # nominated (or from what the domain already holds).
+                rule = keys.relationship_rule_for(domain_key)
+                if rule is not None:
+                    kinds = {**live_kinds, **nominated_kinds}
+                    reason = rule(kind, kinds.get(from_key, ""), kinds.get(to_key, ""))
+                    if reason:
+                        report["skipped"]["bad_endpoint"] += 1
+                        continue
                 external_key = authoring.relationship_external_key(
                     from_key=from_key, kind=kind, to_key=to_key
                 )
@@ -698,6 +710,7 @@ def run(
                     continue
                 body = name
                 nominated.add(external_key)
+                nominated_kinds[external_key] = kind
             evidence["usable_rate"] = round(
                 report["submitted"] / max(1, report["produced"]), 3
             )

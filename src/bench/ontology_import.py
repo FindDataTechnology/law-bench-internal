@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from . import authoring
+from . import authoring, keys
 
 #: Marker used to flag units that came from smoke tests rather than curation.
 #: Only ever used to *label* rows; nothing is auto-deleted.
@@ -61,7 +61,9 @@ def plan(conn: Any, *, domain_key: str, payload: Any) -> list[dict]:
     idempotent by construction rather than by a special case.
     """
     units, rels = parse_payload(payload)
-    live = {e["external_key"] for e in authoring.authoring_live_entities(conn, domain_key=domain_key)}
+    live_units = authoring.authoring_live_entities(conn, domain_key=domain_key)
+    live = {e["external_key"] for e in live_units}
+    live_kinds = {e["external_key"]: e["kind"] for e in live_units}
     rows: list[dict] = []
 
     for raw in units:
@@ -133,6 +135,18 @@ def plan(conn: Any, *, domain_key: str, payload: Any) -> list[dict]:
             rows.append({**label, "action": "error",
                          "reason": f"endpoint not a live entity of this domain: {', '.join(missing)}"})
             continue
+        # Direction is domain policy ("a definition starts at a concept"), so the
+        # pack supplies the rule. Kinds come from what this payload will create,
+        # falling back to what the domain already holds.
+        rule = keys.relationship_rule_for(domain_key)
+        if rule is not None:
+            kinds = {**live_kinds}
+            kinds.update({u["external_key"]: u["kind"] for u in units
+                          if isinstance(u, dict) and u.get("external_key")})
+            reason = rule(kind, kinds.get(from_key, ""), kinds.get(to_key, ""))
+            if reason:
+                rows.append({**label, "action": "error", "reason": reason})
+                continue
         ext = authoring.relationship_external_key(from_key=from_key, kind=kind, to_key=to_key)
         existed = authoring.authoring_get_unit(
             conn, domain_key=domain_key, kind=kind, external_key=ext

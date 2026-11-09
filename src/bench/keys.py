@@ -156,11 +156,12 @@ _DISTINCT: dict[str, object] = {}
 _CONCEPT_REJECT: dict[str, object] = {}
 _CONCEPT_EXAMPLES: dict[str, tuple] = {}
 _CONCEPT_COUNTERS: dict[str, tuple] = {}
+_REL_RULES: dict[str, object] = {}
 
 
 def register_rules(domain_key: str, rules: Iterable["FoldRule"],
                    distinct_document=None, concept_reject=None,
-                   concept_examples=(), concept_counters=()) -> None:
+                   concept_examples=(), concept_counters=(), relationship_rule=None) -> None:
     """Register a domain's key rules (called by a pack on import).
 
     ``concept_reject`` answers "is this name a category label rather than a
@@ -178,6 +179,8 @@ def register_rules(domain_key: str, rules: Iterable["FoldRule"],
         _CONCEPT_EXAMPLES[domain_key] = tuple(concept_examples)
     if concept_counters:
         _CONCEPT_COUNTERS[domain_key] = tuple(concept_counters)
+    if relationship_rule is not None:
+        _REL_RULES[domain_key] = relationship_rule
 
 
 def rules_for(domain_key: str) -> tuple:
@@ -205,6 +208,16 @@ def concept_examples_for(domain_key: str) -> tuple:
 def concept_counters_for(domain_key: str) -> tuple:
     """Negative examples: what *looks* like a concept but is not one."""
     return _CONCEPT_COUNTERS.get(domain_key, ())
+
+
+def relationship_rule_for(domain_key: str):
+    """The pack's endpoint-shape rule for relationships, if it registered one.
+
+    Signature: ``(kind, from_kind, to_kind) -> Optional[str]`` — a reason string
+    when the shape is wrong, ``None`` when it is fine. The kernel cannot judge
+    this: "a definition must start at a concept" is domain policy.
+    """
+    return _REL_RULES.get(domain_key)
 
 
 def registered() -> list[str]:

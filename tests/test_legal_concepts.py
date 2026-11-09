@@ -269,3 +269,48 @@ def test_sentence_shaped_names_fail_on_shape_alone():
     assert keys.concept_shape_ok("听证程序") is True
     assert keys.concept_shape_ok("这是一个非常长的描述性句子用来验证长度上限确实生效了") is False
     assert keys.concept_shape_ok("程序违法，应当撤销") is False
+
+
+def test_defines_direction_is_concept_to_document():
+    """Direction is domain policy, registered by the pack."""
+    rule = keys.relationship_rule_for("legal")
+    assert rule is not None
+    assert rule("defines", "concept", "law") is None
+    assert rule("defines", "concept", "clause") is None
+    assert "must start at a concept" in rule("defines", "law", "concept")
+    assert "must land on a document" in rule("defines", "concept", "concept")
+    # Other relationship kinds are not constrained by this rule.
+    assert rule("cites_law", "clause", "law") is None
+
+
+def test_import_planner_refuses_a_reversed_defines(empty_db):
+    """公司法 defines 清算义务 reads backwards — refuse it at planning time."""
+    from src.bench import ontology_import, templates, workspaces
+    from src.eval.store import ensure_schema
+
+    ensure_schema(db_path=empty_db)
+    schema = {
+        "entity_types": ["clause", "law", "concept"],
+        "concept_structures": {},
+        "relationship_kinds": ["defines"],
+        "tier_vocabulary": ["raw", "bronze", "silver", "gold"],
+        "sensitivity_vocabulary": ["public", "internal", "confidential"],
+        "corpus_declaration": {"source_types": []},
+    }
+    templates.create_template(conn=empty_db, name="tpl", schema=schema, created_by="t")
+    workspaces.instantiate_domain(conn=empty_db, key="legal", name="法律域",
+                                  template_name="tpl", template_version=None, created_by="t")
+    payload = {
+        "units": [
+            {"kind": "concept", "external_key": "清算义务", "body": "清算义务"},
+            {"kind": "law", "external_key": "公司法", "body": "中华人民共和国公司法"},
+        ],
+        "relationships": [
+            {"kind": "defines", "from_key": "公司法", "to_key": "清算义务"},   # reversed
+            {"kind": "defines", "from_key": "清算义务", "to_key": "公司法"},   # correct
+        ],
+    }
+    rows = ontology_import.plan(conn=empty_db, domain_key="legal", payload=payload)
+    verdicts = {r["external_key"]: r["action"] for r in rows if r["section"] == "relationships"}
+    assert verdicts["公司法->清算义务"] == "error"
+    assert verdicts["清算义务->公司法"] == "create"

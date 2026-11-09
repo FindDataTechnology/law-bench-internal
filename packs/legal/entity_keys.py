@@ -139,10 +139,30 @@ CONCEPT_COUNTER_EXAMPLES: tuple[str, ...] = (
     "没收较大数额涉案财产的行政处罚决定", "行政处罚违反法定程序", "民事", "执行",
 )
 
-register_rules("legal", RULES, is_distinct_document, concept_reject,
-               CONCEPT_EXAMPLES, CONCEPT_COUNTER_EXAMPLES)
+#: Relationship shapes this domain insists on. ``defines`` runs concept →
+#: document: a definition starts at the concept and lands on the instrument that
+#: establishes it. The reverse ("公司法 defines 清算义务") reads backwards and, in
+#: practice, lets a document accumulate definitions of unrelated things.
+DOCUMENT_KINDS: tuple[str, ...] = ("law", "clause")
+
+
+def relationship_shape(kind: str, from_kind: str, to_kind: str):
+    """A reason string when the endpoints are the wrong way round, else None."""
+    if kind == "defines":
+        if from_kind != "concept":
+            return f"'defines' must start at a concept, not {from_kind!r}"
+        if to_kind not in DOCUMENT_KINDS:
+            return f"'defines' must land on a document, not {to_kind!r}"
+    return None
 
 
 def concept_counters() -> tuple[str, ...]:
     """Negative examples for the prompt (kept here, not in the kernel)."""
     return CONCEPT_COUNTER_EXAMPLES
+
+
+# Registering last: every rule above must exist before the kernel can be handed
+# one (an earlier draft referenced relationship_shape before its definition).
+register_rules("legal", RULES, is_distinct_document, concept_reject,
+               CONCEPT_EXAMPLES, CONCEPT_COUNTER_EXAMPLES,
+               relationship_rule=relationship_shape)
