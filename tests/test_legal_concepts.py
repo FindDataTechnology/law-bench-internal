@@ -96,8 +96,14 @@ def test_starter_set_is_grounded_and_free_of_categories():
     data = json.loads(path.read_text())
     units = data["units"]
     assert units, "the starter set must not be empty"
-    for unit in units:
-        assert unit["kind"] == "concept"
+    concepts = [u for u in units if u["kind"] == "concept"]
+    laws = [u for u in units if u["kind"] == "law"]
+    assert concepts and laws, "the set must carry both concepts and the instruments they rest on"
+    for unit in laws:
+        # An instrument unit carries its full title and nothing invented.
+        assert unit["attrs"].get("full_title"), unit["external_key"]
+        assert unit["body"] == unit["attrs"]["full_title"]
+    for unit in concepts:
         assert not legal_keys.is_case_category(unit["external_key"]), unit["external_key"]
         attrs = unit["attrs"]
         grounded = bool(attrs.get("statute_refs"))
@@ -106,7 +112,13 @@ def test_starter_set_is_grounded_and_free_of_categories():
         # Either it cites an article, or it says outright that it rests on case
         # law — an empty both-ways entry is exactly what the spec forbids.
         assert grounded or declared_case, unit["external_key"]
-    assert all("kind" in rel and rel["kind"] == "defines" for rel in data["relationships"])
+    assert all(rel["kind"] == "defines" for rel in data["relationships"])
+    # `defines` points at an instrument that is *in the same set* — a relation to
+    # something nobody created is how a concept ends up dangling.
+    law_keys = {u["external_key"] for u in laws}
+    for rel in data["relationships"]:
+        assert rel["to_key"] in law_keys, rel
+        assert rel["from_key"] in {u["external_key"] for u in concepts}, rel
 
 
 def test_starter_set_passes_the_import_planner(empty_db):
