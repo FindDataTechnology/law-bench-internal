@@ -1188,6 +1188,190 @@ def console_bench_legacy(domain_key: str):
     )
 
 
+# ------------------------------------------------------- corpus documents #
+
+#: Browse page size. The store holds tens of thousands of documents; a page that
+#: tried to show them at once would be a different product (and an unusable one).
+_LIBRARY_PAGE = 25
+
+
+def _library_redirect(domain_key: str, msg: str, err: bool = False, **interp):
+    return _flash(f"/d/{quote(domain_key)}/library", msg, err=err, **interp)
+
+
+@read_only_router.get(
+    "/d/{domain_key}/library", include_in_schema=False, name="console_library",
+    dependencies=_READ_GATES,
+)
+def console_library(
+    request: Request,
+    domain_key: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """The documents this domain can draw from — by document, not by chunk.
+
+    Retrieval answers "what is similar to this sentence"; this page answers
+    "which documents does the corpus hold, and which of them have I taken in".
+    Both read the same subscriptions, so the browse scope cannot exceed what a
+    search would honour.
+    """
+    from ...bench import corpus_catalog
+
+    domain = resolve_domain(db, domain_key)
+    try:
+        scope = library_store.effective_sources(db, domain_path=domain["path"])
+    except ValueError as exc:  # a subscription that would widen its parent's scope
+        scope = {}
+        scope_error = str(exc)
+    else:
+        scope_error = None
+
+    catalog: list[dict] = []
+    for lib_key, allowed in scope.items():
+        row = library_store.get_library(db, library_key=lib_key)
+        if row is None:
+            continue
+        sources = []
+        for src in library_store.list_sources(db, library_id=row["id"]):
+            if allowed and src["source_key"] not in allowed:
+                continue
+            try:
+                corpus_catalog.document_mapping(src)
+                declared = True
+            except corpus_catalog.DocumentMappingError:
+                declared = False
+            sources.append({**src, "document_declared": declared})
+        catalog.append({**row, "sources": sources})
+
+    lib_key = (request.query_params.get("lib") or "").strip() or None
+    if lib_key is None and catalog:
+        lib_key = catalog[0]["library_key"]
+    src_key = (request.query_params.get("src") or "").strip() or None
+    q = (request.query_params.get("q") or "").strip()
+    try:
+        offset = max(0, int(request.query_params.get("offset") or 0))
+    except ValueError:
+        offset = 0
+
+    page = None
+    page_error = None
+    if lib_key:
+        try:
+            page = corpus_catalog.documents(
+                db, library_key=lib_key, source_key=src_key, offset=offset,
+                limit=_LIBRARY_PAGE, q=q, domain_key=domain_key,
+            )
+        except (corpus_catalog.DocumentMappingError, corpus_catalog.StoreError,
+                ValueError) as exc:
+            page_error = f"{type(exc).__name__}: {exc}"
+
+    return _templates.TemplateResponse(
+        request,
+        "domain_console_library.html",
+        {
+            **console_context(db, domain, user),
+            "catalog": catalog,
+            "scope_error": scope_error,
+            "lib_key": lib_key,
+            "src_key": src_key or "",
+            "q": q,
+            "offset": offset,
+            "page_size": _LIBRARY_PAGE,
+            "page": page,
+            "page_error": page_error,
+            "cap": capability(db, domain, user),
+        },
+    )
+
+
+@write_router.post(
+    "/d/{domain_key}/library/adopt", include_in_schema=False,
+    name="console_library_adopt",
+    dependencies=[Depends(require_scope("content:write"))],
+)
+async def console_library_adopt(
+    request: Request,
+    domain_key: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Take one corpus document into this domain's ontology."""
+    from ...bench import corpus_catalog
+
+    domain = resolve_domain(db, domain_key)
+    cap = capability(db, domain, user)
+    if not cap["can_write"]:
+        raise HTTPException(status_code=403, detail="write requires expert or above")
+    form = await request.form()
+    lib_key = (form.get("lib") or "").strip()
+    src_key = (form.get("src") or "").strip()
+    doc_id = (form.get("doc") or "").strip()
+    if not (lib_key and src_key and doc_id):
+        return _library_redirect(domain_key, "flash.library_adopt_failed",
+                                 err=True, detail="missing document reference")
+    try:
+        out = corpus_catalog.adopt_document(
+            db, domain_key=domain_key, library_key=lib_key, source_key=src_key,
+            doc_id=doc_id, operator=_operator_of(user),
+        )
+    except (corpus_catalog.DocumentMappingError, corpus_catalog.StoreError,
+            ValueError) as exc:
+        return _library_redirect(domain_key, "flash.library_adopt_failed",
+                                 err=True, detail=str(exc))
+    return _library_redirect(
+        domain_key, "flash.library_document_saved", key=out["key"],
+        op="created" if out["created"] else "already",
+        lib=lib_key, src=src_key,
+    )
+
+
+@write_router.post(
+    "/d/{domain_key}/library/clauses", include_in_schema=False,
+    name="console_library_clauses",
+    dependencies=[Depends(require_scope("content:write"))],
+)
+async def console_library_clauses(
+    request: Request,
+    domain_key: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Take one document's articles in as clause units (one transaction)."""
+    from ...bench import corpus_catalog
+
+    domain = resolve_domain(db, domain_key)
+    cap = capability(db, domain, user)
+    if not cap["can_write"]:
+        raise HTTPException(status_code=403, detail="write requires expert or above")
+    form = await request.form()
+    lib_key = (form.get("lib") or "").strip()
+    src_key = (form.get("src") or "").strip()
+    doc_id = (form.get("doc") or "").strip()
+    law_key = (form.get("law_key") or "").strip() or None
+    if not (lib_key and src_key and doc_id):
+        return _library_redirect(domain_key, "flash.library_adopt_failed",
+                                 err=True, detail="missing document reference")
+    try:
+        out = corpus_catalog.adopt_clauses(
+            db, domain_key=domain_key, library_key=lib_key, source_key=src_key,
+            doc_id=doc_id, operator=_operator_of(user), law_key=law_key,
+        )
+    except (corpus_catalog.DocumentMappingError, corpus_catalog.StoreError,
+            ValueError) as exc:
+        return _library_redirect(domain_key, "flash.library_adopt_failed",
+                                 err=True, detail=str(exc))
+    if not out["adopted"]:
+        return _library_redirect(domain_key, "flash.library_no_clauses",
+                                 err=True, detail=out.get("reason") or "",
+                                 lib=lib_key, src=src_key)
+    return _library_redirect(
+        domain_key, "flash.library_clauses_saved", key=out["key"],
+        n=out["adopted"], remaining=out["remaining"],
+        lib=lib_key, src=src_key,
+    )
+
+
 # --------------------------------------------------------------- knowledge #
 
 

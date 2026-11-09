@@ -387,6 +387,78 @@ def authoring_create_unit(
     )
 
 
+def authoring_create_units(
+    conn: Any,
+    *,
+    domain_key: str,
+    units: list[dict],
+    operator: str,
+) -> list[dict]:
+    """Create many units in **one** transaction: all of them or none.
+
+    ``authoring_create_unit`` commits per unit, which is right for a human
+    editing one row and wrong for a batch read out of a corpus: half a document's
+    articles in the ontology is a state nobody asked for and nobody can explain
+    afterwards. Here every kind is gated before the first write, all rows share
+    one transaction, and a failure anywhere rolls the whole batch back.
+
+    Each unit is ``{kind, external_key, body, tags?, attrs?}``. Duplicate keys
+    inside one batch are refused up front — two rows writing the same key would
+    make "which one landed" depend on ordering.
+    """
+    domain = _load_domain(conn, domain_key=domain_key)
+    if not units:
+        return []
+    seen: set[tuple[str, str]] = set()
+    for unit in units:
+        kind, key = unit.get("kind"), unit.get("external_key")
+        if not kind or not key:
+            raise ValueError("every unit needs both 'kind' and 'external_key'")
+        if (kind, key) in seen:
+            raise ValueError(f"duplicate key in one batch: {kind!r}/{key!r}")
+        seen.add((kind, key))
+        _gate_kind(conn, domain=domain, kind=kind, vocab_key="entity_types")
+
+    written: list[dict] = []
+    try:
+        for unit in units:
+            prior = store.get_knowledge_unit(
+                conn, kind=unit["kind"], external_key=unit["external_key"],
+                namespace=domain["key"],
+            )
+            row = store.upsert_knowledge_unit(
+                conn,
+                kind=unit["kind"],
+                external_key=unit["external_key"],
+                body=unit.get("body") or "",
+                namespace=domain["key"],
+                tags=unit.get("tags"),
+                attrs=unit.get("attrs"),
+                tier="raw",
+                provenance={"operator": operator, "via": "authoring"},
+                commit=False,
+            )
+            _record_event(
+                conn,
+                domain_id=domain["id"],
+                unit_kind=unit["kind"],
+                unit_key=unit["external_key"],
+                op="create" if prior is None else "update",
+                before=_copy_unit(prior) if prior is not None else None,
+                after=row,
+                operator=operator,
+            )
+            written.append(row)
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    conn.commit()
+    return written
+
+
 def authoring_update_unit(
     conn: Any,
     *,
