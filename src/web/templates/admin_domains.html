@@ -62,7 +62,20 @@
         <td>{{ member_counts.get(d.id, 0) }}</td>
         <td>{{ d.created_by }}</td>
         <td class="muted">{{ d.created_at }}</td>
-        <td><a class="btn btn-sm" href="{{ url_for('admin_domain_detail', domain_key=d.key) }}">{{ t.admin.domains.view }}</a></td>
+        <td>
+          <a class="btn btn-sm" href="{{ url_for('admin_domain_detail', domain_key=d.key) }}">{{ t.admin.domains.view }}</a>
+          {% if d.archived_at %}
+          <span class="badge bad">{{ t.console.estate.archived_badge }}</span>
+          <form method="POST" class="inline" action="{{ url_for('console_domain_archive', domain_key=d.key) }}">
+            <input type="hidden" name="restore" value="1">
+            <button type="submit" class="btn btn-sm">{{ t.console.estate.restore_btn }}</button>
+          </form>
+          {% else %}
+          <form method="POST" class="inline" action="{{ url_for('console_domain_archive', domain_key=d.key) }}">
+            <button type="submit" class="btn btn-sm">{{ t.console.estate.archive_btn }}</button>
+          </form>
+          {% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>

@@ -275,7 +275,9 @@ async def admin_template_version_create(
 )
 def admin_domains(request: Request, db: DbConn = Depends(get_db)):
     """All domains with their template anchor and active member count."""
-    domains = workspaces.list_domains(db)
+    # The admin page is the full roll-call, archived included: this is where a
+    # retired line is found again to restore it.
+    domains = workspaces.list_domains(db, include_archived=True)
     counts = {
         d["id"]: len(workspaces.list_members(db, domain_id=d["id"])) for d in domains
     }

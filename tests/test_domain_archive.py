@@ -137,3 +137,13 @@ def test_restore_route(conn):
         ok = c.post("/d/trial-x/archive", data={"restore": "1"}, follow_redirects=False)
     assert ok.status_code == 303
     assert workspaces.get_domain(conn, domain_key="trial-x")["archived_at"] is None
+
+
+def test_admin_page_lists_archived_with_restore(conn):
+    workspaces.archive_domain(conn, domain_key="trial-x", actor="t")
+    with _client(conn) as c:
+        page = c.get("/admin/domains")
+    assert page.status_code == 200
+    body = page.text
+    assert "trial-x" in body
+    assert "已归档" in body and "恢复" in body
