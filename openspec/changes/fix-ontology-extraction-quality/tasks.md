@@ -30,5 +30,5 @@
 
 - [x] 6.1 `openspec validate fix-ontology-extraction-quality --strict` 通过
 - [x] 6.2 全量 pytest 不回归（基线 1582 passed / 60 skipped）
-- [ ] 6.3 生产复跑同一批 20 块，对比新旧口径：裸条款号与「中华人民共和国」是否消失，可用率是否上升；报告留档
-- [ ] 6.4 验收报告：四类拒绝计数、可用率前后对比、以及「还需要什么才能真扩量」的判断
+- [x] 6.3 生产复跑同一批 20 块（`sha-8fb1f3d`）：裸条款号 0 / 国家名冒充 law 0 / 归一折叠 3 / 结构名拒 1；可用率 0.529→0.429 且判低产（拒绝原因均口径可解释，非模型胡说）。见 `reports/2026-11-09-key-scheme-acceptance.md`
+- [x] 6.4 验收报告：`reports/2026-11-09-key-scheme-acceptance.md`（八类拒绝计数、新旧对照、扩量还差两件事：换语料面 + 抽样均衡）
