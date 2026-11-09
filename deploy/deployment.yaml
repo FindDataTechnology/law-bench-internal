@@ -134,6 +134,13 @@ spec:
             # 功能整体关闭、零请求。集群侧 kubectl 建的 secret，与上面四个同管理模式。
             - secretRef:
                 name: law-bench-law-api
+            # 文字引擎库只读接入（add-domain-tree-and-shared-libraries §7.9）。
+            # 只含一个键 FDTEXT_DATABASE_URL；该库**没有订阅者**，所以这个连接
+            # 串目前不会被任何请求使用——它的存在只是让「库台账」里能看见这
+            # 批语料。真要检索还需要 LIBRARY_EMBED_GATEWAY_KEY（8B 模型），
+            # 缺了会明确报错而不是静默降质。
+            - secretRef:
+                name: law-bench-fdtext
           ports:
             - containerPort: 8010
           livenessProbe:

@@ -11,6 +11,9 @@ ones are migrations of corpora that already exist elsewhere. An admin form can
 come later; what matters now is that the registration is idempotent and that
 every number it writes is measured, not assumed.
 
+``text-library`` registers the text engine's four verticals read-only and
+**without any subscription** — that corpus belongs to another product line.
+
 ``law-library`` sources partition the Qdrant collection **exhaustively** — every
 one of the 364,916 points belongs to exactly one source, so "which source" is
 never a guess and no chunk is silently unreachable::
@@ -137,21 +140,115 @@ def register_law_library(conn, *, domain_key: str = "legal", dry_run: bool = Fal
     return {"library": "law-library", "total": total, "covered": covered, "ok": True}
 
 
+#: The text engine's four verticals. One table per vertical, so a source *is* a
+#: table here — the generic "prefix" idea does not apply. Counts measured
+#: 2026-11-08: gov 2,160 / news 2,942 / papers 82 / screenplay 2,305.
+#:
+#: This library is registered **without any subscription** on purpose: the
+#: content is another product line's corpus (政务/新闻/论文/剧本), not statutes.
+#: Registering it makes it selectable in the ledger; nobody's retrieval changes
+#: until a domain deliberately subscribes. Searching it additionally needs
+#: ``LIBRARY_EMBED_GATEWAY_KEY`` (8B model); without it the search fails loudly
+#: instead of silently degrading.
+TEXT_SOURCES: list[tuple[str, str, str]] = [
+    ("gov", "政务公开文本", "corpus_chunks_gov"),
+    ("news", "新闻文本", "corpus_chunks_news"),
+    ("papers", "论文文本", "corpus_chunks_papers"),
+    ("screenplay", "剧本文本", "corpus_chunks_screenplay"),
+]
+
+
+def register_text_library(conn, *, dry_run: bool = False) -> dict:
+    """Register the text engine's verticals as an unsubscribed library."""
+    lib = libraries.get_library(conn, library_key="text-library")
+    if lib is None:
+        if dry_run:
+            print("  would create library text-library (pgvector-external, 1024, "
+                  "Qwen/Qwen3-Embedding-8B)")
+            for key, label, table in TEXT_SOURCES:
+                print(f"  would add source {key:11s} {label} -> {table}")
+            return {"library": "text-library", "sources": len(TEXT_SOURCES), "dry_run": True}
+        libraries.create_library(
+            conn,
+            library_key="text-library",
+            name="文字垂域库（政务/新闻/论文/剧本）",
+            created_by="register_libraries",
+            backend="pgvector-external",
+            embedding_model="Qwen/Qwen3-Embedding-8B",
+            dims=1024,
+            location={"dsn_env": "FDTEXT_DATABASE_URL"},
+        )
+        lib = libraries.get_library(conn, library_key="text-library")
+
+    have = {s["source_key"] for s in libraries.list_sources(conn, library_id=lib["id"])}
+    for key, label, table in TEXT_SOURCES:
+        if key in have:
+            print(f"  source {key:11s} exists")
+            continue
+        if dry_run:
+            print(f"  would add source {key:11s} {label} -> {table}")
+            continue
+        libraries.add_source(
+            conn,
+            library_key="text-library",
+            source_key=key,
+            uri=table,
+            created_by="register_libraries",
+            source_kind="external-table",
+            content_type=f"文本/{label}",
+        )
+        print(f"  source {key:11s} added")
+
+    if dry_run:
+        print("  no subscription written (by design: another product line's corpus)")
+        return {"library": "text-library", "sources": len(TEXT_SOURCES), "dry_run": True}
+
+    # Report per-table counts so the ledger is not a promise with no numbers.
+    from src.search import library_index
+
+    counts = {}
+    try:
+        counts = library_index.source_counts(
+            conn, lib=libraries.get_library(conn, library_key="text-library"),
+            allowed={s["source_key"] for s in TEXT_SOURCES},
+        )
+    except Exception as exc:  # unreachable DSN must not read as "empty"
+        print(f"  !! counts unavailable: {type(exc).__name__}: {exc}", file=sys.stderr)
+    for key, n in counts.items():
+        print(f"    {key:11s} {n:8d}")
+    subscribed = conn.execute(
+        "SELECT COUNT(*) AS n FROM domain_library_subscriptions s "
+        "JOIN libraries l ON l.id = s.library_id WHERE l.library_key = 'text-library'"
+    ).fetchone()["n"]
+    print(f"  subscribers: {subscribed} (expected 0)")
+    return {"library": "text-library", "counts": counts, "subscribers": subscribed,
+            "ok": subscribed == 0}
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--domain", default="legal")
+    ap.add_argument("--only", choices=("law", "text", "all"), default="all",
+                    help="which library to register (default: all)")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(argv)
 
     from src.eval.db import connect
 
     conn = connect()
+    ok = True
     try:
-        out = register_law_library(conn, domain_key=args.domain, dry_run=args.dry_run)
+        if args.only in ("law", "all"):
+            out = register_law_library(conn, domain_key=args.domain, dry_run=args.dry_run)
+            print(out)
+            ok = ok and bool(out.get("ok", True))
+        if args.only in ("text", "all"):
+            out = register_text_library(conn, dry_run=args.dry_run)
+            print(out)
+            ok = ok and bool(out.get("ok", True))
     finally:
         conn.close()
-    print(out)
-    return 0 if out.get("ok", True) else 1
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
