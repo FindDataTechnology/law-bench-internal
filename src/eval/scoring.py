@@ -316,16 +316,22 @@ def _marker_in_contract(reasoning: Optional[str]) -> bool:
 #: 于是本来重试一次就能成功的调用被直接放弃，再被记成 FAIL/无效，白丢一次判定。
 #: 这里补上异常类名与常见 5xx。刻意**不**匹配 `Validation`/`ValueError` 这类
 #: 确定性错误——重试它们只是浪费三次往返。
+#:
+#: **数字码必须带 HTTP 语境**（`HTTP 500` / `status 500`），不能裸匹配 `"500"`：
+#: 实测 `"ValidationError: max 500 tokens exceeded"` 与 `"score=0.500 below floor"`
+#: 都会被裸子串命中，而它们都是确定性错误，重试纯浪费。
 _TRANSIENT_JUDGE_ERROR_MARKERS = (
     "RateLimit", "429",
     "ServiceUnavailable", "503",
     "APITimeoutError", "Timeout", "timed out",
     "APIConnectionError", "Connection reset", "ConnectionError", "ConnectError",
-    "InternalServerError", "500", "502", "504",
-    "BadGateway", "GatewayTimeout",
+    "InternalServerError", "BadGateway", "GatewayTimeout",
     "RemoteProtocolError", "ReadTimeout", "WriteTimeout",
     "JSONDecodeError",  # 截断响应
 )
+
+#: 形如 `HTTP 500` / `status: 502` / `got 504` 的写法才算 5xx。
+_TRANSIENT_HTTP_CODE_RE = re.compile(r"(?:HTTP|status|code|got|returned)\s*[:=]?\s*5\d\d", re.I)
 
 
 def _is_transient_judge_error(error_text: str) -> bool:
@@ -335,7 +341,9 @@ def _is_transient_judge_error(error_text: str) -> bool:
     ``isinstance`` 拿不到原类。
     """
     s = error_text or ""
-    return any(marker in s for marker in _TRANSIENT_JUDGE_ERROR_MARKERS)
+    if any(marker in s for marker in _TRANSIENT_JUDGE_ERROR_MARKERS):
+        return True
+    return _TRANSIENT_HTTP_CODE_RE.search(s) is not None
 
 
 def classify_structural_soundness(

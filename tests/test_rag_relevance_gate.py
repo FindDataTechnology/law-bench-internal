@@ -81,3 +81,34 @@ def test_all_filtered_out_is_logged(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING):
         rag.ContractSearchTool()._run("某问题")
     assert caplog.records, "全部低于阈值时完全静默 —— 与「没检索」不可区分"
+
+
+def test_healthz_exposes_retrieval_counters():
+    """/healthz 必须把检索失败/拒绝计数暴露出来——否则计数器也是死的。
+
+    我第一版只加了 `retrieval_stats()` 却没有调用者，那和审计 §11 批评的
+    「没有失败信号」是同一个病：计数器存在但没人读，等于不存在。
+
+    **但不能因此改状态码**：/healthz 是 liveness/readiness 探针目标，一次 ES
+    抖动要是让它非 200，k8s 会把本来健康的 pod 重启掉——那是把「降级」放大成
+    「停机」。
+    """
+    from fastapi.testclient import TestClient
+
+    import src.search.rag_tool as rag_mod
+    from src.web.app import create_app
+
+    rag_mod._retrieval_failures = 3
+    rag_mod._retrieval_denied = 2
+    try:
+        client = TestClient(create_app())
+        resp = client.get("/healthz")
+        assert resp.status_code == 200, "探针状态码不许因检索计数变化"
+        body = resp.json()
+        assert body.get("status") == "ok"
+        stats = body.get("retrieval") or {}
+        assert stats.get("failures") == 3, f"/healthz 没暴露检索失败计数：{body}"
+        assert stats.get("denied") == 2
+    finally:
+        rag_mod._retrieval_failures = 0
+        rag_mod._retrieval_denied = 0

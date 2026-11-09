@@ -176,8 +176,21 @@ def create_app() -> FastAPI:
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> JSONResponse:
-        """Liveness/readiness probe target: always 200 when the process is up."""
-        return JSONResponse({"status": "ok"})
+        """Liveness/readiness probe target: always 200 when the process is up.
+
+        附带检索计数（审计 03 §11）。**刻意不改状态码**：探针非 200 会让 k8s
+        重启本来健康的 pod——一次 ES 抖动不该把「降级」放大成「停机」。
+        计数只是信息，让人能从 `kubectl exec ... /healthz` 看出「这个进程
+        一直在裸起草」，而不是去翻日志。
+        """
+        payload: dict = {"status": "ok"}
+        try:
+            from ..search.rag_tool import retrieval_stats
+
+            payload["retrieval"] = retrieval_stats()
+        except Exception:  # noqa: BLE001 - 探针不许因附加信息失败
+            pass
+        return JSONResponse(payload)
 
     @app.on_event("startup")
     def _verify_auth_startup() -> None:

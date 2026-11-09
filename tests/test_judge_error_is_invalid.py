@@ -118,3 +118,20 @@ def test_partial_invalid_is_never_all_pass():
     assert all_pass is False, (
         "部分 invalid 时被判 ALL PASS —— 没测成的条款被当成通过了"
     )
+
+
+def test_numbers_in_unrelated_text_are_not_treated_as_http_5xx():
+    """裸 `"500"` 子串会误伤——我第一版就是这么写的，实测被自己抓到。
+
+    `"ValidationError: max 500 tokens exceeded"` 和 `"score=0.500 below floor"`
+    都含 `500` 但都是确定性错误；把它们当瞬态去重试三次纯属浪费。
+    数字码必须带 HTTP 语境才算。
+    """
+    from src.eval.scoring import _is_transient_judge_error as t
+
+    assert not t("ValidationError: max 500 tokens exceeded"), "token 上限被当成 5xx 重试"
+    assert not t("score=0.500 below the relevance floor"), "分数里的 500 被当成 5xx"
+    # 带 HTTP 语境的仍然要认
+    assert t("HTTP 500 from relay")
+    assert t("status: 502")
+    assert t("upstream returned 504")
