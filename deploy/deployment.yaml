@@ -67,7 +67,7 @@ spec:
             - lawbench.finddatatech.cloud
       initContainers:
         - name: seed-db
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-fe81215
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-cf858e9
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsUser: 0
@@ -94,9 +94,9 @@ spec:
           # 任何域的知识。本片加：qdrant / pgvector-external 只读后端、库表
           # location（只存环境变量名）、按 embedding_model 路由嵌入器（两个
           # 1024 维空间不可混用）、缺口矩阵按外部库自数。
-          # 出片=通用池 testaction002/build-pool（快照 fe812157（源 19bc329），tag 取 7 位）。
+          # 出片=通用池 testaction002/build-pool（快照 cf858e95（源 6442e70），tag 取 7 位）。
           # 回滚=sha-2180036（八区控制台那版）。
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-fe81215
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-cf858e9
           imagePullPolicy: IfNotPresent
           env:
             # Admin-assistant runtime (add-admin-copilot-assistant). Non-secret
