@@ -80,6 +80,16 @@ spec:
                 secretKeyRef:
                   name: law-bench-mcp
                   key: MCP_HTTP_TOKEN
+            # DOCX→PDF 经共享 render 服务（extract-render-service）：镜像已不带
+            # LibreOffice。与 deployment.yaml（web 面）同口径——此前本清单缺这两行，
+            # 转换器回落 libreoffice 后端去找本机 soffice，导致经 MCP 的
+            # contract_generate 一律报 "LibreOffice binary 'soffice' not found"
+            # （2026-11-10 现网实采实证）。回滚=同时改回 backend libreoffice 并换回
+            # 带 LibreOffice 的旧镜像 tag。
+            - name: DOCS_PDF_BACKEND
+              value: "http"
+            - name: RENDER_SERVICE_URL
+              value: "http://render-service.law-bench.svc.cluster.local:8090"
           envFrom:
             - secretRef:
                 name: law-bench-db
