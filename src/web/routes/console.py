@@ -168,6 +168,57 @@ def console_domain_list(
 
 
 @write_router.post(
+    "/d/{domain_key}/inbox/batch", include_in_schema=False,
+    name="console_proposal_batch",
+    dependencies=[Depends(require_scope("content:write"))],
+)
+async def console_proposal_batch(
+    request: Request,
+    domain_key: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Confirm or reject a whole extraction batch, row by row.
+
+    Each proposal goes through the same confirm/reject path a single one does, so
+    the kernel still writes and still trails. One failing row does **not** roll
+    back the others: partial success is reported as such.
+    """
+    domain = resolve_domain(db, domain_key)
+    require_domain_role("lead")(request, user=user, conn=db)
+    form = await request.form()
+    batch = (form.get("batch") or "").strip()
+    action = (form.get("action") or "").strip()
+    if action not in ("confirm", "reject"):
+        raise HTTPException(status_code=422, detail="action must be confirm or reject")
+    rows = bench_proposals.list_proposals(db, domain_key=domain_key, state="pending",
+                                          batch=batch or None)
+    ok = failed = 0
+    for row in rows:
+        try:
+            actor = user.email or user.name or user.sub
+            if action == "confirm":
+                # The kernel's own signature: `actor` decides attribution and
+                # whether the caller was a platform admin driving an override.
+                bench_proposals.confirm(
+                    db, domain_key=domain_key, proposal_id=row["id"], actor=actor,
+                    admin_override=is_platform_admin(user),
+                )
+            else:
+                bench_proposals.reject(
+                    db, domain_key=domain_key, proposal_id=row["id"],
+                    actor=actor, note="batch reject",
+                )
+            ok += 1
+        except ValueError:
+            failed += 1
+    return _flash(
+        f"/d/{quote(domain_key)}/inbox" + (f"?batch={quote(batch)}" if batch else ""),
+        "flash.proposal_batch_done", ok=ok, failed=failed,
+    )
+
+
+@write_router.post(
     "/d/{domain_key}/inbox/tasks/{task_id}/transition", include_in_schema=False,
     name="console_task_transition",
     dependencies=[Depends(require_scope("content:write"))],
@@ -801,9 +852,10 @@ def console_inbox(
 ):
     """The domain's proposal inbox, optionally filtered by state."""
     domain = resolve_domain(db, domain_key)
+    batch = (request.query_params.get("batch") or "").strip() or None
     try:
         proposals = bench_proposals.list_proposals(
-            db, domain_key=domain_key, state=state
+            db, domain_key=domain_key, state=state, batch=batch
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -822,6 +874,8 @@ def console_inbox(
             "state_filter": state,
             "tasks": tasks,
             "open_tasks": [t for t in tasks if t["status"] in ("pending", "in_progress")],
+            "batch": batch or "",
+            "batches": bench_proposals.batches(db, domain_key=domain_key),
         },
     )
 

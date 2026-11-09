@@ -548,14 +548,41 @@ def reject(
 # ---------------------------------------------------------------- read side
 
 
+def batches(conn: Any, *, domain_key: str) -> list[dict]:
+    """Distinct extraction batches in this domain, newest first, with counts."""
+    domain = _load_domain(conn, domain_key=domain_key)
+    rows = conn.execute(
+        "SELECT evidence->>'batch' AS batch, state, COUNT(*) AS n "
+        "FROM domain_proposals WHERE domain_id = %s AND evidence ? 'batch' "
+        "GROUP BY 1, 2 ORDER BY 1 DESC",
+        (domain["id"],),
+    ).fetchall()
+    merged: dict[str, dict] = {}
+    for row in rows:
+        name = row["batch"]
+        if not name:
+            continue
+        entry = merged.setdefault(name, {"batch": name, "pending": 0, "confirmed": 0,
+                                         "rejected": 0, "total": 0})
+        entry[row["state"]] = row["n"]
+        entry["total"] += row["n"]
+    return [merged[k] for k in sorted(merged, reverse=True)]
+
+
 def list_proposals(
     conn: Any,
     *,
     domain_key: str,
     state: Optional[str] = None,
+    batch: Optional[str] = None,
     limit: int = 200,
 ) -> list[dict]:
-    """The domain's inbox, newest submission first; state filter is optional."""
+    """The domain's inbox, newest submission first.
+
+    ``batch`` filters on ``evidence->>'batch'`` — extraction files its output in
+    named batches so a reviewer can work through one run at a time instead of
+    whatever happens to be newest.
+    """
     if state is not None and state not in PROPOSAL_STATES:
         raise ValueError(f"state must be one of {list(PROPOSAL_STATES)}")
     domain = _load_domain(conn, domain_key=domain_key)
@@ -563,6 +590,9 @@ def list_proposals(
     if state is not None:
         where.append("state = %s")
         params.append(state)
+    if batch:
+        where.append("evidence->>'batch' = %s")
+        params.append(batch)
     params.append(limit)
     cur = conn.execute(
         f"SELECT {_PROPOSAL_COLS} FROM domain_proposals "

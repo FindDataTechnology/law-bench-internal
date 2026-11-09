@@ -103,6 +103,48 @@
     （某人的邮箱、某支舰队），所以不在这里列出来，这些任务就谁看不见——而且
     它们开着会让幂等检查永久拒绝再次派同一缺口。关闭动作是让这条链路可重跑
     的那一步。 -#}
+{% if batches %}
+<div class="panel">
+  <h2>{{ t.console.inbox.batches_h2 }}</h2>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>{{ t.console.inbox.col_batch }}</th>
+        <th>{{ t.console.inbox.col_pending }}</th>
+        <th>{{ t.console.inbox.col_confirmed }}</th>
+        <th>{{ t.console.inbox.col_rejected }}</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in batches %}
+      <tr>
+        <td><a href="{{ url_for('console_inbox', domain_key=domain.key) }}?batch={{ b.batch }}"><code>{{ b.batch }}</code></a></td>
+        <td>{{ b.pending }}</td>
+        <td>{{ b.confirmed }}</td>
+        <td>{{ b.rejected }}</td>
+        <td>
+          {% if cap.can_assign and b.pending %}
+          <form method="POST" class="inline" action="{{ url_for('console_proposal_batch', domain_key=domain.key) }}">
+            <input type="hidden" name="batch" value="{{ b.batch }}">
+            <input type="hidden" name="action" value="confirm">
+            <button type="submit" class="btn btn-sm">{{ t.console.inbox.batch_confirm }}</button>
+          </form>
+          <form method="POST" class="inline" action="{{ url_for('console_proposal_batch', domain_key=domain.key) }}">
+            <input type="hidden" name="batch" value="{{ b.batch }}">
+            <input type="hidden" name="action" value="reject">
+            <button type="submit" class="btn btn-sm btn-danger">{{ t.console.inbox.batch_reject }}</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if batch %}<p class="hint">{{ t.console.inbox.batch_filtered }} <a href="{{ url_for('console_inbox', domain_key=domain.key) }}">{{ t.console.inbox.batch_clear }}</a></p>{% endif %}
+</div>
+{% endif %}
+
 {% if tasks %}
 <div class="panel">
   <h2>{{ t.console.inbox.tasks_h2 }} <span class="muted">{{ open_tasks|length }}</span></h2>
