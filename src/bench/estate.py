@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from . import domain_rubrics, libraries
+from . import domain_rubrics, libraries, quality
 
 #: Gap keys, in the order the matrix renders them.
 PILLARS = ("ontology", "knowledge", "eval", "inbox")
@@ -132,7 +132,8 @@ def _pillar_inbox(conn: Any, domain: dict) -> dict:
     }
 
 
-def matrix(conn: Any, *, domains: list[dict]) -> list[dict]:
+def matrix(conn: Any, *, domains: list[dict], probed: Optional[dict] = None,
+           with_quality: bool = True) -> list[dict]:
     """One row per domain: identity + tree depth + the four pillar summaries."""
     rows = []
     # One memo for the whole matrix: sub-domains inheriting the same grant must
@@ -148,6 +149,11 @@ def matrix(conn: Any, *, domains: list[dict]) -> list[dict]:
         ontology = _pillar_ontology(conn, domain)
         knowledge = _pillar_knowledge(conn, domain, cache=scope_cache)
         evaluation = _pillar_eval(conn, domain)
+        row_quality = (
+            quality.all_metrics(conn, domain_key=domain["key"], namespace=path,
+                                probed=probed)
+            if with_quality else {}
+        )
         rows.append(
             {
                 "domain": {**domain, "path": path},
@@ -156,16 +162,22 @@ def matrix(conn: Any, *, domains: list[dict]) -> list[dict]:
                 "knowledge": knowledge,
                 "eval": evaluation,
                 "inbox": _pillar_inbox(conn, domain),
+                "quality": row_quality,
                 "gaps": gaps_for(
-                    {"ontology": ontology, "knowledge": knowledge, "eval": evaluation}
+                    {"ontology": ontology, "knowledge": knowledge, "eval": evaluation},
+                    row_quality,
                 ),
             }
         )
     return rows
 
 
-def gaps_for(pillars: dict) -> list[str]:
-    """Which pillars are empty. Pure, so the template and the tests agree."""
+def gaps_for(pillars: dict, quality_metrics: Optional[dict] = None) -> list[str]:
+    """Which pillars are empty, plus which quality ratios are below their floor.
+
+    两类缺口刻意分开命名：``ontology`` 是"没有内容"，``quality:evidence`` 是
+    "有内容但立不住"。合成一个词，就会有人用灌量把第二个也抹平。
+    """
     gaps = []
     if (pillars["ontology"].get("curated_units") or 0) == 0:
         gaps.append("ontology")
@@ -179,6 +191,15 @@ def gaps_for(pillars: dict) -> list[str]:
         gaps.append("knowledge")
     if (pillars["eval"].get("standards") or 0) == 0:
         gaps.append("eval")
+    # 质量缺口：只有"有物可算且不达标"才算；无物可算（value is None）不是缺口，
+    # 那由对应柱的空态去表达，否则同一件事会被数两遍。
+    for name, metric in (quality_metrics or {}).items():
+        if name == "review_lag":
+            if metric.get("over_threshold"):
+                gaps.append("quality:review_lag")
+            continue
+        if quality.below_threshold(name, metric):
+            gaps.append(f"quality:{name}")
     return gaps
 
 

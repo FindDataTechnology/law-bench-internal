@@ -224,3 +224,36 @@ def all_metrics(
         "key_hygiene": key_hygiene(conn, domain_key=domain_key, namespace=ns),
         "judge": judge_health(probed=probed),
     }
+
+
+# ── 阈值与方向（策略只写在这里，派单与矩阵都读它）────────────────────────────
+
+#: 每项比率是"越高越好"还是"越低越好"。方向写错，减分就会变成加分。
+HIGHER_IS_BETTER: dict[str, bool] = {
+    "grounding": True,
+    "evidence": True,
+    "referential": True,
+    "key_hygiene": False,   # 还能继续归名的键越少越好
+}
+
+#: 达标线。这些值是策略，不是测量结果——所以集中一处，谁要改都得看见彼此。
+QUALITY_THRESHOLDS: dict[str, float] = {
+    "grounding": 0.5,      # 一半以上概念悬空 = 有量无骨
+    "evidence": 0.9,       # 依据是复核唯一抓手
+    "referential": 1.0,    # 悬空关系零容忍
+    "key_hygiene": 0.0,    # 能归名的键就该已归名
+}
+
+#: 评审时滞阈值（小时）；另算，因为它衡量的是"人跟不跟得上"，不是内容质量。
+REVIEW_LAG_HOURS = 24.0
+
+
+def below_threshold(name: str, metric: dict) -> Optional[bool]:
+    """这一项是否不达标。``None`` = 无物可算（不算不达标，也不算达标）。"""
+    value = metric.get("value")
+    if value is None:
+        return None
+    floor = QUALITY_THRESHOLDS.get(name)
+    if floor is None:
+        return None
+    return value < floor if HIGHER_IS_BETTER[name] else value > floor

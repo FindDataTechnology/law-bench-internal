@@ -127,7 +127,10 @@ def test_populated_pillars_are_not_gaps(conn):
     conn.commit()
 
     rows = estate.matrix(conn, domains=domains)
-    assert rows[0]["gaps"] == []
+    # 四柱都不再空 —— 但"柱不空"不再等于"没缺口"：这条种子单位没有依据，
+    # 所以质量缺口（evidence）应当在，这正是本 change 要区分开的两件事。
+    assert [g for g in rows[0]["gaps"] if not g.startswith("quality:")] == []
+    assert "quality:evidence" in rows[0]["gaps"]
     assert rows[0]["knowledge"]["chunks"] == 1
     assert rows[0]["knowledge"]["libraries"] == 1
     assert rows[0]["knowledge"]["sources"] == 1
@@ -300,3 +303,52 @@ def test_retired_units_do_not_count_as_curated(conn):
     conn.commit()
     row = estate.matrix(conn, domains=domains)[0]
     assert row["ontology"]["curated_units"] == 1
+
+
+def test_quality_gap_appears_below_the_floor_and_closes_with_evidence(conn):
+    """缺口消失 ≠ 达标：证据率不足时出质量缺口，补上依据即消失。"""
+    domains = _domains(conn)
+    conn.execute(
+        "INSERT INTO knowledge_units (kind, namespace, external_key, body, created_at, updated_at) "
+        "VALUES ('clause','legal','gb-1','b','now','now')"
+    )
+    conn.commit()
+    gaps = estate.matrix(conn, domains=domains)[0]["gaps"]
+    assert "quality:evidence" in gaps
+
+    # 补上可回源的依据后，比率升到 1.0，质量缺口应当消失
+    conn.execute(
+        "UPDATE knowledge_units SET attrs = '{\"chunk_id\": \"c1\"}'::jsonb "
+        "WHERE namespace='legal' AND external_key='gb-1'"
+    )
+    conn.commit()
+    gaps = estate.matrix(conn, domains=domains)[0]["gaps"]
+    assert "quality:evidence" not in gaps
+
+
+def test_a_metric_with_no_denominator_is_not_a_gap(conn):
+    """无物可算（None）不算不达标——否则空域会被数两遍。"""
+    rows = estate.matrix(conn, domains=_domains(conn))
+    assert rows[0]["quality"]["grounding"]["value"] is None
+    assert "quality:grounding" not in rows[0]["gaps"]
+
+
+def test_quality_gaps_are_dispatchable(conn):
+    """质量缺口要能像空柱一样派单，且重复派单收敛。"""
+    from src.bench import dispatch
+
+    domains = _domains(conn)
+    conn.execute(
+        "INSERT INTO knowledge_units (kind, namespace, external_key, body, created_at, updated_at) "
+        "VALUES ('clause','legal','gb-1','b','now','now')"
+    )
+    conn.commit()
+    rows = dispatch.rows_for_gap(conn, domains=domains, gap="quality:evidence")
+    assert dispatch.dispatchable(rows, "quality:evidence"), "证据缺口应当可派"
+
+    first = dispatch.dispatch(conn, rows=rows, gap="quality:evidence",
+                              assignee="agent:warden@legal", created_by="t")
+    assert len(first["created"]) == 1
+    again = dispatch.dispatch(conn, rows=rows, gap="quality:evidence",
+                              assignee="agent:warden@legal", created_by="t")
+    assert again["created"] == [] and again["already_open"], "同域同目标不重复派"
