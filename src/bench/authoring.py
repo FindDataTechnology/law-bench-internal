@@ -30,7 +30,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from . import store, templates, workspaces
+from . import keys, store, templates, workspaces
 
 # Distribution-contract anchor (see module docstring): the deterministic
 # external-key convention for relationship units. Do not change it.
@@ -263,6 +263,42 @@ def _commit_with_event(
     conn.commit()
 
 
+def _fold_write_key(
+    *, domain: dict, external_key: str, attrs: Optional[dict]
+) -> tuple[str, Optional[dict]]:
+    """把写入的键按该域已注册的规则归名（写入边界，不是调用方各自负责）。
+
+    为什么在这里：归名过去只发生在两个调用方（取目录 ``corpus_catalog`` 与抽取
+    ``extraction``），而 ``authoring_create_unit`` / 提案确认 / 批量导入都原样落库。
+    结果是同一个实体两个键，两条都进本体——2026-11-09 实测有一批 401 条单位因为
+    父键未归名而全部要退掉重来。写入方一多（舰队 + 七个岗位），
+    "记得 import pack" 必然失效，所以把规则下沉到唯一写入口。
+
+    三条纪律：
+
+    - 该域没有注册规则 → **不归名**（安全默认：宁可少合并，不可凭空合并）；
+    - 归名后与原写法不同 → 原写法进 ``attrs.aliases``，并记下生效的规则名，
+      使合并可解释；
+    - 归名结果为空（规则把整串吃掉了）→ 退回原写法，绝不写空键。
+    """
+    raw = (external_key or "").strip()
+    if not raw:
+        return raw, attrs
+    rules = keys.rules_for(domain.get("key") or "")
+    if not rules:
+        return raw, attrs
+    folded, applied = keys.fold(raw, rules)
+    folded = (folded or "").strip()
+    if not folded or folded == raw:
+        return raw, attrs
+    merged = dict(attrs or {})
+    aliases = set(merged.get("aliases") or [])
+    aliases.add(raw)
+    merged["aliases"] = sorted(aliases)
+    merged["folded_by"] = list(applied)
+    return folded, merged
+
+
 def _create_unit(
     conn: Any,
     *,
@@ -275,8 +311,11 @@ def _create_unit(
     attrs: Optional[dict],
     vocab_key: str,
 ) -> dict:
-    """Shared create path: vocabulary gate, KU upsert, append-only event."""
+    """Shared create path: vocabulary gate, key folding, KU upsert, append-only event."""
     _gate_kind(conn, domain=domain, kind=kind, vocab_key=vocab_key)
+    external_key, attrs = _fold_write_key(
+        domain=domain, external_key=external_key, attrs=attrs
+    )
     # The op is decided by prior existence, not by the upsert result: the KU
     # upsert cannot distinguish create from update (ON CONFLICT DO UPDATE).
     existed = store.get_knowledge_unit(
@@ -409,15 +448,23 @@ def authoring_create_units(
     domain = _load_domain(conn, domain_key=domain_key)
     if not units:
         return []
+    # Fold first, then dedupe: two rows whose keys fold to the same identity are
+    # one row, and the duplicate must be caught before anything is written.
+    folded: list[dict] = []
     seen: set[tuple[str, str]] = set()
     for unit in units:
         kind, key = unit.get("kind"), unit.get("external_key")
         if not kind or not key:
             raise ValueError("every unit needs both 'kind' and 'external_key'")
+        key, attrs = _fold_write_key(
+            domain=domain, external_key=key, attrs=unit.get("attrs")
+        )
         if (kind, key) in seen:
             raise ValueError(f"duplicate key in one batch: {kind!r}/{key!r}")
         seen.add((kind, key))
         _gate_kind(conn, domain=domain, kind=kind, vocab_key="entity_types")
+        folded.append({**unit, "external_key": key, "attrs": attrs})
+    units = folded
 
     written: list[dict] = []
     try:
