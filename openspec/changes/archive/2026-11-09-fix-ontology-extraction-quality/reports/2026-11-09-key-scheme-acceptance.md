@@ -59,3 +59,22 @@ missing_parent=0 bad_kind=0 bad_endpoint=0
   我第一版直接 `from packs.legal import ...`，被 `test_kernel_imports_no_pack` 逮住。
 - 归一不做模糊：`宪法` 与 `宪法修正案` 明确不合并（`DOCUMENT_SUFFIXES` 显式列出）。
 - 手写导入同规：`kind=clause` 的键必须带 `#父法`，不许绕过抽取的键规则。
+
+## 五、收尾：旧批次已驳、冒烟单元已软删（2026-11-09）
+
+```
+before: sample-statutes-2026-11-09   pending 16
+        keyscheme-statutes-2026-11-09 pending 6
+after : sample-statutes-2026-11-09   rejected 16   ← 走真实批量驳回路由（lead 闸 + admin 直通）
+        keyscheme-statutes-2026-11-09 pending  6   ← 留给人复核
+legal 域的 live 单元：[]（smoke-clause-001 已软删，可恢复）
+```
+
+estate 现在如实报缺口：
+
+```
+legal ontology: {declared_types: 2, curated_units: 0, smoke_units: 1}  gaps: ['ontology']
+```
+
+`curated_units=0` 是对的——本体的真实内容仍是空的。这条从「看起来有 1 条」
+变成「0 条 + 1 条测试数据」，是这一路修下来最该有的诚实状态。
