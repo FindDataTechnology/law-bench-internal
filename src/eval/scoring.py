@@ -309,6 +309,35 @@ def _marker_in_contract(reasoning: Optional[str]) -> bool:
     return False
 
 
+#: 判定一次 judge 调用失败是不是**瞬态**（重试可能成功）。
+#:
+#: 原实现只匹配 ``RateLimit|429|ServiceUnavailable|503`` 四个子串（审计 03 §4）。
+#: 中继饱和时真实发生的失败是超时、连接重置、5xx、截断响应——一个都不在列表里，
+#: 于是本来重试一次就能成功的调用被直接放弃，再被记成 FAIL/无效，白丢一次判定。
+#: 这里补上异常类名与常见 5xx。刻意**不**匹配 `Validation`/`ValueError` 这类
+#: 确定性错误——重试它们只是浪费三次往返。
+_TRANSIENT_JUDGE_ERROR_MARKERS = (
+    "RateLimit", "429",
+    "ServiceUnavailable", "503",
+    "APITimeoutError", "Timeout", "timed out",
+    "APIConnectionError", "Connection reset", "ConnectionError", "ConnectError",
+    "InternalServerError", "500", "502", "504",
+    "BadGateway", "GatewayTimeout",
+    "RemoteProtocolError", "ReadTimeout", "WriteTimeout",
+    "JSONDecodeError",  # 截断响应
+)
+
+
+def _is_transient_judge_error(error_text: str) -> bool:
+    """True when the judge-call failure looks transient (worth a retry).
+
+    只看错误文本，因为 deepeval 会把 openai SDK 的异常包成自己的类型，
+    ``isinstance`` 拿不到原类。
+    """
+    s = error_text or ""
+    return any(marker in s for marker in _TRANSIENT_JUDGE_ERROR_MARKERS)
+
+
 def classify_structural_soundness(
     reasoning: Optional[str], success: bool, error: Optional[str]
 ) -> Optional[str]:
@@ -327,13 +356,18 @@ def classify_structural_soundness(
       ``CONFIDENCE: <0.xx>`` self-report is missing/malformed
       (:func:`parse_confidence` returned ``None``). A pass verdict that cannot
       be verified is unverifiable, not green.
-    - ``None`` — no structural problem detected. Non-empty ``error`` means the
-      judge call itself failed: that is the EXISTING error channel's concern
-      (the row keeps its error-suffixed reasoning), so this classifier returns
-      ``None`` and leaves that behavior unchanged.
+    - ``"judge_call_error"`` — the judge call itself never produced a verdict
+      (``error`` non-empty: timeout / connection reset / relay 5xx / truncated
+      JSON). **This must be ``invalid``, not ``fail``.** 原实现这里是
+      ``if error: return None``，于是这些行按 ``success=False`` 记成 ``fail``
+      并计入分母——中继饱和时一批 APITimeoutError 会把合格条款判成不合格，
+      自迭代循环据此重写本来正确的内容（审计 03 §4；`property_service`
+      掉到 0/10 就是这条路）。这也与本文件的「宁无效不假绿」相反：
+      没测成 ≠ 不合格。
+    - ``None`` — no structural problem detected.
     """
     if error:
-        return None
+        return "judge_call_error"
     if _marker_in_contract(reasoning):
         return "marker_in_contract"
     if success and (not reasoning or not reasoning.strip()):
@@ -418,8 +452,7 @@ def evaluate_contract(
                 return
             except Exception as e:
                 s = str(e)
-                if ("RateLimit" in s or "429" in s or "ServiceUnavailable" in s
-                        or "503" in s) and attempt < 2:
+                if _is_transient_judge_error(s) and attempt < 2:
                     time.sleep(8 * (attempt + 1))
                     continue
                 metric.error = s  # one bad judge call must not sink the run

@@ -123,14 +123,32 @@ class TestContractViolation:
 
 
 class TestErrorChannel:
-    def test_error_set_returns_none_regardless(self):
-        # judge-call failure is the EXISTING error channel's concern
-        assert classify_structural_soundness(None, True, "boom") is None
+    def test_error_set_is_invalid_regardless_of_other_fields(self):
+        """judge 调用失败 → 一律 `invalid`，**不再**返回 None。
+
+        **这条契约在 2026-11-09 变了**（审计 03 §4，提交见 `harden-ponytail-p0`
+        `03 §4` 条目）。旧契约是「error 归既有错误通道管，本分类器返回 None」，
+        后果是：measure 从未完成 → `success=False` → `verdict="fail"` **并计入分母**。
+        中继饱和时一批 `APITimeoutError` 就把合格条款判成不合格，自迭代循环据此
+        重写本来正确的内容——`property_service` 掉到 0/10 就是这条路。
+
+        新契约：没测成 ≠ 不合格。带 error 的行一律 `invalid`，不计分母、不计通过，
+        与同文件「宁无效不假绿」的原则一致。
+
+        下面三条覆盖三种「同时还有别的信号」的组合——都必须以 error 为准。
+        """
+        # 1. error + 看似 pass 的字段
+        assert classify_structural_soundness(None, True, "boom") == "judge_call_error"
+        # 2. error + 推理文本（文本是旧的/不完整的，不许拿它判结构）
         assert (
             classify_structural_soundness("该合同应当包含PASS标记。", False, "boom")
-            is None
+            == "judge_call_error"
         )
-        assert classify_structural_soundness("ok\nCONFIDENCE: 0.90", True, "err") is None
+        # 3. error + 完整合法的 pass 文本（仍然 invalid：那次判定根本没过）
+        assert (
+            classify_structural_soundness("ok\nCONFIDENCE: 0.90", True, "err")
+            == "judge_call_error"
+        )
 
 
 # --- evaluate_contract integration --------------------------------------------
