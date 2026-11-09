@@ -36,6 +36,11 @@ def _pillar_ontology(conn: Any, domain: dict) -> dict:
     ontology where there was only left-over test data. Excluding it is not
     deletion (the row stays, and the page names the count); it keeps the number
     answering "did a human curate anything here".
+
+    Soft-deleted units are excluded for the same reason — a retired unit is no
+    longer curated. Measured 2026-11-10, the gov line read 85 curated units while
+    31 were live: the rest were rows a curation pass had retired, still counted
+    because the query carried no deleted filter.
     """
     from . import ontology_import
 
@@ -47,7 +52,8 @@ def _pillar_ontology(conn: Any, domain: dict) -> dict:
         (domain["template_id"],),
     ).fetchone()
     rows = conn.execute(
-        "SELECT kind, external_key, body FROM knowledge_units WHERE namespace = %s",
+        "SELECT kind, external_key, body FROM knowledge_units "
+        "WHERE namespace = %s AND (tags->>'deleted') IS NULL",
         (domain.get("path") or domain["key"],),
     ).fetchall()
     smoke = [r for r in rows if ontology_import.is_smoke({"external_key": r["external_key"],

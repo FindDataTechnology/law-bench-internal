@@ -280,3 +280,23 @@ def test_real_units_still_count(conn):
     row = estate.matrix(conn, domains=domains)[0]
     assert row["ontology"]["curated_units"] == 1
     assert row["ontology"]["smoke_units"] == 0
+
+
+def test_retired_units_do_not_count_as_curated(conn):
+    """A soft-deleted unit is not curated — the number must mean that.
+
+    Measured 2026-11-10: the gov line reported 85 curated units while 31 were
+    live; the difference was rows a curation pass had retired.
+    """
+    domains = _domains(conn)
+    conn.execute(
+        "INSERT INTO knowledge_units (kind, namespace, external_key, body, created_at, updated_at) "
+        "VALUES ('clause','legal','live-1','在库里','now','now')"
+    )
+    conn.execute(
+        "INSERT INTO knowledge_units (kind, namespace, external_key, body, tags, created_at, updated_at) "
+        "VALUES ('clause','legal','retired-1','已退掉','{\"deleted\": true}','now','now')"
+    )
+    conn.commit()
+    row = estate.matrix(conn, domains=domains)[0]
+    assert row["ontology"]["curated_units"] == 1
