@@ -1,0 +1,43 @@
+name: Knowledge Surface Integrity
+
+# harden-knowledge-surfaces 5.2：知识面完整性契约在 law-bench 侧的断言闸。
+#
+# 本仓此前没有任何测试 CI（`.github/workflows` 只有 docs 与 image）——顶层套件
+# 需要一个可达的 PostgreSQL（见 pyproject 的 pytest 注释），所以一直没接。
+# 这里只跑**hermetic 子集**：检索降级断言不碰 DB，不需要 PG 服务。
+#
+# 断言覆盖（fd-coding-law-bench-mcp/tests/test_rag_tool.py）：
+#   R3 读路径三态——命中 / 有效但无匹配 / 上游不可用，三者必须可判别。
+#   把 `tools/rag.py` 的 `except: return []` 改回去，这个作业会红。
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  retrieval-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install (root + MCP sub-package + test tooling)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install -e fd-coding-law-bench-mcp
+          pip install pytest pytest-asyncio
+
+      # The sub-package wraps the law-bench `src.*` modules in place, so both
+      # trees must be importable: `src` from the root, `fd_coding_law_bench_mcp`
+      # from the sub-package.
+      - name: Retrieval degradation assertions
+        env:
+          PYTHONPATH: '.:fd-coding-law-bench-mcp/src'
+        run: |
+          pytest -q fd-coding-law-bench-mcp/tests/test_rag_tool.py
