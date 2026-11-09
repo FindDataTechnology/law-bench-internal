@@ -595,7 +595,21 @@ def adopt_clauses(
                 "capped": False, "remaining": 0, "duplicates": split["duplicates"]}
     parent = (law_key or "").strip() or _canonical(
         (fetched["title"] or doc_id), domain_key)
-    batch = clauses[:limit]
+    # One click must make progress. Cutting the first `limit` articles every time
+    # would rewrite the same ones and report the same "remaining" forever — the
+    # reader would click, see 200 written, and still be 1000 short. So the batch
+    # is the articles that are not in the ontology yet, and a second click
+    # continues where the first stopped.
+    existing = {
+        u["external_key"]
+        for u in authoring.authoring_live_entities(conn, domain_key=domain_key)
+        if u["kind"] == mapping["clause_kind"]
+    }
+    todo = [c for c in clauses if keys.clause_key(parent, c["no"]) not in existing]
+    if not todo:
+        return {"adopted": 0, "key": parent, "reason": "nothing_new", "capped": False,
+                "remaining": 0, "duplicates": split["duplicates"]}
+    batch = todo[:limit]
     units = []
     for clause in batch:
         units.append({
@@ -614,12 +628,13 @@ def adopt_clauses(
     written = authoring.authoring_create_units(
         conn, domain_key=domain_key, units=units, operator=operator
     )
+    remaining = len(todo) - len(batch)
     return {
         "adopted": len(written),
         "key": parent,
         "reason": None,
-        "capped": len(clauses) > limit,
-        "remaining": max(0, len(clauses) - limit),
+        "capped": remaining > 0,
+        "remaining": remaining,
         "duplicates": split["duplicates"],
         "truncated_document": bool(fetched["truncated"]),
     }

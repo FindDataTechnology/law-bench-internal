@@ -391,3 +391,38 @@ def test_bulk_create_writes_one_event_per_unit(conn):
     assert len(written) == 2
     events = conn.execute("SELECT COUNT(*) AS n FROM authoring_events").fetchone()
     assert events["n"] == 2
+
+
+def test_a_second_click_continues_instead_of_rewriting_the_first_page(conn, fake):
+    """The cap must not become a ceiling: clicking again has to make progress."""
+    _library(conn)
+    text = "".join(f"第{i}条 内容{i}。\n" for i in range(1, 8))
+    fake({"7": [{"seq": 0, "text": text}]}, title={"7": "某法"})
+    first = corpus_catalog.adopt_clauses(
+        conn, domain_key="legal", library_key="law-library", source_key="statutes",
+        doc_id="7", operator="t", limit=3)
+    second = corpus_catalog.adopt_clauses(
+        conn, domain_key="legal", library_key="law-library", source_key="statutes",
+        doc_id="7", operator="t", limit=3)
+    third = corpus_catalog.adopt_clauses(
+        conn, domain_key="legal", library_key="law-library", source_key="statutes",
+        doc_id="7", operator="t", limit=3)
+    assert (first["adopted"], first["remaining"]) == (3, 4)
+    assert (second["adopted"], second["remaining"]) == (3, 1)
+    assert (third["adopted"], third["remaining"]) == (1, 0)
+    keys = sorted(r["external_key"] for r in conn.execute(
+        "SELECT external_key FROM knowledge_units WHERE kind='clause'").fetchall())
+    assert keys == [f"某法#第{i}条" for i in range(1, 8)]
+
+
+def test_adopting_everything_already_present_says_nothing_new(conn, fake):
+    _library(conn)
+    fake({"7": [{"seq": 0, "text": "第一条 甲。\n第二条 乙。"}]}, title={"7": "某法"})
+    corpus_catalog.adopt_clauses(
+        conn, domain_key="legal", library_key="law-library", source_key="statutes",
+        doc_id="7", operator="t")
+    again = corpus_catalog.adopt_clauses(
+        conn, domain_key="legal", library_key="law-library", source_key="statutes",
+        doc_id="7", operator="t")
+    assert again["adopted"] == 0
+    assert again["reason"] == "nothing_new"
