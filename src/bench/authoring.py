@@ -20,8 +20,19 @@ Key conventions locked in this module are distribution-contract anchors:
   already-published data.
 
 Style: borrowed connection (never opened or closed here), ``%s`` placeholders,
-one ``conn.commit()`` at the end of each write, JSONB via ``json.dumps``/
-``json.loads``.
+JSONB via ``json.dumps``/``json.loads``.
+
+事务（2026-11-09 修正，审计 03 §2/§8）：**每个写入口把自己的全部语句包在
+``with conn.transaction():`` 里**，不要用 ``conn.commit()``。
+
+原因：本进程的共享连接是 ``psycopg.connect(..., autocommit=True)``（为了让长 LLM
+调用不挂长事务）。在 psycopg 3 里 ``commit()``/``rollback()`` 在
+``transaction_status == IDLE`` 时是 **no-op**，而 autocommit 连接永远 IDLE。所以
+原来的「one ``conn.commit()`` at the end of each write」是一句空话：KU 写入与
+``authoring_events`` 事件各自立即提交，事件写入失败时 KU 已经落库、``rollback()``
+什么也不做——调用方看到报错但写入其实成功了，审计轨迹里却没有那一行。
+``conn.transaction()`` 在 autocommit 连接上会显式 BEGIN/COMMIT，既恢复原子性，
+又不必改掉全局 autocommit。
 """
 
 from __future__ import annotations
@@ -213,43 +224,6 @@ def _record_event(
     return _event_to_dict(cur.fetchone())
 
 
-def _commit_with_event(
-    conn: Any,
-    *,
-    domain: dict,
-    kind: str,
-    external_key: str,
-    op: str,
-    before: Optional[dict],
-    after: Optional[dict],
-    operator: str,
-) -> None:
-    """Append the change event, then commit once.
-
-    The event insert shares the write's transaction: if it raises, the
-    exception propagates to the caller with nothing further committed (the
-    transaction is rolled back so the connection stays usable).
-    """
-    try:
-        _record_event(
-            conn,
-            domain_id=domain["id"],
-            unit_kind=kind,
-            unit_key=external_key,
-            op=op,
-            before=before,
-            after=after,
-            operator=operator,
-        )
-    except Exception:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        raise
-    conn.commit()
-
-
 def _create_unit(
     conn: Any,
     *,
@@ -262,35 +236,41 @@ def _create_unit(
     attrs: Optional[dict],
     vocab_key: str,
 ) -> dict:
-    """Shared create path: vocabulary gate, KU upsert, append-only event."""
-    _gate_kind(conn, domain=domain, kind=kind, vocab_key=vocab_key)
-    # The op is decided by prior existence, not by the upsert result: the KU
-    # upsert cannot distinguish create from update (ON CONFLICT DO UPDATE).
-    existed = store.get_knowledge_unit(
-        conn, kind=kind, external_key=external_key, namespace=domain["key"]
-    )
-    written = store.upsert_knowledge_unit(
-        conn,
-        kind=kind,
-        external_key=external_key,
-        body=body,
-        namespace=domain["key"],
-        tags=tags,
-        attrs=attrs,
-        tier="raw",
-        provenance={"operator": operator, "via": "authoring"},
-        commit=False,
-    )
-    _commit_with_event(
-        conn,
-        domain=domain,
-        kind=kind,
-        external_key=external_key,
-        op="create" if existed is None else "update",
-        before=_copy_unit(existed) if existed is not None else None,
-        after=written,
-        operator=operator,
-    )
+    """Shared create path: vocabulary gate, KU upsert, append-only event.
+
+    **整个函数在一个事务里**：连接是 autocommit 的（见模块顶部的「事务」说明），所以这里显式 ``conn.transaction()`` 才能让「unit 落库」与
+    「事件落库」要么都成、要么都不成。否则事件写入失败会留下一条没有审计行的
+    内容变更——正是审计 03 §2 描述的失败面。
+    """
+    with conn.transaction():
+        _gate_kind(conn, domain=domain, kind=kind, vocab_key=vocab_key)
+        # The op is decided by prior existence, not by the upsert result: the KU
+        # upsert cannot distinguish create from update (ON CONFLICT DO UPDATE).
+        existed = store.get_knowledge_unit(
+            conn, kind=kind, external_key=external_key, namespace=domain["key"]
+        )
+        written = store.upsert_knowledge_unit(
+            conn,
+            kind=kind,
+            external_key=external_key,
+            body=body,
+            namespace=domain["key"],
+            tags=tags,
+            attrs=attrs,
+            tier="raw",
+            provenance={"operator": operator, "via": "authoring"},
+            commit=False,
+        )
+        _record_event(
+            conn,
+            domain_id=domain["id"],
+            unit_kind=kind,
+            unit_key=external_key,
+            op="create" if existed is None else "update",
+            before=_copy_unit(existed) if existed is not None else None,
+            after=written,
+            operator=operator,
+        )
     return written
 
 
@@ -301,42 +281,46 @@ def _soft_delete_unit(
 
     Content and metadata are preserved unchanged so the event stream stays
     replayable; only ``tags["deleted"]`` and the provenance stamp move.
+
+    **整个函数在一个事务里**（理由见模块顶部的「事务」说明）：连接是 autocommit 的，
+    ``commit()`` 在那里是 no-op，不显式开事务就会出现「KU 已改、事件没写」。
     """
-    prior = store.get_knowledge_unit(
-        conn, kind=kind, external_key=external_key, namespace=domain["key"]
-    )
-    if prior is None:
-        raise ValueError(
-            f"unit {kind!r}/{external_key!r} not found in domain {domain['key']!r}"
+    with conn.transaction():
+        prior = store.get_knowledge_unit(
+            conn, kind=kind, external_key=external_key, namespace=domain["key"]
         )
-    tags = dict(prior["tags"] or {})
-    tags["deleted"] = True
-    provenance = dict(prior["provenance"] or {})
-    provenance["operator"] = operator
-    provenance["via"] = "authoring"
-    written = store.upsert_knowledge_unit(
-        conn,
-        kind=kind,
-        external_key=external_key,
-        body=prior["body"],
-        namespace=domain["key"],
-        tags=tags,
-        attrs=prior["attrs"],
-        tier=prior["tier"],
-        source_path=prior["source_path"],
-        provenance=provenance,
-        commit=False,
-    )
-    _commit_with_event(
-        conn,
-        domain=domain,
-        kind=kind,
-        external_key=external_key,
-        op="delete",
-        before=_copy_unit(prior),
-        after=None,
-        operator=operator,
-    )
+        if prior is None:
+            raise ValueError(
+                f"unit {kind!r}/{external_key!r} not found in domain {domain['key']!r}"
+            )
+        tags = dict(prior["tags"] or {})
+        tags["deleted"] = True
+        provenance = dict(prior["provenance"] or {})
+        provenance["operator"] = operator
+        provenance["via"] = "authoring"
+        written = store.upsert_knowledge_unit(
+            conn,
+            kind=kind,
+            external_key=external_key,
+            body=prior["body"],
+            namespace=domain["key"],
+            tags=tags,
+            attrs=prior["attrs"],
+            tier=prior["tier"],
+            source_path=prior["source_path"],
+            provenance=provenance,
+            commit=False,
+        )
+        _record_event(
+            conn,
+            domain_id=domain["id"],
+            unit_kind=kind,
+            unit_key=external_key,
+            op="delete",
+            before=_copy_unit(prior),
+            after=None,
+            operator=operator,
+        )
     return written
 
 
@@ -389,38 +373,41 @@ def authoring_update_unit(
 
     The event carries the full prior state as ``before`` and the written state
     as ``after``. Returns the stored KU dict.
+
+    **整个函数在一个事务里**（理由见模块顶部的「事务」说明）。
     """
     domain = _load_domain(conn, domain_key=domain_key)
-    _gate_kind(conn, domain=domain, kind=kind, vocab_key="entity_types")
-    prior = store.get_knowledge_unit(
-        conn, kind=kind, external_key=external_key, namespace=domain["key"]
-    )
-    if prior is None:
-        raise ValueError(
-            f"unit {kind!r}/{external_key!r} not found in domain {domain_key!r}"
+    with conn.transaction():
+        _gate_kind(conn, domain=domain, kind=kind, vocab_key="entity_types")
+        prior = store.get_knowledge_unit(
+            conn, kind=kind, external_key=external_key, namespace=domain["key"]
         )
-    written = store.upsert_knowledge_unit(
-        conn,
-        kind=kind,
-        external_key=external_key,
-        body=body,
-        namespace=domain["key"],
-        tags=tags,
-        attrs=attrs,
-        tier="raw",
-        provenance={"operator": operator, "via": "authoring"},
-        commit=False,
-    )
-    _commit_with_event(
-        conn,
-        domain=domain,
-        kind=kind,
-        external_key=external_key,
-        op="update",
-        before=_copy_unit(prior),
-        after=written,
-        operator=operator,
-    )
+        if prior is None:
+            raise ValueError(
+                f"unit {kind!r}/{external_key!r} not found in domain {domain_key!r}"
+            )
+        written = store.upsert_knowledge_unit(
+            conn,
+            kind=kind,
+            external_key=external_key,
+            body=body,
+            namespace=domain["key"],
+            tags=tags,
+            attrs=attrs,
+            tier="raw",
+            provenance={"operator": operator, "via": "authoring"},
+            commit=False,
+        )
+        _record_event(
+            conn,
+            domain_id=domain["id"],
+            unit_kind=kind,
+            unit_key=external_key,
+            op="update",
+            before=_copy_unit(prior),
+            after=written,
+            operator=operator,
+        )
     return written
 
 
