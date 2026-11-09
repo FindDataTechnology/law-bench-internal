@@ -421,6 +421,15 @@ def _search_external_pg(
 
                 rule = _json.loads(rule or "{}")
             where = rule.get("where") or {}
+            # Similarity search needs a vector column. A source without one is a
+            # text table: say so by name instead of letting Postgres answer with
+            # 字段 "embedding" 不存在.
+            if "embedding" not in table_columns(ext, table):
+                raise ValueError(
+                    f"source {src['source_key']!r} points at {table!r}, which has no "
+                    "'embedding' column — register it with source_kind 'text-table' "
+                    "instead of searching it"
+                )
             clauses = ["embedding IS NOT NULL"]
             params: list[Any] = []
             for col, val in sorted(where.items()):
@@ -678,14 +687,19 @@ def _count_external_pg(conn: Any, *, lib: dict, allowed: set[str]) -> int:
 
                 rule = _json.loads(rule or "{}")
             where = rule.get("where") or {}
-            clauses = ["embedding IS NOT NULL"]
+            # A text table has no vector column; only a real vector table is
+            # filtered on "has a vector". Assuming the column exists is what made
+            # the guide-cases count raise 字段 "embedding" 不存在.
+            clauses = ["embedding IS NOT NULL"] if "embedding" in table_columns(ext, table) else []
             params: list[Any] = []
             for col, val in sorted(where.items()):
                 if not _IDENT.match(col):
                     raise ValueError(f"unsafe filter column: {col!r}")
                 clauses.append(f"{col} = %s")
                 params.append(val)
-            sql = f"SELECT COUNT(*) FROM {table} WHERE {' AND '.join(clauses)}"
+            sql = f"SELECT COUNT(*) FROM {table}"
+            if clauses:
+                sql += " WHERE " + " AND ".join(clauses)
             total += int(ext.execute(sql, tuple(params)).fetchone()[0])
     return total
 
