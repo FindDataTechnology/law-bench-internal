@@ -561,6 +561,22 @@ def split_clauses(chunks: list[dict], *, document_complete: bool = True) -> dict
 # ── adoption ─────────────────────────────────────────────────────────────────
 
 
+def document_key(
+    conn: Any, *, domain_key: str, library_key: str, source_key: str,
+    doc_id: str,
+) -> str:
+    """The key this document would get — read-only, for previews and cleanups.
+
+    Same fold as adoption, so a page or a cleanup pass cannot disagree with what
+    ``adopt_document`` actually writes.
+    """
+    fetched = document_chunks(conn, library_key=library_key, source_key=source_key,
+                              doc_id=doc_id, limit=1)
+    if not fetched["chunks"]:
+        return ""
+    return _canonical(fetched["chunks"][0]["title"] or str(doc_id), domain_key)
+
+
 def adopt_document(
     conn: Any, *, domain_key: str, library_key: str, source_key: str,
     doc_id: str, operator: str,

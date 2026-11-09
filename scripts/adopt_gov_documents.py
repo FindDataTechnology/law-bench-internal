@@ -84,6 +84,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--library", default="text-library")
     ap.add_argument("--source", default="gov")
     ap.add_argument("--limit", type=int, default=40, help="最多取入多少份文档（按体量）")
+    ap.add_argument("--doc-types", default="办法,规定,规则,命令,决定,准则,标准",
+                    help="只取这些文种（逗号分隔，按元数据 doc_type）；传 * 表示不限")
+    ap.add_argument("--retire-types", default="",
+                    help="取入后，把文种不在 --doc-types 里的已取文档连同其关系退掉（试运行只报数）")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(argv)
 
@@ -91,18 +95,27 @@ def main(argv: list[str] | None = None) -> int:
 
     conn = connect()
     try:
-        page = corpus_catalog.documents(
+        # 体量排序只用来定「先看哪些」，不用来定「哪些重要」：实测最大的一批里
+        # 全是同系列的国债贴现通知。文种才是内容侧的信号，所以先按文种筛。
+        wanted = {t.strip() for t in (args.doc_types or "").split(",") if t.strip()}
+        scan = corpus_catalog.documents(
             conn, library_key=args.library, source_key=args.source,
-            limit=max(1, min(args.limit, 200)), domain_key=args.domain,
+            limit=200, window=2000, domain_key=args.domain,
         )
-        rows = page["rows"]
+        all_rows = scan["rows"]
+        meta_all = _read_metadata(conn, library_key=args.library, source_key=args.source,
+                                  doc_ids=[r["id"] for r in all_rows])
+        keep = [r for r in all_rows
+                if not wanted or wanted == {"*"}
+                or (meta_all.get(r["id"], {}).get("doc_type") or "") in wanted]
+        rows = keep[: max(1, min(args.limit, 200))]
+        page = {"total": len(keep), "partial": scan["partial"]}
         if not rows:
             print("no documents in scope", file=sys.stderr)
             return 1
-        meta = _read_metadata(conn, library_key=args.library, source_key=args.source,
-                              doc_ids=[r["id"] for r in rows])
-        print(f"documents in scope: {page['total']}; taking {len(rows)} "
-              f"(partial={page['partial']})")
+        meta = meta_all
+        print(f"documents matching doc_types={sorted(wanted) or '*'}: {page['total']}; "
+              f"taking {len(rows)} (partial={page['partial']})")
 
         adopted = agencies = relations = skipped_issuer = 0
         for row in rows:
@@ -137,6 +150,32 @@ def main(argv: list[str] | None = None) -> int:
                 operator="adopt_gov",
             )
             relations += 1
+
+        if args.retire_types:
+            retire = [r for r in all_rows
+                      if (meta_all.get(r["id"], {}).get("doc_type") or "") not in wanted]
+            keys = {k for k in (
+                corpus_catalog.document_key(conn, domain_key=args.domain,
+                                            library_key=args.library,
+                                            source_key=args.source, doc_id=r["id"])
+                for r in retire) if k}
+            print(f"would retire {len(keys)} documents outside doc_types={sorted(wanted)}")
+            if not args.dry_run:
+                live = authoring.authoring_live_entities(conn, domain_key=args.domain,
+                                                         limit=100000)
+                retired = relations = 0
+                for unit in live:
+                    if unit["kind"] == "document" and unit["external_key"] in keys:
+                        authoring.authoring_delete_unit(
+                            conn, domain_key=args.domain, kind="document",
+                            external_key=unit["external_key"], operator="adopt_gov")
+                        retired += 1
+                    elif unit["kind"] == "issued_by" and unit["external_key"].split("->")[0] in keys:
+                        authoring.authoring_delete_unit(
+                            conn, domain_key=args.domain, kind="issued_by",
+                            external_key=unit["external_key"], operator="adopt_gov")
+                        relations += 1
+                print(f"retired documents: {retired}; retired relations: {relations}")
 
         if args.dry_run:
             print("[dry-run] nothing written")

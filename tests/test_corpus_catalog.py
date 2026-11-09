@@ -510,3 +510,16 @@ def test_a_document_row_is_its_own_text(conn, split_tables):
     assert fetched["chunks"][0]["text"].startswith("第一条 公开范围")
     split = corpus_catalog.split_clauses(fetched["chunks"])
     assert [c["no"] for c in split["clauses"]] == [1, 2]
+
+
+def test_document_key_previews_exactly_what_adoption_writes(conn, fake):
+    """A preview/cleanup path must not compute a different key than the write."""
+    _library(conn)
+    fake({"7": [{"seq": 0, "text": "第一条 内容。"}]}, title={"7": "中华人民共和国合同法"})
+    preview = corpus_catalog.document_key(
+        conn, domain_key="legal", library_key="law-library", source_key="statutes",
+        doc_id="7")
+    written = corpus_catalog.adopt_document(
+        conn, domain_key="legal", library_key="law-library", source_key="statutes",
+        doc_id="7", operator="t")
+    assert preview == written["key"] == "合同法"
