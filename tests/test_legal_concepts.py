@@ -1,0 +1,226 @@
+"""The concept layer (§1-5): type, key branch, text-table sampling, starter set.
+
+Two things make this layer different from laws and clauses, and both are pinned
+here: a concept is addressed by its *name alone* (it is the same concept in every
+instrument that mentions it), and a concept is only trustworthy when it can be
+traced to the article it rests on.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+import packs.legal  # noqa: F401 — registers fold rules + the category predicate
+from packs.legal import entity_keys as legal_keys
+from src.bench import extraction, keys, ontology_import
+
+# scripts/ is not a package: import the publisher by path so the v2 schema and
+# the test that guards it cannot drift.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+from publish_legal_template_v2 import build_v2_schema  # noqa: E402
+
+
+def test_v2_adds_the_concept_layer_and_nothing_else():
+    v1 = {
+        "entity_types": ["clause", "law"],
+        "relationship_kinds": ["cites_law"],
+        "concept_structures": {"clause": ["body"]},
+        "tier_vocabulary": ["raw", "bronze", "silver", "gold"],
+        "sensitivity_vocabulary": ["public", "internal", "confidential"],
+        "corpus_declaration": {"source_types": []},
+    }
+    v2 = build_v2_schema(v1)
+    assert v2["entity_types"] == ["clause", "law", "concept"]
+    assert v2["relationship_kinds"] == ["cites_law", "defines"]
+    assert v2["tier_vocabulary"] == v1["tier_vocabulary"]      # untouched
+    assert v1["entity_types"] == ["clause", "law"]             # input not mutated
+
+
+def test_concept_key_is_name_only():
+    key, reason, meta = extraction.resolve_entity_key(
+        "连带清偿责任", kind="concept", chunk={"title": "指导案例9号"}, domain_key="legal"
+    )
+    assert key == "连带清偿责任" and reason is None
+    assert "law_key" not in meta          # a concept has no parent document
+
+
+def test_concept_is_cross_instrument():
+    """Same concept, two different source documents → one key."""
+    a, _r, _m = extraction.resolve_entity_key(
+        "违约责任", kind="concept", chunk={"title": "中华人民共和国合同法"}, domain_key="legal")
+    b, _r2, _m2 = extraction.resolve_entity_key(
+        "违约责任", kind="concept", chunk={"title": "中华人民共和国民法典"}, domain_key="legal")
+    assert a == b == "违约责任"
+
+
+def test_case_category_labels_are_not_concepts():
+    """Measured: 715 keyword tags, top four are 民事/刑事/行政/执行."""
+    for label in ("民事", "刑事", "行政", "执行", "国家赔偿"):
+        key, reason, _meta = extraction.resolve_entity_key(
+            label, kind="concept", chunk={}, domain_key="legal")
+        assert key is None and reason == "not_concept"
+
+
+def test_clause_branch_still_carries_its_parent():
+    """The concept branch must not weaken the clause rule."""
+    key, reason, meta = extraction.resolve_entity_key(
+        "第十二条", kind="clause", chunk={"title": "中华人民共和国合同法"}, domain_key="legal")
+    assert key == "合同法#第12条" and meta["clause_no"] == 12
+
+
+def test_concept_mode_prompt_asks_for_concepts_and_grounding():
+    schema = {"entity_types": ["clause", "law", "concept"],
+              "relationship_kinds": ["cites_law", "defines"]}
+    chunk = {"chunk_id": "9", "text": "股东应当依法履行清算义务", "title": "指导案例9号",
+             "source_key": "guide_cases"}
+    concept = extraction.build_prompt(schema=schema, chunks=[chunk], concept_mode=True,
+                                     domain_key="legal")
+    plain = extraction.build_prompt(schema=schema, chunks=[chunk], concept_mode=False)
+    assert "法律概念" in concept and "依据的条文" in concept
+    # The examples come from the pack, so this also proves the registration ran.
+    assert "居间合同" in concept
+    assert "法律概念" not in plain
+    assert "defines" in concept and "concept" in concept
+
+
+def test_starter_set_is_grounded_and_free_of_categories():
+    path = Path("packs/legal/starters/concepts-v1.json")
+    data = json.loads(path.read_text())
+    units = data["units"]
+    assert units, "the starter set must not be empty"
+    for unit in units:
+        assert unit["kind"] == "concept"
+        assert not legal_keys.is_case_category(unit["external_key"]), unit["external_key"]
+        attrs = unit["attrs"]
+        grounded = bool(attrs.get("statute_refs"))
+        # "no statute, rests on case law" is allowed — but it must *say so*.
+        declared_case = bool(attrs.get("source_case_no")) or attrs.get("grounding") == "case"
+        # Either it cites an article, or it says outright that it rests on case
+        # law — an empty both-ways entry is exactly what the spec forbids.
+        assert grounded or declared_case, unit["external_key"]
+    assert all("kind" in rel and rel["kind"] == "defines" for rel in data["relationships"])
+
+
+def test_starter_set_passes_the_import_planner(empty_db):
+    """The set must be importable without a single error row (dry run only)."""
+    from src.bench import templates, workspaces
+    from src.eval.store import ensure_schema
+
+    ensure_schema(db_path=empty_db)
+    conn = empty_db
+    schema = build_v2_schema({
+        "entity_types": ["clause", "law"], "relationship_kinds": ["cites_law"],
+        "concept_structures": {}, "tier_vocabulary": ["raw", "bronze", "silver", "gold"],
+        "sensitivity_vocabulary": ["public", "internal", "confidential"],
+        "corpus_declaration": {"source_types": []},
+    })
+    templates.create_template(conn=conn, name="legal-v2", schema=schema, created_by="t")
+    workspaces.instantiate_domain(
+        conn, key="legal", name="法律域", template_name="legal-v2",
+        template_version=None, created_by="t",
+    )
+    data = json.loads(Path("packs/legal/starters/concepts-v1.json").read_text())
+    rows = ontology_import.plan(conn, domain_key="legal", payload={
+        "units": data["units"], "relationships": [],
+    })
+    errors = [r for r in rows if r["action"] == "error"]
+    assert not errors, [e["reason"] for e in errors][:3]
+    assert all(r["action"] == "create" for r in rows)
+
+
+def test_text_table_sampling_reads_without_vectors(monkeypatch):
+    """The guide cases are read in place: extraction only needs text.
+
+    Re-embedding 293 cases into the statute collection would mix judgment
+    reasoning into a vector space people query for statutes.
+    """
+    import psycopg
+
+    calls = {}
+
+    class _Cur:
+        def __init__(self, rows, one=False):
+            self._rows, self._one = rows, one
+
+        def fetchall(self):
+            return self._rows
+
+        def fetchone(self):
+            return (self._rows or [None])[0] if self._one else (self._rows or [None])[0]
+
+    class _Conn:
+        def __init__(self, *a, **kw):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, sql, params=None):
+            calls.setdefault("sql", []).append(sql)
+            if "information_schema" in sql:
+                return _Cur([("case_no",), ("title",), ("gist",)])
+            return _Cur([(1, "居间合同要点", "指导案例1号"),
+                         (2, "和解协议要点", "指导案例2号")])
+
+    monkeypatch.setattr(psycopg, "connect", _Conn)
+    from src.bench import libraries as libs
+
+    lib = {"id": 1, "library_key": "case-library",
+           "backend": "pgvector-external", "location": {"dsn_env": "X"}
+           if False else {}}
+    monkeypatch.setattr(libs, "resolve_location", lambda lbl: {"dsn_env": "postgresql://x"})
+    monkeypatch.setattr(libs, "list_sources", lambda conn, library_id: [
+        {"source_key": "guide_cases", "uri": "guide_cases",
+         "ingest_rule": {"columns": {"text": "gist", "title": "title", "id": "case_no"}}}
+    ])
+    rows = extraction._sample_text_tables(None, lib={"id": 1, "library_key": "case-library"},
+                                          allowed={"guide_cases"}, limit=2)
+    assert [r["chunk_id"] for r in rows] == ["1", "2"]
+    assert rows[0]["text"] == "居间合同要点" and rows[0]["title"] == "指导案例1号"
+    assert rows[0]["law_id"] is None       # a case is not an instrument
+
+
+def test_missing_column_is_an_error_not_an_empty_page(monkeypatch):
+    import psycopg
+
+    class _Cur:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def fetchall(self):
+            return self._rows
+
+        def fetchone(self):
+            return None
+
+    class _Conn:
+        def __init__(self, *a, **kw):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, sql, params=None):
+            return _Cur([("case_no",), ("title",)])   # no `gist`
+
+    monkeypatch.setattr(psycopg, "connect", _Conn)
+    from src.bench import libraries as libs
+
+    monkeypatch.setattr(libs, "resolve_location", lambda lbl: {"dsn_env": "postgresql://x"})
+    monkeypatch.setattr(libs, "list_sources", lambda conn, library_id: [
+        {"source_key": "guide_cases", "uri": "guide_cases",
+         "ingest_rule": {"columns": {"text": "gist", "title": "title", "id": "case_no"}}}
+    ])
+    with pytest.raises(ValueError, match="no column"):
+        extraction._sample_text_tables(None, lib={"id": 1, "library_key": "case-library"},
+                                       allowed={"guide_cases"}, limit=2)

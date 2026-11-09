@@ -38,6 +38,26 @@ DOCUMENT_SUFFIXES: tuple[str, ...] = (
 #: The ordered rule list applied by :func:`canonical_name`.
 RULES: tuple[FoldRule, ...] = PREFIX_RULES
 
+#: Trading labels that look like concepts but are case *categories*. Measured
+#: 2026-11-09 on the guide cases: 715 keyword tags, 603 occurring once, and the
+#: top four are 民事/刑事/行政/执行 — case types, not legal concepts. Importing
+#: them would fill the ontology with filing metadata.
+CASE_CATEGORY_LABELS: frozenset[str] = frozenset({
+    "民事", "刑事", "行政", "执行", "国家赔偿", "民事诉讼", "行政诉讼",
+    "刑事诉讼", "民事诉讼", "执行实施", "执行监督", "执行复议",
+    "刑事附带民事", "民事公益诉讼", "行政公益诉讼", "司法协助",
+    "再审", "审判监督", "特别程序", "督促程序", "破产", "非诉",
+})
+
+#: Suffixes/stems that mark a concept-shaped name (used only to *prefer* the
+#: concept branch when a chunk is concept-rich; never to force a kind).
+CONCEPT_LIKE_SUFFIXES: tuple[str, ...] = ("责任", "义务", "权利", "合同", "行为", "原则", "制度")
+
+
+def is_case_category(name: str) -> bool:
+    """True when ``name`` is a case category rather than a legal concept."""
+    return (name or "").strip() in CASE_CATEGORY_LABELS
+
 
 def canonical_name(name: str) -> tuple[str, list[str]]:
     """Fold one entity name; ``(canonical, applied_rule_names)``."""
@@ -59,4 +79,10 @@ def is_distinct_document(name: str) -> bool:
 
 # Registering on import is what makes the kernel's ``rules_for`` answer for this
 # domain; a deployment that never imports the pack folds nothing (safe).
-register_rules("legal", RULES, is_distinct_document)
+#: Shown to the model as examples of the *shape* of a concept.
+CONCEPT_EXAMPLES: tuple[str, ...] = (
+    "违约责任", "连带清偿责任", "居间合同", "举证责任", "清算义务",
+)
+
+register_rules("legal", RULES, is_distinct_document, is_case_category,
+               CONCEPT_EXAMPLES)

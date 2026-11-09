@@ -153,16 +153,28 @@ def clause_key(parent_key: str, number: int) -> str:
 
 _RULES: dict[str, tuple] = {}
 _DISTINCT: dict[str, object] = {}
+_CONCEPT_REJECT: dict[str, object] = {}
+_CONCEPT_EXAMPLES: dict[str, tuple] = {}
 
 
 def register_rules(domain_key: str, rules: Iterable["FoldRule"],
-                   distinct_document=None) -> None:
-    """Register a domain's fold rules (called by a pack on import)."""
+                   distinct_document=None, concept_reject=None,
+                   concept_examples=()) -> None:
+    """Register a domain's key rules (called by a pack on import).
+
+    ``concept_reject`` answers "is this name a category label rather than a
+    concept" — the kernel cannot know that (案件类别 are domain vocabulary), but
+    it must be able to ask.
+    """
     if not domain_key:
         raise ValueError("domain_key is required")
     _RULES[domain_key] = tuple(rules)
     if distinct_document is not None:
         _DISTINCT[domain_key] = distinct_document
+    if concept_reject is not None:
+        _CONCEPT_REJECT[domain_key] = concept_reject
+    if concept_examples:
+        _CONCEPT_EXAMPLES[domain_key] = tuple(concept_examples)
 
 
 def rules_for(domain_key: str) -> tuple:
@@ -175,6 +187,16 @@ def rules_for(domain_key: str) -> tuple:
 
 def distinct_document_for(domain_key: str):
     return _DISTINCT.get(domain_key)
+
+
+def concept_reject_for(domain_key: str):
+    """The pack's "not a concept" predicate, if it registered one."""
+    return _CONCEPT_REJECT.get(domain_key)
+
+
+def concept_examples_for(domain_key: str) -> tuple:
+    """Example concept names the pack offers for the prompt (may be empty)."""
+    return _CONCEPT_EXAMPLES.get(domain_key, ())
 
 
 def registered() -> list[str]:

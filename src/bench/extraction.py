@@ -30,6 +30,7 @@ from typing import Any, Callable, Optional
 import httpx
 
 from src.bench import authoring, keys, libraries, ontology_import, proposals
+from src.search import library_index
 
 #: Bumped whenever the prompt changes — recorded on every proposal so a batch can
 #: be traced back to the instruction that produced it.
@@ -87,11 +88,28 @@ def sample_chunks(
     next_cursor = cursor
     for library_key, granted in sorted(scope.items()):
         lib = libraries.get_library(conn, library_key=library_key)
-        if lib is None or (lib.get("backend") or "") != "qdrant":
+        if lib is None:
             continue
-        wanted = set(sources) if sources else set(granted)
-        wanted &= set(granted)
+        backend = lib.get("backend") or ""
+        wanted = (set(sources) if sources else set(granted)) & set(granted)
         if not wanted:
+            continue
+        if backend == "pgvector-external":
+            # A text table needs no vectors: extraction only reads text. Sampling
+            # it here is why the guide cases can be used without re-embedding
+            # them into the statute collection (which would pollute that space).
+            collected.extend(
+                _sample_text_tables(
+                    conn, lib=lib, allowed=wanted, limit=limit - len(collected),
+                    skip=int(cursor or 0),
+                )
+            )
+            if len(collected) >= limit:
+                next_cursor = int(cursor or 0) + len(collected)
+                break
+            next_cursor = int(cursor or 0) + limit
+            continue
+        if backend != "qdrant":
             continue
         loc = libraries.resolve_location(lib)
         filt = _filter_for(conn, lib=lib, allowed=wanted)
@@ -172,6 +190,78 @@ def _spread(chunks: list[dict], limit: int, *, per_doc: int = 2) -> list[dict]:
     return picked
 
 
+#: Default column mapping for a ``text-table`` source. Overridable per source via
+#: ``ingest_rule.columns`` so one code path serves any table.
+DEFAULT_TABLE_COLUMNS = {
+    "text": "chunk_text",
+    "title": "title",
+    "id": "chunk_id",
+}
+
+
+def _sample_text_tables(
+    conn: Any, *, lib: dict, allowed: set[str], limit: int, skip: int = 0
+) -> list[dict]:
+    """Read rows from foreign text tables — no vectors involved.
+
+    The declared columns are honoured (``ingest_rule.columns``), and a missing
+    column raises with its name instead of returning an empty page: "the table
+    has nothing" and "you pointed at the wrong column" must not look alike.
+    """
+    import psycopg
+
+    loc = libraries.resolve_location(lib)
+    out: list[dict] = []
+    with psycopg.connect(loc["dsn_env"], connect_timeout=10) as ext:
+        for src in libraries.list_sources(conn, library_id=lib["id"]):
+            if src["source_key"] not in allowed:
+                continue
+            table = src["uri"]
+            if not library_index._IDENT.match(table or ""):
+                raise ValueError(f"unsafe table name: {table!r}")
+            rule = src.get("ingest_rule") or {}
+            if isinstance(rule, str):
+                import json as _json
+
+                rule = _json.loads(rule or "{}")
+            cols = {**DEFAULT_TABLE_COLUMNS, **(rule.get("columns") or {})}
+            present = {
+                r[0]
+                for r in ext.execute(
+                    "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+                    (table,),
+                ).fetchall()
+            }
+            missing = [c for c in cols.values() if c not in present]
+            if missing:
+                raise ValueError(
+                    f"source {src['source_key']!r}: table {table!r} has no column(s) {missing}"
+                )
+            order = rule.get("order_by") or cols["id"]
+            rows = ext.execute(
+                f"SELECT {cols['id']} AS chunk_id, {cols['text']} AS text, "
+                f"{cols['title']} AS title FROM {table} "
+                f"WHERE coalesce({cols['text']}, '') <> '' "
+                f"ORDER BY {order} OFFSET %s LIMIT %s",
+                (max(0, skip), max(1, limit)),
+            ).fetchall()
+            for chunk_id, text, title in rows:
+                if ontology_import.is_smoke({"external_key": str(chunk_id), "body": text}):
+                    continue
+                out.append(
+                    {
+                        "chunk_id": str(chunk_id),
+                        "library": lib["library_key"],
+                        "source_key": src["source_key"],
+                        "law_id": None,
+                        "title": title,
+                        "chunk_no": None,
+                        "text": text,
+                    }
+                )
+    return out
+
+
 def _filter_for(conn: Any, *, lib: dict, allowed: set[str]) -> Optional[dict]:
     from src.search import library_index
 
@@ -207,8 +297,24 @@ def verify_quote(quote: str, chunk_text: str) -> bool:
 # ── prompt & parsing ────────────────────────────────────────────────────────
 
 
-def build_prompt(*, schema: dict, chunks: list[dict]) -> str:
-    """Instruction + the chunk texts, constrained to the domain's vocabularies."""
+def _concept_examples(domain_key: str) -> list[str]:
+    """Names the pack offers as concept examples (empty when it offers none)."""
+    try:
+        return list(keys.concept_examples_for(domain_key))
+    except Exception:
+        return []
+
+
+def build_prompt(*, schema: dict, chunks: list[dict], concept_mode: bool = False,
+                 domain_key: str = "") -> str:
+    """Instruction + the chunk texts, constrained to the domain's vocabularies.
+
+    ``concept_mode`` switches the ask from "find articles" to "find the legal
+    concepts this reasoning establishes, and the article each rests on". The
+    corpus decides which makes sense: statute text is structured as
+    「第N条」, so it can only yield clauses; a judgment's 裁判要点 is written in
+    conceptual language and is where concepts live.
+    """
     entity_types = sorted((schema or {}).get("entity_types") or [])
     relation_kinds = sorted((schema or {}).get("relationship_kinds") or [])
     blocks = []
@@ -216,6 +322,17 @@ def build_prompt(*, schema: dict, chunks: list[dict]) -> str:
         blocks.append(
             f"[chunk_id={c['chunk_id']}] title={c.get('title')} "
             f"source={c['source_key']}\n{c['text'][:1200]}"
+        )
+    concept_instruction = ""
+    if concept_mode:
+        # Examples come from the pack: the kernel must not carry domain
+        # vocabulary (there is a gate). It only knows *how* to ask.
+        examples = _concept_examples(domain_key)
+        sample = f"（如 {('、'.join(examples))}）" if examples else ""
+        concept_instruction = (
+            f"这份语料是裁判说理/裁判要点。请优先抽取**法律概念**{sample}，"
+            "并为每个概念指出它依据的条文（用 quote 逐字引用原文里的条文表述）。"
+            "不要抽取案件类别这类归档标签。"
         )
     return f"""你是本体候选抽取器（prompt_version={PROMPT_VERSION}）。
 
@@ -228,6 +345,8 @@ def build_prompt(*, schema: dict, chunks: list[dict]) -> str:
 2. 实体候选：kind 必须属于 entity_types，name 用原文里的称呼。
 3. 关系候选：kind 必须属于 relationship_kinds，from_name/to_name 用实体候选或已有实体的名称。
 4. 不确定就不要输出。宁少不滥。
+
+{concept_instruction}
 
 只输出 JSON，形如：
 {{"entities": [{{"kind": "...", "name": "...", "chunk_id": "...", "quote": "..."}}],
@@ -366,6 +485,14 @@ def resolve_entity_key(name: str, *, kind: str, chunk: dict,
     canon = canonical_name(raw, domain_key=domain_key)
     if canon != raw:
         meta.update(canonical_name=canon, raw_name=raw)
+    if kind == "concept":
+        # A concept is addressable by its name alone — it is *cross-instrument*
+        # ("违约责任" means the same thing in every statute that mentions it),
+        # which is the opposite of a clause, whose address must carry its parent.
+        reject = keys.concept_reject_for(domain_key)
+        if reject and reject(canon):
+            return None, "not_concept", meta
+        return normalize_entity_key(canon), None, meta
     return normalize_entity_key(canon), None, meta
 
 
@@ -458,6 +585,7 @@ def run(
             "not_clause": 0,     # a structural name (preface/chapter) posing as a clause
             "type_mismatch": 0,  # a "law" whose name is not the block's title
             "normalised": 0,     # folded into an earlier candidate of this batch
+            "not_concept": 0,    # a case-category label posing as a concept
         },
         "by_kind": {},
         "stopped": None,
@@ -472,7 +600,11 @@ def run(
         if total >= min(max_total, MAX_TOTAL):
             report["stopped"] = "cap"
             break
-        raw = call(build_prompt(schema=schema, chunks=[chunk]))
+        # A guide-case block has a title but no article structure local to it;
+        # statute blocks are dense in 「第N条」. Ask for what the text can give.
+        clause_dense = bool(re.search(r"第[〇零一二三四五六七八九十百千0-9]+\s*条", chunk["text"][:400]))
+        raw = call(build_prompt(schema=schema, chunks=[chunk],
+                                concept_mode=not clause_dense, domain_key=domain_key))
         parsed = parse_candidates(raw)
         report["skipped"]["bad_row"] += parsed["bad_rows"]
         produced = parsed["entities"][:max_per_chunk] + parsed["relationships"][:max_per_chunk]
