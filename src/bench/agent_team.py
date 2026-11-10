@@ -30,7 +30,8 @@ DEFAULT_CADENCE_MINUTES: dict[str, int] = {"warden": 15, "verifier": 60}
 ROLE_PARAM_KEYS: dict[str, tuple[str, ...]] = {
     "scout": ("doc_types", "sources", "limit"),
     "builder": ("doc_types", "sources"),
-    "concept": ("batch_chunks", "min_usable_rate", "max_total"),
+    # 概念岗也要能声明语料面：概念只从某类语料里来，声明在哪由该线决定。
+    "concept": ("batch_chunks", "min_usable_rate", "max_total", "sources"),
     "verifier": ("checks",),
     "eval": ("suites",),
     "release": ("require_digest_match",),

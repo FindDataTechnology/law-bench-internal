@@ -485,6 +485,9 @@ def run_concept(
     chunks = int(max_chunks or params.get("batch_chunks") or 10)
     floor = float(params.get("min_usable_rate") or 0.5)
     cap = int(params.get("max_total") or 100)
+    # 语料面由该线声明：概念只从长于说理的那类语料里来，声明在哪由 pack 决定。
+    # 没声明就不指定（保持原有"整个订阅范围"的语义）。
+    sources = [str(x) for x in (params.get("sources") or [])] or None
     batch_name = batch or f"concept-{domain_key}-{_stamp()}"
 
     run = agent_runs.start(conn, role=role, domain_key=domain_key,
@@ -492,7 +495,7 @@ def run_concept(
     try:
         report = extraction.run(
             conn, domain_key=domain_key,
-            sources=None, max_chunks=chunks, max_total=cap,
+            sources=sources, max_chunks=chunks, max_total=cap,
             batch=batch_name, complete_fn=complete_fn, submitted_by=role,
         )
         summary = _batch_summary(report, batch_name=batch_name)
