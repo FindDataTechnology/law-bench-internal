@@ -60,8 +60,8 @@ spec:
             value: "5"
       containers:
         - name: law-bench-mcp
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-0d2f54d
-          imagePullPolicy: IfNotPresent  # 2026-11-10 sha-0d2f54d：结论带溯源三件套 + 法条 stable_id（真源 c734240）；回滚=sha-67477da
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-017136f
+          imagePullPolicy: IfNotPresent  # 2026-11-10 sha-017136f：修 contract_generate_batch 的 tag_vocab_list ImportError（真源 96fbb0f）；回滚=sha-0d2f54d
           command: ["/app/.venv/bin/python", "-m", "fd_coding_law_bench_mcp"]
           env:
             # sha-2c502d7 was built without the fd-coding-law-bench-mcp context, so
