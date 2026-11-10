@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 
-from src.bench.keys import FoldRule, register_rules
+from src.bench.keys import FoldRule, clause_no, register_rules
 
 #: Prefixes that name the issuing state rather than the instrument. Dropping them
 #: merges "中华人民共和国宪法" with "宪法" — the same document, two spellings.
@@ -75,7 +75,20 @@ _AMOUNT = re.compile(r"\d[\d,.]*\s*(?:万?亿元?|万?元)")
 
 #: Suffixes that mark a document/decision type rather than a concept. A concept
 #: may contain these words; it may not *end* with them.
-DOCUMENT_LIKE_SUFFIXES: tuple[str, ...] = ("决定", "判决", "裁定", "通知", "批复", "答复")
+DOCUMENT_LIKE_SUFFIXES: tuple[str, ...] = (
+    "决定", "判决", "裁定", "通知", "批复", "答复",
+    # 文种名：这些是**文书的种类**，不是法律概念（实测抽出来过「地方政府规章」
+    # 「地方性法规」——它们回答"这是什么文书"，不回答"这是什么原理"）。
+    "规章", "法规", "条例", "办法", "规定", "解释", "法典", "法",
+    # 证照/文书名同样是文种，不是概念。
+    "准运证", "许可证", "调解书", "判决书", "裁定书", "决定书",
+)
+
+#: 当事人角色：一个概念要能跨案复用，角色名只指向某个案子里的某个人。
+PARTY_ROLE_MARKERS: tuple[str, ...] = (
+    "请托人", "当事人", "被告人", "被害人", "原告", "被告", "第三人",
+    "申请人", "被申请人", "犯罪嫌疑人",
+)
 
 
 def is_case_category(name: str) -> bool:
@@ -100,11 +113,36 @@ def concept_reject(name: str) -> bool:
         return True
     if any(marker in value for marker in STATEMENT_MARKERS):
         return True
+    if any(marker in value for marker in PARTY_ROLE_MARKERS):
+        return True
     if _AMOUNT.search(value):
         return True
     if any(value.endswith(suffix) for suffix in DOCUMENT_LIKE_SUFFIXES):
         return True
     return False
+
+
+#: 一条可引用的法条出处：「《文档名》第N条（可带款）」。起始概念集里就是这么写的，
+#: 它是**人工读过原文后留下的溯源**，所以能直接变成 defines 的端点。
+_CITATION = re.compile(r"^《(?P<doc>[^》]+)》\s*(?P<rest>.+)$")
+
+
+def parse_citation(text: str) -> tuple[str, int] | None:
+    """把「《X》第N条…」解析成 (归名后的文档名, 条款号)；解不出就返回 None。
+
+    条款号复用内核的 ``clause_no``（认中文数字、不认章节名）；文档名复用
+    ``canonical_name``，所以两种写法会落到同一个键上。
+    """
+    match = _CITATION.match((text or "").strip())
+    if not match:
+        return None
+    number = clause_no(match.group("rest"))
+    if number is None:
+        return None
+    doc, _applied = canonical_name(match.group("doc"))
+    if not doc:
+        return None
+    return doc, number
 
 
 def canonical_name(name: str) -> tuple[str, list[str]]:

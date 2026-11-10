@@ -18,6 +18,7 @@ from typing import Any, Optional
 
 from . import (agent_ids, agent_runs, agent_team, authoring, corpus_catalog, dispatch,
                estate, libraries, proposals, workspaces)
+from src.search import library_index
 
 #: 缺口 → 该由谁处理。``None`` = 人（复核积压不是智能体能替的）。
 GAP_OWNER: dict[str, Optional[str]] = {
@@ -39,7 +40,8 @@ VERIFIER_CHECKS = (
     "missing_evidence",      # 没有可回源的依据
     "endpoint_open",         # 关系端点未闭合
     "near_duplicate",        # 同一实体的另一种写法已在本体
-    "quote_unverifiable",    # 有引文但本轮无法回源核对
+    "quote_mismatch",        # 引文不在所引块里（编造）
+    "quote_unverifiable",    # 有引文但取不到原文，没法验
 )
 
 
@@ -63,6 +65,78 @@ def _finish_failed(conn: Any, run_id: int, exc: BaseException) -> None:
                           detail=f"{type(exc).__name__}: {exc}"[:300])
     except Exception:  # noqa: BLE001 - 台账写不进去时，原始异常必须继续抛
         pass
+
+
+def fetch_chunk_text(
+    conn: Any, *, library: str, source_key: str, chunk_id: str
+) -> Optional[str]:
+    """按证据里的坐标取回那段原文；取不到返回 ``None``（不是空串）。
+
+    这是质检"逐字核对"的前提。两种库形状都要覆盖：向量库按点 id 取 payload，
+    外接表按登记列名查一行。取不到就是**没法验**，绝不能退化成"验过了"。
+    """
+    from . import libraries
+
+    lib = libraries.get_library(conn, library_key=library)
+    if lib is None:
+        return None
+    src = next(
+        (x for x in libraries.list_sources(conn, library_id=lib["id"])
+         if x["source_key"] == source_key),
+        None,
+    )
+    if src is None:
+        return None
+    backend = lib.get("backend") or ""
+    loc = libraries.resolve_location(lib)
+    if backend == "qdrant":
+        data = library_index._qdrant_post(
+            loc["url_env"], f"/collections/{loc['collection']}/points",
+            {"ids": [_coerce_id(chunk_id)], "with_payload": True, "with_vector": False},
+        )
+        points = (data.get("result") or [])
+        if not points:
+            return None
+        payload = points[0].get("payload") or {}
+        rule = src.get("ingest_rule") or {}
+        if isinstance(rule, str):
+            import json as _json
+
+            rule = _json.loads(rule or "{}")
+        text_field = ((rule.get("document") or {}).get("text")) or "chunk_text"
+        text = payload.get(text_field)
+        return str(text) if text else None
+
+    if backend == "pgvector-external":
+        import psycopg
+
+        rule = src.get("ingest_rule") or {}
+        if isinstance(rule, str):
+            import json as _json
+
+            rule = _json.loads(rule or "{}")
+        cols = {**(rule.get("columns") or {})}
+        table = src["uri"]
+        id_col = cols.get("id", "id")
+        text_col = cols.get("text", "text")
+        from psycopg.rows import dict_row
+
+        with psycopg.connect(loc["dsn_env"], connect_timeout=10,
+                             row_factory=dict_row) as ext:
+            row = ext.execute(
+                f"SELECT {text_col} AS t FROM {table} WHERE {id_col} = %s",
+                (chunk_id,),
+            ).fetchone()
+        return str(row["t"]) if row and row.get("t") else None
+    return None
+
+
+def _coerce_id(chunk_id: str) -> Any:
+    """Qdrant 的点 id 可能是整数；能转就转，不能就原样传。"""
+    try:
+        return int(chunk_id)
+    except (TypeError, ValueError):
+        return chunk_id
 
 
 def run_warden(conn: Any, *, domain_key: str, limit: int = 50) -> dict:
@@ -117,7 +191,22 @@ def run_verifier(conn: Any, *, domain_key: str, limit: int = 200) -> dict:
         rel_kinds = _relationship_kinds(conn, domain)
         pending = proposals.list_proposals(conn, domain_key=domain_key,
                                            state="pending", limit=limit)
-        findings = _inspect(pending, live=live, rel_kinds=rel_kinds)
+        cache: dict[tuple[str, str, str], Optional[str]] = {}
+
+        def text_for(evidence: dict) -> Optional[str]:
+            key = (str(evidence.get("library") or ""), str(evidence.get("source_key") or ""),
+                   str(evidence.get("chunk_id") or ""))
+            if not all(key):
+                return None
+            if key not in cache:
+                try:
+                    cache[key] = fetch_chunk_text(
+                        conn, library=key[0], source_key=key[1], chunk_id=key[2])
+                except Exception:  # noqa: BLE001 - 取不到 = 没法验，不是通过
+                    cache[key] = None
+            return cache[key]
+
+        findings = _inspect(pending, live=live, rel_kinds=rel_kinds, text_for=text_for)
 
         by_check: dict[str, int] = {}
         for f in findings:
@@ -157,7 +246,7 @@ def _relationship_kinds(conn: Any, domain: dict) -> set[str]:
 
 
 def _inspect(pending: list[dict], *, live: dict[str, str],
-             rel_kinds: set[str]) -> list[dict]:
+             rel_kinds: set[str], text_for: Optional[Any] = None) -> list[dict]:
     """四类机器判定 + 一类"没法验"。返回 findings，不改任何东西。"""
     findings: list[dict] = []
     seen_keys: dict[str, list[dict]] = {}
@@ -189,10 +278,18 @@ def _inspect(pending: list[dict], *, live: dict[str, str],
                 findings.append(_finding(p, "missing_evidence", "没有依据"))
                 continue
             if isinstance(evidence, dict) and "quote" in evidence:
-                # 逐字核对需要语料原文；本轮拿不到就如实报"没法验"，
-                # 不能报通过——那等于替人签了字。
-                findings.append(_finding(p, "quote_unverifiable",
-                                         "有引文但本轮未回源核对"))
+                quote = str(evidence.get("quote") or "")
+                text = None
+                if text_for is not None:
+                    text = text_for(evidence)
+                if text is None:
+                    # 拿不到原文就只能说"没法验"——不能报通过，那等于替人签字。
+                    findings.append(_finding(p, "quote_unverifiable",
+                                             "有引文但取不到原文，未核验"))
+                elif not _quote_in(quote, text):
+                    findings.append(_finding(p, "quote_mismatch",
+                                             f"引文不在原文里：{quote[:40]}"))
+                # 逐字命中 = 通过，不产生 finding（干净的就是干净的）
 
     # 同一实体的两种写法：同键多条（跨来源）在 pending 里就是重复主张
     for key, group in seen_keys.items():
@@ -201,6 +298,12 @@ def _inspect(pending: list[dict], *, live: dict[str, str],
                 findings.append(_finding(p, "near_duplicate",
                                          f"与提案 {group[0]['id']} 同键"))
     return findings
+
+
+def _quote_in(quote: str, text: str) -> bool:
+    from .extraction import verify_quote
+
+    return verify_quote(quote, text)
 
 
 def _finding(proposal: dict, check: str, note: str) -> dict:

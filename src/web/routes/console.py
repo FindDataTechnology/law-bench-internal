@@ -1192,6 +1192,56 @@ def console_bench_legacy(domain_key: str):
     )
 
 
+# ------------------------------------------------------------- team view #
+
+
+@read_only_router.get(
+    "/d/{domain_key}/team", include_in_schema=False, name="console_team",
+    dependencies=_READ_GATES,
+)
+def console_team(
+    request: Request,
+    domain_key: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """值班长一页：质量比 + 运行台账 + 按批待确认。
+
+    三样东西必须同屏，因为它们是同一个判断的三个面：**哪里薄**（质量比）、
+    **谁在跑、成没成**（台账）、**人该看什么**（按批的待确认）。分成三页，
+    值班的人就得自己在脑子里拼。
+
+    页面本身只读：确认/退回的按钮指向既有的 inbox 批量端点，权限仍由那条
+    路由的 lead 闸判定——页面上看得见一个按钮，不代表点得动。
+    """
+    from ...bench import agent_runs, agent_team, proposals as bench_proposals, quality
+
+    domain = resolve_domain(db, domain_key)
+    cap = capability(db, domain, user)
+    metrics = quality.all_metrics(db, domain_key=domain_key, namespace=domain["path"])
+    thresholds = dict(quality.QUALITY_THRESHOLDS)
+    review = metrics.get("review_lag") or {}
+    batches = [
+        b for b in bench_proposals.batches(db, domain_key=domain_key)
+        if b.get("pending")
+    ]
+    return _templates.TemplateResponse(
+        request,
+        "domain_console_team.html",
+        {
+            **console_context(db, domain, user),
+            "cap": cap,
+            "metrics": metrics,
+            "thresholds": thresholds,
+            "review": review,
+            "ledger": agent_runs.summary(db, domain_key=domain_key),
+            "runs": agent_runs.list_runs(db, domain_key=domain_key, limit=20),
+            "batches": batches,
+            "plan": agent_team.plan(domain_key),
+        },
+    )
+
+
 # ------------------------------------------------------- corpus documents #
 
 #: Browse page size. The store holds tens of thousands of documents; a page that

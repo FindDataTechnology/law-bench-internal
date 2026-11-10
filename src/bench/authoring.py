@@ -603,6 +603,129 @@ def authoring_live_entities(
     return [u for u in rows if u["kind"] in entities]
 
 
+def authoring_fold_existing_keys(
+    conn: Any,
+    *,
+    domain_key: str,
+    dry_run: bool = True,
+    limit: Optional[int] = None,
+) -> dict:
+    """把库里历史遗留的「未归名键」改成归名后的键（一次性对账，可 dry-run）。
+
+    为什么需要它：写入口现在会归名，但归名之前写进去的行还留着原写法（实测
+    2026-11-11 legal 有 1488 个这样的键：`中华人民共和国电信条例#第23条`、
+    `中国银保监会…办法`）。键是身份，改它必须同时满足三件事，否则就是制造悬空：
+
+    - **只改没有孪生的**：目标键已存在时不动（合并会丢掉一侧的 body/attrs，
+      那是人的决定，不是脚本的决定）；
+    - **原写法进 aliases**：合并/改名都要可解释；
+    - **引用它的关系一起改**：关系的 external_key 与 attrs.from_key/to_key 都要
+      重写，否则改名当场造出悬空关系。
+
+    整批一个事务：任何一条失败就整体回滚，重跑幂等（第二次 0 变更）。
+    """
+    domain = _load_domain(conn, domain_key=domain_key)
+    rules = keys.rules_for(domain["key"])
+    if not rules:
+        return {"domain": domain_key, "renamed": 0, "skipped_twin": 0,
+                "reason": "该域未注册归名规则（不归名，安全默认）", "dry_run": dry_run,
+                "plan": []}
+
+    rows = conn.execute(
+        "SELECT kind, external_key, attrs, body, tags FROM knowledge_units "
+        "WHERE namespace = %s AND (tags->>'deleted') IS NULL",
+        (domain["key"],),
+    ).fetchall()
+    live_pairs = {(r["kind"], r["external_key"]) for r in rows}
+    plan: list[dict] = []
+    for row in rows:
+        folded, applied = keys.fold(row["external_key"], rules)
+        folded = (folded or "").strip()
+        if not folded or folded == row["external_key"]:
+            continue
+        if (row["kind"], folded) in live_pairs:
+            plan.append({"kind": row["kind"], "old": row["external_key"],
+                         "new": folded, "action": "skip_twin"})
+            continue
+        plan.append({"kind": row["kind"], "old": row["external_key"], "new": folded,
+                     "action": "rename", "applied": list(applied)})
+
+    renames = [p for p in plan if p["action"] == "rename"]
+    twins = [p for p in plan if p["action"] == "skip_twin"]
+    if limit:
+        renames = renames[: int(limit)]
+    if dry_run:
+        return {"domain": domain_key, "renamed": len(renames), "skipped_twin": len(twins),
+                "reason": None, "dry_run": True, "plan": renames[:20]}
+
+    # 原地 UPDATE external_key：**不要 delete+insert**——行 id 是审计与血缘的锚，
+    # 换 id 等于把同一个实体变成另一个实体。
+    mapping = {p["old"]: p["new"] for p in renames}
+    try:
+        for p in renames:
+            prior = store.get_knowledge_unit(
+                conn, kind=p["kind"], external_key=p["old"], namespace=domain["key"])
+            if prior is None:
+                continue
+            attrs = dict(prior.get("attrs") or {})
+            aliases = set(attrs.get("aliases") or [])
+            aliases.add(p["old"])
+            attrs["aliases"] = sorted(aliases)
+            attrs["folded_by"] = p["applied"]
+            conn.execute(
+                "UPDATE knowledge_units SET external_key = %s, attrs = %s::jsonb, "
+                "updated_at = now() WHERE namespace = %s AND kind = %s AND external_key = %s",
+                (p["new"], json.dumps(attrs, ensure_ascii=False), domain["key"],
+                 p["kind"], p["old"]),
+            )
+            _record_event(
+                conn, domain_id=domain["id"], unit_kind=p["kind"], unit_key=p["new"],
+                op="update", before=_copy_unit(prior),
+                after={**prior, "external_key": p["new"], "attrs": attrs},
+                operator="fold-existing",
+            )
+
+        # 关系端点：键与 attrs 都要跟着改，否则改名当场造出悬空关系。
+        rel_rows = conn.execute(
+            "SELECT kind, external_key, body, attrs, tags, tier FROM knowledge_units "
+            "WHERE namespace = %s AND (tags->>'deleted') IS NULL "
+            "AND external_key LIKE '%%->%%'",
+            (domain["key"],),
+        ).fetchall()
+        rewritten = 0
+        for rel in rel_rows:
+            frm, _, rest = (rel["external_key"] or "").partition("->")
+            rkind, _, to = rest.partition(":")
+            new_from, new_to = mapping.get(frm, frm), mapping.get(to, to)
+            if new_from == frm and new_to == to:
+                continue
+            new_key = relationship_external_key(
+                from_key=new_from, kind=rkind, to_key=new_to)
+            attrs = dict(rel.get("attrs") or {})
+            attrs["from_key"], attrs["to_key"] = new_from, new_to
+            conn.execute(
+                "UPDATE knowledge_units SET external_key = %s, attrs = %s::jsonb, "
+                "updated_at = now() WHERE namespace = %s AND kind = %s AND external_key = %s",
+                (new_key, json.dumps(attrs, ensure_ascii=False), domain["key"],
+                 rel["kind"], rel["external_key"]),
+            )
+            _record_event(
+                conn, domain_id=domain["id"], unit_kind=rel["kind"], unit_key=new_key,
+                op="update",
+                before={"external_key": rel["external_key"], "body": rel.get("body"),
+                        "attrs": rel.get("attrs")},
+                after={"external_key": new_key, "attrs": attrs},
+                operator="fold-existing",
+            )
+            rewritten += 1
+    except Exception:
+        conn.rollback()
+        raise
+    conn.commit()
+    return {"domain": domain_key, "renamed": len(renames), "skipped_twin": len(twins),
+            "relations_rewritten": rewritten, "reason": None, "dry_run": False, "plan": []}
+
+
 def authoring_live_keys(
     conn: Any,
     *,
@@ -767,6 +890,12 @@ def authoring_create_relationship(
     the payload). Returns the stored KU dict.
     """
     domain = _load_domain(conn, domain_key=domain_key)
+    # 端点先归名，再算关系键、再进 attrs。三处必须用**同一个**写法：
+    # 只归键不归 attrs，就会出现"键是归名后的写法、attrs 里还是原文"这种自相矛盾
+    # 的行（实测 2026-11-11 造出过一条，导致遗留键对账脚本误判为无需处理）。
+    # 归名规则来自该域的 pack，没注册就什么都不折。
+    from_key, _ = _fold_write_key(domain=domain, external_key=from_key, attrs=None)
+    to_key, _ = _fold_write_key(domain=domain, external_key=to_key, attrs=None)
     external_key = relationship_external_key(from_key=from_key, kind=kind, to_key=to_key)
     merged_attrs = dict(attrs or {})
     merged_attrs.update(

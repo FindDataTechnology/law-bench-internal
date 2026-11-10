@@ -7,6 +7,7 @@ pack 就写出 401 条 `中华人民共和国民法典#第N条`，与 `民法典
 
 from __future__ import annotations
 
+import json
 import pytest
 
 import packs.legal  # noqa: F401 — registers the legal rules
@@ -111,3 +112,77 @@ def test_folding_is_stable(conn):
     first = keys.fold("中华人民共和国合同法", keys.rules_for("legal"))[0]
     second = keys.fold("中华人民共和国合同法", keys.rules_for("legal"))[0]
     assert first == second == "合同法"
+
+
+# ── 历史存量对账（authoring_fold_existing_keys） ────────────────────────────
+
+
+def _raw_unit(conn, kind, key, attrs=None):
+    """直接写一行，绕过写入口——模拟"归名之前写进去的历史行"。"""
+    conn.execute(
+        "INSERT INTO knowledge_units (kind, namespace, external_key, body, attrs, "
+        "created_at, updated_at) VALUES (%s,'legal',%s,'b',%s::jsonb,'now','now')",
+        (kind, key, json.dumps(attrs or {})),
+    )
+    conn.commit()
+
+
+def test_dry_run_reports_without_changing_anything(conn):
+    _raw_unit(conn, "law", "中华人民共和国合同法")
+    out = authoring.authoring_fold_existing_keys(conn, domain_key="legal", dry_run=True)
+    assert out["renamed"] == 1 and out["dry_run"] is True
+    assert out["plan"][0]["new"] == "合同法"
+    assert conn.execute(
+        "SELECT COUNT(*) AS n FROM knowledge_units WHERE external_key='中华人民共和国合同法'"
+    ).fetchone()["n"] == 1, "dry-run 不得改库"
+
+
+def test_a_historical_key_is_renamed_in_place_and_records_the_alias(conn):
+    _raw_unit(conn, "law", "中华人民共和国合同法", attrs={"corpus": {"doc_id": "1"}})
+    before_id = conn.execute(
+        "SELECT id FROM knowledge_units WHERE external_key='中华人民共和国合同法'"
+    ).fetchone()["id"]
+    out = authoring.authoring_fold_existing_keys(conn, domain_key="legal", dry_run=False)
+    assert out["renamed"] == 1
+    row = conn.execute(
+        "SELECT id, external_key, attrs FROM knowledge_units WHERE kind='law'").fetchone()
+    assert row["external_key"] == "合同法"
+    assert row["id"] == before_id, "行 id 不能变：它是审计锚"
+    assert row["attrs"]["aliases"] == ["中华人民共和国合同法"]
+    assert row["attrs"]["corpus"] == {"doc_id": "1"}, "其它 attrs 必须原样保留"
+
+
+def test_a_key_with_a_twin_is_left_alone(conn):
+    _raw_unit(conn, "law", "中华人民共和国合同法")
+    _raw_unit(conn, "law", "合同法")
+    out = authoring.authoring_fold_existing_keys(conn, domain_key="legal", dry_run=False)
+    assert out["renamed"] == 0 and out["skipped_twin"] == 1
+    assert conn.execute("SELECT COUNT(*) AS n FROM knowledge_units").fetchone()["n"] == 2
+
+
+def test_a_relation_pointing_at_the_old_key_is_rewritten(conn):
+    _raw_unit(conn, "law", "中华人民共和国合同法")
+    authoring.authoring_create_unit(conn, domain_key="legal", kind="clause",
+                                    external_key="合同法#第1条", body="b", operator="t")
+    authoring.authoring_create_relationship(
+        conn, domain_key="legal", kind="defines",
+        from_key="中华人民共和国合同法", to_key="合同法#第1条",
+        body="x", operator="t")
+    authoring.authoring_fold_existing_keys(conn, domain_key="legal", dry_run=False)
+    rel = conn.execute(
+        "SELECT external_key, attrs FROM knowledge_units WHERE kind='defines'").fetchone()
+    assert rel["external_key"] == "合同法->defines:合同法#第1条"
+    assert rel["attrs"]["from_key"] == "合同法"
+
+
+def test_the_reconciliation_is_idempotent(conn):
+    _raw_unit(conn, "law", "中华人民共和国合同法")
+    authoring.authoring_fold_existing_keys(conn, domain_key="legal", dry_run=False)
+    again = authoring.authoring_fold_existing_keys(conn, domain_key="legal", dry_run=False)
+    assert again["renamed"] == 0
+
+
+def test_a_domain_without_rules_is_refused_with_a_reason(conn):
+    out = authoring.authoring_fold_existing_keys(conn, domain_key=UNRULED, dry_run=True)
+    assert out["renamed"] == 0
+    assert "未注册归名规则" in out["reason"]

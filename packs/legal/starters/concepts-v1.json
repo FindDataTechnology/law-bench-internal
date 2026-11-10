@@ -165,7 +165,9 @@
       "body": "合同解除",
       "attrs": {
         "definition": "合同有效成立后因法定或约定事由使合同关系归于消灭的行为",
-        "statute_refs": [],
+        "statute_refs": [
+          "《中华人民共和国民法典》第五百六十三条"
+        ],
         "source_case_no": null,
         "grounding": "case"
       }
@@ -176,7 +178,9 @@
       "body": "违约责任",
       "attrs": {
         "definition": "合同当事人不履行合同义务或履行不符合约定时依法应当承担的责任",
-        "statute_refs": [],
+        "statute_refs": [
+          "《中华人民共和国民法典》第五百七十七条"
+        ],
         "source_case_no": null,
         "grounding": "case"
       }
