@@ -60,8 +60,8 @@ spec:
             value: "5"
       containers:
         - name: law-bench-mcp
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-e411d22
-          imagePullPolicy: IfNotPresent
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-aef1c58
+          imagePullPolicy: IfNotPresent  # 2026-11-10 sha-aef1c58：含 catalog.py 的 type_metadata ImportError 修复；回滚=sha-e411d22
           command: ["/app/.venv/bin/python", "-m", "fd_coding_law_bench_mcp"]
           env:
             # sha-2c502d7 was built without the fd-coding-law-bench-mcp context, so
