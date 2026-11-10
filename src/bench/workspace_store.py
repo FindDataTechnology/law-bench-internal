@@ -224,6 +224,16 @@ CREATE TABLE IF NOT EXISTS domain_proposals (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS domain_proposals_pending_uk
     ON domain_proposals (domain_id, source, external_key) WHERE state = 'pending';
+
+-- sources：同一主张的**全部提交方**。去重身份过去是 (domain, source, external_key)，
+-- 也就是"按提交方去重"——舰队岗与应用内团队同时上线时，同一主张会变成两行待确认，
+-- 而人眼只有一双。现在按主张合并：同键同依据只有一行，source 记首个提交方，
+-- sources 记全部提交方（见 src/bench/proposals.py::submit）。
+ALTER TABLE domain_proposals
+    ADD COLUMN IF NOT EXISTS sources JSONB NOT NULL DEFAULT '[]'::jsonb;
+UPDATE domain_proposals
+   SET sources = jsonb_build_array(source)
+ WHERE sources = '[]'::jsonb;
 CREATE INDEX IF NOT EXISTS domain_proposals_box_idx
     ON domain_proposals (domain_id, state, submitted_at DESC);
 

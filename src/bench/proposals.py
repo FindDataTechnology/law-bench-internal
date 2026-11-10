@@ -52,7 +52,7 @@ from . import agent_ids, authoring, keys, templates, workspaces
 PROPOSAL_STATES = ("pending", "confirmed", "rejected")
 
 _PROPOSAL_COLS = (
-    "id, domain_id, source, kind, external_key, body, evidence, "
+    "id, domain_id, source, sources, kind, external_key, body, evidence, "
     "evidence_digest, impact, state, submitted_by, submitted_at, "
     "decided_by, decided_at, decision_note"
 )
@@ -390,6 +390,31 @@ def submit(
 
     digest = canonical_evidence_digest(evidence)
 
+    # ① 先按**主张**去重（同键 + 同依据）：舰队的提案岗与应用内岗位可能同时提出
+    # 同一条主张，过去的去重身份含 source，于是会变成两行待确认——人眼只有一双。
+    # 命中时把新的提交方并入 sources，source 保留首个提交方（谁先说的）。
+    claim = conn.execute(
+        f"SELECT {_PROPOSAL_COLS} FROM domain_proposals "
+        "WHERE domain_id = %s AND external_key = %s AND evidence_digest = %s "
+        "AND state = 'pending' LIMIT 1",
+        (domain["id"], external_key, digest),
+    ).fetchone()
+    if claim is not None:
+        existing = _proposal_to_dict(claim)
+        sources = list(existing.get("sources") or [])
+        if existing["source"] not in sources:
+            sources.insert(0, existing["source"])
+        if source not in sources:
+            sources.append(source)
+            conn.execute(
+                "UPDATE domain_proposals SET sources = %s::jsonb WHERE id = %s",
+                (json.dumps(sources, ensure_ascii=False), existing["id"]),
+            )
+            conn.commit()
+        existing["sources"] = sources
+        return (existing, False) if with_created else existing
+
+    # ② 同一提交方的重复提交（原有语义，保留）
     pending = conn.execute(
         f"SELECT {_PROPOSAL_COLS} FROM domain_proposals "
         "WHERE domain_id = %s AND source = %s AND external_key = %s "
@@ -411,13 +436,14 @@ def submit(
 
     cur = conn.execute(
         f"INSERT INTO domain_proposals "
-        f"(domain_id, source, kind, external_key, body, evidence, "
+        f"(domain_id, source, sources, kind, external_key, body, evidence, "
         f"evidence_digest, impact, state, submitted_by) "
-        f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'pending', %s) "
+        f"VALUES (%s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, 'pending', %s) "
         f"RETURNING {_PROPOSAL_COLS}",
         (
             domain["id"],
             source,
+            json.dumps([source], ensure_ascii=False),
             kind,
             external_key,
             body,

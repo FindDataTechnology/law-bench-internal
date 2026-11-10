@@ -197,11 +197,28 @@ def test_verifier_says_it_could_not_verify_a_quote(conn):
     assert out["by_check"]["quote_unverifiable"] == 1
 
 
-def test_verifier_flags_same_claim_from_two_producers(conn):
-    _submit(conn, key="举证责任", source="fleet:a/1")
-    _submit(conn, key="举证责任", source="agent:concept@legal")
+def test_verifier_flags_one_claim_with_two_different_evidences(conn):
+    """同一主张、**不同依据**会合法地并存两行，这才是该标 near_duplicate 的情形。
+
+    同键同依据不再产生两行（提案层按主张去重并合并 sources），所以旧的
+    "两个生产者同键 = 两行"前提已经不成立——那条性质由
+    tests/test_domain_proposals.py 断言。
+    """
+    _submit(conn, key="举证责任", source="fleet:a/1",
+            evidence={"quote": "第一种说法"})
+    _submit(conn, key="举证责任", source="agent:concept@legal",
+            evidence={"quote": "第二种说法"})
     out = team_roles.run_verifier(conn, domain_key="legal")
     assert out["by_check"]["near_duplicate"] == 1
+
+
+def test_the_same_claim_with_the_same_evidence_is_one_row_not_a_duplicate(conn):
+    """同键同依据只留一行，质检不该把它报成重复。"""
+    _submit(conn, key="举证责任", source="fleet:a/1", evidence={"quote": "同一说法"})
+    _submit(conn, key="举证责任", source="agent:concept@legal", evidence={"quote": "同一说法"})
+    out = team_roles.run_verifier(conn, domain_key="legal")
+    assert out["pending"] == 1
+    assert out["by_check"].get("near_duplicate", 0) == 0
 
 
 def test_verifier_never_changes_a_proposal_or_the_ontology(conn):
