@@ -100,3 +100,15 @@ def test_manifest_entries_carry_no_prose_in_returns():
 
     for name, spec in detail.items():
         walk(name, spec.get("returns", {}))
+
+
+def test_empty_dict_declaration_means_variable_keys(checker):
+    """空对象 = 键随数据变化的映射（sha256_by_format），只验是对象、键留旁注。"""
+    problems, notes = _compare(checker, {"by_format": {}}, {"by_format": {"pdf": "string"}})
+    assert problems == []
+    assert notes and "动态键映射" in notes[0]
+
+
+def test_empty_dict_declaration_still_requires_an_object(checker):
+    problems, _ = _compare(checker, {"by_format": {}}, {"by_format": ["string"]})
+    assert problems == ["t.by_format: 声明为对象，实返回 list"]
