@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 
-from src.bench.keys import FoldRule, register_rules
+from src.bench.keys import FoldRule, clause_no, register_rules
 
 #: Prefixes that name the issuing state rather than the instrument. Dropping them
 #: merges "中华人民共和国宪法" with "宪法" — the same document, two spellings.
@@ -120,6 +120,29 @@ def concept_reject(name: str) -> bool:
     if any(value.endswith(suffix) for suffix in DOCUMENT_LIKE_SUFFIXES):
         return True
     return False
+
+
+#: 一条可引用的法条出处：「《文档名》第N条（可带款）」。起始概念集里就是这么写的，
+#: 它是**人工读过原文后留下的溯源**，所以能直接变成 defines 的端点。
+_CITATION = re.compile(r"^《(?P<doc>[^》]+)》\s*(?P<rest>.+)$")
+
+
+def parse_citation(text: str) -> tuple[str, int] | None:
+    """把「《X》第N条…」解析成 (归名后的文档名, 条款号)；解不出就返回 None。
+
+    条款号复用内核的 ``clause_no``（认中文数字、不认章节名）；文档名复用
+    ``canonical_name``，所以两种写法会落到同一个键上。
+    """
+    match = _CITATION.match((text or "").strip())
+    if not match:
+        return None
+    number = clause_no(match.group("rest"))
+    if number is None:
+        return None
+    doc, _applied = canonical_name(match.group("doc"))
+    if not doc:
+        return None
+    return doc, number
 
 
 def canonical_name(name: str) -> tuple[str, list[str]]:
