@@ -237,3 +237,38 @@ def test_verifier_with_an_empty_inbox_reports_thin(conn):
     out = team_roles.run_verifier(conn, domain_key="legal")
     assert out["run"]["outcome"] == "thin"
     assert out["pending"] == 0 and out["findings"] == []
+
+
+# ── 逐字核验（新增能力：把"没法验"升级成真判定） ──────────────────────────
+
+
+def test_a_quote_that_is_in_the_source_passes(conn, monkeypatch):
+    """引文逐字命中 → 不产生 finding（干净的就是干净的）。"""
+    _submit(conn, key="举证责任",
+            evidence={"quote": "合同应当采用书面形式", "library": "law-library",
+                      "source_key": "statutes", "chunk_id": "c1"})
+    monkeypatch.setattr(team_roles, "fetch_chunk_text",
+                        lambda *a, **kw: "第一条 为了规范。第二条 合同应当采用书面形式。")
+    out = team_roles.run_verifier(conn, domain_key="legal")
+    assert out["by_check"].get("quote_mismatch", 0) == 0
+    assert out["by_check"].get("quote_unverifiable", 0) == 0
+
+
+def test_a_fabricated_quote_is_flagged(conn, monkeypatch):
+    _submit(conn, key="举证责任",
+            evidence={"quote": "这句话原文里没有", "library": "law-library",
+                      "source_key": "statutes", "chunk_id": "c1"})
+    monkeypatch.setattr(team_roles, "fetch_chunk_text",
+                        lambda *a, **kw: "第一条 为了规范合同的订立。")
+    out = team_roles.run_verifier(conn, domain_key="legal")
+    assert out["by_check"]["quote_mismatch"] == 1
+
+
+def test_when_the_chunk_cannot_be_fetched_it_still_says_unverifiable(conn, monkeypatch):
+    """取不到原文绝不等于核验通过。"""
+    _submit(conn, key="举证责任",
+            evidence={"quote": "某句", "library": "law-library",
+                      "source_key": "statutes", "chunk_id": "gone"})
+    monkeypatch.setattr(team_roles, "fetch_chunk_text", lambda *a, **kw: None)
+    out = team_roles.run_verifier(conn, domain_key="legal")
+    assert out["by_check"]["quote_unverifiable"] == 1
