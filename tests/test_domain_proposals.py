@@ -466,3 +466,40 @@ def test_cross_domain_proposal_is_invisible_and_undecidable(db_conn):
     assert proposals.get(
         db_conn, domain_key="dom-a", proposal_id=proposal["id"]
     )["state"] == "pending"
+
+
+def test_the_same_claim_from_two_producers_is_one_row(db_conn):
+    """去重按**主张**，不是按提交方。
+
+    实测风险：幂等身份过去是 (domain, source, external_key)，舰队岗与应用内岗位
+    同时提出同一条主张会变成两行待确认——人眼只有一双。
+    """
+    make_domain(db_conn, "legal")
+    first = proposals.submit(
+        db_conn, domain_key="legal", source="fleet:a/1", kind="concept",
+        external_key="indicator-y", body="b", evidence={"quote": "q"},
+        submitted_by="fleet:a/1")
+    again = proposals.submit(
+        db_conn, domain_key="legal", source="agent:concept@legal", kind="concept",
+        external_key="indicator-y", body="b", evidence={"quote": "q"},
+        submitted_by="agent:concept@legal")
+
+    assert again["id"] == first["id"], "同键同依据只有一行"
+    assert set(again["sources"]) == {"fleet:a/1", "agent:concept@legal"}
+    n = db_conn.execute("SELECT COUNT(*) AS n FROM domain_proposals").fetchone()["n"]
+    assert n == 1
+
+
+def test_different_evidence_for_the_same_key_stays_two_rows(db_conn):
+    """证据不同不能合并：分歧本身是信息，交给人判。"""
+    make_domain(db_conn, "legal")
+    proposals.submit(db_conn, domain_key="legal", source="fleet:a/1", kind="concept",
+                     external_key="indicator-x", body="b",
+                     evidence={"quote": "第一种说法"}, submitted_by="fleet:a/1")
+    proposals.submit(db_conn, domain_key="legal", source="fleet:b/2", kind="concept",
+                     external_key="indicator-x", body="b",
+                     evidence={"quote": "第二种说法"}, submitted_by="fleet:b/2")
+    rows = db_conn.execute(
+        "SELECT external_key, sources FROM domain_proposals WHERE state='pending'").fetchall()
+    assert len(rows) == 2
+    assert all(r["sources"] for r in rows), "每行都要记自己的提交方"
