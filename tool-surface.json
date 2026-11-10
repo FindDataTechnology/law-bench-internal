@@ -31,6 +31,7 @@
       "contract_content",
       "contract_download",
       "contract_generate",
+      "contract_generate_batch",
       "contract_type_catalog",
       "law_references",
       "law_types",
@@ -58,7 +59,6 @@
       "compare_matrix",
       "compare_run",
       "contract_evaluate",
-      "contract_generate_batch",
       "contract_generate_stored",
       "criterion_add",
       "criterion_delete",
@@ -405,15 +405,51 @@
           "result.slots": "该产物登记的槽位；body_text 为空时为空数组"
         },
         "observed": "live tools/call 2026-11-10（pod law-bench-mcp，镜像 sha-0d2f54d）"
+      },
+      "contract_generate_batch": {
+        "envelope": "structuredContent",
+        "returns": {
+          "trace_id": "string",
+          "contract_type": "string",
+          "total_requested": "int",
+          "success_count": "int",
+          "failure_count": "int",
+          "combinatorial_warning": "bool",
+          "results": [
+            {
+              "success": "bool",
+              "tags": {},
+              "trace_id": "string",
+              "contract_type": "string",
+              "format": "string",
+              "body_text": "string",
+              "slots": [],
+              "instructions": [
+                {
+                  "name": "string",
+                  "label": "string",
+                  "description": "string",
+                  "example": "string",
+                  "required": "bool"
+                }
+              ],
+              "law_refs": [],
+              "tags_used": {}
+            }
+          ]
+        },
+        "field_notes": {
+          "results[]": "成功项内嵌一份 contract_content 的返回（同一形状），失败项则是 {success:false,tags,error}；两态共用一个数组，故元素键随成败变化",
+          "results[].tags": "请求时给的那组标签，原样回显（动态键映射）",
+          "results[].body_text": "无 clause 语料时为空串（clauses=0）",
+          "error": "仅整体失败时出现：{type,message,details}；成功路径没有该键"
+        },
+        "observed": "live tools/call 2026-11-10（pod law-bench-mcp，镜像 sha-017136f）。两条分支都实测：tag_combinations 路径 total_requested=1/success=1，enumerate_all 路径 total_requested=3/success=3、combinatorial_warning=false；此前的 tag_vocab_list ImportError 已消失"
       }
     },
     "blocked_detail": [
       {
         "tool": "clause_review",
-        "blocked_by": "同上"
-      },
-      {
-        "tool": "contract_generate_batch",
         "blocked_by": "同上"
       },
       {
