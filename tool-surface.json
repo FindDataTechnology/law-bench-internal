@@ -812,7 +812,10 @@
     "entry_path": "/law-bench",
     "upstream": "http://cheap6.mesh.finddata.cn:30840/mcp",
     "expected_tool_count": 54,
-    "observed_tool_count": 52,
-    "observed_note": "2026-11-10 现网 pod 内 tools/list 实枚举 52；缺失 task_failed_items/task_status（未部署）"
+    "observed_tool_count": 54,
+    "observed_note": "2026-11-10 现网 pod（镜像 sha-0d2f54d）内 tools/list 实枚举 54，与仓内 EXPECTED_TOOLS 一致；此前记录的 52 系 metrics 组未上线所致，现不缺件",
+    "commercial_tool_count": 21,
+    "listed_at": "2026-11-10T10:58:00Z",
+    "listed_note": "注册表条目已刷新为 num_tools=54 / tool_list 54 / surface 商业集 21，三方（清单=注册表=现网）逐名一致，由 scripts/check_surface_listed.py 断言（exit=0）"
   }
 }
