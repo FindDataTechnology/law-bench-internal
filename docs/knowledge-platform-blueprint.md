@@ -92,3 +92,5 @@
 | P3 `add-judge-misread-remediation` | 判官结构性误读 fail-loud + prompt 域化补账 + 校准闭环实跑 | P3 | 🟡 9/10（strict 绿）：3.2/3.3 已勾（run 8：误读清零达成、all_pass 0.602<0.70）；**4.3 未勾=4.1 未达成**，差距与边界如实挂账 |
 | P3 `add-judge-model-selection` | 采样一致率置信通道 + 分层校准门（balanced_accuracy≥0.70）+ bake-off 留痕 | P3 | ✅ 已归档上 spec（2026-11-06，12/12，`judge-channel-selection` +4 需求入主 specs，全量 1325 绿）；bake-off 如实：relay 退化致 k=5 全量轮未跑通、48 条定界 pilot 全 vote_share、无候选过门（采样不稀释判官过严偏置），生产判官未切换 |
 | P3 解禁路径（待拍板） | ①绑更强/更稳定判官上游 ②判官口径与 gold「过严」偏差另立校准轮 ③维持 silver-only | P3 | ⏸ 未开：4.1 挂账不销，选型轮已把差距定谳为链路级而非 prompt 级 |
+| C5 `add-domain-first-workbench` | 域优先工作台：`/d` 我的域、域控制台六区导航、本体台账、域提案箱、评测资产按域归属 | P0/P1 | 🔄 51/56：六区与导航、台账、提案箱、资产归属已上产；剩余 7.2/7.3（舰队提案目标改域提案箱，跨仓）与 8.x（paas 侧 timeout、星妍供给面） |
+| C6 `add-corpus-document-adoption` | 大库→子域取材：语料文档目录（按文档而非按块、派生不落表）、来源自述文档结构、取文档/取条款进本体（确定性切分、逐字原文、批量事务） | P2 | ✅ **已归档上 spec（2026-11-10，26/26，回归 1679 绿，specs 76/0）**：生产滚 sha-cf858e9。取入民法典 1208 条 + 合同法 428 + 公司法 266 条（含配套规定 13+8）；目录 468 篇（partial=false）；defines 闭环实测 concept + defines→民法典#第585条 双 pending、bad_endpoint=0。过程中修掉四类真问题：批次不收敛、两处 1000 行上限被当全集、条款父键只从块标题推导（新增 `<文档名>#第N条` 显式寻址） |

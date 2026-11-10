@@ -30,6 +30,9 @@ AREAS: tuple[dict, ...] = (
     # The corpus a domain may actually retrieve from, with its inheritance
     # explanation. Read-only for annotators; subscriptions are lead-gated.
     {"id": "knowledge", "min_role": "annotator"},
+    # The same corpus seen as documents instead of chunks: browse what the
+    # library holds and take a document (or its articles) into the ontology.
+    {"id": "library", "min_role": "annotator"},
     # Evaluation standards: own rubrics plus the ones inherited by reference.
     {"id": "eval-standards", "min_role": "annotator"},
     # Formerly ``bench``: the shelf of assigned assets plus run history. The old

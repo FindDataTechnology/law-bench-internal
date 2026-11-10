@@ -158,3 +158,27 @@ def test_child_area_shows_inherited_corpus_and_standard(conn):
     assert "areas-parent" in knowledge.text
     assert standards.status_code == 200
     assert "parent-standard" in standards.text
+
+
+def test_estate_page_computes_the_matrix_once(conn, monkeypatch):
+    """The gap chips must not re-run the whole matrix.
+
+    Warm `/d` measured 1465ms with a single domain; about half was a second full
+    matrix (a second external count per domain). It was also a second chance for
+    the chips and the rows to disagree.
+    """
+    from src.bench import estate as estate_mod
+
+    _world(conn)
+    calls = {"n": 0}
+    real = estate_mod.matrix
+
+    def counting(*a, **kw):
+        calls["n"] += 1
+        return real(*a, **kw)
+
+    monkeypatch.setattr(estate_mod, "matrix", counting)
+    with _client(conn) as c:
+        r = c.get("/d?gap=knowledge")
+    assert r.status_code == 200
+    assert calls["n"] == 1, f"matrix ran {calls['n']} times"

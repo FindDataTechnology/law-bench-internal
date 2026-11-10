@@ -227,4 +227,179 @@
     </dd>
   </dl>
 </div>
+
+{% include '_ontology_graph.html' %}
+
+<div class="panel">
+  <h2>{{ t.console.ontology.units_h2 }}</h2>
+  <form method="GET" action="{{ url_for('console_ontology', domain_key=domain.key) }}" class="toolbar gap">
+    <label for="ont-kind">{{ t.console.ontology.col_kind }}</label>
+    <select name="kind" id="ont-kind">
+      <option value="">{{ t.console.ontology.all_kinds }}</option>
+      {% for k in entity_types %}<option value="{{ k }}"{% if filters.kind == k %} selected{% endif %}>{{ k }}</option>{% endfor %}
+      {% for k in relationship_kinds %}<option value="{{ k }}"{% if filters.kind == k %} selected{% endif %}>{{ k }}</option>{% endfor %}
+    </select>
+    <label for="ont-q">{{ t.console.ontology.search_label }}</label>
+    <input type="text" name="q" id="ont-q" value="{{ filters.q }}">
+    <label><input type="checkbox" name="deleted" value="1"{% if filters.deleted %} checked{% endif %}> {{ t.console.ontology.show_deleted }}</label>
+    <button type="submit" class="btn btn-sm">{{ t.console.ontology.filter_btn }}</button>
+  </form>
+  {% if units %}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>{{ t.console.ontology.col_kind }}</th>
+        <th>{{ t.console.ontology.col_key }}</th>
+        <th>{{ t.console.ontology.col_body }}</th>
+        <th>{{ t.console.ontology.col_grounding }}</th>
+        <th>{{ t.console.ontology.col_tier }}</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in units %}
+      <tr>
+        <td>{{ u.kind }}</td>
+        <td><code>{{ u.external_key }}</code></td>
+        <td>{{ u.body[:60] }}</td>
+        <td>
+          {% set gl = grounding.get(u.external_key) or [] %}
+          {% if gl %}
+            {% for g in gl %}
+            <span class="onto-grounding">
+              <span class="onto-grounding__kind">{{ g.kind }}</span>
+              {% if g.direction == 'out' %}→{% else %}←{% endif %}
+              <code>{{ g.other }}</code>
+            </span>
+            {% endfor %}
+          {% elif u.attrs and u.attrs.definition %}
+            <span class="hint">{{ u.attrs.definition[:40] }}</span>
+          {% else %}
+            <span class="badge bad">{{ t.console.ontology.grounding_none }}</span>
+          {% endif %}
+        </td>
+        <td>{{ u.tier }}</td>
+        <td>
+          {% if u.tags and u.tags.deleted %}<span class="badge badge-warn">{{ t.console.ontology.deleted_tag }}</span>{% endif %}
+          {% if cap.can_assign %}
+          <form method="POST" class="inline" action="{{ url_for('console_ontology_unit_delete', domain_key=domain.key) }}">
+            <input type="hidden" name="kind" value="{{ u.kind }}">
+            <input type="hidden" name="external_key" value="{{ u.external_key }}">
+            <button type="submit" class="btn btn-sm">{{ t.console.ontology.delete_btn }}</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="hint">{{ t.console.ontology.units_empty }}</p>
+  {% endif %}
+</div>
+
+{% if vocab_gaps or smoke_units %}
+<div class="panel">
+  {% if vocab_gaps %}
+  <h3>{{ t.console.ontology.vocab_gap_h2 }}</h3>
+  <p class="hint">{{ t.console.ontology.vocab_gap_hint }}</p>
+  <ul class="plain">{% for k in vocab_gaps %}<li><code>{{ k }}</code></li>{% endfor %}</ul>
+  {% endif %}
+  {% if smoke_units %}
+  <h3>{{ t.console.ontology.smoke_h2 }}</h3>
+  <p class="hint">{{ t.console.ontology.smoke_hint }}</p>
+  <ul class="plain">{% for s in smoke_units %}<li><code>{{ s.external_key }}</code></li>{% endfor %}</ul>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if cap.can_write %}
+<div class="panel">
+  <h2>{{ t.console.ontology.write_h2 }}</h2>
+  <form method="POST" action="{{ url_for('console_ontology_unit_write', domain_key=domain.key) }}" class="filter-form">
+    <div class="filter-group">
+      <label for="unit-kind">{{ t.console.ontology.col_kind }}</label>
+      <select name="kind" id="unit-kind" required>
+        {% for k in entity_types %}<option value="{{ k }}">{{ k }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="filter-group">
+      <label for="unit-key">{{ t.console.ontology.col_key }}</label>
+      <input type="text" name="external_key" id="unit-key" required>
+    </div>
+    <div class="filter-group">
+      <label for="unit-body">{{ t.console.ontology.col_body }}</label>
+      <input type="text" name="body" id="unit-body" required>
+    </div>
+    <div class="filter-group">
+      <label>&nbsp;</label>
+      <button type="submit" class="btn btn-primary">{{ t.console.ontology.save_btn }}</button>
+    </div>
+  </form>
+
+  {% if live_entities and relationship_kinds %}
+  <h3>{{ t.console.ontology.relation_h2 }}</h3>
+  <form method="POST" action="{{ url_for('console_ontology_relation_create', domain_key=domain.key) }}" class="filter-form">
+    <div class="filter-group">
+      <label for="rel-kind">{{ t.console.ontology.col_kind }}</label>
+      <select name="kind" id="rel-kind" required>
+        {% for k in relationship_kinds %}<option value="{{ k }}">{{ k }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="filter-group">
+      <label for="rel-from">{{ t.console.ontology.from_label }}</label>
+      <select name="from_key" id="rel-from" required>
+        {% for e in live_entities %}<option value="{{ e.external_key }}">{{ e.external_key }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="filter-group">
+      <label for="rel-to">{{ t.console.ontology.to_label }}</label>
+      <select name="to_key" id="rel-to" required>
+        {% for e in live_entities %}<option value="{{ e.external_key }}">{{ e.external_key }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>&nbsp;</label>
+      <button type="submit" class="btn">{{ t.console.ontology.connect_btn }}</button>
+    </div>
+  </form>
+  {% endif %}
+
+  <h3>{{ t.console.ontology.import_h2 }}</h3>
+  <form method="POST" action="{{ url_for('console_ontology_import', domain_key=domain.key) }}">
+    <input type="hidden" name="dry" value="1">
+    <textarea name="payload" rows="6" class="wide"></textarea>
+    <button type="submit" class="btn">{{ t.console.ontology.import_preview_btn }}</button>
+  </form>
+  <p class="hint">{{ t.console.ontology.import_hint }}</p>
+</div>
+{% endif %}
+
+{% if events %}
+<div class="panel">
+  <details>
+    <summary>{{ t.console.ontology.events_h2 }} ({{ events|length }})</summary>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>{{ t.console.ontology.col_when }}</th>
+          <th>{{ t.console.ontology.col_who }}</th>
+          <th>{{ t.console.ontology.col_op }}</th>
+          <th>{{ t.console.ontology.col_key }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in events %}
+        <tr>
+          <td>{{ e.created_at }}</td>
+          <td>{{ e.operator }}</td>
+          <td>{{ e.op }}</td>
+          <td><code>{{ e.unit_key }}</code> <span class="muted">{{ e.unit_kind }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+</div>
+{% endif %}
 {% endblock %}

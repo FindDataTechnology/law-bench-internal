@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}{{ t.console.dispatch.title }} · {{ t.nav.brand }}{% endblock %}
+
+{% block nav_items %}{% endblock %}
+
+{% block content %}
+{#- 派单确认页：**这一页只读**。
+
+    批量派单的危险不在「点了会怎样」，而在「不小心点了」：如果列表页渲染时
+    就建任务，刷新一次就多一批。所以先看计划（谁、几个、已有哪些已开单），
+    再在下一页确认写。
+
+    已经开单的域不重复建，并且在计划里如实列出——静默跳过会让人以为派全了。 -#}
+<div class="toolbar between">
+  <h1>{{ t.console.dispatch.title }}</h1>
+  <a class="btn btn-sm" href="{{ url_for('console_domain_list') }}?gap={{ plan.gap }}">{{ t.console.dispatch.back }}</a>
+</div>
+
+<div class="panel">
+  <p class="hint">{{ plan.pillar.title }}</p>
+  <p class="muted">{{ plan.pillar.detail }}</p>
+</div>
+
+{% if plan.will_create %}
+<div class="panel">
+  <h2>{{ t.console.dispatch.will_create }} {{ plan.will_create|length }}</h2>
+  <ul class="plain">
+    {% for d in plan.will_create %}
+    <li><strong>{{ d.name }}</strong> <code>{{ d.path or d.key }}</code></li>
+    {% endfor %}
+  </ul>
+  <form method="POST" action="{{ url_for('console_dispatch_confirm') }}" class="toolbar gap">
+    <input type="hidden" name="gap" value="{{ plan.gap }}">
+    <label for="assignee">{{ t.console.dispatch.assignee }}</label>
+    <input type="text" name="assignee" id="assignee" required
+           placeholder="someone@example.com">
+    <button type="submit" class="btn btn-primary">{{ t.console.dispatch.confirm }}</button>
+  </form>
+  <p class="hint">{{ t.console.dispatch.assignee_hint }}</p>
+</div>
+{% else %}
+<div class="panel">
+  <p class="hint">{{ t.console.dispatch.nothing_to_do }}</p>
+</div>
+{% endif %}
+
+{% if plan.already_open %}
+<div class="panel">
+  <h2>{{ t.console.dispatch.already_open }} {{ plan.already_open|length }}</h2>
+  <p class="hint">{{ t.console.dispatch.already_hint }}</p>
+  <ul class="plain">
+    {% for d in plan.already_open %}
+    <li>{{ d.name }} <code>{{ d.path or d.key }}</code></li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% endblock %}

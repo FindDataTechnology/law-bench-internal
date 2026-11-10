@@ -20,19 +20,8 @@ Key conventions locked in this module are distribution-contract anchors:
   already-published data.
 
 Style: borrowed connection (never opened or closed here), ``%s`` placeholders,
-JSONB via ``json.dumps``/``json.loads``.
-
-事务（2026-11-09 修正，审计 03 §2/§8）：**每个写入口把自己的全部语句包在
-``with conn.transaction():`` 里**，不要用 ``conn.commit()``。
-
-原因：本进程的共享连接是 ``psycopg.connect(..., autocommit=True)``（为了让长 LLM
-调用不挂长事务）。在 psycopg 3 里 ``commit()``/``rollback()`` 在
-``transaction_status == IDLE`` 时是 **no-op**，而 autocommit 连接永远 IDLE。所以
-原来的「one ``conn.commit()`` at the end of each write」是一句空话：KU 写入与
-``authoring_events`` 事件各自立即提交，事件写入失败时 KU 已经落库、``rollback()``
-什么也不做——调用方看到报错但写入其实成功了，审计轨迹里却没有那一行。
-``conn.transaction()`` 在 autocommit 连接上会显式 BEGIN/COMMIT，既恢复原子性，
-又不必改掉全局 autocommit。
+one ``conn.commit()`` at the end of each write, JSONB via ``json.dumps``/
+``json.loads``.
 """
 
 from __future__ import annotations
@@ -41,7 +30,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from . import store, templates, workspaces
+from . import keys, store, templates, workspaces
 
 # Distribution-contract anchor (see module docstring): the deterministic
 # external-key convention for relationship units. Do not change it.
@@ -193,6 +182,19 @@ def _gate_kind(conn: Any, *, domain: dict, kind: str, vocab_key: str) -> None:
         )
 
 
+def _vocabulary(conn: Any, *, domain: dict, key: str) -> list[str]:
+    """The declared vocabulary list for ``key`` (``[]`` when unusable).
+
+    Read-only sibling of :func:`_gate_kind`: the pickers and the importer need
+    the list itself, not a pass/fail verdict, and they must read it from the
+    same template row the gate uses.
+    """
+    tmpl = templates.get_template_by_id(conn, template_id=domain["template_id"])
+    schema = (tmpl or {}).get("schema") or {}
+    vocab = schema.get(key) if isinstance(schema, dict) else None
+    return [str(v) for v in vocab] if isinstance(vocab, list) else []
+
+
 def _record_event(
     conn: Any,
     *,
@@ -224,6 +226,42 @@ def _record_event(
     return _event_to_dict(cur.fetchone())
 
 
+def _fold_write_key(
+    *, domain: dict, external_key: str, attrs: Optional[dict]
+) -> tuple[str, Optional[dict]]:
+    """把写入的键按该域已注册的规则归名（写入边界，不是调用方各自负责）。
+
+    为什么在这里：归名过去只发生在两个调用方（取目录 ``corpus_catalog`` 与抽取
+    ``extraction``），而 ``authoring_create_unit`` / 提案确认 / 批量导入都原样落库。
+    结果是同一个实体两个键，两条都进本体——2026-11-09 实测有一批 401 条单位因为
+    父键未归名而全部要退掉重来。写入方一多（舰队 + 七个岗位），
+    "记得 import pack" 必然失效，所以把规则下沉到唯一写入口。
+
+    三条纪律：
+
+    - 该域没有注册规则 → **不归名**（安全默认：宁可少合并，不可凭空合并）；
+    - 归名后与原写法不同 → 原写法进 ``attrs.aliases``，并记下生效的规则名，
+      使合并可解释；
+    - 归名结果为空（规则把整串吃掉了）→ 退回原写法，绝不写空键。
+    """
+    raw = (external_key or "").strip()
+    if not raw:
+        return raw, attrs
+    rules = keys.rules_for(domain.get("key") or "")
+    if not rules:
+        return raw, attrs
+    folded, applied = keys.fold(raw, rules)
+    folded = (folded or "").strip()
+    if not folded or folded == raw:
+        return raw, attrs
+    merged = dict(attrs or {})
+    aliases = set(merged.get("aliases") or [])
+    aliases.add(raw)
+    merged["aliases"] = sorted(aliases)
+    merged["folded_by"] = list(applied)
+    return folded, merged
+
+
 def _create_unit(
     conn: Any,
     *,
@@ -244,6 +282,11 @@ def _create_unit(
     """
     with conn.transaction():
         _gate_kind(conn, domain=domain, kind=kind, vocab_key=vocab_key)
+        # 写入边界归一（add-domain-agent-team）：同一个实体两个键的问题不能靠
+        # 调用方各自记得 import pack。规则由该域注册，无规则则不归名。
+        external_key, attrs = _fold_write_key(
+            domain=domain, external_key=external_key, attrs=attrs
+        )
         # The op is decided by prior existence, not by the upsert result: the KU
         # upsert cannot distinguish create from update (ON CONFLICT DO UPDATE).
         existed = store.get_knowledge_unit(
@@ -358,6 +401,82 @@ def authoring_create_unit(
     )
 
 
+def authoring_create_units(
+    conn: Any,
+    *,
+    domain_key: str,
+    units: list[dict],
+    operator: str,
+) -> list[dict]:
+    """Create many units in **one** transaction: all of them or none.
+
+    ``authoring_create_unit`` commits per unit, which is right for a human
+    editing one row and wrong for a batch read out of a corpus: half a document's
+    articles in the ontology is a state nobody asked for and nobody can explain
+    afterwards. Here every kind is gated before the first write, all rows share
+    one transaction, and a failure anywhere rolls the whole batch back.
+
+    Each unit is ``{kind, external_key, body, tags?, attrs?}``. Duplicate keys
+    inside one batch are refused up front — two rows writing the same key would
+    make "which one landed" depend on ordering.
+    """
+    domain = _load_domain(conn, domain_key=domain_key)
+    if not units:
+        return []
+    # Fold first, then dedupe: two rows whose keys fold to the same identity are
+    # one row, and the duplicate must be caught before anything is written.
+    folded: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for unit in units:
+        kind, key = unit.get("kind"), unit.get("external_key")
+        if not kind or not key:
+            raise ValueError("every unit needs both 'kind' and 'external_key'")
+        key, attrs = _fold_write_key(
+            domain=domain, external_key=key, attrs=unit.get("attrs")
+        )
+        if (kind, key) in seen:
+            raise ValueError(f"duplicate key in one batch: {kind!r}/{key!r}")
+        seen.add((kind, key))
+        _gate_kind(conn, domain=domain, kind=kind, vocab_key="entity_types")
+        folded.append({**unit, "external_key": key, "attrs": attrs})
+    units = folded
+
+    written: list[dict] = []
+    # 2026-11-09 修正（审计 03 §2/§8）：连接是 autocommit=True，psycopg 3 里
+    # commit()/rollback() 在 IDLE 状态是 no-op。原来的「末尾 commit + 失败 rollback」
+    # 是空话——中途失败会留下半批已经落库的行，与这个函数承诺的 all-or-none 相反。
+    with conn.transaction():
+        for unit in units:
+                prior = store.get_knowledge_unit(
+                    conn, kind=unit["kind"], external_key=unit["external_key"],
+                    namespace=domain["key"],
+                )
+                row = store.upsert_knowledge_unit(
+                    conn,
+                    kind=unit["kind"],
+                    external_key=unit["external_key"],
+                    body=unit.get("body") or "",
+                    namespace=domain["key"],
+                    tags=unit.get("tags"),
+                    attrs=unit.get("attrs"),
+                    tier="raw",
+                    provenance={"operator": operator, "via": "authoring"},
+                    commit=False,
+                )
+                _record_event(
+                    conn,
+                    domain_id=domain["id"],
+                    unit_kind=unit["kind"],
+                    unit_key=unit["external_key"],
+                    op="create" if prior is None else "update",
+                    before=_copy_unit(prior) if prior is not None else None,
+                    after=row,
+                    operator=operator,
+                )
+                written.append(row)
+    return written
+
+
 def authoring_update_unit(
     conn: Any,
     *,
@@ -443,20 +562,147 @@ def authoring_list_units(
     *,
     domain_key: str,
     kind: Optional[str] = None,
+    tier: Optional[str] = None,
+    query: Optional[str] = None,
     include_deleted: bool = False,
     limit: int = 200,
 ) -> list[dict]:
     """List the domain's units, most recently updated first.
 
-    Soft-deleted units are excluded unless ``include_deleted`` is set.
+    Soft-deleted units are excluded unless ``include_deleted`` is set. The
+    filtering happens in SQL rather than in Python so a ``limit`` means "the
+    newest N matching units" — filtering after a LIMIT returned a short page
+    that looked like an empty domain.
     """
     domain = _load_domain(conn, domain_key=domain_key)
-    units = store.list_knowledge_units(
-        conn, kind=kind, namespace=domain["key"], limit=limit
+    return store.list_knowledge_units(
+        conn,
+        kind=kind,
+        tier=tier,
+        query=query,
+        namespace=domain["key"],
+        include_deleted=include_deleted,
+        limit=limit,
     )
-    if include_deleted:
-        return units
-    return [u for u in units if not (u.get("tags") or {}).get("deleted")]
+
+
+def authoring_live_entities(
+    conn: Any, *, domain_key: str, limit: int = 1000
+) -> list[dict]:
+    """The domain's entity units that are not soft-deleted.
+
+    This is the candidate list a relationship picker offers and the set a bulk
+    import resolves its endpoints against — one function so the two cannot
+    disagree about which entities "exist".
+    """
+    domain = _load_domain(conn, domain_key=domain_key)
+    rows = store.list_knowledge_units(
+        conn, namespace=domain["key"], include_deleted=False, limit=limit
+    )
+    entities = set(_vocabulary(conn, domain=domain, key="entity_types") or ())
+    return [u for u in rows if u["kind"] in entities]
+
+
+def authoring_live_keys(
+    conn: Any,
+    *,
+    domain_key: str,
+    kind: Optional[str] = None,
+    prefix: Optional[str] = None,
+) -> set[str]:
+    """Every live unit key in the domain — optionally one kind, one key prefix.
+
+    Deliberately *not* ``authoring_live_entities``: that one is capped at 1000
+    rows because it feeds a picker, and reading it as "these exist" silently
+    stops being true past the cap. Measured 2026-11-10: adopting a 1,208-article
+    code read the first 1000 units, concluded the rest were missing every time,
+    and rewrote the same 200 articles until the cap — the loop could never
+    finish. A set membership question needs the whole set.
+    """
+    domain = _load_domain(conn, domain_key=domain_key)
+    sql = (
+        "SELECT external_key FROM knowledge_units "
+        "WHERE namespace = %s AND (tags->>'deleted') IS NULL"
+    )
+    params: list[Any] = [domain["key"]]
+    if kind:
+        sql += " AND kind = %s"
+        params.append(kind)
+    if prefix:
+        sql += " AND external_key LIKE %s"
+        params.append(prefix.replace("%", r"\%").replace("_", r"\_") + "%")
+    return {r["external_key"] for r in conn.execute(sql, tuple(params)).fetchall()}
+
+
+def authoring_live_key_kinds(conn: Any, *, domain_key: str) -> dict[str, str]:
+    """``{external_key: kind}`` for every live unit — same reason as above.
+
+    The extractor closes a relationship's endpoints against this map, so a capped
+    version silently turns existing clauses into "missing endpoints": measured
+    2026-11-10, the legal domain had 1,923 clause units and the first 1000 held no
+    article of the code in question at all, so every grounding proposal was
+    refused.
+    """
+    domain = _load_domain(conn, domain_key=domain_key)
+    rows = conn.execute(
+        "SELECT external_key, kind FROM knowledge_units "
+        "WHERE namespace = %s AND (tags->>'deleted') IS NULL",
+        (domain["key"],),
+    ).fetchall()
+    return {r["external_key"]: r["kind"] for r in rows}
+
+
+def authoring_unit_detail(
+    conn: Any, *, domain_key: str, kind: str, external_key: str
+) -> Optional[dict]:
+    """One unit plus the relationships that touch it.
+
+    A relationship stores its endpoints in ``attrs`` (``from_key``/``to_key``),
+    so "what is this entity connected to" is a scan over the relationship units
+    in the same namespace. Relations whose other end is soft-deleted are still
+    returned with ``dangling=True`` — hiding them would make a deleted entity
+    look unreferenced.
+    """
+    domain = _load_domain(conn, domain_key=domain_key)
+    unit = store.get_knowledge_unit(
+        conn, kind=kind, external_key=external_key, namespace=domain["key"]
+    )
+    if unit is None:
+        return None
+    rel_kinds = set(_vocabulary(conn, domain=domain, key="relationship_kinds") or ())
+    rels = [
+        u
+        for u in store.list_knowledge_units(conn, namespace=domain["key"], limit=2000)
+        if u["kind"] in rel_kinds
+        and external_key
+        in (
+            (u.get("attrs") or {}).get("from_key"),
+            (u.get("attrs") or {}).get("to_key"),
+        )
+    ]
+    live = {
+        u["external_key"]
+        for u in store.list_knowledge_units(
+            conn, namespace=domain["key"], include_deleted=False, limit=2000
+        )
+    }
+    related = []
+    for rel in rels:
+        attrs = rel.get("attrs") or {}
+        other = attrs.get("to_key") if attrs.get("from_key") == external_key else attrs.get("from_key")
+        related.append(
+            {
+                "kind": rel["kind"],
+                "external_key": rel["external_key"],
+                "from_key": attrs.get("from_key"),
+                "to_key": attrs.get("to_key"),
+                "other": other,
+                "deleted": bool((rel.get("tags") or {}).get("deleted")),
+                "dangling": other not in live,
+            }
+        )
+    return {"unit": unit, "related": related,
+            "deleted": bool((unit.get("tags") or {}).get("deleted"))}
 
 
 # ------------------------------------------------------------------- events

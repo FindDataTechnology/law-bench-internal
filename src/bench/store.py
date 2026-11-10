@@ -184,16 +184,24 @@ def list_knowledge_units(
     kind: Optional[str] = None,
     namespace: Optional[str] = None,
     tier: Optional[str] = None,
+    query: Optional[str] = None,
+    include_deleted: bool = True,
     limit: int = 200,
 ) -> list[dict]:
     """List units, most recently updated first; filters are optional.
 
-    ``limit`` is clamped to :data:`MAX_LIST_UNITS` at this boundary: the value
-    is parameterised into ``LIMIT`` (no injection) but the rows are all
-    materialised by ``fetchall``, so an unbounded value is a memory hazard.
+    ``query`` matches the external key or the body (case-insensitive substring)
+    — the page's one search box has to find a unit by the name a person knows it
+    by, which is usually the key.
+
+    ``include_deleted`` defaults to **True** here so the store stays a plain
+    projection of the table; callers that mean "live units only" say so. The
+    default used to be implicit (everything) and the authoring layer filtered —
+    that is preserved, just made explicit.
+    ``limit`` 另有钳制（真源侧）：它被参数化进 ``LIMIT``，但行由
+    ``fetchall`` 全部物化，所以无上界是内存风险；钳制落在本函数——
+    这是所有调用方的唯一收口，风险也在 fetchall 而不在 SQL。
     """
-    # Clamp here, not only at the route: this is the single place every caller
-    # funnels through, and the hazard is the fetchall, not the SQL.
     limit = max(1, min(int(limit), MAX_LIST_UNITS))
     where, params = [], []
     if kind is not None:
@@ -205,6 +213,11 @@ def list_knowledge_units(
     if tier is not None:
         where.append("tier = %s")
         params.append(tier)
+    if query:
+        where.append("(external_key ILIKE %s OR body ILIKE %s)")
+        params.extend([f"%{query}%", f"%{query}%"])
+    if not include_deleted:
+        where.append("COALESCE(tags->>'deleted', 'false') <> 'true'")
     sql = f"SELECT {_UNIT_COLS} FROM knowledge_units"
     if where:
         sql += " WHERE " + " AND ".join(where)

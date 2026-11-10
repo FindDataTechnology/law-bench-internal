@@ -96,4 +96,96 @@
   {% endif %}
 {% endif %}
 </div>
+
+{#- 派给「人/舰队」的缺口任务。
+
+    总览页只列 assignee 恰好等于本人 id 的任务；批量派单的负责人是自由文本
+    （某人的邮箱、某支舰队），所以不在这里列出来，这些任务就谁看不见——而且
+    它们开着会让幂等检查永久拒绝再次派同一缺口。关闭动作是让这条链路可重跑
+    的那一步。 -#}
+{% if batches %}
+<div class="panel">
+  <h2>{{ t.console.inbox.batches_h2 }}</h2>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>{{ t.console.inbox.col_batch }}</th>
+        <th>{{ t.console.inbox.col_pending }}</th>
+        <th>{{ t.console.inbox.col_confirmed }}</th>
+        <th>{{ t.console.inbox.col_rejected }}</th>
+        <th>{{ t.console.inbox.col_usable }}</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in batches %}
+      <tr>
+        <td><a href="{{ url_for('console_inbox', domain_key=domain.key) }}?batch={{ b.batch }}"><code>{{ b.batch }}</code></a></td>
+        <td>{{ b.pending }}</td>
+        <td>{{ b.confirmed }}</td>
+        <td>{{ b.rejected }}</td>
+        <td>
+          {% if b.usable_rate is not none %}
+            {{ '%.0f%%'|format(b.usable_rate * 100) }}
+            {% if b.low_yield %}<span class="badge badge-warn">{{ t.console.inbox.low_yield }}</span>{% endif %}
+          {% else %}<span class="muted">-</span>{% endif %}
+        </td>
+        <td>
+          {% if cap.can_assign and b.pending %}
+          <form method="POST" class="inline" action="{{ url_for('console_proposal_batch', domain_key=domain.key) }}">
+            <input type="hidden" name="batch" value="{{ b.batch }}">
+            <input type="hidden" name="action" value="confirm">
+            <button type="submit" class="btn btn-sm">{{ t.console.inbox.batch_confirm }}</button>
+          </form>
+          <form method="POST" class="inline" action="{{ url_for('console_proposal_batch', domain_key=domain.key) }}">
+            <input type="hidden" name="batch" value="{{ b.batch }}">
+            <input type="hidden" name="action" value="reject">
+            <button type="submit" class="btn btn-sm btn-danger">{{ t.console.inbox.batch_reject }}</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if batch %}<p class="hint">{{ t.console.inbox.batch_filtered }} <a href="{{ url_for('console_inbox', domain_key=domain.key) }}">{{ t.console.inbox.batch_clear }}</a></p>{% endif %}
+</div>
+{% endif %}
+
+{% if tasks %}
+<div class="panel">
+  <h2>{{ t.console.inbox.tasks_h2 }} <span class="muted">{{ open_tasks|length }}</span></h2>
+  <table class="table">
+    <thead><tr>
+      <th>{{ t.console.inbox.col_task }}</th>
+      <th>{{ t.console.inbox.col_assignee }}</th>
+      <th>{{ t.console.inbox.col_status }}</th>
+      <th></th>
+    </tr></thead>
+    <tbody>
+      {% for task in tasks %}
+      <tr>
+        <td>{{ task.title }}{% if task.target_key %} <span class="muted">· {{ task.target_key }}</span>{% endif %}</td>
+        <td><code>{{ task.assignee }}</code></td>
+        <td>{{ task.status }}</td>
+        <td>
+          {% if task.status in ('pending', 'in_progress') and cap.can_write %}
+          <form method="POST" class="inline"
+                action="{{ url_for('console_task_transition', domain_key=domain.key, task_id=task.id) }}">
+            <input type="hidden" name="to" value="done">
+            <button type="submit" class="btn btn-sm">{{ t.console.inbox.task_done }}</button>
+          </form>
+          <form method="POST" class="inline"
+                action="{{ url_for('console_task_transition', domain_key=domain.key, task_id=task.id) }}">
+            <input type="hidden" name="to" value="cancelled">
+            <button type="submit" class="btn btn-sm">{{ t.console.inbox.task_cancel }}</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 {% endblock %}

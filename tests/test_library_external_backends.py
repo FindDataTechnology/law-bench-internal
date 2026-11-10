@@ -301,3 +301,31 @@ def test_local_model_calls_the_in_cluster_contract(monkeypatch):
     assert stub.calls[0]["url"] == "http://embed.test:6100/embed"
     assert stub.calls[0]["body"] == {"input": ["第一条"]}
     assert len(out[0]) == 1024
+
+
+def test_text_only_library_is_skipped_by_search_not_fatal(conn, monkeypatch):
+    """A text-table library holds no vectors.
+
+    Measured 2026-11-09: registering the guide cases as a text table with
+    `dims=1` made *every* search in that domain fail on embedder resolution —
+    one line's extraction-only library took another line's retrieval down with it.
+    """
+    lib = libraries.create_library(
+        conn, library_key="cases", name="cases", created_by="t",
+        backend="pgvector-external", dims=1, location={"dsn_env": "X"},
+    )
+    libraries.add_source(conn, library_key="cases", source_key="guide_cases",
+                         uri="guide_cases", created_by="t", source_kind="text-table")
+    legal = conn.execute("SELECT id, path FROM domains WHERE key='legal'").fetchone()
+    libraries.subscribe(conn, domain_id=legal["id"], library_key="cases", created_by="t")
+
+    # The vector library in the same scope still answers.
+    _qdrant_library(conn, sources={"admin": {"match": {"category": "行政法规"}}})
+    libraries.subscribe(conn, domain_id=legal["id"], library_key="law-library", created_by="t")
+    monkeypatch.setenv("TEST_QDRANT_URL", "http://qdrant.test:6333")
+    stub = _Stub(lambda url, body: {"result": []})
+    monkeypatch.setattr(library_index, "_http_post", stub)
+    hits = library_index.search(conn, domain_path="legal", query="x",
+                                embed=lambda t: [[0.1] * 1024])
+    assert hits == []                     # no crash from the text-only library
+    assert stub.calls                     # the vector library was still queried

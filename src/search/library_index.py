@@ -194,6 +194,12 @@ def search(
         lib = libraries.get_library(conn, library_key=library_key)
         if lib is None:
             continue
+        # A library whose sources are all text tables holds no vectors: it exists
+        # for extraction, and asking it for neighbours would either fail on the
+        # embedder or return nothing. Skip it rather than fail the whole search —
+        # one line's dead weight must not take another line's retrieval down.
+        if _text_only(conn, lib):
+            continue
         # One embedder per library: several libraries may each live in a
         # different space, so a single query vector for all of them is wrong.
         embed_fn = embed or _embedders.embedder_for_library(lib)
@@ -210,6 +216,12 @@ def search(
                                          allowed=allowed, qvec=qvec))
     results.sort(key=lambda h: h["score"], reverse=True)
     return results[: max(1, top_k)]
+
+
+def _text_only(conn: Any, lib: dict) -> bool:
+    """True when a library's sources are text tables — nothing to search."""
+    sources = libraries.list_sources(conn, library_id=lib["id"])
+    return bool(sources) and all(s.get("source_kind") == "text-table" for s in sources)
 
 
 def _search_owned(
@@ -409,6 +421,15 @@ def _search_external_pg(
 
                 rule = _json.loads(rule or "{}")
             where = rule.get("where") or {}
+            # Similarity search needs a vector column. A source without one is a
+            # text table: say so by name instead of letting Postgres answer with
+            # 字段 "embedding" 不存在.
+            if "embedding" not in table_columns(ext, table):
+                raise ValueError(
+                    f"source {src['source_key']!r} points at {table!r}, which has no "
+                    "'embedding' column — register it with source_kind 'text-table' "
+                    "instead of searching it"
+                )
             clauses = ["embedding IS NOT NULL"]
             params: list[Any] = []
             for col, val in sorted(where.items()):
@@ -438,7 +459,28 @@ def _search_external_pg(
     return out
 
 
-def count_scope(conn: Any, *, domain_path: str) -> dict:
+def count_for(conn: Any, *, lib: dict, allowed: set[str], chain: list[str]) -> int:
+    """Count one library's retrievable chunks for a reader on ``chain``.
+
+    Split out of :func:`count_scope` so a caller that already has per-source
+    numbers (the knowledge page) does not pay for a second full scan of the same
+    store — two exact counts over 364k points is most of a second.
+    """
+    backend = lib.get("backend") or "array-cosine"
+    if backend == "qdrant":
+        return _count_qdrant(conn, lib=lib, allowed=allowed)
+    if backend == "pgvector-external":
+        return _count_external_pg(conn, lib=lib, allowed=allowed)
+    params: list[Any] = [lib["id"], chain]
+    sql = ("SELECT COUNT(*) AS n FROM corpus_chunks "
+           "WHERE library_id = %s AND scope_path = ANY(%s)")
+    if allowed:
+        sql += " AND source_key = ANY(%s)"
+        params.append(sorted(allowed))
+    return conn.execute(sql, tuple(params)).fetchone()["n"]
+
+
+def count_scope(conn: Any, *, domain_path: str, cache: Optional[dict] = None) -> dict:
     """How much retrievable content a domain's scope actually holds.
 
     Owned libraries are counted in ``corpus_chunks``; external libraries are
@@ -446,8 +488,14 @@ def count_scope(conn: Any, *, domain_path: str) -> dict:
     that reports "0 chunks" would be exactly the false gap the estate matrix
     exists to prevent. A store that cannot be reached reports its error instead
     of a zero.
+
+    ``cache`` is a **per-request** memo shared by callers that loop over many
+    domains (the estate matrix). An external library's count depends only on
+    ``(library, granted sources)`` — not on the reader's path — so ten
+    sub-domains inheriting the same grant need one round trip, not ten. Owned
+    counts stay uncached: they depend on the reader's ancestor chain.
     """
-    out = {"chunks": 0, "errors": []}
+    out = {"chunks": 0, "by_library": {}, "errors": []}
     scope = libraries.effective_sources(conn, domain_path=domain_path)
     chain = _scope_paths(domain_path)
     for library_key, allowed in scope.items():
@@ -455,21 +503,68 @@ def count_scope(conn: Any, *, domain_path: str) -> dict:
         if lib is None:
             continue
         backend = lib.get("backend") or "array-cosine"
+        cache_key = (library_key, tuple(sorted(allowed))) if cache is not None else None
+        if cache_key is not None and cache_key in cache:
+            n = cache[cache_key]
+            out["chunks"] += n
+            out["by_library"][library_key] = n
+            continue
         try:
-            if backend == "qdrant":
-                out["chunks"] += _count_qdrant(conn, lib=lib, allowed=allowed)
-            elif backend == "pgvector-external":
-                out["chunks"] += _count_external_pg(conn, lib=lib, allowed=allowed)
-            else:
-                params: list[Any] = [lib["id"], chain]
-                sql = ("SELECT COUNT(*) AS n FROM corpus_chunks "
-                       "WHERE library_id = %s AND scope_path = ANY(%s)")
-                if allowed:
-                    sql += " AND source_key = ANY(%s)"
-                    params.append(sorted(allowed))
-                out["chunks"] += conn.execute(sql, tuple(params)).fetchone()["n"]
+            n = count_for(conn, lib=lib, allowed=allowed, chain=chain)
+            if cache_key is not None and backend in ("qdrant", "pgvector-external"):
+                cache[cache_key] = n
+            out["chunks"] += n
+            out["by_library"][library_key] = n
         except Exception as exc:  # unreachable store must not read as "empty"
             out["errors"].append(f"{library_key}: {exc}")
+    return out
+
+
+def _source_counts_owned(conn: Any, *, lib: dict, sources: list[dict]) -> dict[str, int]:
+    """Per-source counts for content ingested into this database (one GROUP BY)."""
+    permitted = sorted({s["source_key"] for s in sources})
+    rows = conn.execute(
+        "SELECT source_key, COUNT(*) AS n FROM corpus_chunks "
+        "WHERE library_id = %s AND source_key = ANY(%s) GROUP BY source_key",
+        (lib["id"], permitted),
+    ).fetchall()
+    seen = {r["source_key"]: r["n"] for r in rows}
+    return {s["source_key"]: seen.get(s["source_key"], 0) for s in sources}
+
+
+def _source_counts_external_pg(
+    conn: Any, *, lib: dict, sources: list[dict]
+) -> dict[str, int]:
+    """Per-source counts where a source *is* a table on a foreign database."""
+    import psycopg
+
+    loc = libraries.resolve_location(lib)
+    out: dict[str, int] = {}
+    with psycopg.connect(loc["dsn_env"], connect_timeout=10) as ext:
+        for src in sources:
+            table = src["uri"]
+            if not _IDENT.match(table or ""):
+                raise ValueError(f"unsafe table name: {table!r}")
+            rule = src.get("ingest_rule") or {}
+            if isinstance(rule, str):
+                import json as _json
+
+                rule = _json.loads(rule or "{}")
+            clauses: list[str] = []
+            params: list[Any] = []
+            if "embedding" in table_columns(ext, table):
+                # Only a vector table can be filtered on having a vector; a text
+                # table has no such column and every row counts.
+                clauses.append("embedding IS NOT NULL")
+            for col, val in sorted((rule.get("where") or {}).items()):
+                if not _IDENT.match(col):
+                    raise ValueError(f"unsafe filter column: {col!r}")
+                clauses.append(f"{col} = %s")
+                params.append(val)
+            sql = f"SELECT COUNT(*) FROM {table}"
+            if clauses:
+                sql += " WHERE " + " AND ".join(clauses)
+            out[src["source_key"]] = int(ext.execute(sql, tuple(params)).fetchone()[0])
     return out
 
 
@@ -481,6 +576,97 @@ def _count_qdrant(conn: Any, *, lib: dict, allowed: set[str]) -> int:
         body["filter"] = filt
     data = _qdrant_post(loc["url_env"], f"/collections/{loc['collection']}/points/count", body)
     return int((data.get("result") or {}).get("count") or 0)
+
+
+def _match_values(src: dict) -> dict[str, list[Any]]:
+    """A source's rule as ``{payload_key: [allowed values]}`` (lists normalised)."""
+    rule = src.get("ingest_rule") or {}
+    if isinstance(rule, str):
+        import json as _json
+
+        rule = _json.loads(rule or "{}")
+    out: dict[str, list[Any]] = {}
+    for key, value in (rule.get("match") or {}).items():
+        if isinstance(value, (list, tuple, set)):
+            out[str(key)] = list(value)
+        else:
+            out[str(key)] = [value]
+    return out
+
+
+def source_counts(conn: Any, *, lib: dict, allowed: set[str]) -> dict[str, int]:
+    """Per-source chunk counts, answered by whatever the backend does best.
+
+    Owned content is one ``GROUP BY`` here; a foreign pgvector store is one
+    ``COUNT(*)`` per table; Qdrant is **one** facet request per payload key
+    instead of one per source (7 sources × a round trip each is a slow panel for
+    no extra truth), falling back to per-source counts when the rules do not
+    share a single filter key — a facet cannot answer that shape.
+
+    ``source_counts`` is what makes "narrow the subscription to these sources"
+    a decision taken on numbers instead of on source names, so a backend that
+    cannot answer must return ``{}`` rather than zeros.
+    """
+    sources = [s for s in libraries.list_sources(conn, library_id=lib["id"])
+               if not allowed or s["source_key"] in allowed]
+    if not sources:
+        return {}
+    backend = lib.get("backend") or "array-cosine"
+    # Owned backends keep their chunks in this database: one GROUP BY, no network.
+    if backend in ("array-cosine", "pgvector"):
+        return _source_counts_owned(conn, lib=lib, sources=sources)
+    # External pgvector: a source *is* a table on someone else's database, so
+    # counting per source is the only shape available there.
+    if backend == "pgvector-external":
+        return _source_counts_external_pg(conn, lib=lib, sources=sources)
+    if backend != "qdrant":
+        return {}
+
+    rules = {s["source_key"]: _match_values(s) for s in sources}
+    keys = {tuple(sorted(r)) for r in rules.values()}
+    if len(keys) != 1 or not next(iter(keys)):
+        # Mixed or keyless rules: no single facet can answer, count per source.
+        return {s["source_key"]: _count_qdrant(conn, lib=lib, allowed={s["source_key"]})
+                for s in sources}
+
+    key_tuple = next(iter(keys))
+    if len(key_tuple) != 1:
+        return {s["source_key"]: _count_qdrant(conn, lib=lib, allowed={s["source_key"]})
+                for s in sources}
+    # A facet groups by ONE payload key; `key_tuple` is the tuple of the keys the
+    # rules filter on, so unwrap it only after the width check above.
+    key = key_tuple[0]
+
+    loc = libraries.resolve_location(lib)
+    data = _qdrant_post(
+        loc["url_env"],
+        f"/collections/{loc['collection']}/facet",
+        {"key": key, "limit": 1000, "exact": True},
+    )
+    facet = {h["value"]: int(h["count"]) for h in (data.get("result") or {}).get("hits") or []}
+    counts: dict[str, int] = {}
+    covered: set[Any] = set()
+    for src in sources:
+        values = rules[src["source_key"]].get(key, [])
+        n = 0
+        for v in values:
+            if v in facet:
+                n += facet[v]
+                covered.add(v)
+        counts[src["source_key"]] = n
+    # A value in the facet that belongs to no granted source is unreachable for
+    # this subscription; it is not part of any source's count, and the caller
+    # reports the difference against the library total.
+    return counts
+
+
+def table_columns(ext: Any, table: str) -> set[str]:
+    """The table's column names (one catalog query, cached per call site)."""
+    rows = ext.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+        (table,),
+    ).fetchall()
+    return {r[0] for r in rows}
 
 
 def _count_external_pg(conn: Any, *, lib: dict, allowed: set[str]) -> int:
@@ -501,14 +687,19 @@ def _count_external_pg(conn: Any, *, lib: dict, allowed: set[str]) -> int:
 
                 rule = _json.loads(rule or "{}")
             where = rule.get("where") or {}
-            clauses = ["embedding IS NOT NULL"]
+            # A text table has no vector column; only a real vector table is
+            # filtered on "has a vector". Assuming the column exists is what made
+            # the guide-cases count raise 字段 "embedding" 不存在.
+            clauses = ["embedding IS NOT NULL"] if "embedding" in table_columns(ext, table) else []
             params: list[Any] = []
             for col, val in sorted(where.items()):
                 if not _IDENT.match(col):
                     raise ValueError(f"unsafe filter column: {col!r}")
                 clauses.append(f"{col} = %s")
                 params.append(val)
-            sql = f"SELECT COUNT(*) FROM {table} WHERE {' AND '.join(clauses)}"
+            sql = f"SELECT COUNT(*) FROM {table}"
+            if clauses:
+                sql += " WHERE " + " AND ".join(clauses)
             total += int(ext.execute(sql, tuple(params)).fetchone()[0])
     return total
 

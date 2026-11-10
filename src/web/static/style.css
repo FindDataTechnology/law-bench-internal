@@ -566,3 +566,51 @@ code.digest { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
   .inline-form input[type="text"] { width: 100%; }
   .zone-nav { gap: 0.8rem; }
 }
+
+/* ── ontology graph ──────────────────────────────────────────────────────────
+   Server-rendered SVG: the picture is deterministic on purpose — a graph that
+   reshuffles on reload cannot be read as a structure. Concepts sit left, the
+   documents they rest on sit right, edges are the relationships between them.
+   Colour carries the kind (concept = accent, document = local/cyan); nothing
+   else in the drawing competes. */
+.onto-graph__svg {
+  width: 100%;
+  height: auto;
+  max-height: 520px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 0.75rem;
+}
+.onto-graph__edge {
+  fill: none;
+  stroke: #9aa3af;
+  stroke-width: 1.25;
+}
+.onto-graph__node rect { stroke-width: 1; }
+.onto-graph__node text {
+  font-size: 0.78rem;
+  dominant-baseline: middle;
+}
+.onto-graph__node--concept rect { fill: #eff6ff; stroke: var(--accent); }
+.onto-graph__node--concept text { fill: #1e3a8a; }
+.onto-graph__node--doc rect { fill: #ecfeff; stroke: var(--local); }
+.onto-graph__node--doc text { fill: var(--local-deep); }
+.onto-graph__node:hover rect { fill: #fff; }
+.onto-graph__isolated {
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+}
+.onto-grounding {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-right: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.onto-grounding__kind {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  color: var(--local-deep);
+}

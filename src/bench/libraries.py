@@ -68,6 +68,12 @@ LIBRARY_SCHEMA = """
 ALTER TABLE IF EXISTS domains ADD COLUMN IF NOT EXISTS parent_id BIGINT REFERENCES domains(id);
 ALTER TABLE IF EXISTS domains ADD COLUMN IF NOT EXISTS path TEXT;
 
+-- Archiving is a soft exit: the domain leaves the estate, its data stays put.
+-- A timestamp (not a boolean) because "when did this line stop" is the question
+-- that actually gets asked later, and it matches the other soft-deletes in this
+-- schema (domain_members.removed_at).
+ALTER TABLE IF EXISTS domains ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+
 -- Backfill: a pre-tree domain is a root whose path is its own key. Idempotent —
 -- only rows that have never been assigned a path are touched again.
 UPDATE domains SET path = key WHERE path IS NULL OR path = '';
@@ -387,6 +393,62 @@ def subscribe(
     row = _row(cur.fetchone())
     conn.commit()
     return row
+
+
+def narrow(
+    conn: Any,
+    *,
+    domain_id: int,
+    domain_path: str,
+    library_key: str,
+    sources: Iterable[str],
+    created_by: str,
+) -> dict:
+    """Narrow a domain's own subscription, refusing anything that widens.
+
+    ``subscribe`` stores whatever it is given and lets ``effective_sources``
+    complain later — fine for an admin form, wrong for a self-service page: the
+    domain lead would see a success flash and a broken scope on the next page
+    load. Validating **here** turns "you may not do that" into an immediate,
+    specific error.
+
+    Rules, matching the resolver exactly:
+
+    - a root domain may narrow to any subset of the library's sources;
+    - a child may only pick from what its **parent** effectively holds, and the
+      library itself must be one the parent holds.
+    """
+    lib = get_library(conn, library_key=library_key)
+    if lib is None:
+        raise ValueError(f"library {library_key!r} not found")
+    wanted = {str(s).strip() for s in sources if str(s).strip()}
+    if not wanted:
+        raise ValueError("narrowing needs at least one source; omit the filter to keep every source")
+    known = {s["source_key"] for s in list_sources(conn, library_id=lib["id"])}
+    unknown = sorted(wanted - known)
+    if unknown:
+        raise ValueError(f"unknown source(s) for {library_key!r}: {', '.join(unknown)}")
+
+    parent_path = "/".join([p for p in (domain_path or "").split("/") if p][:-1])
+    if parent_path:
+        parent_scope = effective_sources(conn, domain_path=parent_path)
+        if library_key not in parent_scope:
+            raise ValueError(
+                f"the parent domain does not hold {library_key!r} — a sub-domain cannot "
+                "introduce a library its parent never granted"
+            )
+        extra = sorted(wanted - parent_scope[library_key])
+        if extra:
+            raise ValueError(
+                f"scope widens beyond the parent: {', '.join(extra)} not granted by {parent_path!r}"
+            )
+    return subscribe(
+        conn,
+        domain_id=domain_id,
+        library_key=library_key,
+        created_by=created_by,
+        source_filter=sorted(wanted),
+    )
 
 
 def _ancestors(path: str) -> list[str]:

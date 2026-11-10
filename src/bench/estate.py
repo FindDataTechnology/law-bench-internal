@@ -21,13 +21,29 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from . import domain_rubrics, libraries
+from . import domain_rubrics, libraries, quality
 
 #: Gap keys, in the order the matrix renders them.
 PILLARS = ("ontology", "knowledge", "eval", "inbox")
 
 
 def _pillar_ontology(conn: Any, domain: dict) -> dict:
+    """Declared vocabulary size and how much of it is actually curated.
+
+    Smoke-test rows are **excluded** from ``curated_units`` and reported
+    separately. On 2026-11-09 this pillar read "1 unit" for the legal domain —
+    and that unit was ``smoke-clause-001``, so the matrix reported a curated
+    ontology where there was only left-over test data. Excluding it is not
+    deletion (the row stays, and the page names the count); it keeps the number
+    answering "did a human curate anything here".
+
+    Soft-deleted units are excluded for the same reason — a retired unit is no
+    longer curated. Measured 2026-11-10, the gov line read 85 curated units while
+    31 were live: the rest were rows a curation pass had retired, still counted
+    because the query carried no deleted filter.
+    """
+    from . import ontology_import
+
     declared = conn.execute(
         "SELECT COUNT(*) AS n FROM ("
         "  SELECT jsonb_array_elements_text(schema::jsonb -> 'entity_types') "
@@ -35,17 +51,21 @@ def _pillar_ontology(conn: Any, domain: dict) -> dict:
         ") t",
         (domain["template_id"],),
     ).fetchone()
-    curated = conn.execute(
-        "SELECT COUNT(*) AS n FROM knowledge_units WHERE namespace = %s",
+    rows = conn.execute(
+        "SELECT kind, external_key, body FROM knowledge_units "
+        "WHERE namespace = %s AND (tags->>'deleted') IS NULL",
         (domain.get("path") or domain["key"],),
-    ).fetchone()
+    ).fetchall()
+    smoke = [r for r in rows if ontology_import.is_smoke({"external_key": r["external_key"],
+                                                          "body": r["body"]})]
     return {
         "declared_types": declared["n"] if declared else None,
-        "curated_units": curated["n"] if curated else None,
+        "curated_units": len(rows) - len(smoke),
+        "smoke_units": len(smoke),
     }
 
 
-def _pillar_knowledge(conn: Any, domain: dict) -> dict:
+def _pillar_knowledge(conn: Any, domain: dict, *, cache: Optional[dict] = None) -> dict:
     """Subscribed scope **and** how much of it is actually retrievable.
 
     The gap is about retrievable content, not about paperwork: a domain that
@@ -68,7 +88,9 @@ def _pillar_knowledge(conn: Any, domain: dict) -> dict:
         # breakage instead of pretending the domain has no corpus.
         return {"libraries": 0, "sources": 0, "chunks": 0, "error": str(exc)}
 
-    counted = library_index.count_scope(conn, domain_path=domain.get("path") or domain["key"])
+    counted = library_index.count_scope(
+        conn, domain_path=domain.get("path") or domain["key"], cache=cache
+    )
     out = {
         "libraries": len(scope),
         "sources": sum(len(v) for v in scope.values()),
@@ -110,9 +132,13 @@ def _pillar_inbox(conn: Any, domain: dict) -> dict:
     }
 
 
-def matrix(conn: Any, *, domains: list[dict]) -> list[dict]:
+def matrix(conn: Any, *, domains: list[dict], probed: Optional[dict] = None,
+           with_quality: bool = True) -> list[dict]:
     """One row per domain: identity + tree depth + the four pillar summaries."""
     rows = []
+    # One memo for the whole matrix: sub-domains inheriting the same grant must
+    # not each re-count the same external store (ten rows, one round trip).
+    scope_cache: dict = {}
     for domain in domains:
         # A domain row written before the tree existed may still have no path
         # (the backfill only touches rows present when it runs). A root's path
@@ -121,8 +147,13 @@ def matrix(conn: Any, *, domains: list[dict]) -> list[dict]:
         # Computed once: the knowledge pillar may call out to an external store,
         # and asking twice per row would double that round trip.
         ontology = _pillar_ontology(conn, domain)
-        knowledge = _pillar_knowledge(conn, domain)
+        knowledge = _pillar_knowledge(conn, domain, cache=scope_cache)
         evaluation = _pillar_eval(conn, domain)
+        row_quality = (
+            quality.all_metrics(conn, domain_key=domain["key"], namespace=path,
+                                probed=probed)
+            if with_quality else {}
+        )
         rows.append(
             {
                 "domain": {**domain, "path": path},
@@ -131,25 +162,44 @@ def matrix(conn: Any, *, domains: list[dict]) -> list[dict]:
                 "knowledge": knowledge,
                 "eval": evaluation,
                 "inbox": _pillar_inbox(conn, domain),
+                "quality": row_quality,
                 "gaps": gaps_for(
-                    {"ontology": ontology, "knowledge": knowledge, "eval": evaluation}
+                    {"ontology": ontology, "knowledge": knowledge, "eval": evaluation},
+                    row_quality,
                 ),
             }
         )
     return rows
 
 
-def gaps_for(pillars: dict) -> list[str]:
-    """Which pillars are empty. Pure, so the template and the tests agree."""
+def gaps_for(pillars: dict, quality_metrics: Optional[dict] = None) -> list[str]:
+    """Which pillars are empty, plus which quality ratios are below their floor.
+
+    两类缺口刻意分开命名：``ontology`` 是"没有内容"，``quality:evidence`` 是
+    "有内容但立不住"。合成一个词，就会有人用灌量把第二个也抹平。
+    """
     gaps = []
     if (pillars["ontology"].get("curated_units") or 0) == 0:
         gaps.append("ontology")
     # Zero *chunks* is the gap — a subscription with nothing ingested is not
-    # knowledge, it is a promise.
-    if (pillars["knowledge"].get("chunks") or 0) == 0:
+    # knowledge, it is a promise. But an *unreadable* store is not an empty one:
+    # when the count could not be taken, reporting a gap would send someone to
+    # rebuild a corpus that already exists. Unknown is not a gap; the page shows
+    # the error itself (the row still renders it as a warning badge).
+    knowledge = pillars["knowledge"]
+    if not knowledge.get("error") and (knowledge.get("chunks") or 0) == 0:
         gaps.append("knowledge")
     if (pillars["eval"].get("standards") or 0) == 0:
         gaps.append("eval")
+    # 质量缺口：只有"有物可算且不达标"才算；无物可算（value is None）不是缺口，
+    # 那由对应柱的空态去表达，否则同一件事会被数两遍。
+    for name, metric in (quality_metrics or {}).items():
+        if name == "review_lag":
+            if metric.get("over_threshold"):
+                gaps.append("quality:review_lag")
+            continue
+        if quality.below_threshold(name, metric):
+            gaps.append(f"quality:{name}")
     return gaps
 
 

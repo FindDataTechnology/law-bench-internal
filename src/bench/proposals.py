@@ -45,7 +45,7 @@ import hashlib
 import json
 from typing import Any, Optional
 
-from . import authoring, templates, workspaces
+from . import agent_ids, authoring, keys, templates, workspaces
 
 # Mirror of the CHECK constraint on domain_proposals.state (see
 # src/bench/workspace_store.py).
@@ -375,6 +375,19 @@ def submit(
     _require_text(external_key, "external_key")
     _require_text(body, "body")
 
+    # 与内核写入口同一把尺子：键在这里先归名，否则提案箱会把同一个实体的两种写法
+    # 存成两条，人确认完才发现本体里也是两条。提案行没有 attrs 列，所以原写法记进
+    # impact（人读的那一栏），不吞掉。
+    raw_key = external_key.strip()
+    rules = keys.rules_for(domain.get("key") or "")
+    if rules:
+        folded_key, applied = keys.fold(raw_key, rules)
+        folded_key = (folded_key or "").strip() or raw_key
+        if folded_key != raw_key:
+            external_key = folded_key
+            note = f"键已归名：{raw_key} → {folded_key}（规则 {', '.join(applied)}）"
+            impact = f"{note}；{impact}".strip("；") if impact else note
+
     digest = canonical_evidence_digest(evidence)
 
     pending = conn.execute(
@@ -455,6 +468,20 @@ def confirm(
             "a rejected proposal must be resubmitted with new evidence"
         )
 
+    # 两道智能体闸，顺序重要：先拦"智能体当签字人"，再拦"管理员豁免替智能体背书"。
+    #
+    # 第一道覆盖任何 agent 身份，包括它在确认别人的提案——硬停清单里 confirm
+    # 不发给智能体，这一道是内核侧的兜底（工具面没有那个动词，但内核不能假设
+    # 调用方一定经过工具面）。
+    if agent_ids.is_agent(actor):
+        raise PermissionError("智能体不得确认提案；确认是人类 lead 的职责")
+    # 第二道堵 admin 豁免：豁免的存在是给人救火用的，一旦它能替智能体提交的
+    # 提案背书，`admin` scope 就等于一张自签通行证。所以只要提交方是 agent，
+    # 豁免一律不生效——人工 lead 正常确认（submitted_by != actor）仍然可以。
+    if admin_override and agent_ids.is_agent(proposal["submitted_by"]):
+        raise PermissionError(
+            "管理员豁免不适用于智能体提交的提案；请由人类负责人正常确认"
+        )
     if proposal["submitted_by"] == actor and not admin_override:
         raise PermissionError("提案人不得自提自确认")
 
@@ -548,14 +575,59 @@ def reject(
 # ---------------------------------------------------------------- read side
 
 
+def batches(conn: Any, *, domain_key: str) -> list[dict]:
+    """Distinct extraction batches in this domain, newest first, with counts."""
+    domain = _load_domain(conn, domain_key=domain_key)
+    rows = conn.execute(
+        "SELECT evidence->>'batch' AS batch, state, COUNT(*) AS n "
+        "FROM domain_proposals WHERE domain_id = %s AND evidence ? 'batch' "
+        "GROUP BY 1, 2 ORDER BY 1 DESC",
+        (domain["id"],),
+    ).fetchall()
+    rates = {
+        r["batch"]: r["rate"]
+        for r in conn.execute(
+            "SELECT evidence->>'batch' AS batch, MAX(evidence->>'usable_rate') AS rate "
+            "FROM domain_proposals WHERE domain_id = %s AND evidence ? 'usable_rate' "
+            "GROUP BY 1",
+            (domain["id"],),
+        ).fetchall()
+    }
+    merged: dict[str, dict] = {}
+    for row in rows:
+        name = row["batch"]
+        if not name:
+            continue
+        entry = merged.setdefault(name, {"batch": name, "pending": 0, "confirmed": 0,
+                                         "rejected": 0, "total": 0,
+                                         "usable_rate": None, "low_yield": False})
+        entry[row["state"]] = row["n"]
+        entry["total"] += row["n"]
+    for name, entry in merged.items():
+        raw = rates.get(name)
+        if raw:
+            try:
+                entry["usable_rate"] = float(raw)
+                entry["low_yield"] = entry["usable_rate"] < 0.5
+            except (TypeError, ValueError):
+                pass
+    return [merged[k] for k in sorted(merged, reverse=True)]
+
+
 def list_proposals(
     conn: Any,
     *,
     domain_key: str,
     state: Optional[str] = None,
+    batch: Optional[str] = None,
     limit: int = 200,
 ) -> list[dict]:
-    """The domain's inbox, newest submission first; state filter is optional."""
+    """The domain's inbox, newest submission first.
+
+    ``batch`` filters on ``evidence->>'batch'`` — extraction files its output in
+    named batches so a reviewer can work through one run at a time instead of
+    whatever happens to be newest.
+    """
     if state is not None and state not in PROPOSAL_STATES:
         raise ValueError(f"state must be one of {list(PROPOSAL_STATES)}")
     domain = _load_domain(conn, domain_key=domain_key)
@@ -563,6 +635,9 @@ def list_proposals(
     if state is not None:
         where.append("state = %s")
         params.append(state)
+    if batch:
+        where.append("evidence->>'batch' = %s")
+        params.append(batch)
     params.append(limit)
     cur = conn.execute(
         f"SELECT {_PROPOSAL_COLS} FROM domain_proposals "

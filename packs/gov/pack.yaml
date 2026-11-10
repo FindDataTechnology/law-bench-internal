@@ -10,3 +10,21 @@ components:
     path: packs/gov/checks.py
 eval_suites:
   - gov-registry-consistency
+
+# 岗位参数：政务线只跑只读巡检与取材；概念/评测/发布未声明即不启动。
+roles:
+  warden:
+    cadence_minutes: 15
+    review_threshold_hours: 48
+  verifier:
+    cadence_minutes: 120
+    checks: [key_already_live, endpoint_open]
+  scout:
+    cadence_minutes: 1440
+    doc_types: [办法, 规定, 规则, 命令, 决定, 准则, 标准]
+    sources: [gov]
+    limit: 30
+  builder:
+    cadence_minutes: 1440
+    doc_types: [办法, 规定]
+    sources: [gov]

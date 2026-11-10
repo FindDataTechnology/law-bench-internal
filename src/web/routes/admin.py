@@ -51,6 +51,7 @@ from ..auth.deps import User, require_scope
 from ..auth.domain_rbac import require_domain_role
 from ..deps import DbConn, get_db
 from ..templating import templates as _templates
+from ...bench import declarations as bench_declarations
 from ...bench import distribution as bench_distribution
 from ...bench import templates as bench_templates
 from ...bench import workspaces
@@ -220,6 +221,10 @@ async def admin_template_create(
     if problem is not None:
         return _flash("/admin/templates", "flash.template_json_invalid", err=True, detail=problem)
     try:
+        # A declaration naming a library source that does not exist is a promise
+        # nobody can keep; refuse it here rather than discover it later as
+        # "why is this domain still missing corpus".
+        bench_declarations.check_refs(db, schema.get("corpus_declaration"))
         bench_templates.create_template(
             db, name=name, schema=schema, created_by=_operator_of(user)
         )
@@ -249,6 +254,7 @@ async def admin_template_version_create(
             err=True, detail=problem,
         )
     try:
+        bench_declarations.check_refs(db, schema.get("corpus_declaration"))
         bench_templates.update_template(
             db, name=name, schema=schema, created_by=_operator_of(user)
         )
@@ -269,7 +275,9 @@ async def admin_template_version_create(
 )
 def admin_domains(request: Request, db: DbConn = Depends(get_db)):
     """All domains with their template anchor and active member count."""
-    domains = workspaces.list_domains(db)
+    # The admin page is the full roll-call, archived included: this is where a
+    # retired line is found again to restore it.
+    domains = workspaces.list_domains(db, include_archived=True)
     counts = {
         d["id"]: len(workspaces.list_members(db, domain_id=d["id"])) for d in domains
     }
@@ -697,6 +705,161 @@ async def admin_invite_accept(
         # neutral invalid state; the message names why (fail closed, no 500).
         return _flash(back, "flash.invite_failed", err=True, detail=str(exc))
     return _flash("/", "flash.invite_accepted")
+
+
+# ------------------------------------------------------------------ libraries #
+
+
+def _split_lines(raw: str) -> list[str]:
+    return [x.strip() for x in (raw or "").splitlines() if x.strip()]
+
+
+@read_only_router.get(
+    "/admin/libraries", include_in_schema=False, name="admin_libraries",
+    dependencies=[Depends(require_scope("admin"))],
+)
+def admin_libraries(request: Request, db: DbConn = Depends(get_db)):
+    """The library registry: what corpora exist, and how to add one.
+
+    A domain only chooses what to *subscribe*; libraries are platform-level, so
+    this page lives beside the other admin gates. Creating one is the step that
+    used to require running a script inside a pod.
+    """
+    from ...bench import libraries as library_store
+
+    return _templates.TemplateResponse(
+        request,
+        "admin_libraries.html",
+        {
+            "libraries": library_store.list_libraries(db),
+            "sources": {
+                lib["library_key"]: library_store.list_sources(db, library_id=lib["id"])
+                for lib in library_store.list_libraries(db)
+            },
+            "backends": library_store.BACKENDS,
+            "external": library_store.EXTERNAL_BACKENDS,
+            "domains": workspaces.list_domains(db),
+        },
+    )
+
+
+@write_router.post(
+    "/admin/libraries", include_in_schema=False, name="admin_library_create",
+    dependencies=[Depends(require_scope("admin"))],
+)
+async def admin_library_create(
+    request: Request,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(require_scope("admin")),
+):
+    from ...bench import libraries as library_store
+
+    form = await request.form()
+    backend = (form.get("backend") or "").strip()
+    location: dict = {}
+    try:
+        # External libraries are addressed by env *names*. The form deliberately
+        # has no field for a DSN or a key: this page is rendered, dumped and
+        # reviewed, so a secret entered here would leak three ways.
+        if backend == "qdrant":
+            location = {
+                "url_env": (form.get("url_env") or "").strip(),
+                "collection": (form.get("collection") or "").strip(),
+            }
+        elif backend == "pgvector-external":
+            location = {"dsn_env": (form.get("dsn_env") or "").strip()}
+        dims = int((form.get("dims") or "0").strip() or 0)
+        library_store.create_library(
+            db,
+            library_key=(form.get("library_key") or "").strip(),
+            name=(form.get("name") or "").strip(),
+            backend=backend,
+            embedding_model=(form.get("embedding_model") or "").strip() or None,
+            dims=dims,
+            location=location or None,
+            created_by=_operator_of(user),
+        )
+    except (ValueError, TypeError) as exc:
+        return _flash("/admin/libraries", "flash.library_create_failed", err=True, detail=str(exc))
+    return _flash("/admin/libraries", "flash.library_created")
+
+
+@write_router.post(
+    "/admin/libraries/{library_key}/sources", include_in_schema=False,
+    name="admin_library_source_add",
+    dependencies=[Depends(require_scope("admin"))],
+)
+async def admin_library_source_add(
+    library_key: str,
+    request: Request,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(require_scope("admin")),
+):
+    """Register one source. ``match`` is the filter that defines it, for external
+    libraries: a source is not a prefix there, it is a predicate."""
+    from ...bench import libraries as library_store
+
+    form = await request.form()
+    rule: dict = {}
+    raw_match = (form.get("match") or "").strip()
+    if raw_match:
+        try:
+            match = json.loads(raw_match)
+        except json.JSONDecodeError as exc:
+            return _flash("/admin/libraries", "flash.library_source_failed",
+                          err=True, detail=f"match must be JSON: {exc}")
+        if not isinstance(match, dict):
+            return _flash("/admin/libraries", "flash.library_source_failed",
+                          err=True, detail="match must be a JSON object")
+        rule = {"match": match}
+    try:
+        library_store.add_source(
+            db,
+            library_key=library_key,
+            source_key=(form.get("source_key") or "").strip(),
+            uri=(form.get("uri") or "").strip(),
+            source_kind=(form.get("source_kind") or "object-prefix").strip(),
+            ingest_rule=rule,
+            created_by=_operator_of(user),
+        )
+    except ValueError as exc:
+        return _flash("/admin/libraries", "flash.library_source_failed", err=True, detail=str(exc))
+    return _flash("/admin/libraries", "flash.library_source_added")
+
+
+@write_router.post(
+    "/admin/libraries/{library_key}/subscribe", include_in_schema=False,
+    name="admin_library_subscribe",
+    dependencies=[Depends(require_scope("admin"))],
+)
+async def admin_library_subscribe(
+    library_key: str,
+    request: Request,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(require_scope("admin")),
+):
+    """Grant a domain a library. ``sources`` left empty means "every source"."""
+    from ...bench import libraries as library_store
+
+    form = await request.form()
+    domain_key = (form.get("domain_key") or "").strip()
+    selected = [s for s in (form.get("sources") or "").split(",") if s.strip()]
+    domain = workspaces.get_domain(db, domain_key=domain_key)
+    if domain is None:
+        return _flash("/admin/libraries", "flash.library_subscribe_failed",
+                      err=True, detail=f"unknown domain {domain_key!r}")
+    try:
+        library_store.subscribe(
+            db,
+            domain_id=domain["id"],
+            library_key=library_key,
+            source_filter=selected or None,
+            created_by=_operator_of(user),
+        )
+    except ValueError as exc:
+        return _flash("/admin/libraries", "flash.library_subscribe_failed",
+                      err=True, detail=str(exc))
+    return _flash("/admin/libraries", "flash.library_subscribed")
 
 
 router = APIRouter(tags=["admin"])
