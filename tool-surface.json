@@ -373,12 +373,12 @@
       "clause_get": {
         "envelope": "structuredContent",
         "returns": {
-          "result": "object|null"
+          "result": "null"
         },
         "field_notes": {
-          "result": "句柄不存在时为 null；库内 clauses=0，成功形状未观测"
+          "result": "实测为 null（句柄不存在）；库内 clauses=0，成功时的对象形状未观测——故这里只声明已观测到的值，不写「object|null」这种把推测混进形状的写法"
         },
-        "observed": "live tools/call 2026-11-10（pod law-bench-mcp，镜像 sha-0d2f54d）"
+        "observed": "live tools/call 2026-11-10（pod law-bench-mcp，镜像 sha-0d2f54d）；二采订正：result 只声明已观测的 null（原写 object|null 属推测）"
       },
       "contract_download": {
         "envelope": "structuredContent",
