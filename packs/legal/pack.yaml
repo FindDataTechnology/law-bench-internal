@@ -47,6 +47,9 @@ roles:
     batch_chunks: 10
     min_usable_rate: 0.5
     max_total: 100
+    # 概念长在裁判说理里，不长在法条正文里（实测：抽 statutes 得 0 条候选）。
+    # 指定语料面，免得岗位每次都要试错。
+    sources: [judicial, guide_cases]
   eval:
     enabled: false
   release:

@@ -128,3 +128,42 @@ def test_validate_pack_accepts_the_real_packs():
     for name in ("legal", "gov"):
         manifest = packs.load_pack(name)
         assert packs.validate_pack(manifest, directory=name) == []
+
+
+def test_a_concept_role_may_declare_its_corpus_face():
+    """概念只从某类语料里来，所以 `sources` 必须是它可声明的参数。
+
+    实测：抽 statutes 得 0 条候选——概念长在裁判说理里。而白名单最初没放行
+    `sources`，pack 里写了会被判"未知参数"→整条线 declared=False（守卫本身是对的，
+    缺的是这个词表项）。
+    """
+    roles = agent_team.roles_for_domain("legal")
+    assert roles["declared"] is True
+    assert roles["roles"]["concept"]["sources"] == ["judicial", "guide_cases"]
+
+
+def test_the_concept_run_passes_the_declared_sources_to_extraction(monkeypatch):
+    """run_concept 必须把声明过的语料面传下去，不能抽全范围。
+
+    用 stub 把 extraction.run 换掉，只验一件事：sources 有没有被传下去。
+    """
+    import src.bench.extraction as extraction_mod
+    from src.bench import agent_runs, team_roles
+
+    seen: dict = {}
+
+    def fake_run(conn, **kw):
+        seen.update(kw)
+        return {"sampled": 0, "produced": 0, "submitted": 0, "duplicate": 0,
+                "usable_rate": 0.0, "by_kind": {}, "skipped": {}, "stopped": None}
+
+    monkeypatch.setattr(extraction_mod, "run", fake_run)
+    monkeypatch.setattr(team_roles, "_role_params",
+                        lambda d, r: {"batch_chunks": 3, "min_usable_rate": 0.5,
+                                      "max_total": 9, "sources": ["guide_cases"]})
+    monkeypatch.setattr(agent_runs, "start", lambda *a, **k: {"id": 1})
+    monkeypatch.setattr(agent_runs, "finish", lambda *a, **k: {"id": 1, "outcome": "thin"})
+
+    team_roles.run_concept(object(), domain_key="legal", batch="b-x")
+    assert seen["sources"] == ["guide_cases"]
+    assert seen["max_chunks"] == 3 and seen["max_total"] == 9
