@@ -27,16 +27,18 @@
     "envelope_note": "law-bench 的 tools/call 返回走 structuredContent，content 为空数组（2026-11-10 pod 内实测）。客户端解析 payload 必须读 structuredContent，不能按 content 解析。",
     "declared": [
       "clause_list",
+      "contract_generate",
       "contract_type_catalog",
       "law_references",
       "law_types",
       "search_clauses",
       "tag_vocab_list",
+      "type_metadata",
       "validation_check",
       "validation_list"
     ],
-    "declared_count": 8,
-    "blocked_count": 13,
+    "declared_count": 10,
+    "blocked_count": 11,
     "undeclared": [
       "agent_run_get",
       "agent_run_list",
@@ -53,7 +55,6 @@
       "contract_content",
       "contract_download",
       "contract_evaluate",
-      "contract_generate",
       "contract_generate_batch",
       "contract_generate_stored",
       "criterion_add",
@@ -82,10 +83,9 @@
       "tag_iteration_suggest",
       "tag_validate",
       "task_failed_items",
-      "task_status",
-      "type_metadata"
+      "task_status"
     ],
-    "note": "按 spec lex-mcp-surface「声明与实返回一致」：只登记实采可观察的形状，未采到的一律进 blocked 并写明原因，MUST NOT 凭读代码或单侧预期填充字段。internal 面不在本次收敛范围。采集方式：cheap-6 上 kubectl exec 进 law-bench-mcp pod，直连 127.0.0.1:8080/mcp 的 initialize→tools/list→tools/call，绕开网关与计费闸。 本服务「未采到」即「未声明」：全部如实并入 undeclared（检查器只认 declared/undeclared 两栏）；链路相关未采到的 13 个另有 blocked_detail 写明阻塞原因（缺 render 配置 / ImportError / 语料为空 / 未部署）。",
+    "note": "按 spec lex-mcp-surface「声明与实返回一致」：只登记实采可观察的形状，未采到的一律进 blocked 并写明原因，MUST NOT 凭读代码或单侧预期填充字段。internal 面不在本次收敛范围。采集方式：cheap-6 上 kubectl exec 进 law-bench-mcp pod，直连 127.0.0.1:8080/mcp 的 initialize→tools/list→tools/call，绕开网关与计费闸。 本服务「未采到」即「未声明」：全部如实并入 undeclared（检查器只认 declared/undeclared 两栏）；链路相关未采到的 13 个另有 blocked_detail 写明阻塞原因（缺 render 配置 / ImportError / 语料为空 / 未部署）。 检查器只认 declared/undeclared 两栏：未采到即未声明，一律并入 undeclared；链路相关未采到的原因留在 blocked_detail（旁注，不参与校验）。",
     "declared_detail": {
       "contract_type_catalog": {
         "envelope": "structuredContent",
@@ -102,19 +102,23 @@
             }
           ]
         },
-        "observed": "live tools/call 2026-11-10；66 个类型，条款计数全 0（语料为空）"
+        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）"
       },
       "tag_vocab_list": {
         "envelope": "structuredContent",
         "returns": {
           "source": [
-            "base|tagged|custom"
+            "base",
+            "tagged",
+            "custom"
           ],
           "stance": [
-            "pro_a|pro_b|balanced"
+            "pro_a",
+            "pro_b",
+            "balanced"
           ]
         },
-        "observed": "live tools/call 2026-11-10"
+        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）"
       },
       "validation_check": {
         "envelope": "structuredContent",
@@ -123,56 +127,112 @@
           "warnings": "array",
           "passed": "bool"
         },
-        "observed": "live tools/call 2026-11-10（bailment）；未携带 provenance，spec 要求待补"
+        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）"
       },
       "validation_list": {
         "envelope": "structuredContent",
         "returns": {
-          "result": "array<unobserved: 库内 type_validations=0 行，语料恢复后再采>"
+          "result": "array<unobserved: 库内 type_validations=0 行>"
         },
-        "observed": "live tools/call 2026-11-10（bailment/sale 均空集）"
+        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）"
       },
       "law_types": {
         "envelope": "structuredContent",
         "returns": {
           "result": "array<unobserved: 空集>"
         },
-        "observed": "live tools/call 2026-11-10"
+        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）"
       },
       "law_references": {
         "envelope": "structuredContent",
         "returns": {
           "result": "array<unobserved: 无参时为空集>"
         },
-        "observed": "live tools/call 2026-11-10；spec 要求结果带 stable_id，当前未见"
+        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）"
       },
       "clause_list": {
         "envelope": "structuredContent",
         "returns": {
           "result": "array<unobserved: 库内 clauses=0 行>"
         },
-        "observed": "live tools/call 2026-11-10（无参及 contract_type=bailment 均空集）"
+        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）"
       },
       "search_clauses": {
         "envelope": "structuredContent",
         "returns": {
           "result": "array<unobserved: 库内 clauses=0 行>"
         },
-        "observed": "入参已采（必填 query）；返回形状待语料恢复后采集"
+        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）"
+      },
+      "type_metadata": {
+        "envelope": "structuredContent",
+        "returns": {
+          "key": "string",
+          "zh_name": "string",
+          "slot_count": "int",
+          "universal_dims": [
+            "string"
+          ],
+          "type_specific_dims": [
+            "string"
+          ],
+          "scenarios": [
+            {
+              "name": "string",
+              "clause_count": "int",
+              "has_tagged_clauses": "bool"
+            }
+          ],
+          "assembly_ready": "bool"
+        },
+        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）"
+      },
+      "contract_generate": {
+        "envelope": "structuredContent",
+        "returns": {
+          "body_text": "string（含 {{slot}} 占位）",
+          "docx_path": "string|null",
+          "pdf_path": "string|null",
+          "slots": [
+            {
+              "name": "string",
+              "label": "string",
+              "latin": "string",
+              "description": "string",
+              "example": "string",
+              "required": "bool",
+              "source": "string"
+            }
+          ],
+          "instructions": [
+            {
+              "name": "string",
+              "label": "string",
+              "description": "string"
+            }
+          ],
+          "laws": [
+            {
+              "name": "string",
+              "category": "string",
+              "category_zh": "string",
+              "sources": [
+                "string"
+              ]
+            }
+          ]
+        },
+        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）"
       }
     },
     "blocked_detail": [
       {
-        "tool": "contract_generate",
-        "blocked_by": "现网报 LibreOffice binary 'soffice' not found on PATH；根因=mcp-deployment.yaml 缺 DOCS_PDF_BACKEND=http + RENDER_SERVICE_URL（web 面 deployment.yaml 有）"
+        "tool": "clause_get",
+        "blocked_by": "依赖 clause_id；库内 clauses=0 行（集群无 MinIO，语料源已下线）"
       },
       {
-        "tool": "contract_generate_stored",
-        "blocked_by": "同上（依赖生成链路）"
-      },
-      {
-        "tool": "contract_generate_batch",
-        "blocked_by": "同上（依赖生成链路）"
+        "tool": "clause_review",
+        "blocked_by": "同上"
       },
       {
         "tool": "contract_content",
@@ -183,28 +243,24 @@
         "blocked_by": "同上"
       },
       {
-        "tool": "type_metadata",
-        "blocked_by": "现网抛 ImportError：cannot import name 'tag_vocab_list' from 'src.clauses.tags'"
+        "tool": "contract_generate_batch",
+        "blocked_by": "同上"
       },
       {
-        "tool": "clause_get",
-        "blocked_by": "依赖 clause_id；库内 clauses=0 行，无可采样本"
-      },
-      {
-        "tool": "clause_review",
-        "blocked_by": "依赖 clause_id；库内 clauses=0 行，无可采样本"
-      },
-      {
-        "tool": "tag_validate",
-        "blocked_by": "依赖条款语料；库内 clauses=0 行"
-      },
-      {
-        "tool": "tag_combinations_list",
-        "blocked_by": "需 contract_type 且依赖条款语料；库内 clauses=0 行"
+        "tool": "contract_generate_stored",
+        "blocked_by": "依赖 MinIO 落库；集群无 MinIO"
       },
       {
         "tool": "law_info",
         "blocked_by": "需 contract_type；本轮未采集"
+      },
+      {
+        "tool": "tag_combinations_list",
+        "blocked_by": "依赖条款语料；clauses=0 行"
+      },
+      {
+        "tool": "tag_validate",
+        "blocked_by": "依赖条款语料；clauses=0 行"
       },
       {
         "tool": "task_failed_items",
@@ -212,7 +268,7 @@
       },
       {
         "tool": "task_status",
-        "blocked_by": "现网镜像未部署（仓内 54 / 现网 52）"
+        "blocked_by": "同上"
       }
     ],
     "blocked": [
@@ -220,15 +276,13 @@
       "clause_review",
       "contract_content",
       "contract_download",
-      "contract_generate",
       "contract_generate_batch",
       "contract_generate_stored",
       "law_info",
       "tag_combinations_list",
       "tag_validate",
       "task_failed_items",
-      "task_status",
-      "type_metadata"
+      "task_status"
     ]
   },
   "naming_convention": {
