@@ -225,3 +225,25 @@ def test_a_writer_failure_is_recorded(conn, fake, monkeypatch):
     rows = agent_runs.list_runs(conn, domain_key="legal", role="agent:scout@legal")
     assert rows and rows[0]["outcome"] == "failed"
     assert "目录读不了" in (rows[0]["detail"] or "")
+
+
+def test_scout_is_idempotent_even_when_the_listing_order_changes(conn, fake, monkeypatch):
+    """目录顺序不稳定时也必须收敛：第二遍零新增。
+
+    实测：按块数降序、同分文档顺序不定，两次调用给出不同的前 N 份，于是第二遍
+    又取了 20 份新文档。修法是按 id 稳定排序 + 跳过已取入。
+    """
+    fake(DOCS)
+    team_roles.run_scout(conn, domain_key="legal")
+    # 第二遍：把同一批文档以相反顺序返回（模拟同分乱序）
+    real = team_roles.corpus_catalog.documents
+
+    def reversed_listing(conn, **kw):
+        page = real(conn, **kw)
+        page["rows"] = list(reversed(page["rows"]))
+        return page
+
+    monkeypatch.setattr(team_roles.corpus_catalog, "documents", reversed_listing)
+    second = team_roles.run_scout(conn, domain_key="legal")
+    assert second["adopted"] == 0
+    assert second["already_adopted"] >= 2
