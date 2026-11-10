@@ -126,7 +126,9 @@ async def type_metadata(
     ```
     """
     from src.contracts.templates import get_template, list_contract_types
-    from src.clauses.tags import tag_vocab_list
+    # 函数真名是 tag_vocab_for_type（tag_vocab_list 是 MCP 侧工具名，不是这里的符号）——
+    # 2026-11-10 实测：这行曾写成 tag_vocab_list，导致 type_metadata 一调就 ImportError。
+    from src.clauses.tags import tag_vocab_for_type
     from src.eval.errors import NotFoundError
 
     def _go() -> dict:
@@ -148,7 +150,7 @@ async def type_metadata(
         slot_count = len(template["slots"])
 
         # Get tag vocabulary
-        vocab = tag_vocab_list(contract_type)
+        vocab = tag_vocab_for_type(contract_type)
         universal_dims = {k: v for k, v in vocab.items() if k in ("stance", "strength", "risk", "mandatory")}
         type_specific_dims = {k: v for k, v in vocab.items() if k not in ("stance", "strength", "risk", "mandatory", "source")}
 
