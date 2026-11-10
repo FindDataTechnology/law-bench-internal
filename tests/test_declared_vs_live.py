@@ -94,7 +94,11 @@ def test_manifest_entries_carry_no_prose_in_returns():
             for index, value in enumerate(node):
                 walk(f"{path}[{index}]", value)
             return
-        assert node in {"string", "int", "bool", "float", "null", "string|null"}, (
+        # object / array 也是类型令牌：guard 要拦的是"说明文字混进 returns"，
+        # 不是"只许标量"。白名单漏了容器类型，另线的 manifest 一写 object|null
+        # 就会被误判成散文。
+        assert node in {"string", "int", "bool", "float", "null", "string|null",
+                        "object", "array", "object|null", "array|null"}, (
             f"{path}: returns 里出现了非类型内容 {node!r}；说明文字请放 field_notes"
         )
 

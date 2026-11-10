@@ -39,6 +39,9 @@ AREAS: tuple[dict, ...] = (
     # URL is kept as a 302 so no bookmark or legacy link breaks.
     {"id": "eval-runs", "min_role": "annotator"},
     {"id": "inbox", "min_role": "annotator"},
+    # 值班长视图：台账 + 质量比 + 按批待确认。只读页，确认动作仍走 inbox 的
+    # lead 闸（页面上出现的按钮只是入口，权限不由页面决定）。
+    {"id": "team", "min_role": "annotator"},
     {"id": "publish", "min_role": "annotator"},
     {"id": "settings", "min_role": "lead"},
 )
