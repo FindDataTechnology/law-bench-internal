@@ -44,6 +44,14 @@ CALL_ARGS: dict[str, dict] = {
     "law_types": {},
     "clause_list": {},
     "search_clauses": {"query": "违约金"},
+    # 5.5 批次二新增：每件都给足必填入参，否则采到的是"缺参数"错误而不是形状。
+    "tag_validate": {"tags": {"stance": "pro_a"}},
+    "tag_combinations_list": {"contract_type": "bailment"},
+    "contract_content": {"contract_type": "bailment"},
+    "task_status": {"handle": "nonexistent-handle"},
+    "task_failed_items": {"handle": "nonexistent-handle"},
+    "clause_get": {"clause_id": 1},
+    "contract_download": {"artifact_id": 1},
 }
 
 
