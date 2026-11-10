@@ -320,6 +320,15 @@ _ADDITIVE_COLUMNS = (
     # the final (underline-blank) keys. Nullable; backfilled on next --force.
     "ALTER TABLE IF EXISTS contract_artifacts ADD COLUMN IF NOT EXISTS docx_key_slotted TEXT; "
     "ALTER TABLE IF EXISTS contract_artifacts ADD COLUMN IF NOT EXISTS pdf_key_slotted TEXT; "
+    # Content fingerprints (lex-matter-spine 5.3): sha256 of the **stored file
+    # bytes**, so a downloader can verify what it got and a case artifact can
+    # anchor the e-signature to the exact file. body_hash (md5 of the body) can
+    # never prove that: same body + different render = different bytes. Nullable;
+    # filled on the next render, legacy rows honestly read as unknown.
+    "ALTER TABLE IF EXISTS contract_artifacts ADD COLUMN IF NOT EXISTS docx_sha256 TEXT; "
+    "ALTER TABLE IF EXISTS contract_artifacts ADD COLUMN IF NOT EXISTS pdf_sha256 TEXT; "
+    "ALTER TABLE IF EXISTS contract_artifacts ADD COLUMN IF NOT EXISTS docx_sha256_slotted TEXT; "
+    "ALTER TABLE IF EXISTS contract_artifacts ADD COLUMN IF NOT EXISTS pdf_sha256_slotted TEXT; "
     # Soft-delete marker for superseded artifact versions: when generate_stored
     # inserts a new body for an existing natural key (contract_type, scenario,
     # stance, custom_clause_ids), the old row is stamped superseded_at = now_iso()
