@@ -84,7 +84,7 @@
       "task_failed_items",
       "task_status"
     ],
-    "note": "按 spec lex-mcp-surface「声明与实返回一致」：只登记实采可观察的形状；未采到的一律并入 undeclared（检查器只认 declared/undeclared 两栏），链路相关未采到的原因留在 blocked_detail 作旁注、不参与校验。MUST NOT 凭读代码或单侧预期填字段。采集方式：kubectl exec 进 law-bench-mcp pod，直连 127.0.0.1:8080/mcp 走 initialize → tools/call（绕开网关与计费闸）；每件给足入参，空集不算证据。一致性由 scripts/collect_live_surface.py（pod 内采集）+ scripts/check_declared_vs_live.py（逐键比对）守。",
+    "note": "按 spec lex-mcp-surface「声明与实返回一致」：只登记实采可观察的形状；未采到的一律并入 undeclared（检查器只认 declared/undeclared 两栏），链路相关未采到的原因留在 blocked_detail 作旁注、不参与校验。MUST NOT 凭读代码或单侧预期填字段。采集方式：kubectl exec 进 law-bench-mcp pod，直连 127.0.0.1:8080/mcp 走 initialize → tools/call（绕开网关与计费闸）；每件给足入参，空集不算证据。一致性由 scripts/collect_live_surface.py（pod 内采集）+ scripts/check_declared_vs_live.py（逐键比对）守。 5.4 的两处新增字段（validation_check.provenance / law_references.stable_id）已落地并有单测，但现网元素数组恒空、形状不可观测，故不写入 declared_detail——遵守本清单自身纪律（不得凭代码或单侧预期填字段），在 blocked_detail 记录待采原因。",
     "declared_detail": {
       "contract_type_catalog": {
         "envelope": "structuredContent",
@@ -324,6 +324,14 @@
       {
         "tool": "task_status",
         "blocked_by": "同上"
+      },
+      {
+        "tool": "validation_check",
+        "blocked_by": "provenance 三件套已实现（src/validations/validate.py::_provenance：source/stable_id/as_of + as_of_source=run，逐条挂 errors/warnings 每一项），但现网不可观测：type_validations 表 0 行、镜像未装 contract_rules（build_registry → ModuleNotFoundError），errors/warnings 恒为空集，元素形状采不到。契约与负例门在 tests/test_validation_provenance.py（6 条）。约束源就位后补采。"
+      },
+      {
+        "tool": "law_references",
+        "blocked_by": "stable_id 已实现（src/eval/legal_refs.py::extract_references：law:<去重键>，简称与全称收敛同一 id），但现网 law_references 返回空集（law_info 无数据），元素形状采不到。语料就位后补采。"
       }
     ]
   },
