@@ -63,6 +63,13 @@ def compare(path: str, declared: object, live: object, problems: list, notes: li
         if not isinstance(live, dict):
             problems.append(f"{path}: 声明为对象，实返回 {type(live).__name__}")
             return
+        if not declared:
+            # 空对象声明 = "键随数据变化的映射"（如 sha256_by_format：产出的格式不同，
+            # 键就不同）。只验它是对象，键留作旁注——按键逐个比会把合法的动态键判成
+            # 多出未声明，那不是契约漂移。
+            if live:
+                notes.append(f"{path}: 动态键映射，实测键 {sorted(live)}（不逐键比对）")
+            return
         for key, sub in declared.items():
             if key not in live:
                 problems.append(f"{path}.{key}: 声明有、实返回无")

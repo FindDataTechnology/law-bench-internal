@@ -254,15 +254,30 @@
                 "string"
               ]
             }
-          ]
+          ],
+          "sha256": "string|null",
+          "sha256_source": "string|null",
+          "sha256_body": "string|null",
+          "sha256_by_format": {}
         },
         "field_notes": {
           "body_text": "正文，含 {{槽位名}} 占位",
           "docx_path": "本镜像不产 docx，实测为 null",
           "slots": "槽位显示名数组（如「甲方名称」）；只有名字，必填/示例信息在 instructions",
-          "instructions": "与 slots 一一对应的填槽指引；字段名曾与 slots 记反，2026-11-10 复采校正"
+          "instructions": "与 slots 一一对应的填槽指引；字段名曾与 slots 记反，2026-11-10 复采校正",
+          "sha256": "交付文件字节的 sha256；多格式并存时取 pdf。实测：与 pod 内本地重算逐字符相等",
+          "sha256_source": "指明 sha256 取自哪种文件；无文件时回退 body_text 并显式标注，避免误以为验的是文件",
+          "sha256_body": "正文（Markdown，含 {{slot}} 占位）UTF-8 字节的 sha256，与 body_hash(md5) 互补",
+          "sha256_by_format": "已产出格式 → 其文件字节 sha256 的映射；当前镜像不产 docx 时只有 pdf 键"
         },
-        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）；2026-11-10 十件复采校正：slots 为字符串数组、instructions 才是七字段对象"
+        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）；2026-11-10 十件复采校正：slots 为字符串数组、instructions 才是七字段对象；2026-11-10 二次实采：新增四件指纹字段，sha256 与本地重算一致（5.3）",
+        "values": {
+          "sha256_source": [
+            "pdf",
+            "docx",
+            "body_text"
+          ]
+        }
       }
     },
     "blocked_detail": [
