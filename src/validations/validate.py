@@ -161,11 +161,34 @@ def _load_constraints(contract_type: str) -> list[dict]:
     conn = connect(None)
     rows = conn.execute(
         "SELECT constraint_id, kind, field, params, message, "
-        "severity, law_ref "
+        "severity, law_ref, inherited_from "
         "FROM type_validations WHERE contract_type = %s ORDER BY id",
         (contract_type,),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def _provenance(contract_type: str, constraint: dict) -> dict:
+    """单条结论的溯源三件套（契约见 fd-lex/contracts/lex-artifact.schema.json）。
+
+    - ``source``：这条约束从哪来。继承来的写明上级类型（``inherited_from``），
+      否则就是本类型的约束表——两者都指得出具体来源，不是"系统生成"这种空话。
+    - ``stable_id``：``type_validations:<类型>#<约束 id>``。表名+主业务键，重灌不换号，
+      案卷侧可以拿它对账"同一约束"。
+    - ``as_of``：结论产生时刻（UTC ISO8601）。约束行本身没有时间戳列，
+      所以这里如实标 ``as_of_source="run"``——它说明的是"此刻依据这套约束评的"，
+      而不是"约束是哪年写的"；后者要有列才能说，不能编。
+    """
+    from src.eval.db import now_iso
+
+    origin = constraint.get("inherited_from")
+    source = f"type_validations:{origin}" if origin else f"type_validations:{contract_type}"
+    return {
+        "source": source,
+        "stable_id": f"type_validations:{contract_type}#{constraint.get('constraint_id', '')}",
+        "as_of": now_iso(),
+        "as_of_source": "run",
+    }
 
 
 def validate_draft(
@@ -208,6 +231,9 @@ def validate_draft(
             "message": message,
             "law_ref": law_ref,
             "severity": severity,
+            # 每条结论自带溯源：案卷侧要能从一条"不合规"反查到它依据哪条约束、
+            # 那条约束来自哪张表/哪个上级类型。缺三件套即无法反查。
+            "provenance": _provenance(contract_type, c),
         }
 
         if kind not in _KNOWN_KINDS:
