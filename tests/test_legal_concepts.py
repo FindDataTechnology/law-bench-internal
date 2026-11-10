@@ -314,3 +314,20 @@ def test_import_planner_refuses_a_reversed_defines(empty_db):
     verdicts = {r["external_key"]: r["action"] for r in rows if r["section"] == "relationships"}
     assert verdicts["公司法->清算义务"] == "error"
     assert verdicts["清算义务->公司法"] == "create"
+
+
+def test_instrument_types_and_party_roles_are_not_concepts():
+    """文种名与角色名回答的不是"这是什么原理"。
+
+    实测（2026-11-10）抽取把「地方政府规章」「地方性法规」「工业盐准运证」
+    「请托人」当概念提了出来——短名词短语，形状闸拦不住，只有词表能拦。
+    """
+    from packs.legal.entity_keys import concept_reject
+
+    for name in ("地方政府规章", "地方性法规", "条例", "工业盐准运证", "调解书",
+                 "请托人", "被告人", "第三人"):
+        assert concept_reject(name), f"{name} 不该被当作概念"
+
+    for name in ("死刑缓期二年执行", "违约责任", "主观恶性", "和解协议",
+                 "国家工作人员", "限制减刑"):
+        assert not concept_reject(name), f"{name} 是可复用的法律概念"

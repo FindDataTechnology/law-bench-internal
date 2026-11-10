@@ -75,7 +75,20 @@ _AMOUNT = re.compile(r"\d[\d,.]*\s*(?:万?亿元?|万?元)")
 
 #: Suffixes that mark a document/decision type rather than a concept. A concept
 #: may contain these words; it may not *end* with them.
-DOCUMENT_LIKE_SUFFIXES: tuple[str, ...] = ("决定", "判决", "裁定", "通知", "批复", "答复")
+DOCUMENT_LIKE_SUFFIXES: tuple[str, ...] = (
+    "决定", "判决", "裁定", "通知", "批复", "答复",
+    # 文种名：这些是**文书的种类**，不是法律概念（实测抽出来过「地方政府规章」
+    # 「地方性法规」——它们回答"这是什么文书"，不回答"这是什么原理"）。
+    "规章", "法规", "条例", "办法", "规定", "解释", "法典", "法",
+    # 证照/文书名同样是文种，不是概念。
+    "准运证", "许可证", "调解书", "判决书", "裁定书", "决定书",
+)
+
+#: 当事人角色：一个概念要能跨案复用，角色名只指向某个案子里的某个人。
+PARTY_ROLE_MARKERS: tuple[str, ...] = (
+    "请托人", "当事人", "被告人", "被害人", "原告", "被告", "第三人",
+    "申请人", "被申请人", "犯罪嫌疑人",
+)
 
 
 def is_case_category(name: str) -> bool:
@@ -99,6 +112,8 @@ def concept_reject(name: str) -> bool:
     if any(marker in value for marker in FACTUAL_MARKERS):
         return True
     if any(marker in value for marker in STATEMENT_MARKERS):
+        return True
+    if any(marker in value for marker in PARTY_ROLE_MARKERS):
         return True
     if _AMOUNT.search(value):
         return True
