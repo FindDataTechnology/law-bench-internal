@@ -16,7 +16,8 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from . import agent_ids, agent_runs, dispatch, estate, proposals, workspaces
+from . import (agent_ids, agent_runs, agent_team, authoring, corpus_catalog, dispatch,
+               estate, libraries, proposals, workspaces)
 
 #: 缺口 → 该由谁处理。``None`` = 人（复核积压不是智能体能替的）。
 GAP_OWNER: dict[str, Optional[str]] = {
@@ -31,6 +32,8 @@ GAP_OWNER: dict[str, Optional[str]] = {
 }
 
 #: 质检员能机器判定的项。顺序即报告顺序（先便宜且确定的后贵的）。
+MAX_BUILDER_DOCS = 50
+
 VERIFIER_CHECKS = (
     "key_already_live",      # 键已在库里：连"要不要写"都不用判
     "missing_evidence",      # 没有可回源的依据
@@ -213,3 +216,147 @@ def _batch_of(proposal: dict) -> Optional[str]:
 
 def _batches(pending: list[dict]) -> list[dict]:
     return [{"batch": b} for b in {_batch_of(p) for p in pending} if b]
+
+
+# ── 确定性写：取材员与结构员 ────────────────────────────────────────────────
+#
+# 这两个岗位拿到的是**写权限**，所以验收比只读岗硬：同一输入重跑两遍，第二遍必须
+# 零新增；键未归名整批拒绝；一切写入只经内核（adopt_* → authoring_*）。
+# 它们只读本域**已经订阅**的范围（effective_sources），不做任何放宽订阅的动作。
+
+
+def _role_params(domain_key: str, role: str) -> dict:
+    plan = agent_team.plan(domain_key)
+    for entry in plan.get("runnable") or []:
+        if entry["role"] == role:
+            return entry.get("params") or {}
+    return {}
+
+
+def run_scout(conn: Any, *, domain_key: str, limit: Optional[int] = None) -> dict:
+    """取材一轮：把目录里的文档取成本体里的文档单位。确定性、幂等。"""
+    role = _role("scout", domain_key)
+    run = agent_runs.start(conn, role=role, domain_key=domain_key,
+                           run_key=f"scout-{domain_key}")
+    try:
+        params = _role_params(domain_key, role)
+        take = max(1, min(int(limit or params.get("limit") or 20), 50))
+        wanted = {str(k) for k in (params.get("doc_types") or [])}
+        only_sources = {str(k) for k in (params.get("sources") or [])}
+
+        domain = workspaces.get_domain(conn, domain_key=domain_key)
+        scope = libraries.effective_sources(conn, domain_path=domain.get("path") or domain_key)
+        adopted, skipped_kind, considered, already = 0, 0, 0, 0
+        unapplied: list[str] = []
+        per_source: dict[str, int] = {}
+
+        for lib_key, allowed in scope.items():
+            for source_key in sorted(allowed):
+                if only_sources and source_key not in only_sources:
+                    continue
+                try:
+                    page = corpus_catalog.documents(
+                        conn, library_key=lib_key, source_key=source_key,
+                        limit=take, domain_key=domain_key,
+                    )
+                except (corpus_catalog.DocumentMappingError, corpus_catalog.StoreError) as exc:
+                    per_source[f"{lib_key}/{source_key}"] = -1
+                    unapplied.append(f"{source_key}: {type(exc).__name__}")
+                    continue
+                # 稳定排序：目录按块数降序，同分文档的顺序不稳定，两次调用可能返回
+                # 不同的前 N 份——实测第二遍又取了 20 份新文档，"幂等"当场破产。
+                # 按 id 排是确定性的，配合"跳过已取入"才能真收敛。
+                rows = sorted(page["rows"], key=lambda r: str(r["id"]))
+                kinds = {r.get("kind") for r in rows}
+                # 文种筛选只在来源真的给出文种时才有意义；给不出就如实说"未筛"，
+                # 不能假装筛过（否则上层会以为噪声已被过滤）。
+                apply_kind = bool(wanted) and any(kinds)
+                if wanted and not any(kinds):
+                    unapplied.append(f"{source_key}: 来源未提供文种字段，未按文种筛选")
+                for row in rows:
+                    considered += 1
+                    if apply_kind and (row.get("kind") or "") not in wanted:
+                        skipped_kind += 1
+                        continue
+                    if adopted >= take:
+                        break
+                    if row.get("adopted_as"):
+                        already += 1
+                        continue
+                    out = corpus_catalog.adopt_document(
+                        conn, domain_key=domain_key, library_key=lib_key,
+                        source_key=source_key, doc_id=row["id"], operator=role,
+                    )
+                    if out.get("created"):
+                        adopted += 1
+                    per_source[f"{lib_key}/{source_key}"] = per_source.get(
+                        f"{lib_key}/{source_key}", 0) + 1
+
+        counts = {"considered": considered, "adopted": adopted,
+                  "already_adopted": already,
+                  "skipped_kind": skipped_kind, "per_source": per_source}
+        outcome = "ok"
+        detail = None
+        if wanted and unapplied:
+            detail = "文种筛选未完全生效：" + "；".join(unapplied)[:200]
+            outcome = "thin"          # 筛选没生效 = 结果比预期宽，要人看一眼
+        finished = agent_runs.finish(conn, run_id=run["id"], outcome=outcome,
+                                     counts=counts, detail=detail)
+        return {"run": finished, **counts, "warnings": unapplied}
+    except Exception as exc:  # noqa: BLE001
+        _finish_failed(conn, run["id"], exc)
+        raise
+
+
+def run_builder(conn: Any, *, domain_key: str, limit: int = MAX_BUILDER_DOCS) -> dict:
+    """结构一轮：给已取入的文档补条款。只补「还一条都没有」的文档，避免每轮重扫。"""
+    role = _role("builder", domain_key)
+    run = agent_runs.start(conn, role=role, domain_key=domain_key,
+                           run_key=f"builder-{domain_key}")
+    try:
+        live = authoring.authoring_live_keys(conn, domain_key=domain_key)
+        # 只认"文档"：条款单位同样带 attrs.corpus（它们也是从语料取来的），
+        # 用 clause_no 把它们排除，否则结构员会把条款当文档再切一遍。
+        docs = [
+            u for u in authoring.authoring_live_entities(conn, domain_key=domain_key, limit=100000)
+            if (u.get("attrs") or {}).get("corpus")
+            and "clause_no" not in (u.get("attrs") or {})
+        ]
+        built, already, skipped = 0, 0, []
+        for unit in docs[:limit]:
+            corpus = (unit.get("attrs") or {}).get("corpus") or {}
+            lib_key = corpus.get("library")
+            src_key = corpus.get("source_key")
+            doc_id = corpus.get("doc_id")
+            if not (lib_key and src_key and doc_id):
+                skipped.append({"key": unit["external_key"], "reason": "缺少语料坐标"})
+                continue
+            # 已有条款则跳过：本岗位只负责"从无到有"，不负责反复重扫。
+            # 必须要求键里真的有 "#"：文档键自己 split("#")[0] 也等于自己，
+            # 少了这个条件，每份文档都会被判成"已有条款"，结构员永远不干活。
+            if any("#" in k and k.split("#", 1)[0] == unit["external_key"] for k in live):
+                already += 1
+                continue
+            try:
+                out = corpus_catalog.adopt_clauses(
+                    conn, domain_key=domain_key, library_key=lib_key,
+                    source_key=src_key, doc_id=doc_id, operator=role,
+                    law_key=unit["external_key"],
+                )
+            except corpus_catalog.DocumentMappingError as exc:
+                skipped.append({"key": unit["external_key"], "reason": str(exc)[:80]})
+                continue
+            if out.get("adopted"):
+                built += 1
+            elif out.get("reason"):
+                skipped.append({"key": unit["external_key"], "reason": out["reason"]})
+
+        counts = {"documents": len(docs[:limit]), "built": built,
+                  "already_had_clauses": already, "skipped": len(skipped)}
+        finished = agent_runs.finish(conn, run_id=run["id"], outcome="ok" if docs else "thin",
+                                     counts=counts,
+                                     detail=None if docs else "本域没有已取入的文档")
+        return {"run": finished, **counts, "skips": skipped[:10]}
+    except Exception as exc:  # noqa: BLE001
+        _finish_failed(conn, run["id"], exc)
+        raise
