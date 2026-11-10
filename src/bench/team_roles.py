@@ -360,3 +360,89 @@ def run_builder(conn: Any, *, domain_key: str, limit: int = MAX_BUILDER_DOCS) ->
     except Exception as exc:  # noqa: BLE001
         _finish_failed(conn, run["id"], exc)
         raise
+
+
+# ── 只提案：概念员 ──────────────────────────────────────────────────────────
+#
+# 团队里唯一需要模型判断的岗位，所以它的纪律最紧：**产出只有 pending 提案，
+# 一个单位都不直接写**。加速的办法不在"让它多写"，而在批摘要与批量抽取。
+
+def run_concept(
+    conn: Any, *,
+    domain_key: str,
+    max_chunks: Optional[int] = None,
+    batch: Optional[str] = None,
+    complete_fn: Optional[Any] = None,
+) -> dict:
+    """概念一轮：从语料抽候选 → 落 pending 提案 → 记台账与批摘要。"""
+    from . import extraction
+
+    role = _role("concept", domain_key)
+    params = _role_params(domain_key, role)
+    chunks = int(max_chunks or params.get("batch_chunks") or 10)
+    floor = float(params.get("min_usable_rate") or 0.5)
+    cap = int(params.get("max_total") or 100)
+    batch_name = batch or f"concept-{domain_key}-{_stamp()}"
+
+    run = agent_runs.start(conn, role=role, domain_key=domain_key,
+                           run_key=batch_name, input_digest=batch_name)
+    try:
+        report = extraction.run(
+            conn, domain_key=domain_key,
+            sources=None, max_chunks=chunks, max_total=cap,
+            batch=batch_name, complete_fn=complete_fn, submitted_by=role,
+        )
+        summary = _batch_summary(report, batch_name=batch_name)
+        rate = float(report.get("usable_rate") or 0.0)
+        thin = report.get("submitted", 0) == 0 or rate < floor
+        counts = {
+            "sampled": report.get("sampled", 0),
+            "produced": report.get("produced", 0),
+            "submitted": report.get("submitted", 0),
+            "duplicate": report.get("duplicate", 0),
+            "usable_rate": round(rate, 3),
+            "by_kind": report.get("by_kind") or {},
+            "skipped": report.get("skipped") or {},
+        }
+        finished = agent_runs.finish(
+            conn, run_id=run["id"],
+            outcome="thin" if thin else "ok",
+            counts={**counts, "batch": batch_name},
+            artifact_refs=[{"batch": batch_name}],
+            detail=summary,
+        )
+        return {"run": finished, "batch": batch_name, "summary": summary, **counts}
+    except Exception as exc:  # noqa: BLE001
+        _finish_failed(conn, run["id"], exc)
+        raise
+
+
+def _batch_summary(report: dict, *, batch_name: str) -> str:
+    """批摘要：一批提案的共同主张、被丢掉的原因、以及它自己没把握的部分。
+
+    没有摘要的批次不受理（复核按批决策的前提）。摘要只陈述**可核对的事实**：
+    抽了多少块、各类候选多少、哪些被证据/端点/词表闸拒掉——不写"这批很有价值"
+    这类无法核对的话。
+    """
+    by_kind = report.get("by_kind") or {}
+    skipped = {k: v for k, v in (report.get("skipped") or {}).items() if v}
+    parts = [
+        f"批 {batch_name}：采样 {report.get('sampled', 0)} 块，"
+        f"产出 {report.get('produced', 0)} 条，入箱 {report.get('submitted', 0)} 条，"
+        f"可用率 {round(float(report.get('usable_rate') or 0), 3)}"
+    ]
+    if by_kind:
+        parts.append("类型分布：" + "、".join(f"{k}×{v}" for k, v in sorted(by_kind.items())))
+    if skipped:
+        parts.append("被闸门拒掉：" + "、".join(f"{k}×{v}" for k, v in sorted(skipped.items())))
+    if report.get("stopped"):
+        parts.append(f"提前停止：{report['stopped']}")
+    if not by_kind and not skipped:
+        parts.append("本轮没有产生任何候选（语料可能不含可抽内容）")
+    return "；".join(parts)
+
+
+def _stamp() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
