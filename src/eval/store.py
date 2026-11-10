@@ -928,6 +928,45 @@ def get_generation_job(job_id: int, db_path=DEFAULT_DB) -> Optional[dict]:
     return _retry_db_operation(_do_get)
 
 
+def reap_stale_generation_jobs(db_path=DEFAULT_DB) -> int:
+    """把上一个进程遗留的非终态生成任务扫成 `failed`；返回扫掉的行数。
+
+    **为什么必须有这个**（审计 03 §10）：``generation_jobs`` 的终态只有后台任务
+    自己在同一个进程里写（``background_tasks.add_task`` → try/except →
+    completed/failed）。滚动部署、OOM、pod 被驱逐、或 SIGTERM 落在「202 已返回」
+    与「任务收尾」之间时，这行就永远停在 ``pending`` 或 ``running``——而此前
+    ``src/`` 里没有任何启动清扫、reaper 或 ``updated_at`` 超时。后果是客户端轮询
+    ``GET /api/generation-jobs/{id}`` 被告知「还在跑」，UI 面板显示同样的谎。
+    生成一次是几分钟的 LLM 调用，工作时间发版必然撞上。
+
+    在进程启动时调用一次即可：此刻**本进程还没有任何在跑的任务**，所以凡是非终态
+    行一定是上一个进程遗留的，可以无条件收掉。
+
+    返回扫掉的行数（0 表示干净，便于启动日志打一行）。
+    """
+    ensure_schema(db_path)
+
+    def _do_reap():
+        conn = connect(db_path)
+        try:
+            cur = conn.execute(
+                "UPDATE generation_jobs "
+                "SET status='failed', error_message=%s, updated_at=%s "
+                "WHERE status IN ('pending','running')",
+                (
+                    "interrupted by process restart",
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            n = cur.rowcount or 0
+            conn.commit()
+            return n
+        finally:
+            conn.close()
+
+    return _retry_db_operation(_do_reap)
+
+
 def list_generation_jobs(limit: int = 20, db_path=DEFAULT_DB) -> list[dict]:
     """Recent generation jobs (most recent first)."""
     ensure_schema(db_path)

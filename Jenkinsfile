@@ -101,7 +101,7 @@ pipeline {
                 "llama-index-embeddings-openai-like>=0.3" \
                 "llama-index-readers-minio>=0.3" "elasticsearch>=8.15" \
                 "boto3>=1.34" "python-docx>=1.1" "pypdf>=6.14.2" \
-                "itsdangerous>=2.2" "pytest>=8.0"
+                "itsdangerous>=2.2" "pytest>=8.0" "fastmcp>=3.2,<4"
               echo "== 被排除的 external 用例 =="
               python -m pytest tests -q -m external --collect-only || true
               echo "== 正式跑 =="

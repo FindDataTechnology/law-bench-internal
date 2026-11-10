@@ -282,7 +282,12 @@ def workbench_browse(
     domain_key: str,
     kind: str,
     limit: int = Query(50, ge=1, le=200),
-    offset: int = Query(0, ge=0),
+    # The route fetches `offset + limit + 1` rows in one go (the extra row is the
+    # has-next signal), so `offset` bounds the memory this endpoint can be made
+    # to allocate. Without a ceiling, `?offset=50000000` asked Postgres for fifty
+    # million rows and ``fetchall()`` materialised them — any domain member with
+    # content:read could OOM the workbench pod by editing a URL.
+    offset: int = Query(0, ge=0, le=10000),
     db: DbConn = Depends(get_db),
     user: User = Depends(get_current_user),
 ):

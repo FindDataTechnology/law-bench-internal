@@ -690,3 +690,46 @@ def test_list_tasks_filters_by_assignee_and_status(db_conn):
 
     # a non-matching assignee sees nothing
     assert authoring.authoring_list_tasks(db_conn, domain_id=domain["id"], assignee="nobody") == []
+
+
+def test_event_failure_rolls_back_on_the_production_autocommit_conn(empty_db, monkeypatch):
+    """事件写入失败时 KU 必须一起回滚——**用 autocommit 连接测**。
+
+    审计 03 §2/§8：生产共享连接是 `psycopg.connect(..., autocommit=True)`
+    （为了长 LLM 调用不长挂事务）。psycopg 3 在 autocommit 连接上
+    `commit()`/`rollback()` 是 **no-op**（`transaction_status` 永远 IDLE）。
+
+    **为什么这条测试必须自己开 autocommit 连接**：`db_conn` fixture 用的
+    `empty_db` 是默认非 autocommit 连接，在那种连接上 `rollback()` 本来就有效，
+    旧代码照样能回滚——用它测会得到一条**永远绿的假测试**（我第一版就写错了，
+    反向实验时发现旧代码也通过）。只有 autocommit 连接才能复现生产行为。
+
+    断言：异常传出 + `knowledge_units` 里没有这条 unit。
+    """
+    import psycopg
+    from psycopg.rows import dict_row
+
+    dsn = empty_db.info.dsn
+    conn = psycopg.connect(dsn, row_factory=dict_row, autocommit=True)
+    try:
+        ensure_schema(conn)
+        make_domain(conn, "dom-atomic")
+
+        def boom(*a, **kw):
+            raise RuntimeError("事件写入失败")
+
+        monkeypatch.setattr(authoring, "_record_event", boom)
+
+        with pytest.raises(RuntimeError):
+            create_company(conn, "dom-atomic", external_key="co-rollback")
+
+        row = conn.execute(
+            "SELECT 1 FROM knowledge_units WHERE kind = %s AND external_key = %s",
+            ("company", "co-rollback"),
+        ).fetchone()
+        assert row is None, (
+            "autocommit 连接上，事件写入失败后 KU 仍然落库了 —— 内容表与审计轨迹分叉。"
+            "说明写路径没有真正的事务边界（autocommit 下 commit()/rollback() 是 no-op）"
+        )
+    finally:
+        conn.close()

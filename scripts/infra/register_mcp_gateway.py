@@ -96,7 +96,12 @@ def _gateway_request(
     headers = {"Authorization": f"Bearer {token}"}
     body = None
     if data is not None:
-        body = urllib.parse.urlencode(data).encode()
+        # **必须 doseq=True**：`_registration_fields()` 里的
+        # `supported_transports` 是 list，而裸 `urlencode` 会 `str(list)`，
+        # 把 `['streamable-http']` 这串 repr（带单引号）当成**标量值**发出去——
+        # 数组从没离开过进程，网关存下来的正是一个字符串，也就是 2026-11-07
+        # 那次「整排 unhealthy/degraded」事故的形状。审计 03 §6。
+        body = urllib.parse.urlencode(data, doseq=True).encode()
         headers["Content-Type"] = "application/x-www-form-urlencoded"
     request = urllib.request.Request(url, data=body, headers=headers)
     try:

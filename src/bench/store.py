@@ -169,6 +169,15 @@ def get_knowledge_unit(
     return _row_to_dict(row) if row else None
 
 
+#: Hard ceiling on rows this listing will materialise. The workbench route asks
+#: for ``offset + limit + 1`` (one overlapping page) so the cap has to be well
+#: above a page; it exists so that no caller — present or future — can turn a
+#: user-supplied number into "ask Postgres for fifty million rows and fetchall
+#: them". The route additionally caps ``offset`` so absurd input gets a 422
+#: instead of being silently clamped.
+MAX_LIST_UNITS = 20000
+
+
 def list_knowledge_units(
     conn: Any,
     *,
@@ -189,7 +198,11 @@ def list_knowledge_units(
     projection of the table; callers that mean "live units only" say so. The
     default used to be implicit (everything) and the authoring layer filtered —
     that is preserved, just made explicit.
+    ``limit`` 另有钳制（真源侧）：它被参数化进 ``LIMIT``，但行由
+    ``fetchall`` 全部物化，所以无上界是内存风险；钳制落在本函数——
+    这是所有调用方的唯一收口，风险也在 fetchall 而不在 SQL。
     """
+    limit = max(1, min(int(limit), MAX_LIST_UNITS))
     where, params = [], []
     if kind is not None:
         where.append("kind = %s")
