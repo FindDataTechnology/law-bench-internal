@@ -52,6 +52,10 @@ def plan(conn, *, domain_key: str) -> dict:
         concept = unit.get("external_key")
         if not concept:
             continue
+        # 起始集里除了概念还有法规单位（合同法/公司法/…），它们是 defines 的**端点**
+        # 而不是要接地的对象。把它们当概念报"待补出处"是错分类（实测 4 条）。
+        if (unit.get("kind") or "concept") != "concept":
+            continue
         if concept in grounded:
             already.append(concept)
             continue

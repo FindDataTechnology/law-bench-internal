@@ -160,3 +160,44 @@ def test_a_specific_name_within_the_limit_is_still_anchored(conn):
     out = grounding.plan(conn, domain_key="legal", max_candidates=3)
     assert [p["concept"] for p in out["picks"]] == ["举证责任"]
     assert out["too_generic"] == []
+
+
+# ── 人提议 + 机器验收（scripts/ground_curated.py） ─────────────────────────
+
+import sys
+from pathlib import Path as _Path
+
+sys.path.insert(0, str(_Path(__file__).resolve().parent.parent / "scripts"))
+
+
+def test_curated_proposals_must_mention_the_concept_in_the_article(conn):
+    """人选的条文，机器验收：条文正文里没出现概念名就不写。
+
+    实测被这条拦下的三条提议（死刑缓期二年执行 / 犯罪情节 / 房屋买卖居间合同）
+    都是提议本身不准——机器验收比"我说它对"可靠。
+    """
+    import ground_curated
+
+    _unit(conn, "concept", "故意杀人", "故意杀人")
+    _unit(conn, "clause", "刑法#第232条", "第二百三十二条 故意杀人的，处死刑、无期徒刑或者十年以上有期徒刑。")
+    _unit(conn, "concept", "犯罪情节", "犯罪情节")
+    _unit(conn, "clause", "刑法#第61条", "第六十一条 对于犯罪分子决定刑罚的时候，应当根据犯罪的事实、性质、情节。")
+
+    ok = ground_curated.verify(conn, domain_key="legal", concept="故意杀人",
+                               ref="《中华人民共和国刑法》第二百三十二条")
+    bad = ground_curated.verify(conn, domain_key="legal", concept="犯罪情节",
+                                ref="《中华人民共和国刑法》第六十一条")
+    assert ok["ok"] is True
+    assert "故意杀人" in ok["snippet"]
+    assert bad["ok"] is False
+    assert "没有出现" in bad["reason"]
+
+
+def test_an_unadopted_article_is_refused_not_approximated(conn):
+    import ground_curated
+
+    _unit(conn, "concept", "死刑", "死刑")
+    out = ground_curated.verify(conn, domain_key="legal", concept="死刑",
+                                ref="《中华人民共和国刑法》第四十八条")
+    assert out["ok"] is False
+    assert "尚未取入本体" in out["reason"]
