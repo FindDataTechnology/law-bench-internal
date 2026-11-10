@@ -105,6 +105,14 @@ spec:
             # not served).
             - name: COPILOT_RUNTIME_URL
               value: "http://copilot-runtime.law-bench.svc.cluster.local:3111"
+            # 抽取的 token 预算与超时。过去它们是 extraction.complete() 里的隐式默认
+            # （1500 / 240s），清单上看不见也改不了；实测一次概念抽取调用会超过
+            # 240s 而报 ReadTimeout，故障现场只剩一句 httpx.ReadTimeout。放到清单里
+            # 才能被看见、被调整、被审计。
+            - name: EXTRACT_MAX_TOKENS
+              value: "2000"
+            - name: EXTRACT_TIMEOUT
+              value: "600"
             # DOCX->PDF via the shared render service (extract-render-service);
             # the image no longer carries LibreOffice. Rollback = flip both
             # back to backend libreoffice on a fat (pre-extract) image tag.
