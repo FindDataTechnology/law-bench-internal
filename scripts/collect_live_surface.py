@@ -52,6 +52,7 @@ CALL_ARGS: dict[str, dict] = {
     "task_failed_items": {"handle": "nonexistent-handle"},
     "clause_get": {"clause_id": 1},
     "contract_download": {"artifact_id": 1},
+    "contract_generate_batch": {"contract_type": "bailment", "tag_combinations": [{"stance": "pro_a"}]},
 }
 
 
