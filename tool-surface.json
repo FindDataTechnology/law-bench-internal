@@ -24,7 +24,7 @@
   ],
   "output_structure": {
     "envelope": "structuredContent",
-    "envelope_note": "law-bench 的 tools/call 返回走 structuredContent，content 为空数组（2026-11-10 pod 内实测）。客户端解析 payload 必须读 structuredContent，不能按 content 解析。",
+    "envelope_note": "law-bench 的 tools/call 返回主载荷走 structuredContent；content 里是同一份 JSON 的 text 镜像（2026-11-10 十件复采实测，此前「content 为空数组」的记录只对部分工具成立）。客户端解析必须读 structuredContent；按 content 解析会把 text 镜像当正文，且镜像无 schema 保证。",
     "declared": [
       "clause_list",
       "contract_generate",
@@ -38,7 +38,6 @@
       "validation_list"
     ],
     "declared_count": 10,
-    "blocked_count": 11,
     "undeclared": [
       "agent_run_get",
       "agent_run_list",
@@ -85,7 +84,7 @@
       "task_failed_items",
       "task_status"
     ],
-    "note": "按 spec lex-mcp-surface「声明与实返回一致」：只登记实采可观察的形状，未采到的一律进 blocked 并写明原因，MUST NOT 凭读代码或单侧预期填充字段。internal 面不在本次收敛范围。采集方式：cheap-6 上 kubectl exec 进 law-bench-mcp pod，直连 127.0.0.1:8080/mcp 的 initialize→tools/list→tools/call，绕开网关与计费闸。 本服务「未采到」即「未声明」：全部如实并入 undeclared（检查器只认 declared/undeclared 两栏）；链路相关未采到的 13 个另有 blocked_detail 写明阻塞原因（缺 render 配置 / ImportError / 语料为空 / 未部署）。 检查器只认 declared/undeclared 两栏：未采到即未声明，一律并入 undeclared；链路相关未采到的原因留在 blocked_detail（旁注，不参与校验）。",
+    "note": "按 spec lex-mcp-surface「声明与实返回一致」：只登记实采可观察的形状；未采到的一律并入 undeclared（检查器只认 declared/undeclared 两栏），链路相关未采到的原因留在 blocked_detail 作旁注、不参与校验。MUST NOT 凭读代码或单侧预期填字段。采集方式：kubectl exec 进 law-bench-mcp pod，直连 127.0.0.1:8080/mcp 走 initialize → tools/call（绕开网关与计费闸）；每件给足入参，空集不算证据。一致性由 scripts/collect_live_surface.py（pod 内采集）+ scripts/check_declared_vs_live.py（逐键比对）守。",
     "declared_detail": {
       "contract_type_catalog": {
         "envelope": "structuredContent",
@@ -108,6 +107,14 @@
         "envelope": "structuredContent",
         "returns": {
           "source": [
+            "string"
+          ],
+          "stance": [
+            "string"
+          ]
+        },
+        "values": {
+          "source": [
             "base",
             "tagged",
             "custom"
@@ -123,46 +130,71 @@
       "validation_check": {
         "envelope": "structuredContent",
         "returns": {
-          "errors": "array",
-          "warnings": "array",
+          "errors": [],
+          "warnings": [],
           "passed": "bool"
         },
-        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）"
+        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）",
+        "field_notes": {
+          "errors": "空集（当前语料/库内无数据）",
+          "warnings": "空集（当前语料/库内无数据）"
+        }
       },
       "validation_list": {
         "envelope": "structuredContent",
         "returns": {
-          "result": "array<unobserved: 库内 type_validations=0 行>"
+          "result": []
         },
-        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）"
+        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）",
+        "field_notes": {
+          "result": "unobserved: 库内 type_validations=0 行"
+        }
       },
       "law_types": {
         "envelope": "structuredContent",
         "returns": {
-          "result": "array<unobserved: 空集>"
+          "result": []
         },
-        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）"
+        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）",
+        "field_notes": {
+          "result": "unobserved: 空集"
+        }
       },
       "law_references": {
         "envelope": "structuredContent",
         "returns": {
-          "result": "array<unobserved: 无参时为空集>"
+          "result": []
         },
-        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）"
+        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）",
+        "field_notes": {
+          "result": "unobserved: 无参时为空集"
+        }
       },
       "clause_list": {
         "envelope": "structuredContent",
         "returns": {
-          "result": "array<unobserved: 库内 clauses=0 行>"
+          "result": []
         },
-        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）"
+        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）",
+        "field_notes": {
+          "result": "unobserved: 库内 clauses=0 行"
+        }
       },
       "search_clauses": {
         "envelope": "structuredContent",
         "returns": {
-          "result": "array<unobserved: 库内 clauses=0 行>"
+          "result": [
+            {
+              "error": "string",
+              "message": "string",
+              "retryable": "bool"
+            }
+          ]
         },
-        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）"
+        "field_notes": {
+          "result": "实测返回降级信封 {error,message,retryable}（检索后端不可用），不是条款命中；条款命名空间迁移完成后应重采，届时形状会变"
+        },
+        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）；2026-11-10 复采：返回降级信封 {error,message,retryable}，检索后端不可用"
       },
       "type_metadata": {
         "envelope": "structuredContent",
@@ -170,30 +202,39 @@
           "key": "string",
           "zh_name": "string",
           "slot_count": "int",
-          "universal_dims": [
-            "string"
-          ],
-          "type_specific_dims": [
-            "string"
-          ],
-          "scenarios": [
-            {
-              "name": "string",
-              "clause_count": "int",
-              "has_tagged_clauses": "bool"
-            }
-          ],
+          "universal_dims": {
+            "stance": [
+              "string"
+            ]
+          },
+          "type_specific_dims": {},
+          "scenarios": [],
           "assembly_ready": "bool"
         },
-        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）"
+        "values": {
+          "universal_dims.stance": [
+            "pro_a",
+            "pro_b",
+            "balanced"
+          ]
+        },
+        "field_notes": {
+          "universal_dims": "「维度名 → 允许取值数组」的对象；实测三类型均只含 stance",
+          "type_specific_dims": "同形状对象；当前语料下为空对象",
+          "scenarios": "当前语料下为空数组（clauses=0，与 5.2 记录的语料缺口同源）"
+        },
+        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）；2026-11-10 十件复采校正：universal_dims/type_specific_dims 为对象（三类型样本一致）"
       },
       "contract_generate": {
         "envelope": "structuredContent",
         "returns": {
-          "body_text": "string（含 {{slot}} 占位）",
+          "body_text": "string",
           "docx_path": "string|null",
           "pdf_path": "string|null",
           "slots": [
+            "string"
+          ],
+          "instructions": [
             {
               "name": "string",
               "label": "string",
@@ -202,13 +243,6 @@
               "example": "string",
               "required": "bool",
               "source": "string"
-            }
-          ],
-          "instructions": [
-            {
-              "name": "string",
-              "label": "string",
-              "description": "string"
             }
           ],
           "laws": [
@@ -222,7 +256,13 @@
             }
           ]
         },
-        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）"
+        "field_notes": {
+          "body_text": "正文，含 {{槽位名}} 占位",
+          "docx_path": "本镜像不产 docx，实测为 null",
+          "slots": "槽位显示名数组（如「甲方名称」）；只有名字，必填/示例信息在 instructions",
+          "instructions": "与 slots 一一对应的填槽指引；字段名曾与 slots 记反，2026-11-10 复采校正"
+        },
+        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）；2026-11-10 十件复采校正：slots 为字符串数组、instructions 才是七字段对象"
       }
     },
     "blocked_detail": [
@@ -270,19 +310,6 @@
         "tool": "task_status",
         "blocked_by": "同上"
       }
-    ],
-    "blocked": [
-      "clause_get",
-      "clause_review",
-      "contract_content",
-      "contract_download",
-      "contract_generate_batch",
-      "contract_generate_stored",
-      "law_info",
-      "tag_combinations_list",
-      "tag_validate",
-      "task_failed_items",
-      "task_status"
     ]
   },
   "naming_convention": {
