@@ -119,6 +119,23 @@ class UncalibratedJudgeError(RuntimeError):
     """
 
 
+def _check_roles(manifest: dict, problems: list[str]) -> None:
+    """Optional ``roles`` section shape check (see ``src/bench/agent_team``).
+
+    Imported locally: ``agent_team`` reads packs, so a module-level import here
+    would be a cycle. The check itself lives with the vocabulary it validates —
+    one place decides what a role declaration may contain.
+    """
+    if manifest.get("roles") is None:
+        return
+    from .agent_team import RoleDeclarationError, declared_roles
+
+    try:
+        declared_roles(manifest, pack_name=str(manifest.get("name") or ""))
+    except RoleDeclarationError as exc:
+        problems.append(str(exc))
+
+
 def _check_gold_judge(manifest: dict, problems: list[str]) -> None:
     """Optional-field shape check for ``gold_judge``.
 
@@ -225,6 +242,7 @@ def validate_pack(manifest: Any, *, directory: Optional[str] = None) -> list[str
 
     _check_kinds(manifest, problems)
     _check_components(manifest, problems)
+    _check_roles(manifest, problems)
 
     eval_suites = manifest.get("eval_suites")
     if eval_suites is not None and (
