@@ -139,7 +139,13 @@ def test_text_sources_are_tuples_not_rows(conn):
     finally:
         sys.path.pop(0)
 
-    assert all(isinstance(row, tuple) and len(row) == 3 for row in rl.TEXT_SOURCES)
+    # 4 元组：第 4 项是块侧列映射（add-gov-concept-layer）。块表的主键/正文列名
+    # 不是平台默认值——政务块表是 id/chunk_text，没有 chunk_id/title。
+    assert all(isinstance(row, tuple) and len(row) == 4 for row in rl.TEXT_SOURCES)
     # Exactly the expression the script now uses.
-    allowed = {key for key, _label, _table in rl.TEXT_SOURCES}
+    allowed = {key for key, _label, _table, _columns in rl.TEXT_SOURCES}
     assert allowed == {"gov", "news", "papers", "screenplay"}
+    # 有映射的源必须真的声明 id/text 两项，否则取样器又要靠猜。
+    for key, _label, _table, columns in rl.TEXT_SOURCES:
+        if columns:
+            assert {"id", "text"} <= set(columns), (key, columns)

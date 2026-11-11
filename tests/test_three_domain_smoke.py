@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import importlib
 
+import pytest
+
 from _fakes import FakeJudge
 
 from src.clauses.assemble import generate_contract_assembled
@@ -111,8 +113,12 @@ def test_legal_chain_assemble_eval_review(seeded_db):
 
 
 def test_finance_data_chain_load_eval_goldset(empty_db):
+    adapters_probe = importlib.import_module("packs.finance-data.adapters")
+    gold = adapters_probe.sentiment_repo() / adapters_probe.GOLD_REL
+    if not gold.is_file():
+        pytest.skip(f"fd-sentiment goldset absent at {gold} - smoke not runnable here")
     ensure_schema(db_path=empty_db)
-    adapters = importlib.import_module("packs.finance-data.adapters")
+    adapters = adapters_probe
     checks = importlib.import_module("packs.finance-data.checks")  # registers checkers
     from src.bench.data_checks import checkers_for, run_data_eval
     from src.bench.store import list_knowledge_units
@@ -145,6 +151,12 @@ def test_finance_data_chain_load_eval_goldset(empty_db):
 
 
 def test_gov_chain_load_eval(empty_db):
+    # 政务语料在本仓的兄弟仓里（只读），本仓 clone 里没有它——缺了要如实 skip，
+    # 否则出片闸门在任何干净 runner 上永远红（2026-11-11 实测：CI 因家目录路径失败）。
+    from packs.gov import adapters as _gov_adapters
+
+    if not _gov_adapters.registry_path().is_file():
+        pytest.skip(f"fd-cn-gov registry absent at {_gov_adapters.registry_path()} - smoke not runnable here")
     ensure_schema(db_path=empty_db)
     adapters = importlib.import_module("packs.gov.adapters")
     checks = importlib.import_module("packs.gov.checks")  # registers checkers

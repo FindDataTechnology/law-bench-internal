@@ -48,6 +48,8 @@ def _sign_to_direction(sign: int) -> str:
 
 
 def test_band_mapping_zero_drift_vs_origin():
+    if not (SENTIMENT_REPO / "fd_sentiment" / "evaluate.py").is_file():
+        pytest.skip(f"fd-sentiment checkout absent at {SENTIMENT_REPO} - origin ruler not readable here")
     origin = _origin_band_sign()
     assert set(origin) == set(BANDS), "origin band set drifted"
     mismatches = [
