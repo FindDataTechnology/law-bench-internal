@@ -390,7 +390,7 @@
           "tags_used": {}
         },
         "field_notes": {
-          "body_text": "仍为空串，但原因已变：正文只由 clause 装配产生，而 `_select_clauses` 的 custom 分支要求 `is_assembly_ready`（每个 tag 维 tag_review=='approved'）；现有 186 条种子全部是 pending。原注「库内 clauses=0」已过时——**条款在库里了，缺的是人工评审通过**。另注：种子清单里的 `verdict: real` 是「这条是真条款而不是编的」的真实性标记，**不是评审结论**，不得当 approved 用",
+          "body_text": "**空串只在「不传 stance / tags」时出现**（2026-11-11 实测订正）：`_select_clauses` 的 custom 分支要求 stance，所以无立场调用选不到任何条款。带立场即真正文：`contract_content('bailment', stance='pro_a')` → 219 字符、`('sale', stance='balanced')` → 75 字符。原注「装配只收 approved 条款」已被批准动作解除（186 条已批准），但**base 变体仍空**，因为库里没有 category=base 的条款。",
           "slots": "随 body_text 为空；槽位定义在 instructions 里（两者不是同一件事）",
           "instructions": "槽位填报指引，本工具**不带** latin/source（contract_generate 的才带）",
           "tags_used": "动态键映射：本次实际生效的维度→取值（入参没给 tags 时为空对象）"
@@ -537,7 +537,7 @@
         "field_notes": {
           "results[]": "成功项内嵌一份 contract_content 的返回（同一形状），失败项则是 {success:false,tags,error}；两态共用一个数组，故元素键随成败变化",
           "results[].tags": "请求时给的那组标签，原样回显（动态键映射）",
-          "results[].body_text": "仍为空串，但原因已变：正文只由 clause 装配产生，而 `_select_clauses` 的 custom 分支要求 `is_assembly_ready`（每个 tag 维 tag_review=='approved'）；现有 186 条种子全部是 pending。原注「库内 clauses=0」已过时——**条款在库里了，缺的是人工评审通过**。另注：种子清单里的 `verdict: real` 是「这条是真条款而不是编的」的真实性标记，**不是评审结论**，不得当 approved 用",
+          "results[].body_text": "与 contract_content 同因：**带 stance 的组合出真正文**（实测 bailment stance=pro_a → 219 字符、success=true），不传 stance 的组合为空串。原注「clauses=0」「装配只收 approved」均已过时——186 条已批准，缺的是 base 类条款。",
           "error": "仅整体失败时出现：{type,message,details}；成功路径没有该键"
         },
         "observed": "live tools/call 2026-11-10（pod law-bench-mcp，镜像 sha-017136f）。两条分支都实测：tag_combinations 路径 total_requested=1/success=1，enumerate_all 路径 total_requested=3/success=3、combinatorial_warning=false；此前的 tag_vocab_list ImportError 已消失"
@@ -586,7 +586,8 @@
           "format": "markdown 只存正文、**不需要对象存储**——此前把它整件归为「依赖 MinIO」是错判；只有 docx/pdf 两种格式才走存储",
           "sha256/sha256_source": "markdown 路径下为 null（无文件可指纹）；docx/pdf 路径才写 {docx,pdf}_sha256",
           "幂等性": "同 contract_type+scenario+stance 复调返回 new=0 / reused=1 / 同一 artifact_id（实测两次），故可进采集器而不累积行",
-          "探针产物": "当前条款语料为空，落库行 body_hash = md5(空串) d41d8cd9…；这是**已知探针产物**非脏数据，清零执行 DELETE FROM contract_artifacts WHERE body_hash='d41d8cd98f00b204e9800998ecf8427e'"
+          "空正文行的真因（2026-11-11 实测订正）": "无 tags/stance 调用会按「每个 scenario × stance × base 组合」各落一行；其中 **base 变体（stance=None）必然是空正文**（body_hash=md5(空串)=d41d8cd9…，body 长度 0），因为 `_select_clauses` 的 base 只取 `category='base'` 的条款，而当前 186 条种子**全部是 category=custom**（base 得靠 `extract_clauses.py` 从真实合同抽取，属外部语料缺口）。实测：guarded DELETE 掉空行后重调一次，**同一空行立刻重新生成**（sale/None/None 又出现），同时产出三条真正文（sale balanced=75 / pro_a=195 / pro_b=83 字符）。**结论：不要再去删这条空行**（删→重生成是空转），它是「base 语料缺失」的显式产物；等 base 条款入库后自然消失。",
+          "stance 变体现在非空": "2026-11-11 批准种子条款后，带 stance 的变体产出真正文：bailment balanced/pro_a/pro_b = 128/219/254 字符，sale = 75/195/83。**无立场（base）仍空**，与上一条同因。"
         },
         "observed": "live tools/call 2026-11-11（pod 镜像 sha-2f85e53；sale + format=markdown，两次调用验复用）"
       },
