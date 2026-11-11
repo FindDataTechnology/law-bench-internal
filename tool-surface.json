@@ -489,11 +489,11 @@
     "blocked_detail": [
       {
         "tool": "clause_review",
-        "blocked_by": "`clauses` 表 0 行（真实语料缺口：需 MinIO 上的 contracts/ 经 extract_clauses.py 提取，而集群内无 MinIO）。**不要**用 knowledge_units 的 kind='clause' 顶上——实测那 5386 条是**法条**（external_key 形如 `合同法#第70条`、attrs.law_key=法名、corpus.source_key=statutes，attrs/tags 的 contract_type 非空 0/400），与合同条款是两个域，映射进来会把法条冒充条款返回。（2026-11-11 更正：此前记的「读路径错位」已作废）"
+        "blocked_by": "`clauses` 表 0 行（真实语料缺口：需 MinIO 上的 contracts/ 经 extract_clauses.py 提取，而集群内无 MinIO）。**不要**用 knowledge_units 的 kind='clause' 顶上——实测那 5386 条是**法条**（external_key 形如 `合同法#第70条`、attrs.law_key=法名、corpus.source_key=statutes，attrs/tags 的 contract_type 非空 0/400），与合同条款是两个域，映射进来会把法条冒充条款返回。（2026-11-11 更正：此前记的「读路径错位」已作废）（2026-11-11 订正，实测）**不是「连不到对象存储」，是「语料从未上传」**：对象存储其实在跑，且是 RustFS 不是 MinIO —— `100.64.0.11:9000`（cheap1 Caddy 反代到 127.0.0.1:9101-9103 反向隧道；`/minio/health/live` 返回 {\"status\":\"ok\",\"service\":\"rustfs-endpoint\"}）。用 `law-rag/s3-creds` 的 RUSTFS_ACCESS_KEY/SECRET_KEY 列桶：`scraw-law-contracts` **全桶只有 1 个对象**（`artifacts/__canary__/bench-public.txt`），`contracts/` 前缀 **0 个**。故 Pod 内 `minio.minio.svc.cluster.local` 解析失败只是**主机名过时**；把 `minio_host` 指向 100.64.0.11:9000 能连上，但连上也没东西可提取。解除条件 = 先把示范合同上传到 `scraw-law-contracts/contracts/`，再跑 `extract_clauses.py`。在此之前**不要**为它改生产环境变量（会得到一个能连但空的存储）。"
       },
       {
         "tool": "contract_generate_stored",
-        "blocked_by": "依赖 MinIO 落库；集群内无 MinIO（`minio.minio.svc.cluster.local` 解析失败）。代码侧已完成：指纹列 `{docx,pdf}_sha256` 在渲染时写入、复用路径从行上读回（见 5.3）；待 MinIO 就位后即可实采。注意：探测时留下的空正文残留行（body_hash=md5空串）已清理，表现为 0 行。"
+        "blocked_by": "依赖 MinIO 落库；集群内无 MinIO（`minio.minio.svc.cluster.local` 解析失败）。代码侧已完成：指纹列 `{docx,pdf}_sha256` 在渲染时写入、复用路径从行上读回（见 5.3）；待 MinIO 就位后即可实采。注意：探测时留下的空正文残留行（body_hash=md5空串）已清理，表现为 0 行。（2026-11-11 订正，实测）**不是「连不到对象存储」，是「语料从未上传」**：对象存储其实在跑，且是 RustFS 不是 MinIO —— `100.64.0.11:9000`（cheap1 Caddy 反代到 127.0.0.1:9101-9103 反向隧道；`/minio/health/live` 返回 {\"status\":\"ok\",\"service\":\"rustfs-endpoint\"}）。用 `law-rag/s3-creds` 的 RUSTFS_ACCESS_KEY/SECRET_KEY 列桶：`scraw-law-contracts` **全桶只有 1 个对象**（`artifacts/__canary__/bench-public.txt`），`contracts/` 前缀 **0 个**。故 Pod 内 `minio.minio.svc.cluster.local` 解析失败只是**主机名过时**；把 `minio_host` 指向 100.64.0.11:9000 能连上，但连上也没东西可提取。解除条件 = 先把示范合同上传到 `scraw-law-contracts/contracts/`，再跑 `extract_clauses.py`。在此之前**不要**为它改生产环境变量（会得到一个能连但空的存储）。"
       }
     ]
   },
