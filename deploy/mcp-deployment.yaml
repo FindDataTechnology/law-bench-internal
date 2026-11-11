@@ -60,18 +60,18 @@ spec:
             value: "5"
       containers:
         - name: law-bench-mcp
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-f817384
-          # 2026-11-11 深夜：**暂缓**滚 sha-1647bd7（= sha-f817384 + search_clauses
-          # 可选 min_score）。该片已构建成功并在 hkccr（digest
-          # sha256:926a449d…，出片仓快照 law-bench-images 1647bd7 / 源真 sha b19168c），
-          # 但 TCR relay 宿主 china-cheap-3（100.64.0.12）从 23:40 起 tailscale 与
-          # ssh(103.236.89.174:40925) 都不通，ccr 回灌链断 → 集群拉
-          # law-template:sha-1647bd7 报 not found（ImagePullBackOff 实证）。
-          # 因此清单保持 sha-f817384；relay 恢复后改回 sha-1647bd7 即可（无需重出片）。
-          # 回滚/现状=sha-f817384（真语料检索可用、无 min_score）；再往前 sha-700f2c5
-          # 会退回「永远 upstream_unavailable」的旧 ES 路径。
-          imagePullPolicy: IfNotPresent  # 现役 sha-f817384；sha-1647bd7 待 relay 恢复后滚。
-          # 更早的 sha-700f2c5 无真语料检索、sha-2f85e53 连 mcp-auth 都没有。
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-1647bd7
+          # 2026-11-11 上产 sha-1647bd7（= sha-f817384 的内容 + search_clauses 可选
+          # min_score，「有效无匹配」态因此可由调用方触发）。窄线构建：基线 5d979b5
+          # + 本线提交，不夹带 main 上其余未放量提交；出片仓快照 law-bench-images
+          # 1647bd7（源真 sha b19168c，BUILD-INFO.json 可对账），digest sha256:926a449d…。
+          # 回滚=sha-f817384（真语料检索可用、无 min_score）；再往前 sha-700f2c5 会退回
+          # 「永远 upstream_unavailable」的旧 ES 路径。
+          # 注：出片仓推的是 hkccr，正常由 cheap-3 的 tcr-relay 回灌 ccr；本次该宿主
+          # 23:40 起整机失联（tailscale/ssh 都不通），故由本机 skopeo 手动搬运同一 digest
+          # 到 ccr（不改内容，只补 relay 缺口）。
+          imagePullPolicy: IfNotPresent  # 现役 sha-1647bd7（= sha-f817384 + 可选 min_score）。
+          # 回滚=sha-f817384。更早的 sha-700f2c5 无真语料检索、sha-2f85e53 连 mcp-auth 都没有。
           command: ["/app/.venv/bin/python", "-m", "fd_coding_law_bench_mcp"]
           env:
             # sha-2c502d7 was built without the fd-coding-law-bench-mcp context, so
