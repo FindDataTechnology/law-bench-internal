@@ -33,6 +33,7 @@
       "contract_generate",
       "contract_generate_batch",
       "contract_type_catalog",
+      "contract_generate_stored",
       "law_info",
       "law_references",
       "law_types",
@@ -46,7 +47,7 @@
       "validation_check",
       "validation_list"
     ],
-    "declared_count": 19,
+    "declared_count": 20,
     "undeclared": [
       "agent_run_get",
       "agent_run_list",
@@ -60,7 +61,6 @@
       "compare_matrix",
       "compare_run",
       "contract_evaluate",
-      "contract_generate_stored",
       "criterion_add",
       "criterion_delete",
       "criterion_reorder",
@@ -484,12 +484,45 @@
           "「查不到即报错」是本工具既有契约": "未种子的 contract_type（66 类里的 23 个）返回 isError=true，不是返回空对象——调用方要按错误处理，别当\"无内容\""
         },
         "observed": "live tools/call 2026-11-11（pod 镜像 sha-2f85e53，law_info 表 86 行 / 43 类型；sale 实测 3779 字符）"
+      },
+      "contract_generate_stored": {
+        "envelope": "structuredContent",
+        "returns": {
+          "contract_type": "string",
+          "format": "string",
+          "artifacts": [
+            {
+              "artifact_id": "int",
+              "scenario": "string|null",
+              "stance": "string|null",
+              "docx_url": "string|null",
+              "pdf_url": "string|null",
+              "docx_url_slotted": "string|null",
+              "pdf_url_slotted": "string|null",
+              "sha256": "string|null",
+              "sha256_source": "string|null",
+              "reused": "bool"
+            }
+          ],
+          "count": "int",
+          "new": "int",
+          "reused": "int",
+          "failed": "int",
+          "failures": []
+        },
+        "field_notes": {
+          "format": "markdown 只存正文、**不需要对象存储**——此前把它整件归为「依赖 MinIO」是错判；只有 docx/pdf 两种格式才走存储",
+          "sha256/sha256_source": "markdown 路径下为 null（无文件可指纹）；docx/pdf 路径才写 {docx,pdf}_sha256",
+          "幂等性": "同 contract_type+scenario+stance 复调返回 new=0 / reused=1 / 同一 artifact_id（实测两次），故可进采集器而不累积行",
+          "探针产物": "当前条款语料为空，落库行 body_hash = md5(空串) d41d8cd9…；这是**已知探针产物**非脏数据，清零执行 DELETE FROM contract_artifacts WHERE body_hash='d41d8cd98f00b204e9800998ecf8427e'"
+        },
+        "observed": "live tools/call 2026-11-11（pod 镜像 sha-2f85e53；sale + format=markdown，两次调用验复用）"
       }
     },
     "blocked_detail": [
       {
         "tool": "clause_review",
-        "blocked_by": "`clauses` 表 0 行（真实语料缺口：需 MinIO 上的 contracts/ 经 extract_clauses.py 提取，而集群内无 MinIO）。**不要**用 knowledge_units 的 kind='clause' 顶上——实测那 5386 条是**法条**（external_key 形如 `合同法#第70条`、attrs.law_key=法名、corpus.source_key=statutes，attrs/tags 的 contract_type 非空 0/400），与合同条款是两个域，映射进来会把法条冒充条款返回。（2026-11-11 更正：此前记的「读路径错位」已作废）（2026-11-11 订正，实测）**不是「连不到对象存储」，是「语料从未上传」**：对象存储其实在跑，且是 RustFS 不是 MinIO —— `100.64.0.11:9000`（cheap1 Caddy 反代到 127.0.0.1:9101-9103 反向隧道；`/minio/health/live` 返回 {\"status\":\"ok\",\"service\":\"rustfs-endpoint\"}）。用 `law-rag/s3-creds` 的 RUSTFS_ACCESS_KEY/SECRET_KEY 列桶：`scraw-law-contracts` **全桶只有 1 个对象**（`artifacts/__canary__/bench-public.txt`），`contracts/` 前缀 **0 个**。故 Pod 内 `minio.minio.svc.cluster.local` 解析失败只是**主机名过时**；把 `minio_host` 指向 100.64.0.11:9000 能连上，但连上也没东西可提取。解除条件 = 先把示范合同上传到 `scraw-law-contracts/contracts/`，再跑 `extract_clauses.py`。在此之前**不要**为它改生产环境变量（会得到一个能连但空的存储）。"
+        "blocked_by": "`clauses` 表 0 行（真实语料缺口）。**订正（2026-11-11）**：本工具**与对象存储无关**——它只读写 `clauses` 表的评审状态列，不需要 MinIO/RustFS。实测 `clause_review(clause_id=1, status='pending')` 返回 isError=true，原文「clause not found: 1」（形态是「行不存在」，不是「存储连不上」）。解除条件：`clauses` 有行（把示范合同上传到 `scraw-law-contracts/contracts/` 后跑 `extract_clauses.py`）。在此之前其成功形状不可观测，按纪律不声明。**不要**用 knowledge_units 的 kind='clause' 顶上——那 5386 条是**法条**，与合同条款是两个域。"
       },
       {
         "tool": "contract_generate_stored",
