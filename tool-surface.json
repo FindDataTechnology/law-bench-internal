@@ -494,10 +494,6 @@
       {
         "tool": "contract_generate_stored",
         "blocked_by": "依赖 MinIO 落库；集群内无 MinIO（`minio.minio.svc.cluster.local` 解析失败）。代码侧已完成：指纹列 `{docx,pdf}_sha256` 在渲染时写入、复用路径从行上读回（见 5.3）；待 MinIO 就位后即可实采。注意：探测时留下的空正文残留行（body_hash=md5空串）已清理，表现为 0 行。"
-      },
-      {
-        "tool": "law_info",
-        "blocked_by": "`law_info` 表 0 行（按 contract_type 聚合查询无任何记录），故任何 contract_type 都返回「law_info not found」——字段形状已实测为报错，非形状可采；工具本身可用，缺的是数据。"
       }
     ]
   },
