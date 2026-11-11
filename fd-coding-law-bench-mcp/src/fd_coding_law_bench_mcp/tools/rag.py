@@ -86,6 +86,7 @@ async def search_clauses(
     query: str,
     top_k: int = 5,
     domain: str | None = None,
+    min_score: float | None = None,
 ) -> list[dict]:
     """Retrieve ranked clause chunks for a natural-language query.
 
@@ -95,12 +96,24 @@ async def search_clauses(
         domain: domain key to search; omitted ⇒ the same default the web face
             uses (``legal``). An unknown domain returns ``no_corpus`` rather
             than quietly searching another one.
+        min_score: optional similarity floor. Omitted ⇒ **no filtering at all**
+            (byte-identical to the behavior before this parameter existed).
+            Given ⇒ only chunks whose ``score`` is ≥ this value come back; if
+            none qualify the result is the *successful empty list* ``[]``.
+            There is deliberately no default threshold: ``score`` is whatever
+            the library's own backend reports, so a number is comparable only
+            among chunks of the **same backend** — the same value means
+            different things in qdrant / pgvector / array-cosine libraries.
+            ``0.0`` is a real floor (drops negative scores), not "no filter".
+            A chunk whose backend returned no score counts as below any floor.
 
     Returns a list of ``{text, source_path, score}``. Returns ``[]`` when the
-    query is valid but nothing matches. Returns a single marker element when
-    retrieval could not run: ``{error: "no_corpus", retryable: false, …}`` for a
-    domain with no corpus subscribed, ``{error: "upstream_unavailable",
-    retryable: true, …}`` when the backend itself failed. Never raises.
+    query is valid but nothing matches — including "everything fell below
+    ``min_score``". Returns a single marker element when retrieval could not
+    run: ``{error: "no_corpus", retryable: false, …}`` for a domain with no
+    corpus subscribed, ``{error: "upstream_unavailable", retryable: true, …}``
+    when the backend itself failed. Markers are never filtered by
+    ``min_score`` — they are not hits. Never raises.
     """
     if not (query or "").strip():
         return []
@@ -119,13 +132,23 @@ async def search_clauses(
             hits = library_index.search(
                 conn, domain_path=path, query=query, top_k=top_k
             )
-            return [
+            out = [
                 {
                     "text": h.get("text") or "",
                     "source_path": h.get("source_path") or "unknown",
                     "score": h.get("score"),
                 }
                 for h in hits
+            ]
+            if min_score is None:
+                return out
+            # `min_score or 0` would treat 0.0 as "no floor" — compare explicitly.
+            # A missing score cannot be shown to clear a floor, so it is dropped.
+            return [
+                h
+                for h in out
+                if isinstance(h.get("score"), (int, float))
+                and float(h["score"]) >= float(min_score)
             ]
         except library_index.NotSubscribed:
             return [_no_corpus_marker(target)]

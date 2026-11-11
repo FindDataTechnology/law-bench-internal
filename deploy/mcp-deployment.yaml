@@ -60,18 +60,15 @@ spec:
             value: "5"
       containers:
         - name: law-bench-mcp
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-f817384
-          # 2026-11-11 21:xx 上产 sha-f817384（= 现役 sha-700f2c5 的内容 + search_clauses
-          # 改读真实语料）。窄线构建：基线 5d979b5（96fbb0f + 79a62bd3 validation +
-          # 911c2a5 mcp-auth）+ 本 change 的 tools/rag.py，刻意不夹带 main 上其余
-          # 未放量提交。出片仓快照 commit = law-bench-images f817384
-          # （源真 sha 5e51439，BUILD-INFO.json 可对账）。
-          # 该镜像同时补回出片仓 image.yml 丢失的 `pip install fastmcp` 测试依赖
-          # 与 `$unobservable` 散文守卫修复，否则 test 闸 collection 阶段即红。
-          # 回滚=sha-700f2c5。
-          imagePullPolicy: IfNotPresent  # 现役 sha-f817384（内容 = sha-700f2c5 + 真语料检索）。
-          # 回滚=sha-700f2c5。更早的 sha-2f85e53 不含 mcp-auth（网关剥掉调用方 auth 后
-          # 上游必须认 X-Authorization），不要回退到它。
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-1647bd7
+          # 2026-11-11 上产 sha-1647bd7（= sha-f817384 的内容 + search_clauses 可选
+          # min_score，「有效无匹配」态因此可由调用方触发）。窄线构建仍是基线
+          # 5d979b5 + 本线提交，不夹带 main 上其余未放量提交；出片仓快照
+          # law-bench-images 1647bd7（源真 sha b19168c，BUILD-INFO.json 可对账）。
+          # 回滚=sha-f817384（真语料检索可用、但无 min_score）；再往前 sha-700f2c5
+          # 会退回「永远 upstream_unavailable」的旧 ES 路径。
+          imagePullPolicy: IfNotPresent  # 现役 sha-1647bd7（= sha-f817384 + 可选 min_score）。
+          # 回滚=sha-f817384。更早的 sha-700f2c5 无真语料检索、sha-2f85e53 连 mcp-auth 都没有。
           command: ["/app/.venv/bin/python", "-m", "fd_coding_law_bench_mcp"]
           env:
             # sha-2c502d7 was built without the fd-coding-law-bench-mcp context, so
