@@ -75,6 +75,18 @@ rubric 是「规则集」，每条规则三个字段。DB schema 存一套命名
 
 当前库内 harbor rubric 只有 2 条，且 context 非 contract（`task_quality` 评 benchmark 任务设计质量、`trial_behavior` 评 trial 行为），**不用于合同评估**。合同 rubric 全部是 `local`。
 
+> **2026-11-11 补记（查实）**：这两条 harbor 尺子挂在 legal 域下，曾被读成"法律域有尺子但没跑过"。它们与合同无关；而合同类 `contract_*` 尺子当时在库里**一条都没有**（`prompts` 也是 0 条）——`scripts/seed_contract_rubrics.py` 的素材一直在仓里，只是从没对这套 Postgres 落过。现在已用 `python3 scripts/seed_contract_rubrics.py --domain legal` 落库：86 条 `contract_*`、848 条判据，`source='local'`、`context='contract'`、`domain_id` 指向 legal。legal 的"生效标准"因此从 2 条（两条无关的 harbor 尺子）变成 88 条。
+>
+> 归属必须显式做：`domain_rubrics.effective_rubrics` 只认 `domain_id` 命中的行，落库但不挂域的尺子在域矩阵里**完全看不见**（等于没落）。
+
+### 3.2.1 判官的自证行为什么必须进 `evaluation_steps`（2026-11-11 实测）
+
+第一轮真评（`contract_sale_v2`，10 条判据）回来 10/10 `invalid`、score 0.0，可判官原文写的是"双方均以完整法律主体名称列明"这种**明确通过**的理由。原因：deepeval 3.9.6 的 strict 模板只要 `{"score", "reason"}` 两个键，并注明"no words or explanation is needed"；结构规则（含 `CONFIDENCE: <0.xx>` 自证行）此前只塞进 `criteria`，而 `criteria` 只喂给**步骤生成器**，最终判分调用看到的是被模型改写过的步骤。模型照模板办事 → 自证行永不出现 → 每个 pass 都被 `classify_structural_soundness` 判成 `contract_violation`。**一把只会返回 invalid 的尺子，和永远绿灯的尺子一样没用。**
+
+修法：`build_evaluation_steps()` 把判据与结构规则作为 `evaluation_steps` 直接传给 GEval（对照实验：同一判据、同一模型，输出从无自证行变为 `CONFIDENCE: 0.99`），并对"通过但漏写自证行"的判定做一次定向重问（`needs_self_report_retry`）。回归守卫：`tests/test_judge_prompt_steps.py`。
+
+**顺带的测试陷阱**：纯函数测试若让 `_load_judge_rules_from_domain` 走真实兜底路径，会打开进程级共享连接并把它钉在当时的 `database_url`（开发库）上，随后会话测试库拿不到 schema——症状是 fixture setup 阶段 `relation "review_tasks" does not exist`，与业务断言无关。
+
 ### 3.3 版本演进：v1 → v2 → v3
 
 合同 rubric 命名 `contract_<type>_v<N>`，覆盖约 45 个合同类型，每类三个版本：
