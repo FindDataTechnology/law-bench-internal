@@ -90,6 +90,18 @@ spec:
               value: "http"
             - name: RENDER_SERVICE_URL
               value: "http://render-service.law-bench.svc.cluster.local:8090"
+            # 法规语料检索后端（mcp-clause-search-reads-real-corpus）。
+            # search_clauses 原走旧的 ES 自摄取库：本部署从没配 elastic_search_host，
+            # 集群里那台 ES 也是零索引 → 每次都返回 upstream_unavailable，而真实
+            # 36.5 万块法规语料在 Qdrant（law-rag/law_chunks_v2，1024 维）。
+            # 现工具改走 library_index（与 web 面同源），因此这里必须给出 Qdrant 与
+            # 嵌入服务的地址；库表只存**环境变量名**，缺变量会在查询时明确报错。
+            # 值照抄 deployment.yaml（同集群同名 Service，避免两处漂移）。
+            # 回滚=镜像回退到 sha-700f2c5（旧 ES 路径），这两行可一并删除。
+            - name: QDRANT_URL
+              value: "http://qdrant.law-rag.svc.cluster.local:6333"
+            - name: LIBRARY_EMBED_LOCAL_URL
+              value: "http://embedding-svc.law-rag.svc.cluster.local:6100"
           envFrom:
             - secretRef:
                 name: law-bench-db
