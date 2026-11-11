@@ -108,9 +108,10 @@ spec:
             # 抽取的 token 预算与超时。过去它们是 extraction.complete() 里的隐式默认
             # （1500 / 240s），清单上看不见也改不了；实测一次概念抽取调用会超过
             # 240s 而报 ReadTimeout，故障现场只剩一句 httpx.ReadTimeout。放到清单里
-            # 才能被看见、被调整、被审计。
+            # 才能被看见、被调整、被审计。2026-11-11 实测：两块的提示词要花 3,531
+            # 个推理 token，2,000 的预算同样会被截断（finish=length、content 空）。
             - name: EXTRACT_MAX_TOKENS
-              value: "2000"
+              value: "4000"
             - name: EXTRACT_TIMEOUT
               value: "600"
             # DOCX->PDF via the shared render service (extract-render-service);

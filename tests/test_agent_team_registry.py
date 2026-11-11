@@ -84,7 +84,11 @@ def test_gov_declares_its_own_parameters():
     assert plan["declared"] is True
     # 政务线的文种与法律线不同，参数各自声明，互不影响
     assert "办法" in roles["scout"]["params"]["doc_types"]
-    assert "concept" in plan["skipped"]
+    # 概念岗为此线新开（add-gov-concept-layer）：语料面就是本域唯一订阅的政务全文。
+    # 此前这里断言 "concept" in plan["skipped"]——那时政务线不产概念，于是
+    # grounding 的分母恒为 0、永远读 None。
+    assert roles["concept"]["params"]["sources"] == ["gov"]
+    assert "eval" in plan["skipped"] and "release" in plan["skipped"]
 
 
 def test_write_roles_have_no_default_cadence():
