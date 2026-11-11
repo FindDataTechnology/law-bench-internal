@@ -205,9 +205,17 @@ def validate_draft(
         slots: dict ``{slot_name: value}``.
         _constraints: internal — bypass DB (for self-check).
 
-    Returns ``{errors: [...], warnings: [...], passed: bool}``.
-    Each entry: ``{constraint_id, message, law_ref, severity}``.
-    ``passed = not errors``.
+    Returns ``{errors: [...], warnings: [...], passed: bool,
+    checked_constraints: int, degraded: bool[, degraded_reason]}``.
+    Each entry: ``{constraint_id, message, law_ref, severity, provenance}``.
+
+    ``passed = not errors`` —— 但**只有 ``checked_constraints > 0`` 时才有意义**。
+    约束集为空（该 contract_type 尚未配置规则，或语料表为空）时 ``passed`` 恒为
+    True，那只是"没有东西可违反"，**不是"查过且合规"**。2026-11-11 实测线上
+    ``validation_list('sale')`` 返回 ``[]``，而 ``validation_check('sale')`` 回
+    ``passed: true`` —— 法务产品把它读成"合同评审通过"是危险的假绿，故新增
+    ``checked_constraints`` 与 ``degraded`` 把两态分开：``degraded=true`` 表示
+    本次评审什么也没查，消费方 MUST NOT 据此声称合规。
     """
     if slots is None:
         slots = {}
@@ -248,7 +256,21 @@ def validate_draft(
             else:
                 warnings.append(entry)
 
-    return {"errors": errors, "warnings": warnings, "passed": not errors}
+    checked = len(_constraints)
+    result: dict = {
+        "errors": errors,
+        "warnings": warnings,
+        "passed": not errors,
+        # 「没有可违反的约束」与「查过且合规」必须可分（见 docstring）。
+        "checked_constraints": checked,
+        "degraded": checked == 0,
+    }
+    if checked == 0:
+        result["degraded_reason"] = (
+            f"contract_type={contract_type!r} 未配置任何验证约束；"
+            "passed=true 只表示没有可违反的约束，不代表已合规"
+        )
+    return result
 
 
 # ── self-check ──────────────────────────────────────────────────
