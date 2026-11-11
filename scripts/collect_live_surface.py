@@ -55,6 +55,11 @@ CALL_ARGS: dict[str, dict] = {
     "clause_get": {"clause_id": 1},
     "contract_download": {"artifact_id": 1},
     "contract_generate_batch": {"contract_type": "bailment", "tag_combinations": [{"stance": "pro_a"}]},
+    # 2026-11-11：format=markdown 只存正文、**不经对象存储**，故本工具可在无 RustFS
+    # 依赖的情况下采到真形状（此前把它整件归为「依赖 MinIO」是错判）。
+    # 它按 contract_type+scenario+stance 复用，复调返回 new=0/reused=1，
+    # 因此反复采集不会累积行；落库行 body_hash=md5(空串) 是已知探针产物。
+    "contract_generate_stored": {"contract_type": "bailment", "format": "markdown"},
 }
 
 
