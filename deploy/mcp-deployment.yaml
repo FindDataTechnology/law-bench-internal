@@ -60,8 +60,16 @@ spec:
             value: "5"
       containers:
         - name: law-bench-mcp
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-2f85e53
-          imagePullPolicy: IfNotPresent  # 2026-11-11 sha-2f85e53：空约束集不再冒充"合规"（validation_check 增 checked_constraints/degraded）；基线=当前生产源码 96fbb0f 单摘 79a62bd3，**不夹带 main 上其余 44 个未放量提交**；回滚=sha-017136f
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-700f2c5
+          # 2026-11-11 15:26 公开线上产 sha-700f2c5（MCP 鉴权认 X-Authorization）：
+          # 网关把调用方 auth 剥掉后，上游需读 X-Authorization 才能认线路凭据；
+          # 该 tag = 96fbb0f + 79a62bd3(validation 单摘) + 911c2a5(mcp-auth)。
+          # 真源此前的 sha-2f85e53（13:24，= 96fbb0f + 79a62bd3）不含 mcp-auth，
+          # 直接导出会把线上回退成「永远 401」，故此处对齐线上并保留更高者。
+          # 回滚=sha-2f85e53。
+          imagePullPolicy: IfNotPresent  # 现役 sha-700f2c5 = 96fbb0f + 79a62bd3(validation：空约束集不再
+          # 冒充"合规"，validation_check 增 checked_constraints/degraded) + 911c2a5(mcp-auth：认
+          # X-Authorization)。刻意单摘、不夹带 main 上其余未放量提交。回滚=sha-2f85e53。
           command: ["/app/.venv/bin/python", "-m", "fd_coding_law_bench_mcp"]
           env:
             # sha-2c502d7 was built without the fd-coding-law-bench-mcp context, so
