@@ -147,3 +147,88 @@ async def test_blank_query_short_circuits(monkeypatch):
 
     assert await search_clauses("   ") == []
     assert calls == []
+
+
+# ---------------------------------------------------------------------------
+# min_score（change mcp-clause-search-score-floor）
+#
+# The four-state contract promised "valid, no match -> []", but the retrieval
+# layer has no score floor, so a vector search always returns top_k neighbours.
+# These tests pin the *caller-controlled* way to reach that state — and that
+# the default path stays byte-identical.
+# ---------------------------------------------------------------------------
+
+_HITS = [
+    {"text": "high", "source_path": "hi.md", "score": 0.9},
+    {"text": "mid", "source_path": "mid.md", "score": 0.5},
+    {"text": "low", "source_path": "low.md", "score": -0.2},
+]
+
+
+def _search_returning(hits):
+    return lambda conn, *, domain_path, query, top_k=5: list(hits)
+
+
+async def test_no_min_score_returns_every_hit(monkeypatch):
+    """默认不过滤：条数与顺序都与引入该参数前一致。"""
+    _patch(monkeypatch, domain_row={"path": "legal"}, search_impl=_search_returning(_HITS))
+    from fd_coding_law_bench_mcp.tools.rag import search_clauses
+
+    out = await search_clauses("违约金", top_k=3)
+    assert [h["text"] for h in out] == ["high", "mid", "low"]
+
+
+async def test_min_score_filters_below_floor(monkeypatch):
+    _patch(monkeypatch, domain_row={"path": "legal"}, search_impl=_search_returning(_HITS))
+    from fd_coding_law_bench_mcp.tools.rag import search_clauses
+
+    out = await search_clauses("违约金", min_score=0.5)
+    assert [h["text"] for h in out] == ["high", "mid"]
+
+
+async def test_min_score_above_everything_is_a_successful_empty_list(monkeypatch):
+    """全部低于下限 → 成功空集（不是 no_corpus、也不是 upstream_unavailable）。"""
+    _patch(monkeypatch, domain_row={"path": "legal"}, search_impl=_search_returning(_HITS))
+    from fd_coding_law_bench_mcp.tools.rag import search_clauses
+
+    out = await search_clauses("违约金", min_score=0.99)
+    assert out == []
+
+
+async def test_min_score_zero_is_a_real_floor_not_a_falsy_noop(monkeypatch):
+    """0.0 必须当真下限：负分被滤掉。写成 `min_score or 0` 会让这条红。"""
+    _patch(monkeypatch, domain_row={"path": "legal"}, search_impl=_search_returning(_HITS))
+    from fd_coding_law_bench_mcp.tools.rag import search_clauses
+
+    out = await search_clauses("违约金", min_score=0.0)
+    assert [h["text"] for h in out] == ["high", "mid"]
+
+
+async def test_min_score_drops_hits_without_a_score(monkeypatch):
+    """后端没回分数 = 无法证明达标，按不达标处理（不能混进结果）。"""
+    hits = [{"text": "noscore", "source_path": "x.md", "score": None},
+            {"text": "ok", "source_path": "y.md", "score": 0.4}]
+    _patch(monkeypatch, domain_row={"path": "legal"}, search_impl=_search_returning(hits))
+    from fd_coding_law_bench_mcp.tools.rag import search_clauses
+
+    out = await search_clauses("违约金", min_score=0.1)
+    assert [h["text"] for h in out] == ["ok"]
+
+
+async def test_min_score_never_filters_error_markers(monkeypatch):
+    """错误标记不是命中项：给了下限也必须原样返回，否则空集会被误读成「无匹配」。"""
+    _patch(monkeypatch, domain_row=None, search_impl=_search_returning(_HITS))
+    from fd_coding_law_bench_mcp.tools.rag import search_clauses
+
+    out = await search_clauses("违约金", domain="nope", min_score=0.99)
+    assert out[0]["error"] == "no_corpus"
+    assert out[0]["retryable"] is False
+
+
+async def test_rag_docstring_states_scores_are_backend_scoped():
+    """分数只在同一后端内可比——这句话必须在 docstring 里（客户端读得到的地方）。"""
+    from fd_coding_law_bench_mcp.tools.rag import search_clauses
+
+    doc = search_clauses.__doc__ or ""
+    assert "same backend" in doc
+    assert "no default threshold" in doc.lower() or "deliberately no default" in doc.lower()
