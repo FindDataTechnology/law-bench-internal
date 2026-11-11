@@ -11,7 +11,7 @@ components:
 eval_suites:
   - gov-registry-consistency
 
-# 岗位参数：政务线只跑只读巡检与取材；概念/评测/发布未声明即不启动。
+# 岗位参数：政务线只跑只读巡检与取材；评测/发布未声明即不启动。
 roles:
   warden:
     cadence_minutes: 15
@@ -28,3 +28,11 @@ roles:
     cadence_minutes: 1440
     doc_types: [办法, 规定]
     sources: [gov]
+  concept:
+    cadence_minutes: 1440
+    batch_chunks: 10
+    min_usable_rate: 0.5
+    max_total: 40
+    # 语料面＝政务公开全文（本域唯一订阅的源）。概念只从它来，不猜。
+    sources: [gov]
+

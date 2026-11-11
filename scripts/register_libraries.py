@@ -150,12 +150,63 @@ def register_law_library(conn, *, domain_key: str = "legal", dry_run: bool = Fal
 #: until a domain deliberately subscribes. Searching it additionally needs
 #: ``LIBRARY_EMBED_GATEWAY_KEY`` (8B model); without it the search fails loudly
 #: instead of silently degrading.
-TEXT_SOURCES: list[tuple[str, str, str]] = [
-    ("gov", "政务公开文本", "corpus_chunks_gov"),
-    ("news", "新闻文本", "corpus_chunks_news"),
-    ("papers", "论文文本", "corpus_chunks_papers"),
-    ("screenplay", "剧本文本", "corpus_chunks_screenplay"),
+#:
+#: The fourth element is the **chunk-side column mapping**. It cannot be left to
+#: the defaults: a real chunk table is
+#: ``id / domain / document_id / chunk_no / chunk_text / section_path / …``
+#: (measured 2026-11-11), so the default ``chunk_id``/``title`` names do not
+#: exist there and sampling fails with "table has no column(s)". Only ``gov`` has
+#: a verified mapping so far; the other three keep the defaults until someone
+#: actually reads their tables (an invented mapping would fail the same way, only
+#: later and less clearly).
+TEXT_SOURCES: list[tuple[str, str, str, dict]] = [
+    ("gov", "政务公开文本", "corpus_chunks_gov", {"id": "id", "text": "chunk_text"}),
+    ("news", "新闻文本", "corpus_chunks_news", {}),
+    ("papers", "论文文本", "corpus_chunks_papers", {}),
+    ("screenplay", "剧本文本", "corpus_chunks_screenplay", {}),
 ]
+
+
+def _merge_chunk_columns(conn, *, library_key: str, source_key: str,
+                         columns: dict, dry_run: bool = False) -> bool:
+    """Merge the chunk-side column mapping into an existing source's ingest rule.
+
+    ``add_source`` only inserts, so a source registered before the mapping was
+    known keeps the default names forever. Merging (rather than replacing) keeps
+    the document-side declaration the source already carries — the two halves
+    describe different tables and must survive each other's updates.
+
+    Returns True when the row was (or would be) changed.
+    """
+    if not columns:
+        return False
+    import json as _json
+
+    from psycopg.types.json import Jsonb
+
+    row = conn.execute(
+        "SELECT s.id, s.ingest_rule FROM library_sources s "
+        "JOIN libraries l ON l.id = s.library_id "
+        "WHERE l.library_key = %s AND s.source_key = %s",
+        (library_key, source_key),
+    ).fetchone()
+    if not row:
+        return False
+    rule = row["ingest_rule"] or {}
+    if isinstance(rule, str):
+        rule = _json.loads(rule or "{}")
+    if (rule.get("columns") or {}) == columns:
+        return False
+    if dry_run:
+        return True
+    rule["columns"] = {**(rule.get("columns") or {}), **columns}
+    conn.execute(
+        "UPDATE library_sources SET ingest_rule = %s WHERE id = %s",
+        (Jsonb(rule), row["id"]),
+    )
+    conn.commit()
+    return True
+
 
 
 def register_text_library(conn, *, dry_run: bool = False) -> dict:
@@ -165,7 +216,7 @@ def register_text_library(conn, *, dry_run: bool = False) -> dict:
         if dry_run:
             print("  would create library text-library (pgvector-external, 1024, "
                   "Qwen/Qwen3-Embedding-8B)")
-            for key, label, table in TEXT_SOURCES:
+            for key, label, table, columns in TEXT_SOURCES:
                 print(f"  would add source {key:11s} {label} -> {table}")
             return {"library": "text-library", "sources": len(TEXT_SOURCES), "dry_run": True}
         libraries.create_library(
@@ -181,9 +232,14 @@ def register_text_library(conn, *, dry_run: bool = False) -> dict:
         lib = libraries.get_library(conn, library_key="text-library")
 
     have = {s["source_key"] for s in libraries.list_sources(conn, library_id=lib["id"])}
-    for key, label, table in TEXT_SOURCES:
+    for key, label, table, columns in TEXT_SOURCES:
         if key in have:
-            print(f"  source {key:11s} exists")
+            if _merge_chunk_columns(conn, library_key="text-library", source_key=key,
+                                    columns=columns, dry_run=dry_run):
+                print(f"  source {key:11s} exists; chunk columns merged "
+                      f"({', '.join(f'{k}->{v}' for k, v in columns.items())})")
+            else:
+                print(f"  source {key:11s} exists")
             continue
         if dry_run:
             print(f"  would add source {key:11s} {label} -> {table}")
@@ -196,6 +252,7 @@ def register_text_library(conn, *, dry_run: bool = False) -> dict:
             created_by="register_libraries",
             source_kind="external-table",
             content_type=f"文本/{label}",
+            ingest_rule={"columns": columns} if columns else None,
         )
         print(f"  source {key:11s} added")
 
@@ -213,7 +270,7 @@ def register_text_library(conn, *, dry_run: bool = False) -> dict:
             # TEXT_SOURCES holds tuples, not source row dicts — subscripting them
             # by name raised `tuple indices must be integers`, which the count
             # step swallowed as "counts unavailable". Take the first element.
-            allowed={key for key, _label, _table in TEXT_SOURCES},
+            allowed={key for key, _label, _table, _columns in TEXT_SOURCES},
         )
     except Exception as exc:  # unreachable DSN must not read as "empty"
         print(f"  !! counts unavailable: {type(exc).__name__}: {exc}", file=sys.stderr)

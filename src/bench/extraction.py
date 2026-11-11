@@ -207,6 +207,14 @@ def _sample_text_tables(
     The declared columns are honoured (``ingest_rule.columns``), and a missing
     column raises with its name instead of returning an empty page: "the table
     has nothing" and "you pointed at the wrong column" must not look alike.
+
+    Chunks and their documents often live in different tables, and the chunk
+    table then carries no title of its own (measured 2026-11-11: a real chunk
+    table is ``id/document_id/chunk_no/chunk_text/section_path``). When the
+    source declares ``ingest_rule.document {table, id, doc_ref, title}`` the
+    title is taken from the document row by ``chunk.doc_ref = document.id``.
+    A missing title is acceptable (``None``); a missing text or id column is
+    not — those two are what a chunk *is*.
     """
     import psycopg
 
@@ -232,17 +240,46 @@ def _sample_text_tables(
                     (table,),
                 ).fetchall()
             }
-            missing = [c for c in cols.values() if c not in present]
-            if missing:
+            required = [c for c in (cols["text"], cols["id"]) if c not in present]
+            if required:
                 raise ValueError(
-                    f"source {src['source_key']!r}: table {table!r} has no column(s) {missing}"
+                    f"source {src['source_key']!r}: table {table!r} has no column(s) {required}"
                 )
+
+            # Title: own column first, then the declared document table. Every
+            # identifier is checked before it reaches the SQL text.
+            title_expr = "NULL"
+            join_clause = ""
+            if cols["title"] in present:
+                title_expr = cols["title"]
+            else:
+                doc = rule.get("document") or {}
+                doc_table, doc_id = doc.get("table"), doc.get("id")
+                doc_ref, doc_title = doc.get("doc_ref"), doc.get("title")
+                if (
+                    doc_table
+                    and doc_id
+                    and doc_ref
+                    and doc_title
+                    and doc_ref in present
+                    and all(
+                        library_index._IDENT.match(str(x) or "")
+                        for x in (doc_table, doc_id, doc_title)
+                    )
+                ):
+                    join_clause = (
+                        f"LEFT JOIN {doc_table} AS d ON {table}.{doc_ref} = d.{doc_id} "
+                    )
+                    title_expr = f"d.{doc_title}"
+
             order = rule.get("order_by") or cols["id"]
+            if not library_index._IDENT.match(str(order) or ""):
+                raise ValueError(f"unsafe order column: {order!r}")
             rows = ext.execute(
-                f"SELECT {cols['id']} AS chunk_id, {cols['text']} AS text, "
-                f"{cols['title']} AS title FROM {table} "
-                f"WHERE coalesce({cols['text']}, '') <> '' "
-                f"ORDER BY {order} OFFSET %s LIMIT %s",
+                f"SELECT {table}.{cols['id']} AS chunk_id, {table}.{cols['text']} AS text, "
+                f"{title_expr} AS title FROM {table} {join_clause}"
+                f"WHERE coalesce({table}.{cols['text']}, '') <> '' "
+                f"ORDER BY {table}.{order} OFFSET %s LIMIT %s",
                 (max(0, skip), max(1, limit)),
             ).fetchall()
             for chunk_id, text, title in rows:
@@ -550,7 +587,13 @@ def complete(prompt: str) -> str:
     # thought and return ``finish_reason=length`` with ``content=None``
     # (observed on 词元, 2026-11-09). The caller then sees what looks like a
     # timeout and goes hunting for a slow model instead of a short payload.
-    budget = int(os.environ.get("EXTRACT_MAX_TOKENS", "1500"))
+    #
+    # Measured 2026-11-11 on a 2-chunk concept prompt (1,406 chars): the model
+    # spent 3,531 reasoning tokens before answering, so the old 1,500 default
+    # returned an empty string on **every** call. 4,000 completed; 8,000 was the
+    # same answer. The default is now 4,000 — a budget that a real concept call
+    # fits in, not the smallest number that looked plausible.
+    budget = int(os.environ.get("EXTRACT_MAX_TOKENS", "4000"))
     call_timeout = float(os.environ.get("EXTRACT_TIMEOUT", "240"))
     resp = httpx.post(
         f"{base.rstrip('/')}/chat/completions",
@@ -560,10 +603,25 @@ def complete(prompt: str) -> str:
         timeout=call_timeout,
     )
     resp.raise_for_status()
-    choices = resp.json().get("choices") or []
+    payload = resp.json()
+    choices = payload.get("choices") or []
     if not choices:
         raise ExtractionError("model returned no choices")
-    return (choices[0].get("message") or {}).get("content") or ""
+    choice = choices[0]
+    content = (choice.get("message") or {}).get("content") or ""
+    if not content and choice.get("finish_reason") == "length":
+        # An empty answer because the budget ran out is NOT "the corpus had
+        # nothing" — reporting it as an empty run sends the reader to the wrong
+        # place (measured: a whole gov round reported
+        # 「语料可能不含可抽内容」 while the real cause was a 1,500-token cap).
+        usage = payload.get("usage") or {}
+        spent = (usage.get("completion_tokens_details") or {}).get("reasoning_tokens")
+        raise ExtractionError(
+            f"模型回答被 token 预算截断：max_tokens={budget}"
+            f"（推理已用 {spent} tokens），content 为空。"
+            "这不是语料为空；调大 EXTRACT_MAX_TOKENS 后重跑。"
+        )
+    return content
 
 
 # ── the run ─────────────────────────────────────────────────────────────────
