@@ -692,6 +692,20 @@ def test_list_tasks_filters_by_assignee_and_status(db_conn):
     assert authoring.authoring_list_tasks(db_conn, domain_id=domain["id"], assignee="nobody") == []
 
 
+def _password_from_database_url() -> str | None:
+    """The password from ``database_url`` (the conninfo from a live conn drops it)."""
+    import os
+    from urllib.parse import urlsplit
+
+    dsn = os.environ.get("database_url") or os.environ.get("DATABASE_URL") or ""
+    if not dsn:
+        return None
+    try:
+        return urlsplit(dsn).password
+    except ValueError:
+        return None
+
+
 def test_event_failure_rolls_back_on_the_production_autocommit_conn(empty_db, monkeypatch):
     """事件写入失败时 KU 必须一起回滚——**用 autocommit 连接测**。
 
@@ -709,8 +723,16 @@ def test_event_failure_rolls_back_on_the_production_autocommit_conn(empty_db, mo
     import psycopg
     from psycopg.rows import dict_row
 
+    # `conn.info.dsn` is libpq's conninfo, which **never carries the password** —
+    # locally that is masked by trust auth / .pgpass, on CI the reconnect fails
+    # with `fe_sendauth: no password supplied`. Carry it explicitly from the
+    # configured URL (the per-test DB only changes the dbname).
     dsn = empty_db.info.dsn
-    conn = psycopg.connect(dsn, row_factory=dict_row, autocommit=True)
+    password = _password_from_database_url()
+    conn = psycopg.connect(
+        dsn, row_factory=dict_row, autocommit=True,
+        **({"password": password} if password else {}),
+    )
     try:
         ensure_schema(conn)
         make_domain(conn, "dom-atomic")
