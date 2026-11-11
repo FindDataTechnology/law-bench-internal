@@ -77,6 +77,38 @@ def test_int_is_not_satisfied_by_bool(checker):
     assert problems == ["t.slot_count: 声明 int，实返回 bool"]
 
 
+def _assert_returns_are_type_tokens(path, node):
+    """形状栏只许类型令牌；`{"$unobservable": "…"}` 是唯一豁免的散文位。
+
+    豁免必须**整节点恰好一个键**：混进别的键就成了"半声明半散文"，比对器
+    （scripts/check_declared_vs_live.py:61 要求 set(declared) == {"$unobservable"}）
+    也不会认，本守卫必须比它更严而不是更松。
+    """
+    if isinstance(node, dict):
+        if "$unobservable" in node:
+            assert set(node) == {"$unobservable"}, (
+                f"{path}: $unobservable 节点不得混入其它键（实为 {sorted(node)}）"
+            )
+            assert isinstance(node["$unobservable"], str) and node["$unobservable"].strip(), (
+                f"{path}.$unobservable: 逃生口必须带一句「为什么观测不到」，不能是空值"
+            )
+            return
+        for key, value in node.items():
+            _assert_returns_are_type_tokens(f"{path}.{key}", value)
+        return
+    if isinstance(node, list):
+        for index, value in enumerate(node):
+            _assert_returns_are_type_tokens(f"{path}[{index}]", value)
+        return
+    # object / array 也是类型令牌：guard 要拦的是"说明文字混进 returns"，
+    # 不是"只许标量"。白名单漏了容器类型，另线的 manifest 一写 object|null
+    # 就会被误判成散文。
+    assert node in {"string", "int", "bool", "float", "null", "string|null",
+                    "object", "array", "object|null", "array|null"}, (
+        f"{path}: returns 里出现了非类型内容 {node!r}；说明文字请放 field_notes"
+    )
+
+
 def test_manifest_entries_carry_no_prose_in_returns():
     """形状栏只允许类型令牌：说明文字进 field_notes，字面取值进 values。
 
@@ -85,25 +117,23 @@ def test_manifest_entries_carry_no_prose_in_returns():
     manifest = json.loads((REPO / "tool-surface.json").read_text(encoding="utf-8"))
     detail = manifest["output_structure"]["declared_detail"]
 
-    def walk(path, node):
-        if isinstance(node, dict):
-            for key, value in node.items():
-                walk(f"{path}.{key}", value)
-            return
-        if isinstance(node, list):
-            for index, value in enumerate(node):
-                walk(f"{path}[{index}]", value)
-            return
-        # object / array 也是类型令牌：guard 要拦的是"说明文字混进 returns"，
-        # 不是"只许标量"。白名单漏了容器类型，另线的 manifest 一写 object|null
-        # 就会被误判成散文。
-        assert node in {"string", "int", "bool", "float", "null", "string|null",
-                        "object", "array", "object|null", "array|null"}, (
-            f"{path}: returns 里出现了非类型内容 {node!r}；说明文字请放 field_notes"
-        )
-
     for name, spec in detail.items():
-        walk(name, spec.get("returns", {}))
+        _assert_returns_are_type_tokens(name, spec.get("returns", {}))
+
+
+def test_unobservable_escape_hatch_is_allowed_but_narrow():
+    """守卫放宽处必须证明"还能红"：散文在别处仍拦，逃生口只认整节点。"""
+    with pytest.raises(AssertionError, match="非类型内容"):
+        _assert_returns_are_type_tokens("t", {"result": {"x": "一段说明文字"}})
+
+    with pytest.raises(AssertionError, match="不得混入其它键"):
+        _assert_returns_are_type_tokens("t", {"result": {"$unobservable": "理由", "x": "int"}})
+
+    with pytest.raises(AssertionError, match="不能是空值"):
+        _assert_returns_are_type_tokens("t", {"result": {"$unobservable": "  "}})
+
+    # 正例：整节点恰好一个 $unobservable，散文悉数放行
+    _assert_returns_are_type_tokens("t", {"result": {"$unobservable": "本环境观测不到"}})
 
 
 def test_empty_dict_declaration_means_variable_keys(checker):
