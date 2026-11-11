@@ -105,13 +105,9 @@
       },
       "tag_vocab_list": {
         "envelope": "structuredContent",
-        "returns": {
-          "source": [
-            "string"
-          ],
-          "stance": [
-            "string"
-          ]
+        "returns": {},
+        "field_notes": {
+          "returns": "「维度名 → 允许取值数组」的映射，**键集随 contract_type 变化**，故声明为空对象（比对器按动态键映射处理，不逐键比）。实测：无参 5 键（source/stance/strength/risk/mandatory）；contract_type=bailment 9 键（+delivery_evidence_type/item_risk_level/paid_or_gratuitous/scenario）。2026-11-11 更正：原声明只写 source/stance 两键，实返回多出 7 键被判红——那是声明漏项，不是服务漂移"
         },
         "values": {
           "source": [
@@ -125,19 +121,25 @@
             "balanced"
           ]
         },
-        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）"
+        "observed": "live tools/call 2026-11-11（pod law-bench-mcp 镜像 sha-2f85e53；无参与 contract_type=bailment 两样本）"
       },
       "validation_check": {
         "envelope": "structuredContent",
         "returns": {
           "errors": [],
           "warnings": [],
-          "passed": "bool"
+          "passed": "bool",
+          "checked_constraints": "int",
+          "degraded": "bool",
+          "degraded_reason": "string"
         },
-        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）",
+        "observed": "live tools/call 2026-11-11（pod law-bench-mcp 镜像 sha-2f85e53）",
         "field_notes": {
           "errors": "空集（当前语料/库内无数据）",
-          "warnings": "空集（当前语料/库内无数据）"
+          "warnings": "空集（当前语料/库内无数据）",
+          "checked_constraints": "本次实际评估的约束条数；实测 sale = 0（validation_list('sale') 同为 []）",
+          "degraded": "== (checked_constraints == 0)。**passed 只在 checked_constraints > 0 时有意义**：空集下 passed=true 表示『没有可违反的约束』而非『查过且合规』，消费方 MUST NOT 据此声称合规",
+          "degraded_reason": "实测原文：contract_type='sale' 未配置任何验证约束；passed=true 只表示没有可违反的约束，不代表已合规。仅 degraded=true 时出现，故别把它当必填字段读"
         }
       },
       "validation_list": {
@@ -202,11 +204,7 @@
           "key": "string",
           "zh_name": "string",
           "slot_count": "int",
-          "universal_dims": {
-            "stance": [
-              "string"
-            ]
-          },
+          "universal_dims": {},
           "type_specific_dims": {},
           "scenarios": [],
           "assembly_ready": "bool"
@@ -219,11 +217,11 @@
           ]
         },
         "field_notes": {
-          "universal_dims": "「维度名 → 允许取值数组」的对象；实测三类型均只含 stance",
-          "type_specific_dims": "同形状对象；当前语料下为空对象",
+          "universal_dims": "「维度名 → 允许取值数组」，**键集随 contract_type 变化**，故声明为空对象（动态键映射）。2026-11-11 更正：原 note 写「实测三类型均只含 stance」已被推翻——contract_type=bailment 实测 4 键（mandatory/risk/stance/strength），原结论来自单类型样本",
+          "type_specific_dims": "同形状对象，键集同样随类型变。contract_type=bailment 实测 4 键（delivery_evidence_type/item_risk_level/paid_or_gratuitous/scenario）；sale 实测空对象",
           "scenarios": "当前语料下为空数组（clauses=0，与 5.2 记录的语料缺口同源）"
         },
-        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）；2026-11-10 十件复采校正：universal_dims/type_specific_dims 为对象（三类型样本一致）"
+        "observed": "live tools/call 2026-11-11（pod law-bench-mcp 镜像 sha-2f85e53；contract_type=bailment 与 sale 两样本）"
       },
       "contract_generate": {
         "envelope": "structuredContent",
@@ -384,27 +382,31 @@
         "envelope": "structuredContent",
         "returns": {
           "result": {
-            "artifact_id": "int",
-            "contract_type": "string",
-            "scenario": "string|null",
-            "stance": "string|null",
-            "body_text": "string",
-            "slots": [],
-            "docx_key": "string|null",
-            "pdf_key": "string|null",
-            "docx_key_slotted": "string|null",
-            "pdf_key_slotted": "string|null",
-            "created_at": "string",
-            "download_urls": {},
-            "sha256_by_format": {}
+            "$unobservable": "本机无可下载产物：artifact_id=1 已不存在（实测 result=null），contract_generate 不返回 id，contract_generate_stored 因集群无 MinIO（minio.minio.svc.cluster.local 解析失败）不可用。待 MinIO 就位、能产出真实产物后复采；在此之前不得把 null 当成功形状声明"
           }
         },
+        "expected_shape_when_present": {
+          "artifact_id": "int",
+          "contract_type": "string",
+          "scenario": "string|null",
+          "stance": "string|null",
+          "body_text": "string",
+          "slots": [],
+          "docx_key": "string|null",
+          "pdf_key": "string|null",
+          "docx_key_slotted": "string|null",
+          "pdf_key_slotted": "string|null",
+          "created_at": "string",
+          "download_urls": {},
+          "sha256_by_format": {}
+        },
         "field_notes": {
+          "result": "**本环境不可观测**（见 returns.result.$unobservable）。历史观测形状（2026-11-10，镜像 sha-0d2f54d，对真实产物调用）保留在 expected_shape_when_present，仅作待复采参考、不参与比对",
           "result.download_urls": "动态键映射：已存格式→下载路径",
           "result.sha256_by_format": "动态键映射：已存格式→文件字节 sha256（5.3 新增，实测已带）",
           "result.slots": "该产物登记的槽位；body_text 为空时为空数组"
         },
-        "observed": "live tools/call 2026-11-10（pod law-bench-mcp，镜像 sha-0d2f54d）"
+        "observed": "live tools/call 2026-11-11（pod law-bench-mcp 镜像 sha-2f85e53）：artifact_id=1 不存在 → result=null，对象形状本轮未复现；历史形状见 expected_shape_when_present（2026-11-10, sha-0d2f54d）"
       },
       "contract_generate_batch": {
         "envelope": "structuredContent",
