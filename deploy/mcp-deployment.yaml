@@ -60,8 +60,8 @@ spec:
             value: "5"
       containers:
         - name: law-bench-mcp
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-017136f
-          imagePullPolicy: IfNotPresent  # 2026-11-10 sha-017136f：修 contract_generate_batch 的 tag_vocab_list ImportError（真源 96fbb0f）；回滚=sha-0d2f54d
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-2f85e53
+          imagePullPolicy: IfNotPresent  # 2026-11-11 sha-2f85e53：空约束集不再冒充"合规"（validation_check 增 checked_constraints/degraded）；基线=当前生产源码 96fbb0f 单摘 79a62bd3，**不夹带 main 上其余 44 个未放量提交**；回滚=sha-017136f
           command: ["/app/.venv/bin/python", "-m", "fd_coding_law_bench_mcp"]
           env:
             # sha-2c502d7 was built without the fd-coding-law-bench-mcp context, so
