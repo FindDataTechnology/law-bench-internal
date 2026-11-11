@@ -28,6 +28,7 @@
     "declared": [
       "clause_get",
       "clause_list",
+      "clause_review",
       "contract_content",
       "contract_download",
       "contract_generate",
@@ -47,14 +48,13 @@
       "validation_check",
       "validation_list"
     ],
-    "declared_count": 20,
+    "declared_count": 21,
     "undeclared": [
       "agent_run_get",
       "agent_run_list",
       "agent_run_store",
       "auto_reject_pipeline_run",
       "clause_delete",
-      "clause_review",
       "clause_update",
       "compare_get",
       "compare_list",
@@ -197,11 +197,47 @@
       "clause_list": {
         "envelope": "structuredContent",
         "returns": {
-          "result": []
+          "result": [
+            {
+              "id": "int",
+              "contract_type": "string",
+              "category": "string",
+              "level": "null",
+              "section": "string",
+              "body": "string",
+              "body_hash": "string",
+              "manual": "bool",
+              "source_doc_title": "string",
+              "source_path": "null",
+              "slot_instructions": [
+                {
+                  "name": "string",
+                  "label": "string",
+                  "description": "string",
+                  "example": "string",
+                  "required": "bool"
+                }
+              ],
+              "law_refs": [
+                {
+                  "name": "string",
+                  "category": "string",
+                  "category_zh": "string"
+                }
+              ],
+              "tags": {
+                "source": "string",
+                "stance": "string",
+                "strength": "string"
+              },
+              "tag_review": {}
+            }
+          ]
         },
-        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）",
+        "observed": "live tools/call 2026-11-11（pod law-bench-mcp，镜像 sha-700f2c5；clauses 表已装 41 类 186 条种子条款）",
         "field_notes": {
-          "result": "unobserved: 库内 clauses=0 行"
+          "result": "2026-11-11 之前 clauses 表 0 行，只声明了空数组（元素形状未观测）；现按实采锁元素模板",
+          "tag_review": "动态映射，同上：未评审 {}，评审后出现维度键"
         }
       },
       "search_clauses": {
@@ -393,12 +429,47 @@
       "clause_get": {
         "envelope": "structuredContent",
         "returns": {
-          "result": "null"
+          "result": {
+            "id": "int",
+            "contract_type": "string",
+            "category": "string",
+            "level": "null",
+            "section": "string",
+            "body": "string",
+            "body_hash": "string",
+            "manual": "bool",
+            "source_doc_title": "string",
+            "source_path": "null",
+            "slot_instructions": [
+              {
+                "name": "string",
+                "label": "string",
+                "description": "string",
+                "example": "string",
+                "required": "bool"
+              }
+            ],
+            "law_refs": [
+              {
+                "name": "string",
+                "category": "string",
+                "category_zh": "string"
+              }
+            ],
+            "tags": {
+              "source": "string",
+              "stance": "string",
+              "strength": "string"
+            },
+            "tag_review": {}
+          }
         },
+        "observed": "live tools/call 2026-11-11（pod law-bench-mcp，镜像 sha-700f2c5，clause_id 由 clause_list 首条派生；另以含 slot_instructions 的行 id=6 单独取元素形状）",
         "field_notes": {
-          "result": "实测为 null（句柄不存在）；库内 clauses=0，成功时的对象形状未观测——故这里只声明已观测到的值，不写「object|null」这种把推测混进形状的写法"
-        },
-        "observed": "live tools/call 2026-11-10（pod law-bench-mcp，镜像 sha-0d2f54d）；二采订正：result 只声明已观测的 null（原写 object|null 属推测）"
+          "result": "成功时是对象；id 不存在时为 null（2026-11-11 之前 clauses 表 0 行，此处曾只声明 null）。**不要写死 clause_id**：重跑 seed 装载会 DELETE+INSERT 换号（实测 1→6）",
+          "tag_review": "动态映射：未评审时为 {}，评审过才有 {source,stance,strength} 键，故按动态键声明、不锁死三键",
+          "tags": "当前三键（source/stance/strength）；类型专属维度按 tag_dims 注册，可能增键，故这里只声明已观测到的三键"
+        }
       },
       "contract_download": {
         "envelope": "structuredContent",
@@ -517,6 +588,20 @@
           "探针产物": "当前条款语料为空，落库行 body_hash = md5(空串) d41d8cd9…；这是**已知探针产物**非脏数据，清零执行 DELETE FROM contract_artifacts WHERE body_hash='d41d8cd98f00b204e9800998ecf8427e'"
         },
         "observed": "live tools/call 2026-11-11（pod 镜像 sha-2f85e53；sale + format=markdown，两次调用验复用）"
+      },
+      "clause_review": {
+        "envelope": "structuredContent",
+        "returns": {
+          "reviewed": "bool",
+          "clause_id": "int",
+          "status": "string"
+        },
+        "observed": "live tools/call 2026-11-11（pod law-bench-mcp，镜像 sha-700f2c5，clause_id 由 clause_list 首条派生）",
+        "field_notes": {
+          "status": "pending / approved / rejected 三值。采集器用 pending：种子条款本来就是待审，反复采集不改评审状态、也不伪造「人工已批准」",
+          "clause_id": "必须是库里真实存在的 id。**不要写死**：重跑 seed 装载是 DELETE+INSERT，id 会整体换号（实测 1→6）；采集器按 clause_list.result[0].id 派生",
+          "前置条件": "`clauses` 表必须有行。2026-11-11 之前该表 0 行，本工具一律返回 isError=true + `clause not found: <id>`——那是「表里没行」，不是「连不上库」"
+        }
       }
     },
     "blocked_detail": [

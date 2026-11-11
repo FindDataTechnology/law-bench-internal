@@ -52,7 +52,7 @@ CALL_ARGS: dict[str, dict] = {
     "contract_content": {"contract_type": "bailment"},
     "task_status": {"handle": "nonexistent-handle"},
     "task_failed_items": {"handle": "nonexistent-handle"},
-    "clause_get": {"clause_id": 1},
+    "clause_get": {"clause_id": {"$first": ["clause_list", "result", "id"]}},
     "contract_download": {"artifact_id": 1},
     "contract_generate_batch": {"contract_type": "bailment", "tag_combinations": [{"stance": "pro_a"}]},
     # 2026-11-11：format=markdown 只存正文、**不经对象存储**，故本工具可在无 RustFS
@@ -60,6 +60,12 @@ CALL_ARGS: dict[str, dict] = {
     # 它按 contract_type+scenario+stance 复用，复调返回 new=0/reused=1，
     # 因此反复采集不会累积行；落库行 body_hash=md5(空串) 是已知探针产物。
     "contract_generate_stored": {"contract_type": "bailment", "format": "markdown"},
+    # `clause_id` **不能写死**：重跑 `load_one` 是 DELETE+INSERT，id 会整体换号
+    # （实测 1 → 6 就是这么飞的，写死会让下一次采集报 clause not found）。
+    # `$first` 表示「先调 clause_list，取 result[0].id」；解析见 resolve_args。
+    # status 用 pending：种子条款本来就是待审，这样反复采集不改任何评审状态，
+    # 也不会伪造一次「人工已批准」。
+    "clause_review": {"clause_id": {"$first": ["clause_list", "result", "id"]}, "status": "pending"},
 }
 
 
@@ -82,6 +88,41 @@ def post(payload: dict, sid: str | None) -> tuple[dict, str | None]:
             raw = line[5:].strip()
             break
     return (json.loads(raw) if raw.strip() else {}), response.headers.get("mcp-session-id")
+
+
+def call_tool(name: str, arguments: dict, sid: str | None, index: int = 1) -> dict:
+    """调一次 tools/call，返回原始 reply。"""
+    reply, _ = post(
+        {
+            "jsonrpc": "2.0",
+            "id": index,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments},
+        },
+        sid,
+    )
+    return reply
+
+
+def resolve_args(arguments: dict, sid: str | None) -> dict:
+    """解析依赖参数：`{"$first": [tool, container, key]}` → 该工具返回的第一条元素字段。
+
+    存在的理由：有些工具的入参必须是**已存在**的业务 id（`clause_id`），而 id 由
+    装载/重建决定、会换号。写死 id 的采集器过几天就会变成 `clause not found`，
+    而那种红是"采集器坏了"不是"声明错了"，会稀释比对器的信号。
+    """
+    out: dict = {}
+    for key, value in arguments.items():
+        if isinstance(value, dict) and "$first" in value:
+            tool, container, elem = value["$first"]
+            reply = call_tool(tool, CALL_ARGS.get(tool, {}), sid)
+            structured = (reply.get("result") or {}).get("structuredContent") or {}
+            items = structured.get(container) or []
+            out[key] = items[0][elem] if items else None
+            print(f"  [derived] {key}={out[key]} (from {tool}.{container}[0].{elem})", file=sys.stderr)
+        else:
+            out[key] = value
+    return out
 
 
 def shape(value: object) -> object:
@@ -142,17 +183,9 @@ def main() -> int:
         "tools": {},
     }
     for index, name in enumerate(declared, start=10):
-        call_args = CALL_ARGS.get(name, {})
+        call_args = resolve_args(CALL_ARGS.get(name, {}), sid)
         try:
-            reply, _ = post(
-                {
-                    "jsonrpc": "2.0",
-                    "id": index,
-                    "method": "tools/call",
-                    "params": {"name": name, "arguments": call_args},
-                },
-                sid,
-            )
+            reply = call_tool(name, call_args, sid, index)
             result = reply.get("result") or {}
             structured = result.get("structuredContent")
             entry = {
