@@ -52,6 +52,16 @@ def kind_of(declared: object) -> str:
 def compare(path: str, declared: object, live: object, problems: list, notes: list) -> None:
     dkind = kind_of(declared)
 
+    # 「已声明形状，但本环境观测不到」的显式出口。
+    #
+    # 为什么要它：没有出口，遇到"声明是对的、只是这台环境造不出样本"时只剩两条歪路——
+    # 把声明改成实测值（等于拿 null 冒充成功形状）或删掉声明（等于放弃契约）。
+    # 两者都比"留一条待复采的记录"差。用法：`{"$unobservable": "<为什么观测不到>"}`，
+    # 比对器只记旁注、不对形状下判断；原因必须写环境事实，不能写"暂时跳过"。
+    if isinstance(declared, dict) and set(declared) == {"$unobservable"}:
+        notes.append(f"{path}: 已声明但本环境不可观测 —— {declared['$unobservable']}")
+        return
+
     if dkind == "union":
         allowed = {part.strip() for part in str(declared).split("|")}
         if isinstance(live, str) and live in allowed:
