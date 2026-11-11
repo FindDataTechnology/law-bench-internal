@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import importlib
 
+import pytest
+
 from _fakes import FakeJudge
 
 from src.clauses.assemble import generate_contract_assembled
