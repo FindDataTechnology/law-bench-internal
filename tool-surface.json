@@ -278,7 +278,7 @@
         "field_notes": {
           "universal_dims": "「维度名 → 允许取值数组」，**键集随 contract_type 变化**，故声明为空对象（动态键映射）。2026-11-11 更正：原 note 写「实测三类型均只含 stance」已被推翻——contract_type=bailment 实测 4 键（mandatory/risk/stance/strength），原结论来自单类型样本",
           "type_specific_dims": "同形状对象，键集同样随类型变。contract_type=bailment 实测 4 键（delivery_evidence_type/item_risk_level/paid_or_gratuitous/scenario）；sale 实测空对象",
-          "scenarios": "当前语料下为空数组（clauses=0，与 5.2 记录的语料缺口同源）"
+          "scenarios": "实测（装载 186 条后）返回 2 条、元素形状 {name, clause_count, example_clause_ids, has_tagged_clauses}。原注「当前语料下为空数组（clauses=0）」已过时。clause_count 仍为 0 是因为种子条款只带 stance/strength、不带 scenario 标签（scenario 由 tagged 语料或人工打标产生）——**场景计数与 clauses 总数是两回事**"
         },
         "observed": "live tools/call 2026-11-11（pod law-bench-mcp 镜像 sha-2f85e53；contract_type=bailment 与 sale 两样本）"
       },
@@ -365,7 +365,7 @@
         },
         "field_notes": {
           "combinations[].tags": "动态键映射：维度名→取值，维数随合同类型变化",
-          "tagged_clause_ids": "当前语料下为空（clauses=0）"
+          "tagged_clause_ids": "仍为空数组，但原因不是「clauses=0」：库里 186 条全部是 tags.source=custom 的种子条款，tagged 来源（tags.source=tagged）为 0。要有 tagged_clause_ids 需灌入带 scenario 标注的 corpus"
         },
         "observed": "live tools/call 2026-11-10（pod law-bench-mcp，镜像 sha-0d2f54d）"
       },
@@ -390,7 +390,7 @@
           "tags_used": {}
         },
         "field_notes": {
-          "body_text": "无 tags 入参时为空串：正文只由 clause 装配产生，而库内 clauses=0",
+          "body_text": "仍为空串，但原因已变：正文只由 clause 装配产生，而 `_select_clauses` 的 custom 分支要求 `is_assembly_ready`（每个 tag 维 tag_review=='approved'）；现有 186 条种子全部是 pending。原注「库内 clauses=0」已过时——**条款在库里了，缺的是人工评审通过**。另注：种子清单里的 `verdict: real` 是「这条是真条款而不是编的」的真实性标记，**不是评审结论**，不得当 approved 用",
           "slots": "随 body_text 为空；槽位定义在 instructions 里（两者不是同一件事）",
           "instructions": "槽位填报指引，本工具**不带** latin/source（contract_generate 的才带）",
           "tags_used": "动态键映射：本次实际生效的维度→取值（入参没给 tags 时为空对象）"
@@ -537,7 +537,7 @@
         "field_notes": {
           "results[]": "成功项内嵌一份 contract_content 的返回（同一形状），失败项则是 {success:false,tags,error}；两态共用一个数组，故元素键随成败变化",
           "results[].tags": "请求时给的那组标签，原样回显（动态键映射）",
-          "results[].body_text": "无 clause 语料时为空串（clauses=0）",
+          "results[].body_text": "仍为空串，但原因已变：正文只由 clause 装配产生，而 `_select_clauses` 的 custom 分支要求 `is_assembly_ready`（每个 tag 维 tag_review=='approved'）；现有 186 条种子全部是 pending。原注「库内 clauses=0」已过时——**条款在库里了，缺的是人工评审通过**。另注：种子清单里的 `verdict: real` 是「这条是真条款而不是编的」的真实性标记，**不是评审结论**，不得当 approved 用",
           "error": "仅整体失败时出现：{type,message,details}；成功路径没有该键"
         },
         "observed": "live tools/call 2026-11-10（pod law-bench-mcp，镜像 sha-017136f）。两条分支都实测：tag_combinations 路径 total_requested=1/success=1，enumerate_all 路径 total_requested=3/success=3、combinatorial_warning=false；此前的 tag_vocab_list ImportError 已消失"
@@ -605,16 +605,7 @@
         }
       }
     },
-    "blocked_detail": [
-      {
-        "tool": "clause_review",
-        "blocked_by": "`clauses` 表 0 行（真实语料缺口）。**订正（2026-11-11）**：本工具**与对象存储无关**——它只读写 `clauses` 表的评审状态列，不需要 MinIO/RustFS。实测 `clause_review(clause_id=1, status='pending')` 返回 isError=true，原文「clause not found: 1」（形态是「行不存在」，不是「存储连不上」）。解除条件：`clauses` 有行（把示范合同上传到 `scraw-law-contracts/contracts/` 后跑 `extract_clauses.py`）。在此之前其成功形状不可观测，按纪律不声明。**不要**用 knowledge_units 的 kind='clause' 顶上——那 5386 条是**法条**，与合同条款是两个域。"
-      },
-      {
-        "tool": "contract_generate_stored",
-        "blocked_by": "依赖 MinIO 落库；集群内无 MinIO（`minio.minio.svc.cluster.local` 解析失败）。代码侧已完成：指纹列 `{docx,pdf}_sha256` 在渲染时写入、复用路径从行上读回（见 5.3）；待 MinIO 就位后即可实采。注意：探测时留下的空正文残留行（body_hash=md5空串）已清理，表现为 0 行。（2026-11-11 订正，实测）**不是「连不到对象存储」，是「语料从未上传」**：对象存储其实在跑，且是 RustFS 不是 MinIO —— `100.64.0.11:9000`（cheap1 Caddy 反代到 127.0.0.1:9101-9103 反向隧道；`/minio/health/live` 返回 {\"status\":\"ok\",\"service\":\"rustfs-endpoint\"}）。用 `law-rag/s3-creds` 的 RUSTFS_ACCESS_KEY/SECRET_KEY 列桶：`scraw-law-contracts` **全桶只有 1 个对象**（`artifacts/__canary__/bench-public.txt`），`contracts/` 前缀 **0 个**。故 Pod 内 `minio.minio.svc.cluster.local` 解析失败只是**主机名过时**；把 `minio_host` 指向 100.64.0.11:9000 能连上，但连上也没东西可提取。解除条件 = 先把示范合同上传到 `scraw-law-contracts/contracts/`，再跑 `extract_clauses.py`。在此之前**不要**为它改生产环境变量（会得到一个能连但空的存储）。"
-      }
-    ]
+    "blocked_detail": []
   },
   "naming_convention": {
     "order": "verb_noun",
