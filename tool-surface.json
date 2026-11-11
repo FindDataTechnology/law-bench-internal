@@ -45,7 +45,7 @@
       "validation_check",
       "validation_list"
     ],
-    "declared_count": 10,
+    "declared_count": 18,
     "undeclared": [
       "agent_run_get",
       "agent_run_list",
