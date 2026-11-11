@@ -33,6 +33,7 @@
       "contract_generate",
       "contract_generate_batch",
       "contract_type_catalog",
+      "law_info",
       "law_references",
       "law_types",
       "search_clauses",
@@ -45,7 +46,7 @@
       "validation_check",
       "validation_list"
     ],
-    "declared_count": 18,
+    "declared_count": 19,
     "undeclared": [
       "agent_run_get",
       "agent_run_list",
@@ -64,7 +65,6 @@
       "criterion_delete",
       "criterion_reorder",
       "criterion_update",
-      "law_info",
       "pipeline_get",
       "pipeline_list",
       "prompt_create",
@@ -155,9 +155,17 @@
       "law_types": {
         "envelope": "structuredContent",
         "returns": {
-          "result": []
+          "result": [
+            {
+              "key": "string",
+              "zh_name": "string",
+              "sources": [
+                "string"
+              ]
+            }
+          ]
         },
-        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）",
+        "observed": "live tools/call 2026-11-11（pod 镜像 sha-2f85e53，law_info 种子入 86 行后；此前为 [] 属库内 0 行）",
         "field_notes": {
           "result": "unobserved: 空集"
         }
@@ -165,9 +173,23 @@
       "law_references": {
         "envelope": "structuredContent",
         "returns": {
-          "result": []
+          "result": [
+            {
+              "name": "string",
+              "stable_id": "string",
+              "category": "string",
+              "category_zh": "string",
+              "contract_types": [
+                "string"
+              ],
+              "sources": [
+                "string"
+              ],
+              "occurrences": "int"
+            }
+          ]
         },
-        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）",
+        "observed": "live tools/call 2026-11-11（pod 镜像 sha-2f85e53；105KB 真实条目，含 stable_id 溯源）",
         "field_notes": {
           "result": "unobserved: 无参时为空集"
         }
@@ -447,6 +469,21 @@
           "error": "仅整体失败时出现：{type,message,details}；成功路径没有该键"
         },
         "observed": "live tools/call 2026-11-10（pod law-bench-mcp，镜像 sha-017136f）。两条分支都实测：tag_combinations 路径 total_requested=1/success=1，enumerate_all 路径 total_requested=3/success=3、combinatorial_warning=false；此前的 tag_vocab_list ImportError 已消失"
+      },
+      "law_info": {
+        "envelope": "structuredContent",
+        "returns": {
+          "type": "string",
+          "zh_name": "string",
+          "doubao": "string|null",
+          "deepseek": "string|null"
+        },
+        "field_notes": {
+          "type": "契约类型键（调用入参 contract_type 回显）",
+          "doubao/deepseek": "两来源的法规调研 markdown 正文；该来源缺失时为 null",
+          "「查不到即报错」是本工具既有契约": "未种子的 contract_type（66 类里的 23 个）返回 isError=true，不是返回空对象——调用方要按错误处理，别当\"无内容\""
+        },
+        "observed": "live tools/call 2026-11-11（pod 镜像 sha-2f85e53，law_info 表 86 行 / 43 类型；sale 实测 3779 字符）"
       }
     },
     "blocked_detail": [

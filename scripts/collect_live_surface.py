@@ -42,6 +42,8 @@ CALL_ARGS: dict[str, dict] = {
     "validation_list": {"contract_type": "bailment"},
     "law_references": {},
     "law_types": {},
+    # 2026-11-11 起 law_info 有数据（种子 86 行），必须给入参才能采到正文形状
+    "law_info": {"contract_type": "sale"},
     "clause_list": {},
     "search_clauses": {"query": "违约金"},
     # 5.5 批次二新增：每件都给足必填入参，否则采到的是"缺参数"错误而不是形状。
