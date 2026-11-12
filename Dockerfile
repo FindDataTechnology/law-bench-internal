@@ -86,6 +86,11 @@ ENV UV_CACHE_DIR=/tmp/uv-cache \
 # registry (pypi.org) and would ignore UV_DEFAULT_INDEX, whereas a plain sync
 # resolves against the configured index while preferring the locked versions.
 COPY --chown=appuser:appuser pyproject.toml uv.lock ./
+# Vendored path-source deps (pyproject [tool.uv.sources]): uv resolves
+# `fd-ontology-kernel` from vendor/*.whl, not from any index, so the wheel MUST
+# be in the build context before `uv sync` or the build dies on
+# "Failed to generate package metadata … No such file or directory".
+COPY --chown=appuser:appuser vendor ./vendor
 
 USER appuser
 
