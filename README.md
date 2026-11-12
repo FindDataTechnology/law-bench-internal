@@ -12,7 +12,7 @@
 
 | 能力 | 说明 |
 |------|------|
-| **条款语料库** | 43 类中国合同的种子条款（[data/clause_seeds/](data/clause_seeds/)），带法条引用、标签维度（场景 `scenario`、立场 `stance` 等）、三级来源（base / tagged / custom）与人工审核工作流 |
+| **条款语料库** | 66 类合同母版模板，其中 41 类带种子条款（[data/clause_seeds/](data/clause_seeds/)，41 份 YAML 实测 2026-11-12），带法条引用、标签维度（场景 `scenario`、立场 `stance` 等）、三级来源（base / tagged / custom）与人工审核工作流 |
 | **标签驱动组装** | 按合同类型 + 标签组合装配母版，槽位（`{{slot}}`）由 LLM 或规则填充，输出 Markdown / DOCX / PDF |
 | **LLM 评审** | rubric × criteria 逐条判定（PASS/FAIL + 理由），多评审模型并行、429/503 退避——限流永远不允许变成 criterion FAIL |
 | **自愈管线** | `generate → fill → evaluate → improve` 迭代至达标（LangGraph 驱动），最佳迭代自动落库 |
@@ -121,7 +121,7 @@ src/
 packs/
   legal/          法律域包（pack.yaml 声明 + 法规目录实现 + 域组件清单）
 data/
-  clause_seeds/   43 类合同种子条款（YAML）
+  clause_seeds/   41 类合同种子条款（YAML；母版模板共 66 类）
   finetune/       微调数据管线 schema 与产物（见 微调说明.md）
 db/               内置种子（rubric/标准/提示词，含 Harbor v0.20.0 衍生规则）
 fd-coding-law-bench-mcp/   FastMCP server（37 工具，包装 src.* 原地实现）
