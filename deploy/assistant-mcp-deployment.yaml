@@ -57,7 +57,11 @@ spec:
             value: "5"
       containers:
         - name: law-bench-mcp-assistant
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-2180036
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-1e90e56
+          # 2026-11-12 由 sha-2180036 上滚：同片修 contract_type_catalog 缓存假零
+          # （单槽缓存被 include_clause_counts=false 污染 → copilot 读到"条款 0 条"）。
+          # 能力面不变：本面 50 个工具＝54 减 denylist 里那 4 个 delete，
+          # 滚后实测仍 50（新增的 4 个正被 MCP_TOOL_DENYLIST 挡住）。回滚=sha-2180036。
           imagePullPolicy: IfNotPresent
           command: ["/app/.venv/bin/python", "-m", "fd_coding_law_bench_mcp"]
           env:
