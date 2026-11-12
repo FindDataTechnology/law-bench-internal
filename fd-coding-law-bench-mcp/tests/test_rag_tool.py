@@ -232,3 +232,97 @@ async def test_rag_docstring_states_scores_are_backend_scoped():
     doc = search_clauses.__doc__ or ""
     assert "same backend" in doc
     assert "no default threshold" in doc.lower() or "deliberately no default" in doc.lower()
+
+
+# ---------------------------------------------------------------------------
+# 每调用一行遥测（change mcp-clause-search-call-telemetry）
+# ---------------------------------------------------------------------------
+
+import json as _json
+
+
+def _capture(capsys):
+    out = capsys.readouterr()
+    lines = [l for l in (out.err + out.out).splitlines() if '"event": "search_clauses"' in l]
+    return [_json.loads(l) for l in lines]
+
+
+async def test_telemetry_emits_one_line_per_call_with_outcome(monkeypatch, capsys):
+    _patch(monkeypatch, domain_row={"path": "legal"}, search_impl=_search_returning(_HITS))
+    from fd_coding_law_bench_mcp.tools.rag import search_clauses
+
+    await search_clauses("违约金", top_k=3)
+    rec = _capture(capsys)
+    assert len(rec) == 1
+    assert rec[0]["outcome"] == "hit" and rec[0]["n"] == 3
+    assert rec[0]["domain"] == "legal" and rec[0]["top_k"] == 3
+    assert rec[0]["min_score"] is None and isinstance(rec[0]["elapsed_ms"], int)
+
+
+async def test_telemetry_distinguishes_empty_and_no_corpus(monkeypatch, capsys):
+    _patch(monkeypatch, domain_row={"path": "legal"}, search_impl=lambda conn, *, domain_path, query, top_k=5: [])
+    from fd_coding_law_bench_mcp.tools.rag import search_clauses
+
+    await search_clauses("违约金")
+    _patch(monkeypatch, domain_row=None, search_impl=lambda conn, *, domain_path, query, top_k=5: [])
+    await search_clauses("违约金", domain="nope")
+
+    outcomes = [r["outcome"] for r in _capture(capsys)]
+    assert outcomes == ["empty", "no_corpus"], outcomes
+
+
+async def test_telemetry_marks_upstream_unavailable(monkeypatch, capsys):
+    def boom(conn, *, domain_path, query, top_k=5):
+        raise RuntimeError("qdrant unreachable")
+
+    _patch(monkeypatch, domain_row={"path": "legal"}, search_impl=boom)
+    from fd_coding_law_bench_mcp.tools.rag import search_clauses
+
+    await search_clauses("违约金")
+    rec = _capture(capsys)
+    assert rec[0]["outcome"] == "upstream_unavailable"
+    assert rec[0]["n"] == 1
+
+
+async def test_telemetry_never_logs_the_query_text(monkeypatch, capsys):
+    _patch(monkeypatch, domain_row={"path": "legal"}, search_impl=_search_returning(_HITS))
+    from fd_coding_law_bench_mcp.tools.rag import search_clauses
+
+    marker = "ZZ_UNIQUE_QUERY_MARKER_9137"
+    await search_clauses(marker)
+    out = capsys.readouterr()
+    assert marker not in (out.err + out.out)
+
+
+async def test_telemetry_failure_does_not_change_the_result(monkeypatch):
+    """遥测写失败（stderr 不可写）也不得影响返回。"""
+    _patch(monkeypatch, domain_row={"path": "legal"}, search_impl=_search_returning(_HITS))
+    import sys as _sys
+
+    import fd_coding_law_bench_mcp.tools.rag as rag_mod
+
+    class BoomStream:
+        def write(self, _s):
+            raise RuntimeError("stderr exploded")
+
+        def flush(self):
+            raise RuntimeError("stderr exploded")
+
+    original = _sys.stderr
+    _sys.stderr = BoomStream()
+    try:
+        out = await rag_mod.search_clauses("违约金", top_k=3)
+    finally:
+        _sys.stderr = original
+    assert [h["text"] for h in out] == ["high", "mid", "low"]
+
+
+def test_telemetry_does_not_depend_on_logging_configuration():
+    """本进程 root 无 handler、默认 WARNING；遥测不得依赖 logging 配置。"""
+    import inspect
+
+    import fd_coding_law_bench_mcp.tools.rag as rag_mod
+
+    src = inspect.getsource(rag_mod._emit_telemetry)
+    assert "sys.stderr" in src, "必须直写当前 sys.stderr"
+    assert "logging" not in src, "不得依赖 logging（root 无 handler 时 INFO 会被丢弃）"

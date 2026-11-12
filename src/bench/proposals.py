@@ -41,9 +41,11 @@ tuple cursors.
 
 from __future__ import annotations
 
-import hashlib
 import json
 from typing import Any, Optional
+
+from fd_ontology_kernel import proposals as kernel_proposals
+from fd_ontology_kernel.errors import ProposalStaleEvidence
 
 from . import agent_ids, authoring, keys, templates, workspaces
 
@@ -326,17 +328,12 @@ def _write_through_kernel(
 
 
 def canonical_evidence_digest(evidence: dict | list | str) -> str:
-    """Sha256 of the evidence's canonical JSON form.
+    """Sha256 of the evidence's canonical JSON form — one definition, in the kernel.
 
-    Same canonicalization as the publication digest: sorted keys, compact
-    separators, UTF-8 with non-ASCII preserved. Key order in the submitted
-    dict therefore never changes the digest, so two processes (or two
-    submissions months apart) always agree on whether evidence is "the same".
+    Key order never changes the digest, so two processes (or two submissions
+    months apart) always agree on whether evidence is "the same".
     """
-    canonical = json.dumps(
-        evidence, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    )
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return kernel_proposals.evidence_digest(evidence)
 
 
 # ------------------------------------------------------------------ workflow
@@ -432,7 +429,15 @@ def submit(
         (domain["id"], source, external_key, digest),
     ).fetchone()
     if same_evidence is not None:
-        raise ValueError("同键已驳回，需新证据")
+        # Same claim, same evidence, already judged — the one thing a rejection
+        # means. The error *type* comes from the kernel (so a caller can branch on
+        # PROPOSAL_STALE_EVIDENCE); the message stays this surface's published
+        # wording, which the contract-doc test pins.
+        raise ProposalStaleEvidence(
+            "同键已驳回，需新证据",
+            external_key=external_key,
+            evidence_digest=digest,
+        )
 
     cur = conn.execute(
         f"INSERT INTO domain_proposals "

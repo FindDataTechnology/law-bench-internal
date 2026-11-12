@@ -29,10 +29,47 @@ that one talks to a model that cannot.
 
 from __future__ import annotations
 
+import json
+import sys
+import time
+
 import anyio
 
 from ..annotations import annotations_for
 from ..server import mcp
+
+#: Per-call telemetry. Deliberately NOT ``logging``: verified in the pod that this
+#: process configures no root logger at all (``root handlers: [] level: 30``), so a
+#: plain ``logger.info`` is silently dropped by the default WARNING level. A
+#: dedicated StreamHandler would appear to fix that but binds ``sys.stderr`` at
+#: import time, which is both wrong (streams get replaced) and untestable.
+#: Writing to the *current* ``sys.stderr`` at call time is unconditionally visible
+#: and does not touch global logging behaviour. stderr is safe here: the
+#: deployment speaks streamable-HTTP, never stdio.
+def _emit_telemetry(outcome: str, n: int, elapsed_ms: int, domain: str,
+                    top_k: int, min_score: float | None) -> None:
+    """Write one JSON line per call to stderr. NEVER raises.
+
+    The query text is deliberately absent: legal queries are sensitive, and the
+    aggregate we need (which of the four outcomes happened) does not need it.
+    Telemetry must not be able to break the tool, so every failure is swallowed.
+    """
+    try:
+        line = json.dumps({
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "event": "search_clauses",
+            "outcome": outcome,
+            "n": n,
+            "elapsed_ms": elapsed_ms,
+            "domain": domain,
+            "top_k": top_k,
+            "min_score": min_score,
+        }, ensure_ascii=False)
+        sys.stderr.write(line + "\n")
+        sys.stderr.flush()
+    except Exception:  # noqa: BLE001 - telemetry never breaks the call
+        pass
+
 
 #: Machine-readable code for "the retrieval backend was unreachable". Mirrors the
 #: four-class taxonomy in ``mcp-error-semantics``; retryable, unlike a no-match.
@@ -116,9 +153,12 @@ async def search_clauses(
     ``min_score`` — they are not hits. Never raises.
     """
     if not (query or "").strip():
+        _emit_telemetry("empty", 0, 0, (domain or DEFAULT_DOMAIN).strip() or DEFAULT_DOMAIN,
+                        top_k, min_score)
         return []
 
     target = (domain or DEFAULT_DOMAIN).strip() or DEFAULT_DOMAIN
+    started = time.monotonic()
 
     def _go() -> list[dict]:
         from src.eval.db import connect
@@ -157,4 +197,11 @@ async def search_clauses(
         finally:
             conn.close()
 
-    return await anyio.to_thread.run_sync(_go)
+    result = await anyio.to_thread.run_sync(_go)
+    elapsed_ms = int((time.monotonic() - started) * 1000)
+    if result and isinstance(result[0], dict) and "error" in result[0]:
+        outcome = str(result[0].get("error") or UPSTREAM_UNAVAILABLE)
+    else:
+        outcome = "hit" if result else "empty"
+    _emit_telemetry(outcome, len(result), elapsed_ms, target, top_k, min_score)
+    return result

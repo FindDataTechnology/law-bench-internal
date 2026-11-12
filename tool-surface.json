@@ -255,7 +255,8 @@
           "result": "命中元素形状（2026-11-11 起）：{text, source_path, score}。另有两种**错误信封**变体（不是命中）：{error:'no_corpus', retryable:false, message} 与 {error:'upstream_unavailable', retryable:true, message}。比对器（scripts/check_declared_vs_live.py）不支持元素级联合，故错误样本会读成「缺 text/source_path」——这是已知的声明侧限制，见到此类红先看返回里是否 error 信封，别急着改声明",
           "min_score（2026-11-11 新增，可选）": "相似度下限。**不传 = 完全不过滤**（与引入前逐字节相同）；传入 = 只留 score ≥ 该值的命中，全部低于则返回**成功空集 []**（这是「有效无匹配」态唯一可由调用方触发的路径）。刻意不设默认阈值：分数由各库自己的后端自报，只在**同一后端内可比**。0.0 是真下限（滤掉负分），不是「不过滤」；后端未回分数的条目按不达标丢弃。错误信封不受该参数影响",
           "score": "后端自报相似度：qdrant 库为余弦（约 -1..1），pgvector/owned array-cosine 同量纲但不可与 qdrant 数直比。现场样本：查询「违约金」top1 = 0.604（绍兴市大气污染防治条例等三件地方性法规的决定#4）",
-          "历史降级记录（2026-11-10 前）": "此前本工具走 ES 自摄取路径（elastic_search_host 未配、集群 ES 零索引）→ 每次都返回 upstream_unavailable。2026-11-11 改走 library_index/Qdrant（law_chunks_v2，36.5 万块/1024 维）后已能取真语料；上面「降级根因/两条通道别混」等旧注描述的部署状态已过期，仅作历史"
+          "历史降级记录（2026-11-10 前）": "此前本工具走 ES 自摄取路径（elastic_search_host 未配、集群 ES 零索引）→ 每次都返回 upstream_unavailable。2026-11-11 改走 library_index/Qdrant（law_chunks_v2，36.5 万块/1024 维）后已能取真语料；上面「降级根因/两条通道别混」等旧注描述的部署状态已过期，仅作历史",
+          "运行期遥测（2026-11-12 起）": "每次调用向 stderr 写一行 JSON：{ts,event:'search_clauses',outcome,n,elapsed_ms,domain,top_k,min_score}，outcome ∈ hit|empty|no_corpus|upstream_unavailable（与四态一一对应）。**不含 query 文本与命中正文**。采集：kubectl -n law-bench logs deploy/law-bench-mcp | grep '\"event\": \"search_clauses\"'。注意：本进程 root logger 无 handler、默认 WARNING，故遥测不用 logging，直接写当前 sys.stderr——用 logging 会被静默丢弃。"
         },
         "observed": "live tools/call 2026-11-11（镜像 sha-f817384，经网关 /law-bench/mcp，M2M 单凭据）：query=违约金&top_k=3 → 3 条命中，首条 source_path=绍兴市人民代表大会常务委员会关于修改《绍兴市大气污染防治条例》等三件地方性法规的决定#4、score=0.604；校验下限（min_score=0.9）→ []；domain=nope → error=no_corpus/retryable=false"
       },

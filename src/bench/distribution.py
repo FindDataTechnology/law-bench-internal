@@ -35,6 +35,8 @@ import hashlib
 import json
 from typing import Any, Optional
 
+from fd_ontology_kernel import manifest as kernel_manifest
+
 from . import authoring, templates, workspaces
 
 # The contract surface carried per knowledge-unit entry in a manifest.
@@ -157,15 +159,12 @@ def _normalize_domain_keys(domains: Any) -> list[str]:
 def canonical_digest(manifest: dict) -> str:
     """Sha256 of the manifest's canonical JSON (content-only anchor).
 
-    Canonical form: keys sorted, compact separators, UTF-8 (non-ASCII
-    preserved, not escaped). Nothing but the manifest participates —
-    timestamps, publisher, and version number never enter the manifest, so
-    identical content always produces the identical digest.
+    Delegates the recipe to the shared kernel: one canonical-JSON definition for
+    every surface, so a snapshot taken here and one taken by another surface
+    cannot disagree about what "the same content" means. The digest still covers
+    this payload only — timestamps, publisher and version number never enter it.
     """
-    canonical = json.dumps(
-        manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    )
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return kernel_manifest.digest_of(manifest)
 
 
 # ------------------------------------------------------------- manifest build
@@ -273,15 +272,22 @@ def build_manifest(conn: Any, *, domain: dict) -> tuple[dict, int, int]:
     if not entities and not relationships:
         raise ValueError(f"domain {domain['key']!r} has no content to publish")
 
-    manifest = {
-        "domain": domain["key"],
-        "template_name": tmpl["name"],
-        "template_version": domain["template_version"],
-        "entity_types": list(entity_types),
-        "relationship_kinds": list(relationship_kinds),
-        "entities": sorted(entities, key=lambda e: e["external_key"]),
-        "relationships": sorted(relationships, key=lambda e: e["external_key"]),
-    }
+    # The shape itself is owned by the kernel (key-addressed, version 2): it
+    # fixes the entry key set, the sort order and the null normalization. Building
+    # it here instead would let this surface drift from every other publisher
+    # while both claim the same shape version.
+    manifest = kernel_manifest.build_payload(
+        shape=kernel_manifest.SHAPE_KEY_ADDRESSED,
+        entities=entities,
+        relationships=relationships,
+        header={
+            "domain": domain["key"],
+            "template_name": tmpl["name"],
+            "template_version": domain["template_version"],
+            "entity_types": list(entity_types),
+            "relationship_kinds": list(relationship_kinds),
+        },
+    )
     return manifest, len(entities), len(relationships)
 
 
