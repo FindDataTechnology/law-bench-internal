@@ -101,7 +101,10 @@
             }
           ]
         },
-        "observed": "live tools/call 2026-11-10（pod law-bench-mcp 新镜像 sha-aef1c58）"
+        "observed": "live tools/call 2026-11-12（pod law-bench-mcp sha-5c485d0）：66 类型、41 个非零、合计 186＝clause_list 186 条",
+        "field_notes": {
+          "total_base_clauses": "仅当 include_clause_counts=true 时为真实条数；false 时恒 0，且两种形状各自缓存（2026-11-12 修，此前 false 会污染 true 成假零）"
+        }
       },
       "tag_vocab_list": {
         "envelope": "structuredContent",
