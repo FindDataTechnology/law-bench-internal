@@ -60,14 +60,15 @@ spec:
             value: "5"
       containers:
         - name: law-bench-mcp
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-5c485d0
-          # 2026-11-12 上产 sha-5c485d0（= sha-1647bd7 + search_clauses 每调用一行 stderr 遥测）。
-          # 窄线构建：基线 5d979b5 + 本线三笔，不夹带 main 其余未放量提交；出片仓快照
-          # law-bench-images 5c485d0（源真 sha 87f099f，BUILD-INFO.json 可对账）。
-          # 遥测用途：harden-knowledge-surfaces 4.4 的「错误分布」此前观测不到（无 per-call 日志、
-          # 容器只开 8080、FastAPI /health 不在服务面），现在可 `kubectl logs | grep '"event": "search_clauses"'` 统计。
-          # 回滚=sha-1647bd7（真语料检索 + min_score，但无遥测）。
-          imagePullPolicy: IfNotPresent  # 现役 sha-5c485d0（= sha-1647bd7 + 遥测）。回滚=sha-1647bd7。
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-1e90e56
+          # 2026-11-12 上产 sha-1e90e56（源 60bb1ec：contract_type_catalog 缓存按
+          # include_clause_counts 分键，止住"先 false 后 true 读到假零计数"；
+          # 同片含 vendored wheel 的 CI/Dockerfile 挂载修复）。
+          # 出片：快照仓 law-bench-images 1e90e56（源真 sha 60bb1ec，BUILD-INFO.json 可对账）。
+          # 本片除目录计数缓存外，还含 11-12 的 vendored wheel 挂载修复（CI/Dockerfile）——
+          # 没有那一修，本仓任何 change 都出不了片（test 作业 42 秒红在依赖解析）。
+          # 遥测：`kubectl logs | grep '"event": "search_clauses"'` 仍按调用一行（四态可数）。
+          imagePullPolicy: IfNotPresent  # 现役 sha-1e90e56（目录计数缓存分键）。回滚=sha-5c485d0。
           # 更早：sha-f817384 无 min_score、sha-700f2c5 无真语料检索、sha-2f85e53 连 mcp-auth 都没有。
           command: ["/app/.venv/bin/python", "-m", "fd_coding_law_bench_mcp"]
           env:
