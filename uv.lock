@@ -481,6 +481,7 @@ dependencies = [
     { name = "deepeval" },
     { name = "elasticsearch" },
     { name = "fastapi" },
+    { name = "fd-ontology-kernel" },
     { name = "itsdangerous" },
     { name = "jinja2" },
     { name = "llama-index-core" },
@@ -508,6 +509,7 @@ requires-dist = [
     { name = "deepeval", specifier = ">=3.9.6" },
     { name = "elasticsearch", specifier = ">=8.15" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "fd-ontology-kernel", path = "vendor/fd_ontology_kernel-0.1.0-py3-none-any.whl" },
     { name = "itsdangerous", specifier = ">=2.2" },
     { name = "jinja2", specifier = ">=3.1" },
     { name = "llama-index-core", specifier = ">=0.12" },
@@ -1049,6 +1051,14 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/bc/17/354d04951ce114bf4afc78e27a18cfbd6ee319ab1829c2d5fb5e94063ac6/fastuuid-0.14.0-cp313-cp313-musllinux_1_1_x86_64.whl", hash = "sha256:1383fff584fa249b16329a059c68ad45d030d5a4b70fb7c73a08d98fd53bcdab", size = 450921, upload-time = "2025-10-19T22:31:02.151Z" },
     { url = "https://files.pythonhosted.org/packages/fb/be/d7be8670151d16d88f15bb121c5b66cdb5ea6a0c2a362d0dcf30276ade53/fastuuid-0.14.0-cp313-cp313-win32.whl", hash = "sha256:a0809f8cc5731c066c909047f9a314d5f536c871a7a22e815cc4967c110ac9ad", size = 154559, upload-time = "2025-10-19T22:36:36.011Z" },
     { url = "https://files.pythonhosted.org/packages/22/1d/5573ef3624ceb7abf4a46073d3554e37191c868abc3aecd5289a72f9810a/fastuuid-0.14.0-cp313-cp313-win_amd64.whl", hash = "sha256:0df14e92e7ad3276327631c9e7cec09e32572ce82089c55cb1bb8df71cf394ed", size = 156539, upload-time = "2025-10-19T22:33:35.898Z" },
+]
+
+[[package]]
+name = "fd-ontology-kernel"
+version = "0.1.0"
+source = { path = "vendor/fd_ontology_kernel-0.1.0-py3-none-any.whl" }
+wheels = [
+    { filename = "fd_ontology_kernel-0.1.0-py3-none-any.whl", hash = "sha256:08174c28f5b8fc896de0f4ba3ecb93a3581fd76b252acf4fa145c8158f4f1704" },
 ]
 
 [[package]]

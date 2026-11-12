@@ -431,36 +431,65 @@ def reconcile(conn: Any, *, domain: dict) -> dict:
 
     Three facts are reported:
 
-    - kinds the anchored vocabulary declares but the DB has no unit for
+    - kinds the anchored vocabulary declares but has no **live** unit for
       (coverage gaps, in declared order);
     - kinds the DB has that neither vocabulary declares (always an anomaly:
       either the template needs a new version or those units need migration);
     - whether the domain is anchored to an older version of its template name.
 
-    A missing template anchor yields empty vocabularies, so every stored kind
-    is reported out of vocabulary; the page surfaces the missing anchor itself
-    from :func:`declaration_layer` (``has_template``). No write, fix, or
-    migration happens here.
+    The classification itself is the kernel's: ``ledger.project`` decides what
+    counts as a gap, an out-of-vocabulary kind and a smoke leftover, so this page
+    and every other surface cannot disagree about the same content. What stays
+    here is the surface's own facts (template anchoring) and its response shape.
+
+    A missing template anchor yields no vocabulary, so every stored kind is
+    reported out of vocabulary; the page surfaces the missing anchor itself from
+    :func:`declaration_layer` (``has_template``). No write, fix, or migration
+    happens here.
     """
+    from fd_ontology_kernel import ledger as kernel_ledger
+
+    from . import kernel_ports
+
     tmpl = _anchored_template(conn, domain=domain)
     entity_types, relationship_kinds, _tiers, _sensitivities = _schema_vocabularies(
         tmpl
     )
     declared = _dedupe(entity_types + relationship_kinds)
+    scope = domain.get("key") or ""
 
-    kinds_cur = conn.execute(
-        "SELECT DISTINCT kind FROM knowledge_units "
-        "WHERE namespace = %s ORDER BY kind",
-        (domain.get("key"),),
-    )
-    present = [_scalar(row) for row in kinds_cur.fetchall()]
-    present_set = set(present)
-    declared_set = set(declared)
+    try:
+        vocabulary = kernel_ports.TemplateVocabulary(conn, domain=domain).load(
+            scope_id=scope
+        )
+    except ValueError:
+        # No usable anchor: report every stored kind as out of vocabulary rather
+        # than pretending the domain is consistent.
+        vocabulary = None
 
-    unused_kinds = [kind for kind in declared if kind not in present_set]
-    out_of_vocab_kinds = sorted(
-        kind for kind in present_set if kind not in declared_set
-    )
+    if vocabulary is not None:
+        projection = kernel_ledger.project(
+            vocabulary=vocabulary,
+            units=kernel_ports.PgUnitStore(conn).list_live(scope_id=scope),
+            relationship_kinds=tuple(relationship_kinds),
+        )
+        unused_kinds = _dedupe(
+            list(projection.gaps.get("entity_types") or [])
+            + list(projection.gaps.get("relationship_kinds") or [])
+        )
+        out_of_vocab_kinds = list(projection.reconcile.get("out_of_vocabulary") or [])
+    else:
+        kinds_cur = conn.execute(
+            "SELECT DISTINCT kind FROM knowledge_units "
+            "WHERE namespace = %s ORDER BY kind",
+            (scope,),
+        )
+        present_set = {_scalar(row) for row in kinds_cur.fetchall()}
+        declared_set = set(declared)
+        unused_kinds = [kind for kind in declared if kind not in present_set]
+        out_of_vocab_kinds = sorted(
+            kind for kind in present_set if kind not in declared_set
+        )
 
     latest_version = (
         _latest_template_version(conn, name=tmpl["name"]) if tmpl is not None else None

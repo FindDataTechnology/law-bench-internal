@@ -274,97 +274,75 @@ def _create_unit(
     attrs: Optional[dict],
     vocab_key: str,
 ) -> dict:
-    """Shared create path: vocabulary gate, KU upsert, append-only event.
+    """Shared create path: delegate to the kernel's single write path.
 
-    **整个函数在一个事务里**：连接是 autocommit 的（见模块顶部的「事务」说明），所以这里显式 ``conn.transaction()`` 才能让「unit 落库」与
-    「事件落库」要么都成、要么都不成。否则事件写入失败会留下一条没有审计行的
-    内容变更——正是审计 03 §2 描述的失败面。
+    The kernel does the four things this function used to do inline — vocabulary
+    gate, write-boundary folding, unit upsert, paired event — so the mechanism
+    exists once. What stays here is the surface's own detail: which connection,
+    which provenance, and returning the stored row in the shape callers expect.
+
+    **The whole write is one transaction.** The kernel cannot open one; the
+    adapter must, or an event failure would leave a content change with no
+    audit row.
     """
+    from . import kernel_ports
+
+    kernel = kernel_ports.kernel_for(conn, domain=domain)
     with conn.transaction():
-        _gate_kind(conn, domain=domain, kind=kind, vocab_key=vocab_key)
-        # 写入边界归一（add-domain-agent-team）：同一个实体两个键的问题不能靠
-        # 调用方各自记得 import pack。规则由该域注册，无规则则不归名。
-        external_key, attrs = _fold_write_key(
-            domain=domain, external_key=external_key, attrs=attrs
-        )
-        # The op is decided by prior existence, not by the upsert result: the KU
-        # upsert cannot distinguish create from update (ON CONFLICT DO UPDATE).
-        existed = store.get_knowledge_unit(
-            conn, kind=kind, external_key=external_key, namespace=domain["key"]
-        )
-        written = store.upsert_knowledge_unit(
-            conn,
+        written = kernel.write(
+            scope_id=domain["key"],
             kind=kind,
             external_key=external_key,
             body=body,
-            namespace=domain["key"],
+            actor=operator,
+            via="authoring",
             tags=tags,
             attrs=attrs,
             tier="raw",
-            provenance={"operator": operator, "via": "authoring"},
-            commit=False,
+            provenance={"operator": operator},
+            vocab_name=vocab_key,
         )
-        _record_event(
-            conn,
-            domain_id=domain["id"],
-            unit_kind=kind,
-            unit_key=external_key,
-            op="create" if existed is None else "update",
-            before=_copy_unit(existed) if existed is not None else None,
-            after=written,
-            operator=operator,
+    row = store.get_knowledge_unit(
+        conn,
+        kind=kind,
+        external_key=written.unit.external_key,
+        namespace=domain["key"],
+    )
+    if row is None:  # pragma: no cover - the write just succeeded in this tx
+        raise RuntimeError(
+            f"unit {kind!r}/{written.unit.external_key!r} vanished after a successful write"
         )
-    return written
+    return row
 
 
 def _soft_delete_unit(
     conn: Any, *, domain: dict, kind: str, external_key: str, operator: str
 ) -> dict:
-    """Shared delete path (soft delete): flag the KU, record the event.
+    """Shared delete path: the kernel flags the unit and journals a ``delete``.
 
     Content and metadata are preserved unchanged so the event stream stays
     replayable; only ``tags["deleted"]`` and the provenance stamp move.
-
-    **整个函数在一个事务里**（理由见模块顶部的「事务」说明）：连接是 autocommit 的，
-    ``commit()`` 在那里是 no-op，不显式开事务就会出现「KU 已改、事件没写」。
     """
+    from . import kernel_ports
+
+    kernel = kernel_ports.kernel_for(conn, domain=domain)
     with conn.transaction():
-        prior = store.get_knowledge_unit(
-            conn, kind=kind, external_key=external_key, namespace=domain["key"]
-        )
-        if prior is None:
-            raise ValueError(
-                f"unit {kind!r}/{external_key!r} not found in domain {domain['key']!r}"
-            )
-        tags = dict(prior["tags"] or {})
-        tags["deleted"] = True
-        provenance = dict(prior["provenance"] or {})
-        provenance["operator"] = operator
-        provenance["via"] = "authoring"
-        written = store.upsert_knowledge_unit(
-            conn,
+        written = kernel.remove(
+            scope_id=domain["key"],
             kind=kind,
             external_key=external_key,
-            body=prior["body"],
-            namespace=domain["key"],
-            tags=tags,
-            attrs=prior["attrs"],
-            tier=prior["tier"],
-            source_path=prior["source_path"],
-            provenance=provenance,
-            commit=False,
+            actor=operator,
+            via="authoring",
         )
-        _record_event(
-            conn,
-            domain_id=domain["id"],
-            unit_kind=kind,
-            unit_key=external_key,
-            op="delete",
-            before=_copy_unit(prior),
-            after=None,
-            operator=operator,
-        )
-    return written
+    row = store.get_knowledge_unit(
+        conn,
+        kind=kind,
+        external_key=written.unit.external_key,
+        namespace=domain["key"],
+    )
+    if row is None:  # pragma: no cover
+        raise RuntimeError("unit vanished after a successful soft delete")
+    return row
 
 
 # -------------------------------------------------------------------- units
@@ -445,34 +423,32 @@ def authoring_create_units(
     # 2026-11-09 修正（审计 03 §2/§8）：连接是 autocommit=True，psycopg 3 里
     # commit()/rollback() 在 IDLE 状态是 no-op。原来的「末尾 commit + 失败 rollback」
     # 是空话——中途失败会留下半批已经落库的行，与这个函数承诺的 all-or-none 相反。
+    #
+    # 现在每行都走内核的唯一写入口；批次事务仍由这里持有，所以「半批落库」不可能
+    # 出现——内核不会自己开事务，也就不会把批次切成一个个小事务。
+    from . import kernel_ports
+
+    kernel = kernel_ports.kernel_for(conn, domain=domain)
     with conn.transaction():
         for unit in units:
-                prior = store.get_knowledge_unit(
-                    conn, kind=unit["kind"], external_key=unit["external_key"],
-                    namespace=domain["key"],
-                )
-                row = store.upsert_knowledge_unit(
-                    conn,
-                    kind=unit["kind"],
-                    external_key=unit["external_key"],
-                    body=unit.get("body") or "",
-                    namespace=domain["key"],
-                    tags=unit.get("tags"),
-                    attrs=unit.get("attrs"),
-                    tier="raw",
-                    provenance={"operator": operator, "via": "authoring"},
-                    commit=False,
-                )
-                _record_event(
-                    conn,
-                    domain_id=domain["id"],
-                    unit_kind=unit["kind"],
-                    unit_key=unit["external_key"],
-                    op="create" if prior is None else "update",
-                    before=_copy_unit(prior) if prior is not None else None,
-                    after=row,
-                    operator=operator,
-                )
+            kernel.write(
+                scope_id=domain["key"],
+                kind=unit["kind"],
+                external_key=unit["external_key"],
+                body=unit.get("body") or "",
+                actor=operator,
+                via="authoring",
+                tags=unit.get("tags"),
+                attrs=unit.get("attrs"),
+                tier="raw",
+                provenance={"operator": operator},
+                vocab_name="entity_types",
+            )
+            row = store.get_knowledge_unit(
+                conn, kind=unit["kind"], external_key=unit["external_key"],
+                namespace=domain["key"],
+            )
+            if row is not None:
                 written.append(row)
     return written
 
@@ -497,7 +473,6 @@ def authoring_update_unit(
     """
     domain = _load_domain(conn, domain_key=domain_key)
     with conn.transaction():
-        _gate_kind(conn, domain=domain, kind=kind, vocab_key="entity_types")
         prior = store.get_knowledge_unit(
             conn, kind=kind, external_key=external_key, namespace=domain["key"]
         )
@@ -505,29 +480,28 @@ def authoring_update_unit(
             raise ValueError(
                 f"unit {kind!r}/{external_key!r} not found in domain {domain_key!r}"
             )
-        written = store.upsert_knowledge_unit(
-            conn,
+        # The kernel decides create-vs-update from prior existence; the explicit
+        # lookup above is what makes "update must exist" this surface's rule.
+        from . import kernel_ports
+
+        kernel = kernel_ports.kernel_for(conn, domain=domain)
+        written = kernel.write(
+            scope_id=domain["key"],
             kind=kind,
             external_key=external_key,
             body=body,
-            namespace=domain["key"],
+            actor=operator,
+            via="authoring",
             tags=tags,
             attrs=attrs,
             tier="raw",
-            provenance={"operator": operator, "via": "authoring"},
-            commit=False,
+            provenance={"operator": operator},
+            vocab_name="entity_types",
         )
-        _record_event(
-            conn,
-            domain_id=domain["id"],
-            unit_kind=kind,
-            unit_key=external_key,
-            op="update",
-            before=_copy_unit(prior),
-            after=written,
-            operator=operator,
-        )
-    return written
+    row = store.get_knowledge_unit(
+        conn, kind=kind, external_key=written.unit.external_key, namespace=domain["key"]
+    )
+    return row if row is not None else written.unit  # pragma: no cover
 
 
 def authoring_delete_unit(
