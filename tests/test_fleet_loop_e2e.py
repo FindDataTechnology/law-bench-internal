@@ -302,3 +302,75 @@ def test_outcome_outside_the_vocabulary_is_422_not_a_row(world):
     assert world.execute(
         "SELECT count(*) AS n FROM domain_agent_runs WHERE origin = 'fleet'"
     ).fetchone()["n"] == 0
+
+
+def test_writeback_without_a_role_is_refused(world):
+    """台账第一列是岗位；允许空岗位，「谁在跑」就永久缺一角。"""
+    with _machine(world) as m:
+        r = m.post(
+            f"/api/v1/distribution/{DOMAIN}/runs",
+            json={"runner_ref": f"fleet:{FLEET_REF}/p#1", "outcome": "ok"},
+            headers=_machine_headers(),
+        )
+    assert r.status_code == 422
+    assert "role 不能为空" in r.json()["detail"]
+
+
+def test_writeback_cannot_reference_a_task_outside_the_domain(world):
+    conn = world
+    other = workspaces.instantiate_domain(
+        conn, key="other-domain", name="别域", template_name="loop-tpl",
+        template_version=None, created_by="seed",
+    )
+    # 别域的那张单派给别域的舰队：本域舰队在那边根本不是可用登记，创建期就会被
+    # 拒——所以要造出「跨域 task_id」这个局面，得让别域自有一支舰队。
+    other_ref = "fleet_other_domain"
+    distribution.register_consumer(
+        conn, name="other-domain-fleet", domains=["other-domain"],
+        token_hash=hashlib.sha256(b"other-domain-token").hexdigest(), created_by="seed",
+        kind="fleet", fleet_ref=other_ref,
+    )
+    from src.bench import authoring
+
+    foreign = authoring.authoring_create_task(
+        conn, domain_id=other["id"], assignee="other-domain-fleet", title="t", detail="d",
+        target_kind="estate-gap", target_key="ontology", created_by="lara",
+        assignee_kind="fleet", assignee_ref=other_ref,
+    )
+    with _machine(conn) as m:
+        r = m.post(
+            f"/api/v1/distribution/{DOMAIN}/runs",
+            json={"runner_ref": f"fleet:{FLEET_REF}/p#1", "role": "concept",
+                  "outcome": "ok", "task_id": foreign["id"]},
+            headers=_machine_headers(),
+        )
+    assert r.status_code == 404, r.text
+
+
+def test_a_malformed_completion_body_is_422_not_a_silent_note(world):
+    """空体可以关单；**写坏的 JSON 不行**——当成空体处理，舰队会以为 note 记上了。"""
+    conn = world
+    domain = workspaces.get_domain(conn, domain_key=DOMAIN)
+    from src.bench import authoring
+
+    task = authoring.authoring_create_task(
+        conn, domain_id=domain["id"], assignee="loop-fleet", title="t", detail="d",
+        target_kind="estate-gap", target_key="ontology", created_by="lara",
+        assignee_kind="fleet", assignee_ref=FLEET_REF,
+    )
+    with _machine(conn) as m:
+        m.post(f"/api/v1/distribution/{DOMAIN}/work-orders/{task['id']}/claim",
+               headers=_machine_headers())
+        bad = m.post(
+            f"/api/v1/distribution/{DOMAIN}/work-orders/{task['id']}/complete",
+            content='{"note": "少了右括号"'.encode("utf-8"),
+            headers={**_machine_headers(), "Content-Type": "application/json"},
+        )
+        empty = m.post(
+            f"/api/v1/distribution/{DOMAIN}/work-orders/{task['id']}/complete",
+            headers=_machine_headers(),
+        )
+    assert bad.status_code == 422
+    assert "JSON 对象" in bad.json()["detail"]
+    assert empty.status_code == 200, empty.text
+    assert empty.json()["task"]["status"] == "done"

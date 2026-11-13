@@ -92,6 +92,7 @@ thin web surface with the ``admin.py`` flash/redirect style.
 from __future__ import annotations
 
 import hashlib
+import json
 import secrets
 from typing import Any, Optional
 from urllib.parse import quote
@@ -402,12 +403,17 @@ async def complete_work_order(
     _fleet_task(db, domain_key=domain_key, task_id=task_id,
                 fleet_ref=consumer["fleet_ref"])
     body: dict = {}
-    try:
-        payload = await request.json()
-        if isinstance(payload, dict):
-            body = payload
-    except Exception:  # noqa: BLE001 - an empty body is a valid completion
-        body = {}
+    # 空体合法（关单可以什么都不说）；**写坏的 JSON 不合法**——把它当空体处理，
+    # 舰队会以为 note 记上了，而台账里一个字都没有。这两种情况必须分开。
+    raw = await request.body()
+    if raw.strip():
+        try:
+            payload = json.loads(raw)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=422, detail="请求体必须是 JSON 对象") from exc
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=422, detail="请求体必须是 JSON 对象")
+        body = payload
 
     refs = body.get("artifact_refs")
     if refs is not None and not isinstance(refs, list):
@@ -455,6 +461,14 @@ async def record_run(
             status_code=403,
             detail=f"runner_ref 必须形如 fleet:{fleet_ref}/<post>#<round>；got {runner_ref!r}",
         )
+    role = str(payload.get("role") or "").strip()
+    if not role:
+        # 台账的第一列是岗位。允许空岗位，这条「谁在跑」的回答就永久缺一角。
+        raise HTTPException(status_code=422, detail="role 不能为空（台账要回答是哪个岗位跑的）")
+    task_id = payload.get("task_id")
+    if task_id is not None:
+        # 引用的工单必须在本域：跨域 task_id 会让「这轮做的是哪张单」指到别人家。
+        _fleet_task(db, domain_key=domain_key, task_id=int(task_id), fleet_ref=fleet_ref)
     counts = payload.get("counts")
     refs = payload.get("artifact_refs")
     for name, value, kind in (
@@ -468,14 +482,14 @@ async def record_run(
         run, created = agent_runs.record_external_run(
             db,
             runner_ref=runner_ref,
-            role=str(payload.get("role") or ""),
+            role=role,
             domain_key=domain_key,
             outcome=str(payload.get("outcome") or ""),
             counts=counts,
             remaining=payload.get("remaining"),
             artifact_refs=refs,
             detail=(payload.get("detail") or None),
-            task_id=payload.get("task_id"),
+            task_id=(int(task_id) if task_id is not None else None),
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

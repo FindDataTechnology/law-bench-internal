@@ -46,6 +46,7 @@
 | 两类同屏可辨 | `test_team_ledger_separates_the_two_origins` | 表头「外部执行方」在、`fleet:fleet_a/post_1#1` 完整显示；去掉两列表头后该条转红 |
 | 回执可读回 | `tests/test_run_readback.py` 11 条 | 自己 1 行；别人的前缀 **403 而非空列表**；machine 档 403；吊销 403 |
 | 回执隔离判据 | 三处注入 | 去掉前缀判据转红 3 条、前缀改子串转红 1 条、去掉 fleet 种类检查转红 1 条 |
+| 写面入参校验 | `test_fleet_loop_e2e.py` | `role` 为空 422「role 不能为空」；`task_id` 指到别域的工单 404；`counts` 非对象 / `artifact_refs` 非数组 422；**写坏的 JSON 422 而不是当空体**（当空体会让舰队以为 note 记上了）。关单空体仍合法（200） |
 
 ### 3. 工单三档（§1）
 
@@ -109,8 +110,9 @@ EXIT=0 并报 `tasks: 0`。
 
 ## 三、全量回归与两条非本 change 的失败
 
-`database_url=law_bench .venv/bin/python -m pytest tests/ -q` → **2105 passed, 59 skipped,
-2 failed**（12:29）。两条都不是本 change 引入的，但都做了定性与处置：
+`database_url=law_bench .venv/bin/python -m pytest tests/ -q` 首次 **2105 passed / 59 skipped / 2 failed**（12:29）；
+定性并处置后（下面两条），排除环境性的那一条再跑一次：
+**2106 passed, 59 skipped, 1 deselected, 0 failed**（5:04）。
 
 | 失败 | 定性 | 依据 |
 |---|---|---|
