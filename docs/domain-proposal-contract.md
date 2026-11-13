@@ -18,7 +18,7 @@ Content-Type: application/json
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
-| `source` | 是 | 提交方的稳定身份，跨轮不变。舰队岗位用 `fleet:<fleet_id>/<post_id>`；域内专家可用自己的用户名。**它和 `external_key` 一起构成幂等身份** |
+| `source` | 是 | 提交方的稳定身份，跨轮不变。四类前缀各有信任依据，见「来源校验」；**它和 `external_key` 一起构成幂等身份** |
 | `kind` | 是 | 必须在**该域锚定的模板版本词表**内（实体类或关系类）。出表一律 400，不会「先收下再看看」 |
 | `external_key` | 是 | 实体的业务键。关系类按 `{from_key}->{kind}:{to_key}` 约定；URL 里要百分号编码 |
 | `body` | 是 | 条目正文（给人和检索看的自然语言） |
@@ -59,6 +59,62 @@ Content-Type: application/json
 
 **给舰队接线时的硬要求**：提交凭据的身份必须在目标域里是 expert。`X-API-Key` 或 Bearer 都能用，
 但它们只解决「平台权限」那一闸，域成员关系仍以 `domain_members` 为准 —— 换凭据不换成员关系。
+
+## 来源校验
+
+`source` 的前缀决定它凭什么叫人相信。**四类，四种信任依据**，判定集中在
+`src/bench/submitters.py`（纯函数，零 DB 依赖），两个调用点（进程内 / HTTP）各自传对
+`via`：
+
+| 前缀 | 形状 | 信任依据 | 能否走外部 HTTP |
+|---|---|---|---|
+| `fleet:` | `fleet:<fleet_id>/<post_id>` | **登记 + 凭据**：`distribution_consumers` 里一条 `kind='fleet'`、未吊销、绑定目标域 | 能（唯一能的一类） |
+| `extract:` | `extract:<model>:<prompt_version>` | **调用位置**：抽取流水线在进程内调用，没有凭据可验 | **不能**，外部一律 403 |
+| `agent:` | `agent:<role>@<domain>` | **已铸身份 + 域成员**：身份里的域须等于目标域、是该域活跃成员，且等于本次请求的认证身份 | 能（但只能是它自己） |
+| `user:` | `user:<identity>` | **已认证身份**：必须等于本次请求的认证身份 | 能（但只能是它自己） |
+
+拒绝一律 **403**，`detail` 是可读原话（不是 400：请求本身没问题，是调用方无权以那个身份提交）：
+
+| 结论 | 原文 | 什么时候 |
+|---|---|---|
+| `unregistered` | `来源未登记` | `fleet:` 没有这条登记 |
+| `revoked` | `来源登记已吊销` | 登记存在但已吊销 |
+| `domain_mismatch` | `域不在绑定范围` | 登记在，但没绑到这个域 |
+| `pipeline_impersonation` | `该类来源仅限进程内调用` | `extract:` 从 HTTP 进来 |
+| `agent_domain_mismatch` | `身份与域不一致` | 身份里的域 ≠ 目标域 |
+| `agent_not_member` | `身份不是该域活跃成员` | 身份在别的域，或不是本域成员，或不是本次请求的身份 |
+| `user_mismatch` | `只能以自己的身份提交` | 冒用别人的 `user:` |
+| `malformed` | `来源形状不合法（…）` | 前缀对、结构不完整（如 `fleet:` 后没有 `<id>/<post>`） |
+| `unknown_prefix` | `未知来源类别（可用：…）` | 没有四类前缀之一 |
+
+**迁移窗口**：环境变量 `BENCH_SUBMITTER_MODE` 为 `lenient` 时，历史上被记成别的形状的来源
+仍可入库，并把判定结果写进 `domain_proposals.submitter_verdict`。**但 `pipeline_impersonation`
+在任何档位都拒绝**——宽松窗口放过的是「迁移没做完」，不是「伪造」。默认档是 `strict`。
+
+新登记一个舰队用 `scripts/register_fleet.py`：`--from-observed` 只打印从
+`domain_proposals.source` 观察到的 `fleet:*` 与当前登记状态（**这份清单不能直接 apply**，
+探针来源也在里面，它不是一个舰队），`--apply` 需要环境里给出该舰队**现有的** token——
+脚本不会发明凭据，那会把正在跑的舰队当场切断。
+
+## 结局与回执读面
+
+提交方必须能读到自己提交后发生了什么，否则「被驳回」只能靠下一轮撞去重才发现，而
+**为什么被驳回**永远读不到。
+
+```
+GET /api/d/{domain_key}/proposals/outcomes?source=<你的 source>
+GET /api/d/{domain_key}/runs?runner_ref=<你的 runner_ref>     # 会话面
+GET /api/v1/distribution/{domain_key}/runs?runner_ref=…        # 机器面，X-Consumer-Token
+```
+
+- **结局**：按 `source` 读，返回该来源在**本域**的提案行（`state`、`decision_note` 是驳回理由
+  原文，不重写不摘要）。读别人的来源 → 403 `只能读取自己来源的结局：<source>`；平台管理员例外。
+- **运行回执**：舰队回写一轮运行后，用 `runner_ref` 读回来确认它落库了（`count` + `runs`）。
+  读别人前缀的 `runner_ref` → **403，不是空列表**——空列表会被读成「我的回写没落库」。
+  机器面只放 `fleet` 种类的登记，且只返回 `fleet:<自己的 fleet_ref>/` 开头的轮次。
+- **迁移计数**：`GET /api/v1/distribution/legacy-sources`（仅平台管理员）返回判定不为 `ok` 的
+  来源分组与计数，以及当前档位。**这个数到 0 才允许把档位锁死在 `strict`**；`verdict` 为
+  `null` 的是列不存在时写入的历史行，单独报出。
 
 ## 幂等与重试纪律
 
