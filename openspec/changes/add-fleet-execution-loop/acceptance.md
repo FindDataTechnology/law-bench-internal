@@ -145,3 +145,40 @@ EXIT=0 并报 `tasks: 0`。
    一次，是注入没红才发现的。
 3. **同一句话对不同档不能说**：「已派出」对内核岗位是真的（下一轮就跑），对舰队是假
    的（要等它认领）。文案级的错误会让值班的人催错对象、或者不催。
+
+## 六、归档须知（写在这里，因为归档那天最容易漏）
+
+### 6.1 归档时应打印的合计
+
+按逐文件实测，delta 共 **13 条 requirement**：
+
+| capability | ADDED | MODIFIED |
+|---|---|---|
+| `domain-work-order`（**新**） | 5 | 0 |
+| `fleet-submitter-contract`（**新**） | 3 | 0 |
+| `domain-run-ledger` | 2 | 1 |
+| `domain-estate-console` | 0 | 1 |
+| `knowledge-distribution` | 0 | 1 |
+| **合计** | **10** | **3** |
+
+`openspec archive add-fleet-execution-loop` 之后应看到 `Totals: + 10, ~ 3, - 0, → 0`。
+数字对不上就是有 delta 段被静默丢弃（每个文件每个操作只能有一个段，多写的那个会被丢且仍报成功）。
+
+### 6.2 两个新 capability 的 Purpose 会在归档时变成 `TBD`
+
+`domain-work-order` 与 `fleet-submitter-contract` 在 `openspec/specs/` 下还不存在，
+归档会新建它们并把 Purpose 写成 `TBD - created by archiving change …`——`--strict` 下
+这就是失败。归档后立刻改主规格（CLI 自己指示的例外），建议文案：
+
+- `openspec/specs/domain-work-order/spec.md`：
+  「一张工单从派到收的完整生命周期：类型化指派人、认领与完成两个显式转移、按执行方可见的机器读面，以及决定「这活归谁」的显性分诊表。它存在的理由是：派单在只有自由文本指派人时，没有任何东西会把活送到执行方手里。」
+- `openspec/specs/fleet-submitter-contract/spec.md`：
+  「外部提交方（舰队）凭什么被相信：三类来源各自的信任依据、登记与凭据的绑定、以及未登记/已吊销/跨域时对调用方说清哪一种。它存在的理由是：来源从「一个曾经出现过的字符串」变成「一条可吊销的登记」。」
+
+### 6.3 归档后逐个校验本次触及的 capability
+
+`openspec validate <cap> --type spec --strict`，五个都跑：`domain-work-order` /
+`fleet-submitter-contract` / `domain-run-ledger` / `domain-estate-console` /
+`knowledge-distribution`。
+
+若只有**别的在途 change** 的 capability 红，点名即可，不属这次归档的范围。
