@@ -755,3 +755,76 @@ def test_legacy_counts_are_admin_only(seeded_db):
     body = allowed.json()
     assert body["mode"] in ("strict", "lenient")
     assert "sources" in body
+
+
+# --- §2.6b 来自真实 HTTP 路由的提交方判定 ------------------------------------- #
+# 函数级测试已经覆盖九类结论，但路由是**另一处**必须传对 ``via`` 的地方：传错等于
+# 没有校验，而函数级的绿完全看不出来。所以这一节只用真请求，不碰判定函数。
+
+
+def _post(c, *, source, key, domain_key=A_KEY):
+    return c.post(
+        f"/api/d/{domain_key}/proposals",
+        json={
+            "source": source, "kind": "company", "external_key": key,
+            "body": f"{key} 正文", "evidence": {"url": f"https://example.test/{key}"},
+        },
+    )
+
+
+def test_http_call_cannot_claim_an_extract_source(seeded_db):
+    """``extract:`` 的信任前提是「管线从网络不可达」；公网面必须当场否掉。"""
+    _seed_world(seeded_db)
+    with _client(seeded_db, _user("alice", _READ_WRITE)) as c:
+        r = _post(c, source="extract:qwen:2025-10", key="impersonated")
+    assert r.status_code == 403, r.text
+    assert "进程内" in r.json()["detail"]
+
+    written = seeded_db.execute(
+        "SELECT count(*) AS n FROM domain_proposals WHERE external_key = 'impersonated'"
+    ).fetchone()["n"]
+    assert written == 0, "被拒的冒充不能留下半行"
+
+
+def test_http_call_from_an_unregistered_fleet_is_refused(seeded_db):
+    _seed_world(seeded_db)
+    with _client(seeded_db, _user("alice", _READ_WRITE)) as c:
+        r = _post(c, source="fleet:fleet_nobody/post_1", key="stranger")
+    assert r.status_code == 403
+    assert "未登记" in r.json()["detail"]
+
+
+def test_http_call_from_a_registered_fleet_is_accepted(seeded_db):
+    _seed_world(seeded_db)
+    bench_distribution.register_consumer(
+        seeded_db, name="ontology-fleet", domains=[A_KEY],
+        token_hash=hashlib.sha256(b"tok").hexdigest(), created_by="seed",
+        kind="fleet", fleet_ref="fleet_a",
+    )
+    with _client(seeded_db, _user("alice", _READ_WRITE)) as c:
+        ok = _post(c, source="fleet:fleet_a/post_1", key="from-fleet")
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["created"] is True
+
+    # 登记绑域：同一个 fleet_ref 在别人域里仍是未登记。这里必须换成 B 域自己的
+    # 成员来发——拿 A 域的人去发会先被域权限门（403「无该域权限」）挡掉，那样
+    # 测到的是门，不是绑域。
+    with _client(seeded_db, _user("bob", _READ_WRITE)) as c:
+        cross = _post(c, source="fleet:fleet_a/post_1", key="cross", domain_key=B_KEY)
+    assert cross.status_code == 403
+    # 说不成「未登记」：这个 fleet_ref 确实登记过，错的是域。结论要指对原因，
+    # 否则运维会去重新登记一个已经存在的舰队。
+    assert "域不在绑定范围" in cross.json()["detail"]
+
+
+def test_http_call_cannot_claim_another_persons_identity(seeded_db):
+    _seed_world(seeded_db)
+    with _client(seeded_db, _user("alice", _READ_WRITE)) as c:
+        r = _post(c, source="user:bob@example.com", key="stolen-identity")
+    assert r.status_code == 403
+    assert "只能以自己的身份提交" in r.json()["detail"]
+
+    # 正例在 bob 自己的域里做（在 A 域他连门都过不去，测不到身份判定）。
+    with _client(seeded_db, _user("bob", _READ_WRITE)) as c:
+        own = _post(c, source="user:bob@example.com", key="own-identity", domain_key=B_KEY)
+    assert own.status_code == 200, own.text

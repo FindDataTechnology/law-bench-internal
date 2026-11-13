@@ -34,7 +34,7 @@
 - [x] 2.4 迁移计数要有读面：`GET /api/v1/distribution/legacy-sources`（admin scope），返回去重来源与计数，供翻硬档前判零
 - [x] 2.5 `scripts/register_fleet.py`：`--fleet-ref` / `--domains` / `--name`；`--from-observed` 从 `domain_proposals.source` 枚举 `fleet:*` 去重值，dry-run 输出建议映射与计数，`--apply` 才写。三处拒写都实跑验过：无 `--apply` 不写、`--apply` 缺**现有** token 拒绝（不发明凭据）、`fleet_ref` 已有未吊销登记拒绝；空库给「先建库」而不是裸 traceback。`tests/test_register_fleet_script.py` 7 条，两处注入各转红 1 条
 - [x] 2.6 单测（DB 侧）：`fleet:` 未登记 403 / 吊销后 403 / 跨域 403；`extract:` 外部 403（伪装）而进程内放行；`agent:` 域不一致 403、非成员 403、域一致放行；宽松档下未知前缀入库且计数 +1、但 `extract:` 外部仍 403；同一舰队重复登记被拒
-- [ ] 2.6b 路由级测试：**从真实 HTTP 路由**发 `source=extract:...`，断言 403（测路由不测函数——`via` 传错等于没有校验）  → **未做**：`extract:` 路由级 403 断言待补（函数级已有）
+- [x] 2.6b 路由级测试：**从真实 HTTP 路由**发 `source=extract:...`，断言 403（测路由不测函数——`via` 传错等于没有校验）。四条：`extract:` 外部 403 且**不留半行**、未登记舰队 403、已登记舰队 200 而同一 fleet_ref 在他域 403「域不在绑定范围」（不是「未登记」——错的是域，得指对原因）、冒用他人身份 403 而本人 200。注入验证：把路由的 `via` 改成 `VIA_IN_PROCESS`，`extract:` 那条立刻转红、其余仍绿
 - [x] 2.7 排他性测试：两个来源标识不能同时解析到同一条登记（`fleet_ref` 唯一有效档）
 
 ## 3. 运行台账分来源与外部回写（`domain-run-ledger`）
@@ -43,7 +43,7 @@
 - [x] 3.2 `src/bench/agent_runs.py`：新增 `record_external_run(conn, *, runner_ref, role, domain_key, outcome, counts, artifact_refs, remaining=None, detail=None)`——按 `runner_ref` 存在性检查幂等，重复调用返回既有行且不改任何字段
 - [x] 3.3 幂等实现必须走存在性检查而非唯一索引（`runner_ref` 允许为空，空值不参与唯一性）；测试用两次同 `runner_ref` 断言行数 1 且字段逐一相等
 - [ ] 3.4 `src/web/routes/console.py` 的 team 区：台账按 `started_at DESC` 排序、`origin` 只作分列与筛选不参与排序；`domain_console_team.html` 增来源列与外部执行方标识列  → **未做**：投影已带 `origin`/`runner_ref`，team 页的分列留给 P3 控制台改动
-- [ ] 3.5 `GET /api/d/{domain_key}/runs`（提交方可见的只读回写校验面：按 `runner_ref` 查本次回写是否落库），供 paas 侧自检  → **未做**：`agent_runs.get_by_runner_ref` 已可查，机器读面未开
+- [x] 3.5 `GET /api/d/{domain_key}/runs`（提交方可见的只读回写校验面：按 `runner_ref` 查本次回写是否落库），供 paas 侧自检。实现成**两个入口一条判据**：会话面给域成员（页面本就能看整份台账），机器面 `/api/v1/distribution/{domain_key}/runs` 复用拉取面那枚 `X-Consumer-Token`、只放 `fleet` 种类且只读自己 `fleet:<fleet_ref>/` 前缀的轮次——paas 是机器，只给浏览器入口等于没有这一面。读别人的前缀返回 **403 而不是空列表**（空列表会被读成「我的回写没落库」）。`tests/test_run_readback.py` 11 条，三处注入各转红（去掉前缀判据转红 3 条、把前缀改成子串转红 1 条、去掉 fleet 种类检查转红 1 条）
 - [x] 3.6 单测：回写幂等、结局词表外被拒、回写不进入质量比（`domain_quality_metrics` 前后一致）、内核岗位行为零变化（既有 run 相关测试全绿）、team 页两类行同屏
 
 ## 4. 提案结局回流

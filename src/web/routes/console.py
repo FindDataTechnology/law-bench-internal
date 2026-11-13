@@ -1778,6 +1778,56 @@ def console_proposal_outcomes(
 
 
 @read_only_router.get(
+    "/api/d/{domain_key}/runs", include_in_schema=False,
+    name="console_domain_runs",
+    dependencies=[Depends(require_scope("content:read"))],
+)
+def console_domain_runs(
+    domain_key: str,
+    runner_ref: str | None = None,
+    origin: str | None = None,
+    limit: int = 50,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """The ledger as a machine-readable read face (session channel).
+
+    Why a JSON face exists at all: the team *page* shows runs to a human, but a
+    submitter must be able to answer "did this round of mine land, and how did it
+    end?" without parsing HTML. Without it a fleet's only feedback is silence —
+    it writes back, gets 200, and never learns whether the row is there.
+
+    Isolation is :func:`submitters.may_read_runner_ref`, the same predicate the
+    machine-token twin under ``/api/v1/distribution`` uses: a fleet reads only
+    its own rounds; a domain member (who already sees the whole ledger page) and
+    an admin read the domain's. Asking for someone else's prefix is 403, not an
+    empty list — an empty list would read as "your write-back did not land".
+    """
+    from ...bench import agent_runs as bench_agent_runs
+
+    domain = resolve_domain(db, domain_key)  # 404 before any read
+    wanted = (runner_ref or "").strip() or None
+    admin = is_platform_admin(user)
+    member = admin or workspaces.get_active_role(
+        db, domain_id=domain["id"], user_id=user.sub
+    ) is not None
+    if not bench_submitters.may_read_runner_ref(
+        wanted, is_member=member, is_admin=admin
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail=f"只能读取自己来源的运行：runner_ref={wanted!r}",
+        )
+    return {
+        "domain": domain_key,
+        "runner_ref": wanted,
+        "runs": bench_agent_runs.list_runs(
+            db, domain_key=domain_key, origin=origin, runner_ref=wanted, limit=limit,
+        ),
+    }
+
+
+@read_only_router.get(
     "/api/v1/distribution/legacy-sources", include_in_schema=False,
     name="console_legacy_sources",
     dependencies=[Depends(require_scope("content:read"))],

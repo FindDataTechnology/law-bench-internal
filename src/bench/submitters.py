@@ -162,3 +162,36 @@ def verdict(
 def is_allowed(result: str) -> bool:
     """结论是否放行。只有 ``ok`` 放行；宽松迁移档由调用方另行处理。"""
     return result == "ok"
+
+
+def may_read_runner_ref(
+    runner_ref: Any,
+    *,
+    fleet_ref: Optional[str] = None,
+    is_member: bool = False,
+    is_admin: bool = False,
+) -> bool:
+    """谁能读到某次外部回写——运行台账的隔离判据。
+
+    三种读者，三种依据：
+
+    - **平台管理员**：全读（迁移与排障要能核对）。
+    - **机器消费者**（``fleet_ref`` 非空，且该登记是 ``fleet`` 种类）：只能读
+      ``fleet:<自己的 fleet_ref>/`` 开头的运行。它读的是**自己那一轮的落库回
+      执**，所以「按前缀判」就够了；反查到别人的轮次对自检没有用处，对有泄漏
+      就有。
+    - **人（域成员）**：域成员在团队区本来就能看到整份台账，读面不该比页面更严
+      或更松——同一条判据，两种入口。
+
+    证不出来的一律不读（``False``）：``runner_ref`` 为空而调用方又既非管理员也
+    非成员时，那里没有东西可以证明归属。
+    """
+    if is_admin:
+        return True
+    ref = (runner_ref or "").strip()
+    if fleet_ref:
+        fleet = (fleet_ref or "").strip()
+        if not fleet:
+            return False
+        return ref.startswith(f"{PREFIX_FLEET}{fleet}/")
+    return bool(is_member)

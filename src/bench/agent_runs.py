@@ -134,8 +134,21 @@ def get(conn: Any, *, run_id: int) -> Optional[dict]:
 
 
 def list_runs(
-    conn: Any, *, domain_key: str, role: Optional[str] = None, limit: int = 50
+    conn: Any,
+    *,
+    domain_key: str,
+    role: Optional[str] = None,
+    origin: Optional[str] = None,
+    runner_ref: Optional[str] = None,
+    limit: int = 50,
 ) -> list[dict]:
+    """The domain's ledger, newest first.
+
+    ``origin`` filters kernel rounds from fleet write-backs; ``runner_ref`` answers
+    the submitter's own question ("did this round of mine land?"). Neither takes
+    part in ordering — the ledger is one timeline, and a fleet that sorted last
+    because of its source would be invisible exactly when it is late.
+    """
     sql = (
         "SELECT id, role, domain_key, task_id, run_key, outcome, input_digest, "
         "       counts, remaining, artifact_refs, detail, started_at, ended_at, "
@@ -146,6 +159,12 @@ def list_runs(
     if role:
         sql += " AND role = %s"
         params.append(role)
+    if origin:
+        sql += " AND origin = %s"
+        params.append(origin)
+    if runner_ref:
+        sql += " AND runner_ref = %s"
+        params.append(runner_ref)
     sql += " ORDER BY started_at DESC LIMIT %s"
     params.append(max(1, min(int(limit or 50), 500)))
     return [dict(r) for r in conn.execute(sql, tuple(params)).fetchall()]

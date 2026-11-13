@@ -69,6 +69,17 @@ Two audiences live in this module:
    the C1 domain detail page; its context is fetched in
    ``admin.py::admin_domain_detail`` (this module owns the publish POST).
 
+3. **Machine run read-back** — ``GET /api/v1/distribution/{domain_key}/runs``
+   (``add-fleet-execution-loop`` §3.5). Same credential and same three-state
+   check as the pull API, but only a ``fleet`` registration may call it: a fleet
+   writes back its round through the kernel and then needs to answer "did it
+   land, and how did it end?" without a browser session. A plain ``machine``
+   consumer (a publication reader) is refused with 403 rather than served an
+   empty ledger, and a fleet only ever sees rounds under its own
+   ``fleet:<fleet_ref>/`` prefix. The session twin is
+   ``GET /api/d/{domain_key}/runs`` in ``console.py``; both share the predicate
+   ``submitters.may_read_runner_ref``.
+
 Token discipline follows the C1 invitation pattern: ``secrets.token_urlsafe(32)``,
 only ``hashlib.sha256(token).hexdigest()`` persisted via
 ``distribution.register_consumer(token_hash=...)``, plaintext shown exactly
@@ -147,6 +158,29 @@ _NO_PUBLICATION_DETAIL = "该域尚无发布"
 _ALLOWED_FORMATS = ("json", "yaml")
 
 
+def _authenticate_consumer(request: Request, db: Any, domain_key: str) -> dict:
+    """Three-state machine auth, shared by every ``/api/v1/distribution`` route.
+
+    One implementation on purpose: the read-back route below answers "did my run
+    land?" for the *same* credential that pulls content. A second copy of this
+    check would drift, and the drift would look like a scope bug rather than a
+    missing branch.
+    """
+    token = request.headers.get("x-consumer-token")
+    if not token:
+        raise HTTPException(status_code=401, detail=_MISSING_TOKEN_DETAIL)
+    # Hash immediately; the plaintext never reaches a log, DB row, or error.
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    consumer = distribution.get_consumer_by_token_hash(db, token_hash=token_hash)
+    if consumer is None:
+        raise HTTPException(status_code=403, detail=_UNREGISTERED_DETAIL)
+    if consumer.get("revoked_at") is not None:
+        raise HTTPException(status_code=403, detail=_REVOKED_DETAIL)
+    if domain_key not in (consumer.get("domains") or []):
+        raise HTTPException(status_code=403, detail=_OUT_OF_SCOPE_DETAIL)
+    return consumer
+
+
 @read_only_router.get("/api/v1/distribution/{domain_key}/ontology", name="distribution_pull_ontology")
 def pull_domain_ontology(
     domain_key: str,
@@ -169,18 +203,7 @@ def pull_domain_ontology(
             detail="invalid format: allowed values are 'json' or 'yaml'",
         )
 
-    token = request.headers.get("x-consumer-token")
-    if not token:
-        raise HTTPException(status_code=401, detail=_MISSING_TOKEN_DETAIL)
-    # Hash immediately; the plaintext never reaches a log, DB row, or error.
-    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    consumer = distribution.get_consumer_by_token_hash(db, token_hash=token_hash)
-    if consumer is None:
-        raise HTTPException(status_code=403, detail=_UNREGISTERED_DETAIL)
-    if consumer.get("revoked_at") is not None:
-        raise HTTPException(status_code=403, detail=_REVOKED_DETAIL)
-    if domain_key not in (consumer.get("domains") or []):
-        raise HTTPException(status_code=403, detail=_OUT_OF_SCOPE_DETAIL)
+    consumer = _authenticate_consumer(request, db, domain_key)
 
     publication = distribution.get_publication(db, domain_key=domain_key, version=version)
     if publication is None:
@@ -222,6 +245,61 @@ def pull_domain_ontology(
         body = yaml.safe_dump(payload, allow_unicode=True, sort_keys=False)
         return Response(content=body, media_type="application/x-yaml")
     return JSONResponse(content=payload)
+
+
+@read_only_router.get(
+    "/api/v1/distribution/{domain_key}/runs", name="distribution_run_readback",
+)
+def read_back_runs(
+    domain_key: str,
+    request: Request,
+    runner_ref: Optional[str] = None,
+    limit: int = 50,
+    db: DbConn = Depends(get_db),
+):
+    """Read back the fleet's own run rows — "did my write-back land?".
+
+    Same credential as the pull API (``X-Consumer-Token``), same three-state
+    check. Only a ``fleet`` registration may ask: a plain ``machine`` consumer is
+    a reader of publications, not a submitter, and 403 is the honest answer
+    rather than an empty ledger.
+
+    Isolation: a fleet sees only ``fleet:<its own fleet_ref>/`` rounds, and the
+    response always says which fleet answered and which rows matched — so a fleet
+    that wrote back under a slightly different ``fleet_ref`` sees "0 rows" *next
+    to its own identity*, not an ambiguous empty list.
+    """
+    from ...bench import agent_runs, submitters
+
+    consumer = _authenticate_consumer(request, db, domain_key)
+    fleet_ref = consumer.get("fleet_ref")
+    if (consumer.get("kind") or "machine") != "fleet" or not fleet_ref:
+        raise HTTPException(
+            status_code=403,
+            detail="只有舰队登记可以读取运行回执（该消费者不是 fleet 种类）",
+        )
+
+    wanted = (runner_ref or "").strip() or None
+    if wanted is not None and not submitters.may_read_runner_ref(wanted, fleet_ref=fleet_ref):
+        raise HTTPException(
+            status_code=403,
+            detail=f"只能读取本舰队的运行：runner_ref={wanted!r} 不属于 {fleet_ref}",
+        )
+
+    rows = agent_runs.list_runs(
+        db, domain_key=domain_key, runner_ref=wanted, limit=limit
+    )
+    # 未指定 runner_ref 时只返回本舰队的行：一个舰队读面没有理由把它们全公布。
+    rows = [r for r in rows if submitters.may_read_runner_ref(
+        r.get("runner_ref"), fleet_ref=fleet_ref
+    )]
+    return {
+        "domain": domain_key,
+        "fleet_ref": fleet_ref,
+        "runner_ref": wanted,
+        "count": len(rows),
+        "runs": rows,
+    }
 
 
 # --------------------------------------------------------- consumer registry #
