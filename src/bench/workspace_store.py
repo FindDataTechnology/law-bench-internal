@@ -300,4 +300,37 @@ CREATE INDEX IF NOT EXISTS domain_agent_runs_outcome_idx
 -- 同名旧表会静默跳过，随后给不存在的列建索引就会在**启动期**炸掉整个进程
 -- （2026-11-09 实际发生，pod CrashLoopBackOff）。所以：不共用泛名，也不在启动期
 -- 加断言——启动期抛异常本身就是那次事故的形态。
+
+-- add-fleet-execution-loop §0.2 -----------------------------------------------
+-- 三类指派人：人 / 内核岗位 / 已登记舰队。`assignee` 保留为人读展示名（既有读点
+-- 与授权判断都在用它），类型与稳定引用另起两列——把「展示成什么」与「授权给谁」
+-- 分开；混用一列时，同名不同身份的人会拿到别人的任务授权。
+ALTER TABLE authoring_tasks
+    ADD COLUMN IF NOT EXISTS assignee_kind TEXT NOT NULL DEFAULT 'human'
+        CHECK (assignee_kind IN ('human','kernel-role','fleet'));
+ALTER TABLE authoring_tasks
+    ADD COLUMN IF NOT EXISTS assignee_ref TEXT;
+
+-- 消费者分两种：只拉发布物的机器方，与既拉取又提交/回写的舰队。舰队的稳定标识
+-- 存在 `fleet_ref`（如 `fleet_1794335712751_wfa3ww`），它是提案与运行回写里
+-- `source` 的锚——来源从此能反查到一条登记，而不是一个曾经出现过的字符串。
+-- 唯一性只约束「未吊销」：吊销后允许同一舰队重新登记，历史行保留可查。
+ALTER TABLE distribution_consumers
+    ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'machine'
+        CHECK (kind IN ('machine','fleet'));
+ALTER TABLE distribution_consumers
+    ADD COLUMN IF NOT EXISTS fleet_ref TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS distribution_consumers_fleet_ref_uk
+    ON distribution_consumers (fleet_ref)
+ WHERE fleet_ref IS NOT NULL AND revoked_at IS NULL;
+
+-- 运行来源：内核岗位的确定性运行 / 外部舰队回写。没有这一列时，「谁在跑」只能
+-- 看到内核那七个岗位，真正跑 LLM 的看不见——而 `/d/{key}/team` 正是查这张表。
+-- `runner_ref` 是外部执行方的稳定标识（`fleet:<fleet>/<post>#<round>`），内核
+-- 岗位留空：给它编一个反而会让「哪一轮」变成猜的。
+ALTER TABLE domain_agent_runs
+    ADD COLUMN IF NOT EXISTS origin TEXT NOT NULL DEFAULT 'kernel'
+        CHECK (origin IN ('kernel','fleet'));
+ALTER TABLE domain_agent_runs
+    ADD COLUMN IF NOT EXISTS runner_ref TEXT;
 """

@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 import psycopg
+import pytest
 from psycopg.rows import dict_row
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -110,6 +111,119 @@ def test_boot_step_is_idempotent(empty_db, monkeypatch):
     from src.eval.db import close_shared_conn
 
     close_shared_conn()
+
+
+FLEET_LOOP_COLUMNS = {
+    "authoring_tasks": {"assignee_kind", "assignee_ref"},
+    "distribution_consumers": {"kind", "fleet_ref"},
+    "domain_agent_runs": {"origin", "runner_ref"},
+}
+
+
+def test_boot_step_lands_the_fleet_loop_columns(empty_db, monkeypatch):
+    """add-fleet-execution-loop §0.2: six columns, on an empty database."""
+    from src.eval import bootstrap
+    from src.eval.db import close_shared_conn
+
+    monkeypatch.setenv("database_url", _clean_dsn(empty_db))
+    close_shared_conn()
+    assert bootstrap.main() == 0
+    close_shared_conn()
+
+    with psycopg.connect(_clean_dsn(empty_db), row_factory=dict_row) as fresh:
+        for table, expected in FLEET_LOOP_COLUMNS.items():
+            got = _columns(fresh, table)
+            assert expected <= got, f"{table} missing {expected - got}"
+
+
+def test_existing_rows_take_the_documented_defaults(empty_db, monkeypatch):
+    """The columns are added with defaults so pre-existing rows stay readable.
+
+    A NULL ``assignee_kind`` or ``origin`` would make every old row unreadable by
+    the new read paths, which is the exact failure mode this DDL avoids.
+    """
+    from src.eval import bootstrap
+    from src.eval.db import close_shared_conn
+
+    monkeypatch.setenv("database_url", _clean_dsn(empty_db))
+    close_shared_conn()
+    assert bootstrap.main() == 0
+    close_shared_conn()
+
+    with psycopg.connect(_clean_dsn(empty_db), row_factory=dict_row) as fresh:
+        fresh.execute(
+            "INSERT INTO ontology_templates (name, version, schema, created_by) "
+            "VALUES ('t1', 1, '{}'::jsonb, 'tester')"
+        )
+        fresh.execute(
+            "INSERT INTO domains (key, name, template_id, template_version, created_by) "
+            "SELECT 'd1', 'D1', id, 1, 'tester' FROM ontology_templates WHERE name='t1'"
+        )
+        fresh.execute(
+            "INSERT INTO authoring_tasks (domain_id, assignee, title, created_by) "
+            "SELECT id, 'someone', 't', 'tester' FROM domains WHERE key='d1'"
+        )
+        fresh.execute(
+            "INSERT INTO distribution_consumers (name, domains, token_hash, created_by) "
+            "VALUES ('c1', '{d1}', 'hash-c1', 'tester')"
+        )
+        fresh.execute(
+            "INSERT INTO domain_agent_runs (role, domain_key) VALUES ('r1', 'd1')"
+        )
+        fresh.commit()
+
+        task = fresh.execute(
+            "SELECT assignee_kind, assignee_ref FROM authoring_tasks"
+        ).fetchone()
+        assert task["assignee_kind"] == "human" and task["assignee_ref"] is None
+
+        consumer = fresh.execute(
+            "SELECT kind, fleet_ref FROM distribution_consumers"
+        ).fetchone()
+        assert consumer["kind"] == "machine" and consumer["fleet_ref"] is None
+
+        run = fresh.execute(
+            "SELECT origin, runner_ref FROM domain_agent_runs"
+        ).fetchone()
+        assert run["origin"] == "kernel" and run["runner_ref"] is None
+
+
+def test_one_live_registration_per_fleet(empty_db, monkeypatch):
+    """A second live registration for the same fleet is refused by the index.
+
+    Revoking the first must free the fleet_ref again — a revoked credential is
+    not a live claim on the identity.
+    """
+    from src.eval import bootstrap
+    from src.eval.db import close_shared_conn
+
+    monkeypatch.setenv("database_url", _clean_dsn(empty_db))
+    close_shared_conn()
+    assert bootstrap.main() == 0
+    close_shared_conn()
+
+    with psycopg.connect(_clean_dsn(empty_db), row_factory=dict_row) as fresh:
+        fresh.execute(
+            "INSERT INTO distribution_consumers (name, domains, token_hash, kind, fleet_ref, created_by) "
+            "VALUES ('c1','{d1}','h1','fleet','fleet_1','t')"
+        )
+        fresh.commit()
+        with pytest.raises(psycopg.errors.UniqueViolation):
+            fresh.execute(
+                "INSERT INTO distribution_consumers (name, domains, token_hash, kind, fleet_ref, created_by) "
+                "VALUES ('c2','{d1}','h2','fleet','fleet_1','t')"
+            )
+        fresh.rollback()
+        fresh.execute("UPDATE distribution_consumers SET revoked_at = now() WHERE name='c1'")
+        fresh.execute(
+            "INSERT INTO distribution_consumers (name, domains, token_hash, kind, fleet_ref, created_by) "
+            "VALUES ('c2','{d1}','h2','fleet','fleet_1','t')"
+        )
+        fresh.commit()
+        n = fresh.execute(
+            "SELECT count(*) AS n FROM distribution_consumers WHERE fleet_ref='fleet_1'"
+        ).fetchone()["n"]
+        assert n == 2, "the revoked row must stay for audit"
 
 
 def test_boot_step_fails_loudly_when_the_database_is_unreachable(monkeypatch):
