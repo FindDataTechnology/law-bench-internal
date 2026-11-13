@@ -59,6 +59,9 @@ def conn(empty_db):  # noqa: F811 - provided by tests/conftest.py
         workspaces.add_member(conn=empty_db, domain_id=dom["id"], user_id=sub, role=role,
                               added_by="t")
     empty_db.commit()
+    # add-fleet-execution-loop: fleet: sources now need a live registration.
+    from _fleet_fixtures import provision_default_fleet_world
+    provision_default_fleet_world(empty_db)
     yield empty_db
     from src.eval.db import close_shared_conn
     close_shared_conn()

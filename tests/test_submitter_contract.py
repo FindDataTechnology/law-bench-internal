@@ -160,6 +160,8 @@ def test_verdicts_are_from_the_declared_vocabulary():
         ("agent:r@gov", {"agent_is_member": True}),
         ("agent:r@legal", {"agent_is_member": False}),
         ("agent:r@legal", {"agent_is_member": True}),
+        ("user:a@b", {"authenticated_as": "other@b"}),
+        ("user:a@b", {"authenticated_as": "a@b"}),
         ("nope", {}),
         ("fleet:", {}),
     ]

@@ -324,6 +324,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS distribution_consumers_fleet_ref_uk
     ON distribution_consumers (fleet_ref)
  WHERE fleet_ref IS NOT NULL AND revoked_at IS NULL;
 
+-- 提案的来源判定结论（`submitters.VERDICTS` 之一；NULL = 本列上线前入库的存量行）。
+-- 单独成列而不是塞进 `impact`：迁移期要能按来源数「还有多少条没通过校验」，而
+-- 从人读文本里做字符串匹配得到的计数不是判据。检索路径不读这一列，所以它不进
+-- `_proposal_to_dict` 的投影——读面按需直查，既有消费方零感知。
+ALTER TABLE domain_proposals
+    ADD COLUMN IF NOT EXISTS submitter_verdict TEXT;
+CREATE INDEX IF NOT EXISTS domain_proposals_submitter_verdict_idx
+    ON domain_proposals (submitter_verdict, source)
+ WHERE submitter_verdict IS NOT NULL;
+
 -- 运行来源：内核岗位的确定性运行 / 外部舰队回写。没有这一列时，「谁在跑」只能
 -- 看到内核那七个岗位，真正跑 LLM 的看不见——而 `/d/{key}/team` 正是查这张表。
 -- `runner_ref` 是外部执行方的稳定标识（`fleet:<fleet>/<post>#<round>`），内核

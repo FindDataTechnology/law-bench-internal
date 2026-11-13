@@ -42,16 +42,69 @@ tuple cursors.
 from __future__ import annotations
 
 import json
+import os
 from typing import Any, Optional
 
 from fd_ontology_kernel import proposals as kernel_proposals
 from fd_ontology_kernel.errors import ProposalStaleEvidence
 
-from . import agent_ids, authoring, keys, templates, workspaces
+from . import agent_ids, authoring, distribution, keys, submitters, templates, workspaces
 
 # Mirror of the CHECK constraint on domain_proposals.state (see
 # src/bench/workspace_store.py).
 PROPOSAL_STATES = ("pending", "confirmed", "rejected")
+
+#: Enforcement modes for the submitter check. ``strict`` refuses anything but
+#: ``ok``; ``lenient`` records the verdict and lets the row in — it exists only
+#: for the migration window and MUST NOT be a default.
+MODE_STRICT = "strict"
+MODE_LENIENT = "lenient"
+_SUBMITTER_MODE_ENV = "BENCH_SUBMITTER_MODE"
+
+#: Verdicts lenient mode still refuses. Impersonating the in-process extraction
+#: pipeline is forgery, not a legacy artefact: a migration window is not a
+#: licence to pretend to be another writer.
+_NEVER_TOLERATED = ("pipeline_impersonation",)
+
+#: One message per verdict so the caller is told what to fix rather than
+#: "forbidden". Keys mirror ``submitters.VERDICTS``.
+_VERDICT_MESSAGES = {
+    "unregistered": "来源未登记",
+    "revoked": "来源登记已吊销",
+    "domain_mismatch": "域不在绑定范围",
+    "pipeline_impersonation": "该类来源仅限进程内调用",
+    "agent_domain_mismatch": "身份与域不一致",
+    "agent_not_member": "身份不是该域活跃成员",
+    "user_mismatch": "只能以自己的身份提交",
+    "malformed": "来源形状不合法（" + "；".join(submitters.SHAPES.values()) + "）",
+    "unknown_prefix": "未知来源类别（可用：" + "、".join(submitters.SHAPES) + "）",
+}
+
+
+class SubmitterRefused(ValueError):
+    """The submission's source is not an acceptable submitter for this domain.
+
+    Carries the machine-readable ``verdict`` so the HTTP layer maps it to 403
+    with the right sentence instead of pattern-matching the message text.
+    """
+
+    def __init__(self, verdict: str, *, source: str, domain_key: str):
+        self.verdict = verdict
+        self.source = source
+        self.domain_key = domain_key
+        message = _VERDICT_MESSAGES.get(verdict) or f"来源不可接受（{verdict}）"
+        super().__init__(f"{message}：source={source!r} domain={domain_key!r}")
+
+
+def _submitter_mode() -> str:
+    """Current enforcement mode, read per call.
+
+    Read at call time rather than import time: a value snapshotted at import
+    cannot be flipped without a restart, and the lenient window is supposed to
+    end on a measured count, not on a deploy.
+    """
+    raw = (os.environ.get(_SUBMITTER_MODE_ENV) or MODE_STRICT).strip().lower()
+    return MODE_LENIENT if raw == MODE_LENIENT else MODE_STRICT
 
 _PROPOSAL_COLS = (
     "id, domain_id, source, sources, kind, external_key, body, evidence, "
@@ -351,6 +404,8 @@ def submit(
     impact: str = "",
     submitted_by: str,
     with_created: bool = False,
+    via: str = submitters.VIA_HTTP,
+    authenticated_as: Optional[str] = None,
 ):
     """Submit one proposal into the domain's inbox, or return the open one.
 
@@ -365,8 +420,29 @@ def submit(
     hit must be tellable apart from a new row: the submitting fleet reports
     「新增」 vs 「幂等命中」 to its operator, and a report that cannot tell the
     two apart is not a report.
+
+    ``via`` is the caller's own channel. It matters: ``extract:`` sources are
+    accepted only for ``in_process``, because their whole trust basis is that
+    the extraction pipeline is not reachable over the network. A caller that
+    forgets to pass it gets the external (stricter) rule, which fails loudly
+    instead of silently trusting a self-declared pipeline.
     """
     domain = _load_domain(conn, domain_key=domain_key)
+
+    verdict = distribution.resolve_submitter(
+        conn,
+        source=source,
+        domain_key=domain_key,
+        via=via,
+        authenticated_as=authenticated_as,
+    )[1]
+    mode = _submitter_mode()
+    if verdict != "ok":
+        if verdict in _NEVER_TOLERATED or mode == MODE_STRICT:
+            raise SubmitterRefused(verdict, source=source, domain_key=domain_key)
+        # Lenient migration window: the row lands, the verdict is recorded so
+        # the count can be read and driven to zero before the window closes.
+
     _validate_evidence(evidence)
     _require_text(kind, "kind")
     _require_text(external_key, "external_key")
@@ -442,8 +518,8 @@ def submit(
     cur = conn.execute(
         f"INSERT INTO domain_proposals "
         f"(domain_id, source, sources, kind, external_key, body, evidence, "
-        f"evidence_digest, impact, state, submitted_by) "
-        f"VALUES (%s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, 'pending', %s) "
+        f"evidence_digest, impact, state, submitted_by, submitter_verdict) "
+        f"VALUES (%s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, 'pending', %s, %s) "
         f"RETURNING {_PROPOSAL_COLS}",
         (
             domain["id"],
@@ -456,6 +532,7 @@ def submit(
             digest,
             impact,
             submitted_by,
+            verdict,
         ),
     )
     proposal = _proposal_to_dict(cur.fetchone())
@@ -643,6 +720,34 @@ def batches(conn: Any, *, domain_key: str) -> list[dict]:
             except (TypeError, ValueError):
                 pass
     return [merged[k] for k in sorted(merged, reverse=True)]
+
+
+def legacy_sources(conn: Any, *, verdict: Optional[str] = None) -> list[dict]:
+    """Sources admitted by the lenient window, with counts, worst first.
+
+    This is the read surface that decides when the window can close: the answer
+    must be a count of rows whose recorded verdict is not ``ok``, grouped by
+    source — not a guess from the shape of the string.
+
+    ``NULL`` verdicts are rows written before the column existed; they are the
+    one group that cannot be re-judged after the fact, so they are reported
+    separately rather than folded into a verdict bucket.
+    """
+    sql = (
+        "SELECT source, submitter_verdict, count(*) AS n "
+        "FROM domain_proposals "
+        "WHERE submitter_verdict IS DISTINCT FROM 'ok' "
+    )
+    params: list[Any] = []
+    if verdict is not None:
+        sql += "AND submitter_verdict IS NOT DISTINCT FROM %s "
+        params.append(verdict)
+    sql += "GROUP BY source, submitter_verdict ORDER BY n DESC, source"
+    cur = conn.execute(sql, tuple(params))
+    return [
+        {"source": r["source"], "verdict": r["submitter_verdict"], "n": r["n"]}
+        for r in cur.fetchall()
+    ]
 
 
 def list_proposals(

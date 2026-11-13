@@ -26,7 +26,6 @@ def db_conn(empty_db):  # noqa: F811 - provided by tests/conftest.py
     ensure_schema(db_path=empty_db)
     yield empty_db
 
-
 def authoring_schema() -> dict:
     """Template schema aligned with the kernel vocabularies."""
     return {
@@ -40,11 +39,16 @@ def authoring_schema() -> dict:
 
 
 def make_domain(conn, key: str) -> dict:
-    """One template + one domain instantiated from it; return the domain."""
+    """One template + one domain instantiated from it; return the domain.
+
+    Also provisions the fleet/agent sources these tests submit with — after
+    add-fleet-execution-loop a ``fleet:`` source must resolve to a live
+    registration (see tests/_fleet_fixtures.py).
+    """
     tmpl = templates.create_template(
         conn, name=f"tpl-{key}", schema=authoring_schema(), created_by="admin-1"
     )
-    return workspaces.instantiate_domain(
+    domain = workspaces.instantiate_domain(
         conn,
         key=key,
         name=f"Domain {key}",
@@ -52,6 +56,10 @@ def make_domain(conn, key: str) -> dict:
         template_version=tmpl["version"],
         created_by="admin-1",
     )
+    from _fleet_fixtures import provision_default_fleet_world
+
+    provision_default_fleet_world(conn, domains=[key])
+    return domain
 
 
 def make_two_domains(conn, key_a: str, key_b: str) -> tuple[dict, dict]:
@@ -67,6 +75,9 @@ def make_two_domains(conn, key_a: str, key_b: str) -> tuple[dict, dict]:
         conn, key=key_b, name=f"Domain {key_b}",
         template_name=f"tpl-{key_a}", template_version=None, created_by="admin-1",
     )
+    from _fleet_fixtures import provision_default_fleet_world
+
+    provision_default_fleet_world(conn, domains=[key_a, key_b])
     return a, b
 
 
@@ -81,7 +92,7 @@ def submit_company(conn, domain_key: str, *, external_key: str = "co-1",
     return proposals.submit(
         conn,
         domain_key=domain_key,
-        source="market-feed",
+        source="fleet:a/1",
         kind="company",
         external_key=external_key,
         body="某公司条目",
@@ -152,7 +163,7 @@ def test_submit_requires_text_fields(db_conn, field, value):
     make_domain(db_conn, "dom-text")
     kwargs = dict(
         domain_key="dom-text",
-        source="market-feed",
+        source="fleet:a/1",
         kind="company",
         external_key="co-1",
         body="某公司条目",
@@ -373,7 +384,7 @@ def test_confirm_relationship_uses_the_relationship_kernel_path(db_conn):
     proposal = proposals.submit(
         db_conn,
         domain_key="dom-rel",
-        source="market-feed",
+        source="fleet:a/1",
         kind="belongs_to",
         external_key="co-1->belongs_to:grp-1",
         body="归属关系",

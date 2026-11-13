@@ -560,7 +560,12 @@ def resolve_fleet(conn: Any, *, fleet_ref: str, domain_key: str) -> tuple[Option
 
 
 def resolve_submitter(
-    conn: Any, *, source: str, domain_key: str, via: str
+    conn: Any,
+    *,
+    source: str,
+    domain_key: str,
+    via: str,
+    authenticated_as: Optional[str] = None,
 ) -> tuple[Optional[dict], str]:
     """Resolve a submission's ``source`` into ``(registration_or_None, verdict)``.
 
@@ -600,6 +605,7 @@ def resolve_submitter(
         via=via,
         fleet=fleet,
         agent_is_member=agent_is_member,
+        authenticated_as=authenticated_as,
     )
 
 

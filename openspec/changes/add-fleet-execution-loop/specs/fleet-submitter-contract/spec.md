@@ -10,11 +10,12 @@
 
 ### Requirement: 提交方身份按来源类别分别校验
 
-系统 SHALL 按来源标识的前缀判定类别，并对每类施以各自的校验，MUST NOT 用一条统一的「有登记即放行」规则覆盖三类：
+系统 SHALL 按来源标识的前缀判定类别，并对每类施以各自的校验，MUST NOT 用一条统一的「有登记即放行」规则覆盖全部类别：
 
-- `fleet:<fleet_id>/<post_id>`：来源 SHALL 解析到一条**已登记、未吊销、且绑定目标域**的舰队登记；外部 HTTP 提交只允许这一类。
-- `extract:<model>:<prompt_version>`：SHALL 只允许**进程内调用**（抽取流水线）产生；外部 HTTP 提交端点 MUST 拒绝该类，否则任何人把来源写成 `extract:任意值` 即可冒充流水线。
-- `agent:<role>@<domain>`：SHALL 是平台已铸、且仍是该域活跃成员的智能体身份；`role` 与 `domain` 两段 SHALL 与目标域一致。
+- `fleet:<fleet_id>/<post_id>`：来源 SHALL 解析到一条**已登记、未吊销、且绑定目标域**的舰队登记；其可信依据是**凭据**。
+- `extract:<model>:<prompt_version>`：SHALL 只允许**进程内调用**（抽取流水线）产生；外部 HTTP 提交端点 MUST 拒绝该类，否则任何人把来源写成 `extract:任意值` 即可冒充流水线。其可信依据是**调用位置**。
+- `agent:<role>@<domain>`：SHALL 是平台已铸、且仍是该域活跃成员的智能体身份；`domain` 段 SHALL 与目标域一致；且 SHALL 等于本次请求的已认证身份——**只能以自己提交**。
+- `user:<identity>`：交互式提交，`identity` SHALL 等于本次请求的已认证身份。其可信依据是**已认证会话**；调用方拿不出可比对的身份时 SHALL 判为不匹配（证不出来就不算数）。
 
 不匹配任何类别的前缀、以及**前缀认得但形状不完整**的来源（例如 `fleet:` 后没有 `/`），SHALL 被拒绝并列出各类别的形状要求，MUST NOT 静默入库。前缀匹配 SHALL 区分大小写。
 
@@ -38,6 +39,11 @@
 - **WHEN** 外部 HTTP 提交端点收到 `source=extract:any:any`
 - **THEN** 拒绝并报明该类来源仅限进程内调用，不产生提案行
 
+#### Scenario: 只能以自己提交
+
+- **WHEN** 已认证身份为 `alice@example.com`，提交时声明 `source=user:bob@example.com`
+- **THEN** 403 并报明「只能以自己的身份提交」，不产生提案行
+
 #### Scenario: 智能体身份须与域一致
 
 - **WHEN** 提交来源为 `agent:concept@gov` 而目标域是 `legal`
@@ -45,7 +51,7 @@
 
 #### Scenario: 未知前缀被拒
 
-- **WHEN** 提交来源不以三类前缀之一开头
+- **WHEN** 提交来源不以四类前缀之一开头
 - **THEN** 拒绝并列出可用类别
 
 ### Requirement: 迁移期的宽松档只标记不静默

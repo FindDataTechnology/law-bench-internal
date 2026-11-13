@@ -391,7 +391,10 @@ def test_ledger_curation_layer_offers_authoring_entries_by_role(seeded_db):
 
 
 def _submit(c: TestClient, *, key: str, evidence: dict, kind: str = "company",
-            domain_key: str = A_KEY, source: str = "fleet") -> dict:
+            domain_key: str = A_KEY, as_user: str = "alice",
+            source: str | None = None) -> dict:
+    """Submit as ``as_user`` — the caller may only claim its own identity."""
+    source = source or f"user:{as_user}@example.com"
     r = c.post(
         f"/api/d/{domain_key}/proposals",
         json={
@@ -420,7 +423,7 @@ def test_inbox_confirm_writes_through_the_kernel(seeded_db):
         inbox = c.get(f"/d/{A_KEY}/inbox")
         assert inbox.status_code == 200
         assert "ai-corp" in inbox.text
-        assert "fleet" in inbox.text
+        assert "user:alice" in inbox.text
         confirm = c.post(
             f"/d/{A_KEY}/inbox/{proposal['id']}/confirm", follow_redirects=False
         )
@@ -438,7 +441,8 @@ def test_inbox_forbids_self_confirmation(seeded_db):
     duties); the platform admin may, but only with the override recorded."""
     _seed_world(seeded_db)
     with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
-        proposal = _submit(c, key="self-serv", evidence={"url": "https://example.test/s"})
+        proposal = _submit(c, key="self-serv", evidence={"url": "https://example.test/s"},
+                           as_user="lara")
         denied = c.post(
             f"/d/{A_KEY}/inbox/{proposal['id']}/confirm", follow_redirects=False
         )
@@ -479,7 +483,7 @@ def test_inbox_reject_requires_a_reason_and_blocks_identical_resubmission(seeded
         same = c.post(
             f"/api/d/{A_KEY}/proposals",
             json={
-                "source": "fleet", "kind": "company", "external_key": "weak-source",
+                "source": "user:alice@example.com", "kind": "company", "external_key": "weak-source",
                 "body": "同一条目再提", "evidence": evidence,
             },
         )
@@ -498,7 +502,7 @@ def test_inbox_requires_evidence_at_the_edge(seeded_db):
         r = c.post(
             f"/api/d/{A_KEY}/proposals",
             json={
-                "source": "fleet", "kind": "company", "external_key": "no-proof",
+                "source": "user:alice@example.com", "kind": "company", "external_key": "no-proof",
                 "body": "没有依据的条目", "evidence": {},
             },
         )

@@ -67,11 +67,16 @@ def _no_idp(monkeypatch):
 
 
 def _submit(conn, key, batch, kind="clause"):
+    from src.bench import submitters
+
     proposals.submit(
         conn, domain_key="legal", source=f"extract:m:{batch}", kind=kind,
         external_key=key, body=key,
         evidence={"chunk_id": "c1", "quote": "q", "batch": batch},
         submitted_by="extraction",
+        # These rows stand in for the extraction pipeline, which writes
+        # in-process; the external channel rejects ``extract:`` by design.
+        via=submitters.VIA_IN_PROCESS,
     )
 
 

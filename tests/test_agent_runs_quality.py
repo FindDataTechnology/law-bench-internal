@@ -39,6 +39,9 @@ def conn(empty_db):  # noqa: F811 - provided by tests/conftest.py
         conn=empty_db, key="legal", name="法律域", template_name="tpl",
         template_version=None, created_by="t",
     )
+    # add-fleet-execution-loop: fleet: sources now need a live registration.
+    from _fleet_fixtures import provision_default_fleet_world
+    provision_default_fleet_world(empty_db)
     yield empty_db
     from src.eval.db import close_shared_conn
     close_shared_conn()

@@ -24,10 +24,11 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Optional, Tuple
 
-#: 三类来源的前缀。改它们等于改契约，不轻改。
+#: 来源前缀。改它们等于改契约，不轻改。
 PREFIX_FLEET = "fleet:"
 PREFIX_EXTRACT = "extract:"
 PREFIX_AGENT = "agent:"
+PREFIX_USER = "user:"
 
 #: 提交通道。``extract:`` 只在 ``in_process`` 下被接受。
 VIA_HTTP = "http"
@@ -42,8 +43,9 @@ VERDICTS: tuple[str, ...] = (
     "pipeline_impersonation",  # extract：从外部通道提交
     "agent_domain_mismatch",  # agent：身份里的域与目标域不一致
     "agent_not_member",      # agent：身份不在该域活跃成员里
+    "user_mismatch",         # user：自称的身份不是本次请求的认证身份
     "malformed",             # 前缀认得，形状不完整
-    "unknown_prefix",        # 三类之外
+    "unknown_prefix",        # 四类之外
 )
 
 #: 需要按类别报明给提交方的形状要求（拼错前缀时就列这个）。
@@ -51,6 +53,7 @@ SHAPES: dict[str, str] = {
     PREFIX_FLEET: "fleet:<fleet_id>/<post_id>",
     PREFIX_EXTRACT: "extract:<model>:<prompt_version>",
     PREFIX_AGENT: "agent:<role>@<domain>",
+    PREFIX_USER: "user:<identity>",
 }
 
 
@@ -82,6 +85,12 @@ def classify_source(source: Optional[str]) -> Tuple[Optional[str], Optional[dict
             return PREFIX_AGENT, None, True
         return PREFIX_AGENT, {"role": role, "domain": domain}, False
 
+    if text.startswith(PREFIX_USER):
+        identity = text[len(PREFIX_USER):]
+        if not identity or any(ch.isspace() for ch in identity):
+            return PREFIX_USER, None, True
+        return PREFIX_USER, {"identity": identity}, False
+
     return None, None, False
 
 
@@ -109,11 +118,15 @@ def verdict(
     via: str,
     fleet: Optional[Mapping[str, Any]] = None,
     agent_is_member: Optional[bool] = None,
+    authenticated_as: Optional[str] = None,
 ) -> str:
     """判定一条提交来源在其目标域上是否可被接受。
 
     ``fleet`` 传登记行投影（``{"domains": [...], "revoked": bool}``），``None``
     表示查无登记。``agent_is_member`` 为该身份是否仍是目标域的活跃成员。
+    ``authenticated_as`` 是本次请求已认证的身份——``agent:`` 与 ``user:`` 两类
+    的信任依据都是它：**你只能以自己的身份提交**。``None`` 表示调用方没有身份可
+    比，此时这两类一律判为不匹配（证不出来就不算数）。
 
     调用方**必须**把 ``via`` 说对：``extract:`` 的放行只依赖它。传错的后果不是
     「校验变宽松」，而是「校验消失」——所以两个调用点各传自己的常量，不共享。
@@ -131,7 +144,17 @@ def verdict(
     if prefix == PREFIX_AGENT:
         if parts["domain"] != (domain_key or "").strip():
             return "agent_domain_mismatch"
-        return "ok" if agent_is_member else "agent_not_member"
+        if not agent_is_member:
+            return "agent_not_member"
+        # A minted identity may only submit as itself.
+        if (authenticated_as or "").strip() not in ("", (source or "").strip()):
+            return "agent_not_member"
+        return "ok"
+
+    if prefix == PREFIX_USER:
+        if (authenticated_as or "").strip() != parts["identity"]:
+            return "user_mismatch"
+        return "ok"
 
     return verdict_for_fleet(domain_key=domain_key, fleet=fleet)
 

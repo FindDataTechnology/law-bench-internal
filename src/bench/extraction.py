@@ -29,7 +29,7 @@ from typing import Any, Callable, Optional
 
 import httpx
 
-from src.bench import authoring, keys, libraries, ontology_import, proposals
+from src.bench import authoring, keys, libraries, ontology_import, proposals, submitters
 from src.search import library_index
 
 #: Bumped whenever the prompt changes — recorded on every proposal so a batch can
@@ -801,6 +801,11 @@ def run(
                     impact=f"原文：{evidence['quote']}",
                     submitted_by=submitted_by,
                     with_created=True,
+                    # This is the in-process pipeline: the whole trust basis of
+                    # an ``extract:`` source is that it cannot be reached over
+                    # the network. Passing the channel explicitly is what keeps
+                    # the external endpoint from accepting a forged one.
+                    via=submitters.VIA_IN_PROCESS,
                 )
             except ValueError:
                 report["skipped"]["bad_row"] += 1

@@ -68,6 +68,7 @@ from ...bench import estate
 from ...bench import templates
 from ...bench import libraries as library_store
 from ...bench import proposals as bench_proposals
+from ...bench import submitters as bench_submitters
 from ...search import library_index
 from ...bench import templates as bench_templates
 from ...bench import workspaces
@@ -1680,7 +1681,17 @@ async def console_proposal_submit(
             submitted_by=str(payload.get("submitted_by") or "").strip()
             or _operator_of(user),
             with_created=True,
+            # External channel, always. ``extract:`` sources are refused here
+            # because their trust basis is that the pipeline is unreachable
+            # from the network; this constant is the only thing saying so.
+            via=bench_submitters.VIA_HTTP,
+            # ``agent:``/``user:`` sources may only name the caller themselves.
+            authenticated_as=_operator_of(user),
         )
+    except bench_proposals.SubmitterRefused as exc:
+        # 403, not 400: the request is well-formed; the caller is not allowed to
+        # submit as that source.
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
