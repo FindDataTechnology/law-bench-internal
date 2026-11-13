@@ -12,7 +12,13 @@ import os
 
 from fastmcp import FastMCP
 
+from . import wellknown
+
 mcp: FastMCP = FastMCP("law-bench")
+
+# 线自描述端点（change converge-line-identity-and-keys 1.4）：公开、免鉴权。
+# 路由挂在这里；匿名可达还需要下方 ``EXEMPT_PATHS`` 里的豁免，两处缺一不可。
+wellknown.register(mcp)
 
 # Importing the tool modules registers their @mcp.tool decorators. Order does
 # not matter; the names are re-exported for callers / tests that want them.
@@ -72,8 +78,18 @@ def _extract_access_token(headers: list[tuple[bytes, bytes]]) -> str | None:
     return found.get(b"x-api-key")
 
 
+#: 共享令牌门必须放行的精确路径。唯一的路径字面量在 ``wellknown.WELL_KNOWN_PATH``；
+#: 这里引用它，不复制第二份。``/mcp`` 不在集合里——门本身没有被这条豁免削弱。
+EXEMPT_PATHS: frozenset[str] = frozenset({wellknown.WELL_KNOWN_PATH})
+
+
 class _TokenGuard:
     """ASGI middleware that rejects any HTTP request lacking the shared token.
+
+    ``EXEMPT_PATHS`` are the deliberate holes: public metadata that a caller
+    without this line's credential must still be able to read (currently only
+    the line self-description endpoint). Everything else, including ``/mcp``,
+    still needs the token.
 
     Non-HTTP scopes (the ASGI lifespan) pass through untouched so the wrapped
     app still starts and shuts down normally.
@@ -84,9 +100,11 @@ class _TokenGuard:
         self.token = token
 
     async def __call__(self, scope, receive, send) -> None:
-        if scope["type"] != "http" or _extract_access_token(
-            scope.get("headers", [])
-        ) == self.token:
+        if (
+            scope["type"] != "http"
+            or (scope.get("path") or "") in EXEMPT_PATHS
+            or _extract_access_token(scope.get("headers", [])) == self.token
+        ):
             await self.app(scope, receive, send)
             return
         from starlette.responses import PlainTextResponse

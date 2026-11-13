@@ -60,7 +60,7 @@ spec:
             value: "5"
       containers:
         - name: law-bench-mcp
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-1e90e56
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-57b1465
           # 2026-11-12 上产 sha-1e90e56（源 60bb1ec：contract_type_catalog 缓存按
           # include_clause_counts 分键，止住"先 false 后 true 读到假零计数"；
           # 同片含 vendored wheel 的 CI/Dockerfile 挂载修复）。
