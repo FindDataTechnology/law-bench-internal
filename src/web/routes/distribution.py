@@ -432,20 +432,38 @@ def claim_work_order(
 
     Exclusive by construction: the kernel's claim is one ``UPDATE ... WHERE
     status='pending'``, so two fleets racing produce one winner and one 409.
+
+    **Own retries are idempotent.** A machine endpoint gets retried by the
+    network, not by a human who remembers clicking. "Already claimed — by me" is
+    a success (``created: false``); only *another* fleet's claim is a conflict.
+    Answering 409 to our own retry would make a healthy fleet log a failure it
+    cannot fix by retrying again.
     """
     from ...bench import authoring
 
     consumer = _fleet_consumer(request, db, domain_key)
-    _fleet_task(db, domain_key=domain_key, task_id=task_id,
-                fleet_ref=consumer["fleet_ref"])
+    existing = _fleet_task(db, domain_key=domain_key, task_id=task_id,
+                           fleet_ref=consumer["fleet_ref"])
     actor = consumer.get("fleet_ref")
+    if existing["status"] == "in_progress":
+        claimed_by = next(
+            (e.get("by") for e in reversed(existing.get("transitions") or [])
+             if e.get("to") == "in_progress"),
+            None,
+        )
+        if claimed_by == actor:
+            return {"task": existing, "claimed_by": actor, "created": False}
+        raise HTTPException(
+            status_code=409,
+            detail=f"工单 {task_id} 已被 {claimed_by!r} 认领",
+        )
     try:
         task = authoring.authoring_claim_task(db, task_id=task_id, actor=actor)
     except authoring.TaskAlreadyClaimed as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return {"task": task, "claimed_by": actor}
+    return {"task": task, "claimed_by": actor, "created": True}
 
 
 @write_router.post(
@@ -463,12 +481,18 @@ async def complete_work_order(
     Completing writes **no** knowledge unit: a work order says "this got done".
     Content still arrives through the proposal inbox, so "task done" can never
     quietly become "knowledge published".
+
+    Idempotent on retry: an already-`done` order returns ``created: false``
+    instead of a conflict. The desired end state holds, so a retried request is a
+    success — a fresh `done` event is never appended twice.
     """
     from ...bench import authoring
 
     consumer = _fleet_consumer(request, db, domain_key)
-    _fleet_task(db, domain_key=domain_key, task_id=task_id,
-                fleet_ref=consumer["fleet_ref"])
+    current = _fleet_task(db, domain_key=domain_key, task_id=task_id,
+                          fleet_ref=consumer["fleet_ref"])
+    if current["status"] == "done":
+        return {"task": current, "created": False}
     body: dict = {}
     # 空体合法（关单可以什么都不说）；**写坏的 JSON 不合法**——把它当空体处理，
     # 舰队会以为 note 记上了，而台账里一个字都没有。这两种情况必须分开。
@@ -492,7 +516,7 @@ async def complete_work_order(
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return {"task": task}
+    return {"task": task, "created": True}
 
 
 @write_router.post(

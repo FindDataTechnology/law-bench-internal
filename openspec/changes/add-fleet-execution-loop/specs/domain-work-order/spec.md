@@ -78,7 +78,9 @@
 
 每个动作 SHALL 只对**派给本舰队的单**生效：授权判断 SHALL 读指派人类型与引用（`assignee_kind='fleet'` 且 `assignee_ref` 等于该舰队登记值），MUST NOT 读人读展示名。对非本舰队的单 MUST 拒绝并报明「不是派给该舰队」，MUST NOT 返回空结果冒充成功。非 `fleet` 种类的机器消费者 MUST 被拒。
 
-认领与完成的拒绝形态 SHALL 可分辨：重复认领、未认领即完成 SHALL 报冲突；请求体形状错误 SHALL 报为请求错误，MUST NOT 冒成内部故障。
+认领与完成的拒绝形态 SHALL 可分辨：请求体形状错误 SHALL 报为请求错误，MUST NOT 冒成内部故障。
+
+认领与完成 SHALL 对**本舰队自己的重试**幂等：已由本舰队认领的单再次认领、已完成的单再次完成，SHALL 返回既有工单并标明「非新建」，MUST NOT 追加第二条转移事件、MUST NOT 报冲突。由**其它**舰队占用的认领 SHALL 仍报冲突；未认领即完成 SHALL 仍被拒绝。
 
 #### Scenario: 舰队仅凭机器凭据走完三步
 

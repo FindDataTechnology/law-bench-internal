@@ -135,8 +135,8 @@ GET  /api/v1/distribution/{domain_key}/runs?runner_ref=…
 
 | 端点 | 请求体 | 幂等 / 拒绝 |
 |---|---|---|
-| `claim` | 无（工单号在路径里） | 排他：第二个认领返回 **409**；不是派给本舰队的工单 **403** |
-| `complete` | `{"note"?, "artifact_refs"?: [...]}` | 必须先认领（未认领 409）；**不写知识单元** |
+| `claim` | 无（工单号在路径里） | 排他：**别的舰队**认领 **409**；自己重试是幂等命中（200 + `created:false`）；不是派给本舰队的工单 **403** |
+| `complete` | `{"note"?, "artifact_refs"?: [...]}` | 必须先认领（未认领 409）；已 `done` 的重试幂等（200 + `created:false`）；**不写知识单元** |
 | `runs` | `{"runner_ref", "role", "outcome", "counts"?, "artifact_refs"?, "remaining"?, "detail"?, "task_id"?}` | 同 `runner_ref` 重放返回 `created: false` 且不改任何字段；结局不在四态 **422** |
 
 **认领之后失联怎么办**：认领是排他的，所以一张单被领走后不会自动回到待领。执行方

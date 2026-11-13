@@ -133,12 +133,19 @@ def test_the_whole_loop_over_http(world):
     assert claimed.status_code == 200, claimed.text
     assert claimed.json()["task"]["status"] == "in_progress"
 
+    # 自己的重试是幂等命中（200 + created:false）：机器端点会被网络重试，
+    # 把「已经做过了」报成冲突，等于让健康的舰队去重试它治不好的错。
     with _machine(conn) as m:
         again = m.post(
             f"/api/v1/distribution/{DOMAIN}/work-orders/{task['id']}/claim",
             headers=_machine_headers(),
         )
-    assert again.status_code == 409, "重复认领必须被拒，而不是静默成功"
+    assert again.status_code == 200, again.text
+    assert again.json()["created"] is False
+    claims = [
+        e for e in again.json()["task"]["transitions"] if e.get("to") == "in_progress"
+    ]
+    assert len(claims) == 1, "重试不得再落一条认领事件"
 
     # ④ 执行完回写这一轮（机器身份，幂等）。
     runner_ref = f"fleet:{FLEET_REF}/post_ontology#1"
@@ -465,3 +472,50 @@ def test_the_order_pull_requires_a_fleet_token(world):
         other_domain = m.get("/api/v1/distribution/not-bound/work-orders",
                             headers=_machine_headers())
     assert other_domain.status_code == 403
+
+
+def test_another_fleets_claim_is_still_a_conflict(world):
+    """幂等只放自己的重试；别的舰队来领同一张单仍然必须被如实拒绝。"""
+    conn = world
+    domain = workspaces.get_domain(conn, domain_key=DOMAIN)
+    from src.bench import authoring
+
+    distribution.register_consumer(
+        conn, name="second-fleet", domains=[DOMAIN],
+        token_hash=hashlib.sha256(b"second").hexdigest(), created_by="seed",
+        kind="fleet", fleet_ref="fleet_second",
+    )
+    # 一张派给 fleet_second 的单：本舰队（loop-fleet）连碰都不该碰到它。
+    task = authoring.authoring_create_task(
+        conn, domain_id=domain["id"], assignee="second-fleet", title="t", detail="d",
+        target_kind="estate-gap", target_key="ontology", created_by="lara",
+        assignee_kind="fleet", assignee_ref="fleet_second",
+    )
+    with _machine(conn) as m:
+        r = m.post(f"/api/v1/distribution/{DOMAIN}/work-orders/{task['id']}/claim",
+                   headers=_machine_headers())
+    assert r.status_code == 403
+
+
+def test_completing_twice_is_an_idempotent_hit(world):
+    conn = world
+    domain = workspaces.get_domain(conn, domain_key=DOMAIN)
+    from src.bench import authoring
+
+    task = authoring.authoring_create_task(
+        conn, domain_id=domain["id"], assignee="loop-fleet", title="t", detail="d",
+        target_kind="estate-gap", target_key="ontology", created_by="lara",
+        assignee_kind="fleet", assignee_ref=FLEET_REF,
+    )
+    with _machine(conn) as m:
+        m.post(f"/api/v1/distribution/{DOMAIN}/work-orders/{task['id']}/claim",
+               headers=_machine_headers())
+        first = m.post(f"/api/v1/distribution/{DOMAIN}/work-orders/{task['id']}/complete",
+                       headers=_machine_headers())
+        second = m.post(f"/api/v1/distribution/{DOMAIN}/work-orders/{task['id']}/complete",
+                        headers=_machine_headers())
+    assert first.status_code == 200 and first.json()["created"] is True
+    assert second.status_code == 200, second.text
+    assert second.json()["created"] is False
+    dones = [e for e in second.json()["task"]["transitions"] if e.get("to") == "done"]
+    assert len(dones) == 1, "重试不得再落一条完成事件"

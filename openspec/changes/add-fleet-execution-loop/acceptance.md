@@ -80,6 +80,10 @@
 | 载荷字段齐 | 同上 | `id/target_kind/target_key/title/detail/created_at/status` 齐；已领的单带 `claimed_by` |
 | 重复拉取零副作用 | 同上 | 载荷逐字相同；`authoring_events` 行数不变；状态不变 |
 | 只放舰队凭据 | `test_the_order_pull_requires_a_fleet_token` | 无令牌 401；未绑定域 403 |
+| 自己的重试幂等 | `test_the_whole_loop_over_http` | 同舰队再次认领 → 200 `created:false`，`transitions` 里仍只有 **1** 条认领；完成重试 → 200 `created:false`，仍只有 1 条完成事件 |
+| 别的舰队仍冲突 | `test_another_fleets_claim_is_still_a_conflict` | 派给别支舰队的单，本舰队认领 403 |
+| 完成重试不加事件 | `test_completing_twice_is_an_idempotent_hit` | 第二次 200 `created:false`，`done` 事件仍 1 条 |
+
 
 ### 5. 闭环（§6.4 离线那半 / §7.1）
 
@@ -123,7 +127,7 @@ EXIT=0 并报 `tasks: 0`。
 
 `database_url=law_bench .venv/bin/python -m pytest tests/ -q` 首次 **2105 passed / 59 skipped / 2 failed**（12:29）；
 定性并处置后（下面两条），排除环境性的那一条再跑一次：
-**2114 passed, 59 skipped, 1 deselected, 0 failed**（3:48，含机器读面、入参校验与并发兜底用例）。
+**2116 passed, 59 skipped, 1 deselected, 0 failed**（3:45，含机器读面、入参校验、并发兜底与重试幂等用例）。
 
 | 失败 | 定性 | 依据 |
 |---|---|---|
