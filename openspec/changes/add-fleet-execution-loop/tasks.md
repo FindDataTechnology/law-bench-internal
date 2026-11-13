@@ -5,7 +5,7 @@
 
 ## 0. 前置：先把事实钉住
 
-- [x] 0.1 基线取证（只读，2026-11-13 实测生产 `law_bench`）：`domain_proposals` 93 行 → `extract:*` 78 / `fleet:*` 12（含 1 条 `credential-probe` 探针）/ `agent:*` 4；`authoring_tasks` 1 行（`agent:concept@legal`）；`domain_agent_runs` 17 行且确认无 `origin`/`runner_ref`；`distribution_consumers` 2 行（`fd-wire`、`ontology-fleet-win`，均绑 legal）；`domains` 4 个。读数已写入 `design.md`「基线读数」，并据此把校验改为按前缀分三类（D6）
+- [x] 0.1 基线取证（只读，2026-11-13 实测生产 `law_bench`）：`domain_proposals` 93 行 → `extract:*` 78 / `fleet:*` 12（含 1 条 `credential-probe` 探针）/ `agent:*` 4；`authoring_tasks` 1 行（`agent:concept@legal`）；`domain_agent_runs` 17 行且确认无 `origin`/`runner_ref`；`distribution_consumers` 2 行（`fd-wire`、`ontology-fleet-win`，均绑 legal）；`domains` 4 个。读数已写入 `design.md`「基线读数」，并据此把校验改为按前缀分四类（D6；`user:` 是实施中补的——交互式专家只能以自己的身份提交，见下方 2.2a）
 - [x] 0.2 DDL 进 `src/bench/workspace_store.py`（全部带 DEFAULT，幂等 `ADD COLUMN IF NOT EXISTS`）：`authoring_tasks.assignee_kind`（默认 `human`）/ `assignee_ref`、`distribution_consumers.kind`（默认 `machine`）/ `fleet_ref`、`domain_agent_runs.origin`（默认 `kernel`）/ `runner_ref`；`ensure_schema` 一次建齐
 - [x] 0.3 启动壳测试扩展 `tests/test_boot_schema.py`：空库跑 boot 后六列就位（跨新连接复核已提交）、重复执行幂等、旧库（无这些列）跑一次后列出现且存量行取到默认值
 - [x] 0.4 `docs/domain-proposal-contract.md` 增来源校验与结局读面两节；`tests/test_domain_proposal_contract_doc.py` 双侧校验保持不漂（文档字段集 ↔ 实现字段集）。新增覆盖：四类来源与各自信任依据、九条拒绝原话（双向：文档引了代码里必须有）、四条读面路由
