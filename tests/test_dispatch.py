@@ -205,12 +205,32 @@ def test_dispatched_task_is_visible_in_the_inbox(conn):
 
 def test_closing_a_task_reopens_the_gap_for_dispatch(conn):
     """Dispatch is idempotent per open task — so closing must be possible,
-    otherwise a domain can never be dispatched again."""
+    otherwise a domain can never be dispatched again.
+
+    Closing now goes through claim → complete (``add-fleet-execution-loop`` §1.4):
+    a pending task cannot jump straight to done, because "完成了" on something
+    nobody claimed records an outcome that never happened. The gap reopens the
+    same way it always did — the task simply has to reach ``done``.
+    """
     with _client(conn) as c:
         c.post("/d/dispatch", data={"gap": "knowledge", "assignee": "ops"},
                follow_redirects=False)
     task_id = conn.execute("SELECT id FROM authoring_tasks LIMIT 1").fetchone()["id"]
+
+    # pending → done 被拒：没认领就没有「完成」可言。
     with _client(conn) as c:
+        direct = c.post(
+            f"/d/legal/inbox/tasks/{task_id}/transition", data={"to": "done"},
+            follow_redirects=False,
+        )
+    assert direct.status_code == 303
+    assert conn.execute(
+        "SELECT status FROM authoring_tasks WHERE id=%s", (task_id,)
+    ).fetchone()["status"] == "pending", "未认领不得直接完成"
+
+    with _client(conn) as c:
+        c.post(f"/d/legal/inbox/tasks/{task_id}/transition",
+               data={"to": "in_progress"}, follow_redirects=False)
         r = c.post(f"/d/legal/inbox/tasks/{task_id}/transition", data={"to": "done"},
                    follow_redirects=False)
     assert r.status_code == 303

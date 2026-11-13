@@ -64,6 +64,33 @@
 {#- ② 运行台账：四态。thin 与 failed 分开显示，因为处置不同（升级 vs 不重试）。 -#}
 <div class="panel">
   <div class="toolbar between">
+    <h2>{{ t.console.team.orders_h2 }}</h2>
+    <a class="btn btn-sm" href="{{ url_for('console_work_orders', domain_key=domain.key) }}">{{ t.console.team.goto_work_orders }}</a>
+  </div>
+  {% if open_orders %}
+  {#- 只报「没做完的」并按档位分组：三档的等待方不同，混一个总数等于没回答
+      「还在等谁」。数据与工单页同源，不另写口径。 -#}
+  <p class="hint">
+    {% for kind in ['kernel-role', 'fleet', 'human'] %}
+    {% set n = order_counts.get(kind, 0) %}
+    <span class="badge{% if not n %} badge-quiet{% endif %}">{{ t.console.workorders['kind_' ~ (kind | replace('-', '_'))] }} {{ n }}</span>
+    {% endfor %}
+  </p>
+  <ul class="plain">
+    {% for task in open_orders[:5] %}
+    <li>
+      <span class="badge">{{ t.console.workorders['status_' ~ task.status] }}</span>
+      {{ task.title }}
+      <span class="muted"><code>{{ task.assignee_ref or task.assignee }}</code></span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="hint">{{ t.console.team.no_orders }}</p>
+  {% endif %}
+</div>
+<div class="panel">
+  <div class="toolbar between">
     <h2>{{ t.console.team.ledger_h2 }}</h2>
     <span class="muted">
       {% for state, n in (ledger.by_outcome or {}).items() %}

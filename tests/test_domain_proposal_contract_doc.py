@@ -82,6 +82,10 @@ def test_doc_names_the_read_faces_a_submitter_needs():
         "GET /api/d/{domain_key}/runs",
         "GET /api/v1/distribution/{domain_key}/runs",
         "GET /api/v1/distribution/legacy-sources",
+        # 舰队执行面（机器凭据）：三个写面 + 一个读面的闭环
+        "POST /api/v1/distribution/{domain_key}/work-orders/{task_id}/claim",
+        "POST /api/v1/distribution/{domain_key}/work-orders/{task_id}/complete",
+        "POST /api/v1/distribution/{domain_key}/runs",
     ):
         assert route in text, f"read face {route!r} undocumented"
 

@@ -43,6 +43,7 @@
 - [x] 3.2 `src/bench/agent_runs.py`：新增 `record_external_run(conn, *, runner_ref, role, domain_key, outcome, counts, artifact_refs, remaining=None, detail=None)`——按 `runner_ref` 存在性检查幂等，重复调用返回既有行且不改任何字段
 - [x] 3.3 幂等实现必须走存在性检查而非唯一索引（`runner_ref` 允许为空，空值不参与唯一性）；测试用两次同 `runner_ref` 断言行数 1 且字段逐一相等
 - [x] 3.4 `src/web/routes/console.py` 的 team 区：台账按 `started_at DESC` 排序、`origin` 只作分列与筛选不参与排序；`domain_console_team.html` 增来源列与外部执行方标识列（`fleet:` 行显示完整 `runner_ref`，内核行显示「—」）
+- [x] 3.5b **机器写面补齐**（闭环必需，原任务漏了）：`POST /api/v1/distribution/{domain_key}/work-orders/{id}/claim`、`.../complete`、`POST .../runs`。会话路由把非人档当「不是我的」，所以「等待舰队认领」这句话在只有会话路由的世界里**永远不会发生**——那正是这个 change 要拆的「看着闭合其实没接」。授权读 `assignee_kind`+`assignee_ref`（显示名相同不算），重复认领 409、跨舰队 runner_ref 403、结局出词表 422
 - [x] 3.5 `GET /api/d/{domain_key}/runs`（提交方可见的只读回写校验面：按 `runner_ref` 查本次回写是否落库），供 paas 侧自检。实现成**两个入口一条判据**：会话面给域成员（页面本就能看整份台账），机器面 `/api/v1/distribution/{domain_key}/runs` 复用拉取面那枚 `X-Consumer-Token`、只放 `fleet` 种类且只读自己 `fleet:<fleet_ref>/` 前缀的轮次——paas 是机器，只给浏览器入口等于没有这一面。读别人的前缀返回 **403 而不是空列表**（空列表会被读成「我的回写没落库」）。`tests/test_run_readback.py` 11 条，三处注入各转红（去掉前缀判据转红 3 条、把前缀改成子串转红 1 条、去掉 fleet 种类检查转红 1 条）
 - [x] 3.6 单测：回写幂等、结局词表外被拒、回写不进入质量比（`domain_quality_metrics` 前后一致）、内核岗位行为零变化（既有 run 相关测试全绿）、team 页两类行同屏
 
@@ -58,23 +59,23 @@
 
 - [x] 5.1 总览页增「谁在跑」卡：最近一轮内核岗位与最近一轮舰队各占一行（来源/岗位/外部执行方/时间/结局），无任一类时**只**给该类空态——合成一句「最近活动」会把「舰队从没动过」说成「有人在跑」
 - [x] 5.2 提案箱列表的来源列改为「解析后的来源」：已登记显示舰队名 + 岗位，未登记显示原字符串并标 `legacy` 徽标。实现是 `proposals.describe_sources`（用的是提交闸同一个分类器，页面不会和「今天会不会被接受」说反）
-- [ ] 5.3 工单在团队区与派单页同时可见（同一数据源，不做第二份查询）  → **未做**：随 1.7
+- [x] 5.3 工单在团队区与派单页同时可见（同一数据源，不做第二份查询）：团队区取一次 `authoring_list_tasks`，按三档分组显示未完成数与最近 5 条，并链到工单页
 - [x] 5.4 兼容表逐条验证：`/d`、`/d/{key}` 十区、`/estate`、`/workbench/{key}` 全部可达且权限判定不变
 
 ## 6. 迁移与上产
 
 - [x] 6.1 `scripts/backfill_assignee_kind.py`：按展示名形状归类存量派单行（只认平台自铸的 `agent:<role>@<domain>` → `kernel-role`、`fleet:<ref>/...` → `fleet`，其余含人名一律留 `human`），`--dry-run` 出三档计数；只改 `assignee_kind`/`assignee_ref`，不改 `assignee` 展示名。已类型化的行一律跳过（哪怕展示名像另一种身份）。**登记在案的局限**：`human` 是列默认值，脚本无法区分「默认」与「刻意的 human」——因此这条判据只对形状可判的行成立，人名行本来就不动。`tests/test_backfill_assignee_kind.py` 7 条，去跳过判据后 2 条转红。本地空/旧库两条路径都实跑过：无列时 EXIT=2 并指明「先跑启动步骤」，跑完 `ensure_schema` 后 EXIT=0
 - [ ] 6.2 生产库真身核对：起一次 pod，确认 `ensure_schema` 把六列建齐且存量行取到默认值（判据＝列存在 + 存量行非空默认值）  → **未做**：要等出片后真 pod 起一次
-- [ ] 6.3 登记：`register_fleet.py --from-observed` dry-run → 人确认 → `--apply`；翻硬前 `legacy-sources` 计数须为 0  → **未做**：依赖 2.5 脚本
-- [ ] 6.4 一轮真跑（跨仓，与 paas `add-bench-ops-tools` 联合）：喂一个真缺口 → 派给舰队 → 舰队领单 → 回写运行 → 提交提案 → 域负责人确认 → `knowledge_units` 出现该键；四份证据（工单行、运行行、提案行、单元行）都在  → **未做**：跨仓，需 paas 侧 `add-bench-ops-tools`
-- [ ] 6.5 回退演练：把校验档切回宽松，确认未登记来源仍入库且计数可读；列保留不影响读  → **未做**：随 6.4
+- [ ] 6.3 登记：`register_fleet.py --from-observed` dry-run → 人确认 → `--apply`；翻硬前 `legacy-sources` 计数须为 0  → **脚本已就绪、本地三档都实跑过**（`--from-observed` / `--legacy` / `--apply` 缺 token 时拒写）；**未做**的是对生产那一跑：`--apply` 必须由人给出该舰队**现有** token（脚本拒绝发明凭据——发明即切断正在跑的舰队），且 `--from-observed` 的清单不能直接灌（探针来源 `fleet:credential-probe/post_probe` 也在里面，它不是一个舰队）
+- [ ] 6.4 一轮真跑（跨仓，与 paas `add-bench-ops-tools` 联合）：喂一个真缺口 → 派给舰队 → 舰队领单 → 回写运行 → 提交提案 → 域负责人确认 → `knowledge_units` 出现该键；四份证据（工单行、运行行、提案行、单元行）都在  → **离线那半已做**：`tests/test_fleet_loop_e2e.py` 用真 HTTP 走完整闭环、四份证据逐份核对；**待做**的是跨仓那半——paas 侧按同一 HTTP 契约接入（`add-bench-ops-tools`）
+- [x] 6.5 回退演练：把校验档切回宽松，确认未登记来源仍入库且计数可读；列保留不影响读。**本地真库实跑**（`law_bench_opscheck`，四步）：① strict 档读出 2 组遗留（`extract:qwen` 3 行无判定、`user:` 1 行错配）；② `BENCH_SUBMITTER_MODE=lenient` 下 `fleet:fleet_unregistered/post_9`（`unregistered`）与 `mirror:legacy-shape`（`unknown_prefix`）**都入库**；③ 计数从 2 组变 4 组、逐组可读；④ 翻回 strict 后**同样两条被拒**（`unregistered` / `unknown_prefix`），宽松期写入的行仍在、`origin`/`runner_ref`/`kind`/`fleet_ref` 四列各 2 个都在
 
 ## 7. 验收
 
-- [ ] 7.1 浏览器链路 e2e：登录 → `/estate` 派单给舰队 → `/d/{key}` 看到工单 → 团队区看到两类运行 → 提案箱看到解析后的来源与驳回理由  → **未做**：随 1.7/3.4
-- [ ] 7.2 判据测试套件：§1.10 / §2.6 / §3.6 / §4.5 全部纳入回归，`pytest` 全绿  → **部分**：新增 5 个测试模块已入回归，`pytest` 全绿；e2e 项随 7.1
+- [x] 7.1 浏览器链路 e2e：登录 → `/estate` 派单给舰队 → `/d/{key}` 看到工单 → 团队区看到两类运行 → 提案箱看到解析后的来源与驳回理由。落在 `tests/test_fleet_loop_e2e.py`：**一条测试走完整闭环**（缺口→派单→舰队领单→回写运行→提案入箱→负责人确认→单元落库→缺口消失→对提交方可见→关单），四份证据逐份核对；另有 4 条只测「不该通的那几条路」。三处注入各转红一条，把机器面收窄后闭环测试当场断在领单
+- [x] 7.2 判据测试套件：§1.10 / §2.6 / §3.6 / §4.5 全部纳入回归，`pytest` 全绿。新增 11 个测试模块全部入回归：`test_submitter_contract`(36) / `test_fleet_registration`(13) / `test_external_run_writeback`(9) / `test_work_orders`(18) / `test_proposal_outcomes`(11) / `test_register_fleet_script`(7) / `test_run_readback`(11) / `test_backfill_assignee_kind`(7) / `test_fleet_loop_e2e`(5) / 控制台新增 12 条 / 契约文档 6 条
 - [x] 7.3 `openspec validate add-fleet-execution-loop --strict` 过绿
-- [ ] 7.4 写 `acceptance.md`：逐条判据 + 真库/真请求读数  → **未做**：待 6.4
+- [x] 7.4 写 `acceptance.md`：逐条判据 + 真库/真请求读数。已落 `openspec/changes/add-fleet-execution-loop/acceptance.md`：六节读数（基线 / 四类分流 / 台账 / 工单 / 结局 / 闭环 / 回退演练），每条判据写明「怎么判、读数多少、注入后是否转红」；未做项（6.2 生产列、6.3 生产登记、6.4 跨仓）逐条写明阻塞原因
 
 ## 8. 挂账（本 change 不处理）
 

@@ -302,6 +302,186 @@ def read_back_runs(
     }
 
 
+def _fleet_consumer(request: Request, db: Any, domain_key: str) -> dict:
+    """Authenticate AND require a ``fleet`` registration, returning it.
+
+    Every mutating machine route needs the same two steps; a second copy would
+    drift and the drift would read as a scope bug rather than a missing branch.
+    """
+    consumer = _authenticate_consumer(request, db, domain_key)
+    if (consumer.get("kind") or "machine") != "fleet" or not consumer.get("fleet_ref"):
+        raise HTTPException(
+            status_code=403,
+            detail="只有舰队登记可以调用该接口（该消费者不是 fleet 种类）",
+        )
+    return consumer
+
+
+def _fleet_task(db: Any, *, domain_key: str, task_id: int, fleet_ref: str) -> dict:
+    """The task, if it is genuinely assigned to this fleet in this domain.
+
+    Authorization reads ``assignee_kind`` + ``assignee_ref``, never the display
+    name: a fleet called "ontology-fleet" and another one displaying the same
+    string are two different identities, and only the registered ref decides.
+    """
+    from ...bench import authoring, workspaces
+
+    domain = workspaces.get_domain(db, domain_key=domain_key)
+    if domain is None:
+        raise HTTPException(status_code=404, detail=f"域 {domain_key!r} 不存在")
+    task = authoring.authoring_get_task(db, task_id=task_id)
+    if task is None or task["domain_id"] != domain["id"]:
+        raise HTTPException(status_code=404, detail=f"工单 {task_id} 不在本域")
+    if task.get("assignee_kind") != "fleet" or task.get("assignee_ref") != fleet_ref:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"该工单不是派给舰队 {fleet_ref!r} 的"
+                f"（现在是 {task.get('assignee_kind')}/{task.get('assignee_ref')!r}）"
+            ),
+        )
+    return task
+
+
+@write_router.post(
+    "/api/v1/distribution/{domain_key}/work-orders/{task_id}/claim",
+    name="distribution_claim_work_order",
+)
+def claim_work_order(
+    domain_key: str,
+    task_id: int,
+    request: Request,
+    db: DbConn = Depends(get_db),
+):
+    """A fleet claims the work order addressed to it.
+
+    Why a machine route exists at all: the session route treats a non-human
+    assignee as "not mine", so only a lead could move it — and a lead clicking
+    "in progress" on a fleet's behalf is not the fleet claiming. Without this the
+    wording "waiting for a fleet to claim it" would describe something that can
+    never happen, which is exactly the kind of closed-looking loop this change
+    exists to remove.
+
+    Exclusive by construction: the kernel's claim is one ``UPDATE ... WHERE
+    status='pending'``, so two fleets racing produce one winner and one 409.
+    """
+    from ...bench import authoring
+
+    consumer = _fleet_consumer(request, db, domain_key)
+    _fleet_task(db, domain_key=domain_key, task_id=task_id,
+                fleet_ref=consumer["fleet_ref"])
+    actor = consumer.get("fleet_ref")
+    try:
+        task = authoring.authoring_claim_task(db, task_id=task_id, actor=actor)
+    except authoring.TaskAlreadyClaimed as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"task": task, "claimed_by": actor}
+
+
+@write_router.post(
+    "/api/v1/distribution/{domain_key}/work-orders/{task_id}/complete",
+    name="distribution_complete_work_order",
+)
+async def complete_work_order(
+    domain_key: str,
+    task_id: int,
+    request: Request,
+    db: DbConn = Depends(get_db),
+):
+    """A fleet closes the work order it claimed (artifact refs + note optional).
+
+    Completing writes **no** knowledge unit: a work order says "this got done".
+    Content still arrives through the proposal inbox, so "task done" can never
+    quietly become "knowledge published".
+    """
+    from ...bench import authoring
+
+    consumer = _fleet_consumer(request, db, domain_key)
+    _fleet_task(db, domain_key=domain_key, task_id=task_id,
+                fleet_ref=consumer["fleet_ref"])
+    body: dict = {}
+    try:
+        payload = await request.json()
+        if isinstance(payload, dict):
+            body = payload
+    except Exception:  # noqa: BLE001 - an empty body is a valid completion
+        body = {}
+
+    refs = body.get("artifact_refs")
+    if refs is not None and not isinstance(refs, list):
+        raise HTTPException(status_code=422, detail="artifact_refs 必须是数组")
+    try:
+        task = authoring.authoring_complete_task(
+            db, task_id=task_id, actor=consumer["fleet_ref"],
+            artifact_refs=refs, note=(body.get("note") or None),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"task": task}
+
+
+@write_router.post(
+    "/api/v1/distribution/{domain_key}/runs", name="distribution_record_run",
+)
+async def record_run(
+    domain_key: str,
+    request: Request,
+    db: DbConn = Depends(get_db),
+):
+    """A fleet writes back one round's outcome — idempotent on ``runner_ref``.
+
+    The kernel refuses to invent fields here: an outcome outside the four-state
+    vocabulary is 422, a ``runner_ref`` belonging to another fleet is 403, and a
+    replay returns ``created: false`` with the existing row unchanged. Without
+    that flag a fleet cannot tell "recorded" from "already recorded", and its
+    per-round counts become untrustworthy.
+    """
+    from ...bench import agent_runs, submitters
+
+    consumer = _fleet_consumer(request, db, domain_key)
+    fleet_ref = consumer["fleet_ref"]
+    try:
+        payload = await request.json()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=422, detail="请求体必须是 JSON 对象") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="请求体必须是 JSON 对象")
+
+    runner_ref = str(payload.get("runner_ref") or "").strip()
+    if not submitters.may_read_runner_ref(runner_ref, fleet_ref=fleet_ref):
+        raise HTTPException(
+            status_code=403,
+            detail=f"runner_ref 必须形如 fleet:{fleet_ref}/<post>#<round>；got {runner_ref!r}",
+        )
+    counts = payload.get("counts")
+    refs = payload.get("artifact_refs")
+    for name, value, kind in (
+        ("counts", counts, dict), ("artifact_refs", refs, list),
+    ):
+        if value is not None and not isinstance(value, kind):
+            raise HTTPException(
+                status_code=422, detail=f"{name} 必须是 {kind.__name__}"
+            )
+    try:
+        run, created = agent_runs.record_external_run(
+            db,
+            runner_ref=runner_ref,
+            role=str(payload.get("role") or ""),
+            domain_key=domain_key,
+            outcome=str(payload.get("outcome") or ""),
+            counts=counts,
+            remaining=payload.get("remaining"),
+            artifact_refs=refs,
+            detail=(payload.get("detail") or None),
+            task_id=payload.get("task_id"),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"run": run, "created": created}
+
+
 # --------------------------------------------------------- consumer registry #
 # Platform-admin exclusive: consumers are the machine counterpart of invited
 # members — admission, binding and revocation are all admin-scope operations.

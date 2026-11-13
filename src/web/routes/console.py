@@ -1295,6 +1295,12 @@ def console_team(
         b for b in bench_proposals.batches(db, domain_key=domain_key)
         if b.get("pending")
     ]
+    # 工单在团队区与工单页同源：**同一次查询**，不另写一份口径。值班的人先看
+    # 「谁在跑」，紧接着要问「还有谁该跑」，中间不该跳页。
+    open_orders = [
+        t for t in bench_authoring.authoring_list_tasks(db, domain_id=domain["id"])
+        if t["status"] in ("pending", "in_progress")
+    ]
     return _templates.TemplateResponse(
         request,
         "domain_console_team.html",
@@ -1307,6 +1313,11 @@ def console_team(
             "ledger": agent_runs.summary(db, domain_key=domain_key),
             "runs": agent_runs.list_runs(db, domain_key=domain_key, limit=20),
             "batches": batches,
+            "open_orders": open_orders,
+            "order_counts": {
+                kind: sum(1 for t in open_orders if t.get("assignee_kind") == kind)
+                for kind in bench_authoring.ASSIGNEE_KINDS
+            },
             "plan": agent_team.plan(domain_key),
         },
     )

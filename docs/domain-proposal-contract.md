@@ -116,6 +116,32 @@ GET /api/v1/distribution/{domain_key}/runs?runner_ref=…        # 机器面，X
   来源分组与计数，以及当前档位。**这个数到 0 才允许把档位锁死在 `strict`**；`verdict` 为
   `null` 的是列不存在时写入的历史行，单独报出。
 
+## 舰队执行面（机器凭据）
+
+舰队是机器，没有会话。下面三个写面与一个读面都只用 `X-Consumer-Token`（与拉取面同一枚，
+只存 sha256），**且只放 `kind='fleet'` 的登记**：
+
+```
+POST /api/v1/distribution/{domain_key}/work-orders/{task_id}/claim
+POST /api/v1/distribution/{domain_key}/work-orders/{task_id}/complete
+POST /api/v1/distribution/{domain_key}/runs
+GET  /api/v1/distribution/{domain_key}/runs?runner_ref=…
+```
+
+| 端点 | 请求体 | 幂等 / 拒绝 |
+|---|---|---|
+| `claim` | 无（工单号在路径里） | 排他：第二个认领返回 **409**；不是派给本舰队的工单 **403** |
+| `complete` | `{"note"?, "artifact_refs"?: [...]}` | 必须先认领（未认领 409）；**不写知识单元** |
+| `runs` | `{"runner_ref", "role", "outcome", "counts"?, "artifact_refs"?, "remaining"?, "detail"?, "task_id"?}` | 同 `runner_ref` 重放返回 `created: false` 且不改任何字段；结局不在四态 **422** |
+
+授权读的是 `assignee_kind` + `assignee_ref`，**不是显示名**：两支舰队可以把名字都叫
+`ontology-fleet`，只有登记引用能分清谁被派了活。`runner_ref` 必须形如
+`fleet:<自己的 fleet_ref>/<post_id>#<round>`——拿别人的 ref 回写是 403，不是「记到别人
+名下」。
+
+三个写面存在的理由：只有会话路由时，非人档的工单只有域负责人能推动，那**不是**舰队在
+认领。没有这三个口，「等待舰队认领」就描述了一件永远不会发生的事。
+
 ## 幂等与重试纪律
 
 - 幂等身份 = `(domain, source, external_key, state='pending')`，由部分唯一索引兜底。

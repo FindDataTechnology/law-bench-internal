@@ -1020,3 +1020,27 @@ def test_inbox_shows_the_resolved_source_and_marks_legacy(seeded_db):
     # 未登记：原样显示并标 legacy——那行没有任何登记能约束它。
     assert "<code>fleet:credential-probe/post_probe</code>" in body
     assert "badge-warn\">legacy</span>" in body
+
+
+def test_team_shows_open_work_orders_by_kind(seeded_db):
+    """团队区与工单页同源展示未完成工单，并按档位分组——混一个总数等于没回答「还在等谁」。"""
+    world = _seed_world(seeded_db)
+    _task(seeded_db, world["a"], assignee="alice@example.com", target_key="ontology")
+    _task(seeded_db, world["a"], assignee="agent:builder@aw-key",
+          assignee_kind="kernel-role", assignee_ref="builder", target_key="knowledge")
+
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        page = c.get(f"/d/{A_KEY}/team")
+    body = _rendered(page.text)
+    assert page.status_code == 200, page.text
+    assert "未完成工单" in body
+    assert "内核岗位 1" in body
+    assert "人 1" in body
+    assert "舰队 0" in body
+
+
+def test_team_reports_no_open_orders_honestly(seeded_db):
+    _seed_world(seeded_db)
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        page = c.get(f"/d/{A_KEY}/team")
+    assert "没有未完成的工单" in _rendered(page.text)
