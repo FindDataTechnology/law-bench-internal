@@ -16,7 +16,7 @@
 - `extract:<model>:<prompt_version>`：SHALL 只允许**进程内调用**（抽取流水线）产生；外部 HTTP 提交端点 MUST 拒绝该类，否则任何人把来源写成 `extract:任意值` 即可冒充流水线。
 - `agent:<role>@<domain>`：SHALL 是平台已铸、且仍是该域活跃成员的智能体身份；`role` 与 `domain` 两段 SHALL 与目标域一致。
 
-不匹配任何类别的前缀 SHALL 被拒绝并列出可用类别，MUST NOT 静默入库。
+不匹配任何类别的前缀、以及**前缀认得但形状不完整**的来源（例如 `fleet:` 后没有 `/`），SHALL 被拒绝并列出各类别的形状要求，MUST NOT 静默入库。前缀匹配 SHALL 区分大小写。
 
 #### Scenario: 未登记舰队被拒
 
