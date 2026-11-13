@@ -1,7 +1,7 @@
 # domain-run-ledger Specification
 
 ## Purpose
-TBD - created by archiving change add-domain-agent-team. Update Purpose after archive.
+每轮岗位运行的账本：谁在什么域、认领了哪张单、跑成什么样、产出多少。它回答的是「昨晚干了什么」这个可核对的问题，因此只存可复算的事实（输入摘要、计数、剩余量、产物引用），不存推理文本。结局四态与进度不变量都在这里，因为「读类失败可以重跑、写类与薄产出不行」是机械可判的，不该靠人盯。执行方既可以是内核里的确定性岗位，也可以是外部舰队（见 `add-fleet-execution-loop`），两者同表并列、按 origin 区分。
 
 ## Requirements
 
