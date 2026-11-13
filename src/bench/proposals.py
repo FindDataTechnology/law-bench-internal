@@ -43,7 +43,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 from fd_ontology_kernel import proposals as kernel_proposals
 from fd_ontology_kernel.errors import ProposalStaleEvidence
@@ -826,6 +826,63 @@ def get(conn: Any, *, domain_key: str, proposal_id: int) -> Optional[dict]:
     """Fetch one proposal in the domain's inbox; ``None`` when out of scope."""
     domain = _load_domain(conn, domain_key=domain_key)
     return _load_proposal(conn, domain_id=domain["id"], proposal_id=proposal_id)
+
+
+def describe_sources(
+    conn: Any, *, sources: Iterable[Any], domain_key: str
+) -> dict[str, dict]:
+    """Resolve submission sources into what a reviewer needs to see.
+
+    A raw ``fleet:<id>/<post>`` string tells a reviewer nothing: which fleet, does
+    it still exist, and is this post one we recognise? So the inbox shows the
+    *resolved* form — registration name plus post id, or the raw string with a
+    ``legacy`` mark when nothing resolves. The mark matters more than the name:
+    an unresolved source is a row whose submitter cannot be held to anything, and
+    silently rendering it as if it were normal hides exactly that.
+
+    One lookup per distinct source (the inbox holds dozens, not thousands), and
+    the same classifier the submission gate uses, so the page cannot disagree
+    with what would be accepted today.
+    """
+    from . import distribution, submitters
+
+    wanted = []
+    for value in sources:
+        text = (value or "").strip()
+        if text and text not in wanted:
+            wanted.append(text)
+
+    out: dict[str, dict] = {}
+    for text in wanted:
+        prefix, parts, malformed = submitters.classify_source(text)
+        view = {
+            "raw": text,
+            "class": (prefix or "").rstrip(":") or "unknown",
+            "post_id": None,
+            "fleet_ref": None,
+            "fleet_name": None,
+            "registered": False,
+            "legacy": True,
+        }
+        if prefix == submitters.PREFIX_FLEET and parts and not malformed:
+            consumer, verdict = distribution.resolve_submitter(
+                conn, source=text, domain_key=domain_key, via=submitters.VIA_IN_PROCESS
+            )
+            view["fleet_ref"] = parts["fleet_id"]
+            view["post_id"] = parts["post_id"]
+            view["fleet_name"] = (consumer or {}).get("name")
+            view["registered"] = verdict == "ok"
+            view["legacy"] = verdict != "ok"
+            view["verdict"] = verdict
+        elif prefix != submitters.PREFIX_FLEET:
+            # 非舰队来源没有登记可查；能判它「不是遗留」的依据是它能被判成立。
+            view["legacy"] = not submitters.is_allowed(
+                submitters.verdict(
+                    text, domain_key=domain_key, via=submitters.VIA_IN_PROCESS
+                )
+            )
+        out[text] = view
+    return out
 
 
 def count_pending(conn: Any, *, domain_key: str) -> int:

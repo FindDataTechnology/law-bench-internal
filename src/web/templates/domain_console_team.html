@@ -18,6 +18,8 @@
     <h1>{{ t.console.areas.team }}</h1>
     <p class="hint">{{ domain.path }} · {{ t.console.team.intro }}</p>
   </div>
+  {#- 工单从这一页进：值班的人先看到「谁在跑」，再问「谁该跑」。 -#}
+  <a class="btn btn-sm" href="{{ url_for('console_work_orders', domain_key=domain.key) }}">{{ t.console.team.goto_work_orders }}</a>
 </div>
 
 {#- ① 质量比：每项都给分子/分母与算法，缺分母时报「无物可算」而不是 0。 -#}
@@ -73,7 +75,9 @@
   <table class="table">
     <thead><tr>
       <th>{{ t.console.team.col_when }}</th>
+      <th>{{ t.console.team.col_origin }}</th>
       <th>{{ t.console.team.col_role }}</th>
+      <th>{{ t.console.team.col_runner }}</th>
       <th>{{ t.console.team.col_outcome }}</th>
       <th>{{ t.console.team.col_counts }}</th>
       <th>{{ t.console.team.col_detail }}</th>
@@ -82,7 +86,14 @@
       {% for r in runs %}
       <tr>
         <td class="muted">{{ r.started_at }}</td>
+        {#- 来源只分列，不参与排序：台账是一条时间线，按来源排序会让迟到的舰队在
+            它最该被看见的时候排到最后。 -#}
+        <td class="nowrap">
+          {% if r.origin == 'fleet' %}<span class="badge">{{ t.console.team.origin_fleet }}</span>
+          {% else %}<span class="badge badge-quiet">{{ t.console.team.origin_kernel }}</span>{% endif %}
+        </td>
         <td><code>{{ r.role }}</code></td>
+        <td class="muted">{% if r.runner_ref %}<code>{{ r.runner_ref }}</code>{% else %}—{% endif %}</td>
         <td>{% if r.outcome == 'ok' %}<code>ok</code>
             {% elif r.outcome == 'thin' %}<span class="badge badge-warn">thin</span>
             {% else %}<span class="badge badge-bad">{{ r.outcome }}</span>{% endif %}</td>

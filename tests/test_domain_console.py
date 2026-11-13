@@ -26,6 +26,7 @@ bare zh string is not proof that a page rendered it.
 from __future__ import annotations
 
 import hashlib
+import re
 from urllib.parse import parse_qs, quote, urlparse
 
 import pytest
@@ -133,6 +134,15 @@ def _no_idp(monkeypatch):
 
 def _params(location: str) -> dict:
     return {k: v[0] for k, v in parse_qs(urlparse(location).query).items()}
+
+
+def _rendered(html: str) -> str:
+    """HTML 去掉 i18n 引导脚本。
+
+    页面里嵌着整份 `window.__LOCALE__`，所以一个裸中文串**不能**证明页面渲染了
+    它——它可能在引导脚本里。判「这一句出现在页面上」必须先去掉那份脚本。
+    """
+    return re.sub(r"<script>window\.__LOCALE__.*?</script>", "", html, flags=re.S)
 
 
 # =========================================================================== #
@@ -828,3 +838,185 @@ def test_http_call_cannot_claim_another_persons_identity(seeded_db):
     with _client(seeded_db, _user("bob", _READ_WRITE)) as c:
         own = _post(c, source="user:bob@example.com", key="own-identity", domain_key=B_KEY)
     assert own.status_code == 200, own.text
+
+
+# =========================================================================== #
+# 工单 / 派单 / 台账的来源：三档后果必须分开说                                 #
+# =========================================================================== #
+
+
+def _task(seeded_db, domain, **kw):
+    params = dict(
+        domain_id=domain["id"], assignee="alice", title="t", detail="d",
+        target_kind="estate-gap", target_key="ontology", created_by="lara",
+    )
+    params.update(kw)
+    return bench_authoring.authoring_create_task(seeded_db, **params)
+
+
+def test_work_orders_page_shows_all_three_kinds(seeded_db):
+    """总览的「我的任务」只匹配人；另外两档必须还有一页能看见，否则它们无法关闭。"""
+    world = _seed_world(seeded_db)
+    _task(seeded_db, world["a"], assignee="alice@example.com")
+    _task(seeded_db, world["a"], assignee="agent:builder@aw-key",
+          assignee_kind="kernel-role", assignee_ref="builder", target_key="knowledge")
+    bench_distribution.register_consumer(
+        seeded_db, name="ontology-fleet", domains=[A_KEY],
+        token_hash=hashlib.sha256(b"t").hexdigest(), created_by="seed",
+        kind="fleet", fleet_ref="fleet_a",
+    )
+    _task(seeded_db, world["a"], assignee="ontology-fleet",
+          assignee_kind="fleet", assignee_ref="fleet_a", target_key="eval")
+
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        page = c.get(f"/d/{A_KEY}/work-orders")
+    body = _rendered(page.text)
+    assert page.status_code == 200, page.text
+    assert "ontology-fleet" in body
+    assert "<code>builder</code>" in body
+    # 三档各一句后果：共用一句「已派出」会把「等舰队认领」说成「下一轮就跑」。
+    assert "内核岗位下一轮执行" in body
+    assert "等待舰队认领" in body
+    assert "由人处理" in body
+
+
+def test_work_orders_can_be_filtered_by_kind_and_status(seeded_db):
+    world = _seed_world(seeded_db)
+    _task(seeded_db, world["a"], assignee="alice@example.com", target_key="ontology")
+    _task(seeded_db, world["a"], assignee="agent:builder@aw-key",
+          assignee_kind="kernel-role", assignee_ref="builder", target_key="knowledge")
+
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        only_role = c.get(f"/d/{A_KEY}/work-orders", params={"kind": "kernel-role"})
+        only_human = c.get(f"/d/{A_KEY}/work-orders", params={"kind": "human"})
+        bad = c.get(f"/d/{A_KEY}/work-orders", params={"kind": "robot"})
+    role_body, human_body = _rendered(only_role.text), _rendered(only_human.text)
+    assert "<code>builder</code>" in role_body
+    assert "alice@example.com" not in role_body
+    assert "alice@example.com" in human_body
+    assert "<code>builder</code>" not in human_body
+    assert bad.status_code == 422
+
+
+def test_work_orders_is_empty_honestly_when_there_are_none(seeded_db):
+    _seed_world(seeded_db)
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        page = c.get(f"/d/{A_KEY}/work-orders")
+    assert page.status_code == 200
+    assert "本域没有工单" in _rendered(page.text)
+
+
+def test_work_orders_is_domain_scoped(seeded_db):
+    _seed_world(seeded_db)
+    with _client(seeded_db, _user("bob", _READ_WRITE)) as c:
+        assert c.get(f"/d/{B_KEY}/work-orders").status_code == 200
+        assert c.get(f"/d/{A_KEY}/work-orders").status_code == 403
+
+
+def test_dispatch_page_offers_the_route_table_role(seeded_db):
+    _seed_world(seeded_db)
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        page = c.get("/d/dispatch", params={"gap": "ontology"})
+    assert page.status_code == 200, page.text
+    body = _rendered(page.text)
+    assert "kernel:builder" in body
+    # 选择器存在，且默认选项就是分诊表指定的那个岗位。
+    assert 'name="assignee_kind"' in body
+    assert "下一轮执行" in body
+
+
+def test_dispatch_page_refuses_to_offer_agents_for_a_human_gap(seeded_db):
+    """归人的缺口只有一档可选：给智能体选项等于让人以为它能替人做复核。"""
+    _seed_world(seeded_db)
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        page = c.get("/d/dispatch", params={"gap": "quality:review_lag"})
+    assert page.status_code == 200, page.text
+    body = _rendered(page.text)
+    assert "这个缺口归人" in body
+    # 判据是「没有智能体可选项」：这个缺口下没有任何 domain 会给出 fleet/岗位按钮。
+    assert 'value="fleet"' not in body
+    assert 'value="kernel-role"' not in body
+
+
+def test_dispatch_page_lists_only_fleets_bound_to_the_target_domains(seeded_db):
+    _seed_world(seeded_db)
+    bench_distribution.register_consumer(
+        seeded_db, name="bound-fleet", domains=[A_KEY],
+        token_hash=hashlib.sha256(b"a").hexdigest(), created_by="seed",
+        kind="fleet", fleet_ref="fleet_a",
+    )
+    bench_distribution.register_consumer(
+        seeded_db, name="other-fleet", domains=[B_KEY],
+        token_hash=hashlib.sha256(b"b").hexdigest(), created_by="seed",
+        kind="fleet", fleet_ref="fleet_b",
+    )
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        page = c.get("/d/dispatch", params={"gap": "ontology"})
+    body = _rendered(page.text)
+    assert "bound-fleet" in body
+    assert "other-fleet" not in body
+
+
+def test_team_ledger_separates_the_two_origins(seeded_db):
+    """值班长要在一份台账里看出谁在跑：来源与外部执行方各占一列。"""
+    from src.bench import agent_runs
+
+    _seed_world(seeded_db)
+    agent_runs.start(seeded_db, role="agent:warden@aw-key", domain_key=A_KEY)
+    agent_runs.record_external_run(
+        seeded_db, runner_ref="fleet:fleet_a/post_1#1", role="concept",
+        domain_key=A_KEY, outcome="ok", counts={"drafts": 2},
+    )
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        page = c.get(f"/d/{A_KEY}/team")
+    body = _rendered(page.text)
+    assert page.status_code == 200, page.text
+    # 表头本身也要在（裸串在引导脚本里也有一份，所以先去掉那份脚本）。
+    assert "<th>外部执行方</th>" in body
+    assert "<code>fleet:fleet_a/post_1#1</code>" in body
+
+
+def test_overview_says_who_is_running_per_class(seeded_db):
+    from src.bench import agent_runs
+
+    _seed_world(seeded_db)
+    agent_runs.start(seeded_db, role="agent:warden@aw-key", domain_key=A_KEY)
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        page = c.get(f"/d/{A_KEY}")
+    body = _rendered(page.text)
+    assert page.status_code == 200, page.text
+    assert "<h2>谁在跑</h2>" in body
+    # 内核跑过、舰队没跑过：两类各自给结论，不能合成一句「有活动」。
+    assert "<code>agent:warden@aw-key</code>" in body
+    assert "还没有跑过" in body
+
+
+def test_inbox_shows_the_resolved_source_and_marks_legacy(seeded_db):
+    world = _seed_world(seeded_db)
+    bench_distribution.register_consumer(
+        seeded_db, name="ontology-fleet", domains=[A_KEY],
+        token_hash=hashlib.sha256(b"t").hexdigest(), created_by="seed",
+        kind="fleet", fleet_ref="fleet_a",
+    )
+    seeded_db.execute(
+        "INSERT INTO domain_proposals (domain_id, source, kind, external_key, body, "
+        "evidence, evidence_digest, state, submitted_by, sources) VALUES "
+        "(%s, 'fleet:fleet_a/post_1', 'company', 'known-1', 'b', '{\"u\":1}'::jsonb, "
+        "'d1', 'pending', 'fleet:fleet_a/post_1', '[\"fleet:fleet_a/post_1\"]'::jsonb), "
+        "(%s, 'fleet:credential-probe/post_probe', 'company', 'probe-1', 'b', "
+        "'{\"u\":2}'::jsonb, 'd2', 'pending', 'probe', "
+        "'[\"fleet:credential-probe/post_probe\"]'::jsonb)",
+        (world["a"]["id"], world["a"]["id"]),
+    )
+    seeded_db.commit()
+
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        page = c.get(f"/d/{A_KEY}/inbox")
+    body = _rendered(page.text)
+    assert page.status_code == 200, page.text
+    # 已登记：显示舰队名 + 岗位，而不是一串原始标识。
+    assert "<strong>ontology-fleet</strong>" in body
+    assert "<code>post_1</code>" in body
+    # 未登记：原样显示并标 legacy——那行没有任何登记能约束它。
+    assert "<code>fleet:credential-probe/post_probe</code>" in body
+    assert "badge-warn\">legacy</span>" in body

@@ -94,6 +94,47 @@
 </div>
 
 <div class="panel">
+  <div class="toolbar between">
+    <h2>{{ t.console.overview.who_runs_h2 }}</h2>
+    <a class="btn btn-sm" href="{{ url_for('console_team', domain_key=domain.key) }}">{{ t.console.overview.goto_runs }}</a>
+  </div>
+  <p class="hint">{{ t.console.overview.who_runs_hint }}</p>
+  <table class="table">
+    <thead><tr>
+      <th>{{ t.console.team.col_origin }}</th>
+      <th>{{ t.console.team.col_role }}</th>
+      <th>{{ t.console.team.col_runner }}</th>
+      <th>{{ t.console.overview.who_runs_at }}</th>
+      <th>{{ t.console.overview.who_runs_outcome }}</th>
+    </tr></thead>
+    <tbody>
+      {% for origin, label in [('kernel', t.console.overview.who_runs_kernel),
+                                ('fleet', t.console.overview.who_runs_fleet)] %}
+      {% set run = who_runs.get(origin) %}
+      <tr>
+        <td class="nowrap">
+          {% if origin == 'fleet' %}<span class="badge">{{ label }}</span>
+          {% else %}<span class="badge badge-quiet">{{ label }}</span>{% endif %}
+        </td>
+        {% if run %}
+        <td><code>{{ run.role }}</code></td>
+        <td class="muted">{% if run.runner_ref %}<code>{{ run.runner_ref }}</code>{% else %}—{% endif %}</td>
+        <td class="muted nowrap">{{ (run.started_at | string)[:16] | replace('T', ' ') }}</td>
+        <td>{% if run.outcome == 'ok' %}<code>ok</code>
+            {% elif run.outcome == 'thin' %}<span class="badge badge-warn">thin</span>
+            {% else %}<span class="badge badge-bad">{{ run.outcome }}</span>{% endif %}</td>
+        {% else %}
+        {#- 空态如实说这一**类**没跑过，不说「没有活动」：另一类可能刚跑完。 -#}
+        <td colspan="4" class="muted">{{ t.console.overview.who_runs_none }}
+          <span class="hint">{{ t.console.overview.who_runs_none_hint }}</span></td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
   <h2>{{ t.console.overview.vocab_h2 }}</h2>
   {% if entity_types or relationship_kinds %}
   <p>

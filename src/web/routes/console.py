@@ -447,10 +447,30 @@ def console_dispatch_preview(
         plan = dispatch.plan(db, rows=rows, gap=gap, assignee="")
     except ValueError as exc:
         return _flash("/d", str(exc), err=True)
+
+    route = dispatch.route_for(gap)
+    kernel_role = dispatch.kernel_role_for(gap)
+    # 舰队下拉只列「绑定了本次将派到的域」的活登记：列一支绑在别的域的舰队，
+    # 是给操作者一个点了必然失败的选项。
+    target_keys = {d["key"] for d in plan["will_create"] + plan["already_open"]}
+    fleets = [
+        c
+        for c in bench_distribution.list_consumers(db)
+        if (c.get("kind") or "machine") == "fleet"
+        and c.get("revoked_at") is None
+        and target_keys & set(c.get("domains") or [])
+    ]
     return _templates.TemplateResponse(
         request,
         "domain_dispatch.html",
-        {"plan": plan, "platform_admin": is_platform_admin(user)},
+        {
+            "plan": plan,
+            "platform_admin": is_platform_admin(user),
+            "route": route,
+            "kernel_role": kernel_role,
+            "human_only": route == dispatch.HUMAN_ROUTE,
+            "fleets": fleets,
+        },
     )
 
 
@@ -650,7 +670,9 @@ def console_overview(
     db: DbConn = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Domain overview: four real counts, my tasks, vocabulary, recent changes."""
+    """Domain overview: four real counts, my tasks, who is running, recent changes."""
+    from ...bench import agent_runs
+
     domain = resolve_domain(db, domain_key)
     schema = _anchored_schema(db, domain)
     ctx = console_context(db, domain, user, touch=True)
@@ -671,6 +693,14 @@ def console_overview(
                     db, domain_id=domain["id"], assignee=user.sub
                 )
             ),
+            # 「谁在跑」：两类执行方各取最近一轮，各自留空态。合成一句「最近活动」
+            # 会把「舰队从没动过」说成「有人在跑」——那是两个不同的判断。
+            "who_runs": {
+                origin: (agent_runs.list_runs(
+                    db, domain_key=domain_key, origin=origin, limit=1
+                ) or [None])[0]
+                for origin in ("kernel", "fleet")
+            },
             "recent_events": curation.get("recent_events") or [],
         },
     )
@@ -1042,12 +1072,18 @@ def console_inbox(
     # tasks exist, block re-dispatch (idempotency), and nobody can see or close
     # them.
     tasks = bench_authoring.authoring_list_tasks(db, domain_id=domain["id"])
+    # 来源列要显示「解析后的来源」，不是一串原始标识：只写 `fleet:<id>/<post>`
+    # 时复核的人看不出这是哪支舰队、登记还在不在。未解析的显式标 legacy。
+    source_views = bench_proposals.describe_sources(
+        db, sources=[p["source"] for p in proposals], domain_key=domain_key
+    )
     return _templates.TemplateResponse(
         request,
         "domain_console_inbox.html",
         {
             **console_context(db, domain, user),
             "proposals": proposals,
+            "source_views": source_views,
             "state_filter": state,
             "tasks": tasks,
             "open_tasks": [t for t in tasks if t["status"] in ("pending", "in_progress")],
@@ -1274,6 +1310,84 @@ def console_team(
             "plan": agent_team.plan(domain_key),
         },
     )
+
+
+# ------------------------------------------------------- work orders view #
+
+
+@read_only_router.get(
+    "/d/{domain_key}/work-orders", include_in_schema=False, name="console_work_orders",
+    dependencies=_READ_GATES,
+)
+def console_work_orders(
+    request: Request,
+    domain_key: str,
+    status: Optional[str] = None,
+    kind: Optional[str] = None,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """The domain's work orders, filterable by state and assignee kind.
+
+    Why this page exists separately from the overview's "my tasks": that list
+    matches ``assignee == user.sub``, which is *one* of three kinds. A work order
+    handed to a kernel role or a fleet is invisible there — it exists, blocks
+    re-dispatch, and nobody can see or close it. The kind is therefore a first
+    class filter, not a decoration: "who is this waiting on" is the question the
+    page answers.
+    """
+    from ...bench import dispatch as bench_dispatch
+
+    domain = resolve_domain(db, domain_key)
+    cap = capability(db, domain, user)
+    if status is not None and status not in ("pending", "in_progress", "done", "cancelled"):
+        raise HTTPException(status_code=422, detail=f"未知状态：{status!r}")
+    if kind is not None and kind not in bench_authoring.ASSIGNEE_KINDS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"未知指派人档位：{kind!r}（可用：{list(bench_authoring.ASSIGNEE_KINDS)}）",
+        )
+
+    tasks = bench_authoring.authoring_list_tasks(
+        db, domain_id=domain["id"], status=status
+    )
+    if kind is not None:
+        tasks = [t for t in tasks if t.get("assignee_kind") == kind]
+
+    # 每行带一句「它在等谁」：三档的后果不同，同一个「已派出」会把等待舰队认领
+    # 说成「下一轮就跑了」，值班的人据此判断要不要催。
+    for task in tasks:
+        task["consequence"] = _consequence_key(task)
+        task["trail"] = [e for e in (task.get("transitions") or []) if e.get("from")]
+
+    return _templates.TemplateResponse(
+        request,
+        "domain_work_orders.html",
+        {
+            **console_context(db, domain, user),
+            "cap": cap,
+            "tasks": tasks,
+            "status_filter": status,
+            "kind_filter": kind,
+            "kinds": bench_authoring.ASSIGNEE_KINDS,
+            "route_hint": {
+                gap: bench_dispatch.route_for(gap) for gap in bench_dispatch.GAP_TASKS
+            },
+        },
+    )
+
+
+def _consequence_key(task: dict) -> str:
+    """What the assignee kind actually means for this task's next move.
+
+    Three kinds, three different sentences — sharing one "dispatched" wording
+    would state something false about two of them.
+    """
+    kind = task.get("assignee_kind") or "human"
+    return {
+        "kernel-role": "consequence_kernel",
+        "fleet": "consequence_fleet",
+    }.get(kind, "consequence_human")
 
 
 # ------------------------------------------------------- corpus documents #

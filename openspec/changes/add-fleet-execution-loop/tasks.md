@@ -19,9 +19,9 @@
 - [x] 1.4 `src/bench/authoring.py`：新增 `authoring_claim_task`（`pending`→`in_progress`，排他，记录认领者与时间）与 `authoring_complete_task`（`in_progress`→`done`，带产物引用与结局说明）；两者各落一条 `transitions` 事件
 - [x] 1.5 排他认领的实现方式：`UPDATE ... WHERE id=%s AND status='pending'` 影响行数为 0 即返回「已被认领」，MUST NOT 先查后改（先查后改在并发下会双成功）
 - [x] 1.6 `src/web/routes/console.py`：派单路由只调 `dispatch.dispatch()`，删掉任何直接 `authoring_create_task` 的旁路；测试断言「console 路由模块内零直接调用」
-- [ ] 1.7 `GET /d/{domain_key}/work-orders`（域内可见的工单列表，按状态与指派人筛选）；`domain_dispatch.html` 的指派人从自由输入改为三档选择（人自由填、内核岗位下拉、舰队下拉只列绑定本域的已登记舰队）  → **未做**：工单读取面与三档选择器属于控制台 UI，留给 `add-domain-next-actions` 一起改（同一页要重排），本 change 只保证数据面就位
-- [ ] 1.8 界面如实区分两档后果：派给内核岗位显示「内核岗位下一轮执行」，派给舰队显示「等待舰队认领」，不共用同一句「已派出」  → **未做**：随 1.7
-- [ ] 1.9 归人的缺口（评审积压）在派单页显示「归人处理」且不可选智能体  → **未做**：随 1.7（`dispatch.GAP_ROUTE` 已能判 `human`，界面未呈现）
+- [x] 1.7 `GET /d/{domain_key}/work-orders`（域内可见的工单列表，按状态与指派人筛选）；`domain_dispatch.html` 的指派人从自由输入改为三档选择（人自由填、内核岗位下拉、舰队下拉只列绑定本域的已登记舰队）。这一页单独存在的理由：总览的「我的任务」只匹配 `assignee == user.sub`，派给岗位或舰队的工单在那里根本看不见——它存在、挡住重复派单、而没人能关。舰队下拉只列**绑定本次将派到的域**的活登记（列一支绑在别处的舰队＝给一个点了必然失败的选项）
+- [x] 1.8 界面如实区分两档后果：派给内核岗位显示「内核岗位下一轮执行」，派给舰队显示「等待舰队认领」，不共用同一句「已派出」。工单页每行也带同一句——值班的人据此判断要不要催，措辞错了判断就错了
+- [x] 1.9 归人的缺口（评审积压）在派单页显示「归人处理」且不可选智能体：`route == 'human'` 时只渲染人这一档，页面上不出现 `fleet` / `kernel-role` 选项
 - [x] 1.10 单测：类型化三档各一条正例、词表外岗位被拒、未登记舰队被拒、跨域舰队被拒、`pending` 直接完成被拒、并发认领只一个成功、完成不写知识单元（断言 `knowledge_units` 行数不变）
 
 ## 2. 舰队登记与来源校验（`fleet-submitter-contract` / `knowledge-distribution`）
@@ -42,7 +42,7 @@
 - [x] 3.1 `src/bench/agent_runs.py`：`start`/`finish` 增 `origin` 与 `runner_ref`；内核岗位调用点**不改语义**（`origin` 缺省 `kernel`）
 - [x] 3.2 `src/bench/agent_runs.py`：新增 `record_external_run(conn, *, runner_ref, role, domain_key, outcome, counts, artifact_refs, remaining=None, detail=None)`——按 `runner_ref` 存在性检查幂等，重复调用返回既有行且不改任何字段
 - [x] 3.3 幂等实现必须走存在性检查而非唯一索引（`runner_ref` 允许为空，空值不参与唯一性）；测试用两次同 `runner_ref` 断言行数 1 且字段逐一相等
-- [ ] 3.4 `src/web/routes/console.py` 的 team 区：台账按 `started_at DESC` 排序、`origin` 只作分列与筛选不参与排序；`domain_console_team.html` 增来源列与外部执行方标识列  → **未做**：投影已带 `origin`/`runner_ref`，team 页的分列留给 P3 控制台改动
+- [x] 3.4 `src/web/routes/console.py` 的 team 区：台账按 `started_at DESC` 排序、`origin` 只作分列与筛选不参与排序；`domain_console_team.html` 增来源列与外部执行方标识列（`fleet:` 行显示完整 `runner_ref`，内核行显示「—」）
 - [x] 3.5 `GET /api/d/{domain_key}/runs`（提交方可见的只读回写校验面：按 `runner_ref` 查本次回写是否落库），供 paas 侧自检。实现成**两个入口一条判据**：会话面给域成员（页面本就能看整份台账），机器面 `/api/v1/distribution/{domain_key}/runs` 复用拉取面那枚 `X-Consumer-Token`、只放 `fleet` 种类且只读自己 `fleet:<fleet_ref>/` 前缀的轮次——paas 是机器，只给浏览器入口等于没有这一面。读别人的前缀返回 **403 而不是空列表**（空列表会被读成「我的回写没落库」）。`tests/test_run_readback.py` 11 条，三处注入各转红（去掉前缀判据转红 3 条、把前缀改成子串转红 1 条、去掉 fleet 种类检查转红 1 条）
 - [x] 3.6 单测：回写幂等、结局词表外被拒、回写不进入质量比（`domain_quality_metrics` 前后一致）、内核岗位行为零变化（既有 run 相关测试全绿）、team 页两类行同屏
 
@@ -56,8 +56,8 @@
 
 ## 5. 控制台最小读面
 
-- [ ] 5.1 总览页增「谁在跑」卡：最近一轮内核岗位与最近一轮舰队的来源、时间、结局；无任一类时如实显示该类空态  → **未做**：随 P3 控制台改动
-- [ ] 5.2 提案箱列表的来源列改为「解析后的来源」：已登记显示舰队名 + 岗位 + 轮次，未登记显示原字符串并标 `legacy` 徽标  → **未做**：随 P3 控制台改动
+- [x] 5.1 总览页增「谁在跑」卡：最近一轮内核岗位与最近一轮舰队各占一行（来源/岗位/外部执行方/时间/结局），无任一类时**只**给该类空态——合成一句「最近活动」会把「舰队从没动过」说成「有人在跑」
+- [x] 5.2 提案箱列表的来源列改为「解析后的来源」：已登记显示舰队名 + 岗位，未登记显示原字符串并标 `legacy` 徽标。实现是 `proposals.describe_sources`（用的是提交闸同一个分类器，页面不会和「今天会不会被接受」说反）
 - [ ] 5.3 工单在团队区与派单页同时可见（同一数据源，不做第二份查询）  → **未做**：随 1.7
 - [x] 5.4 兼容表逐条验证：`/d`、`/d/{key}` 十区、`/estate`、`/workbench/{key}` 全部可达且权限判定不变
 
