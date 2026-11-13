@@ -118,6 +118,11 @@ GET /api/v1/distribution/{domain_key}/runs?runner_ref=…        # 机器面，X
 
 ## 舰队执行面（机器凭据）
 
+> **接哪台主机**：机器面只挂在**工作台（origin）应用**上——`https://lawbench.finddatatech.cloud`。
+> 只读公开 pod 不挂这些路由（`src/web/app.py` 的挂载注释写明「not mounted on public_app」），
+> 打公开主机只会拿到 404，而不是权限错误。这一条必须写清：404 会被读成「你们没实现」，
+> 而实际是打错了门。
+
 舰队是机器，没有会话。下面三个写面与一个读面都只用 `X-Consumer-Token`（与拉取面同一枚，
 只存 sha256），**且只放 `kind='fleet'` 的登记**：
 
