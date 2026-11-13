@@ -1,3 +1,23 @@
+## 基线读数（2026-11-13 实测，生产 `law_bench`，只读）
+
+§0.1 的取证先于设计。读数改了设计里的一处关键假设。
+
+```
+domain_proposals 93 行，按 source 分布
+  extract:<model>:<prompt_ver>                     78   (84%)  ← 抽取流水线，进程内写
+  fleet:fleet_1794335712751_wfa3ww/m_...10rte4      6
+  fleet:fleet_1794335712751_wfa3ww/m_...ik4sum      5
+  agent:concept@legal / probe / probe2              4          ← 平台自铸身份
+  fleet:credential-probe/post_probe                 1          ← 探针，不是真舰队
+
+authoring_tasks     1 行，assignee = agent:concept@legal（内核岗位，非自由文本）
+domain_agent_runs  17 行，列确认无 origin / runner_ref
+distribution_consumers 2 行：fd-wire(legal) / ontology-fleet-win(legal)
+domains            4 个：legal / gov / data-ontology / archive-probe
+```
+
+**被推翻的假设**：初稿写「`source` SHALL 解析到一条已登记消费者」。按这条，78 条抽取流水线提案会被全部拒绝，而这正是本域最大的生产者；更糟的是它不区分「进程内调用」与「外部 HTTP 调用」——任何人都能写 `source=extract:任意` 冒充流水线。因此校验改成**按前缀分三类**（见 D6）。
+
 ## Context
 
 See `proposal.md` — Why. 只补设计和落地需要、但从动机里看不出来的现状：
@@ -60,7 +80,25 @@ See `proposal.md` — Why. 只补设计和落地需要、但从动机里看不�
 
 收紧后未登记来源 403。为了不让在跑的舰队静默断掉，提供 `scripts/register_fleet.py --from-observed`：从既有 `domain_proposals.source` 里枚举出 `fleet:*` 形态的去重值，dry-run 输出计数与建议的 `fleet_ref`，由人确认后写登记。
 
-**不做自动登记**：自动把观察到的字符串变成登记，等于把「来源是事实」换成「来源是曾经出现过的东西」，那和现在没有区别。
+实测存量只有 12 条 `fleet:*`（含 1 条 `credential-probe` 探针），确认成本很低。
+
+**不做自动登记**：自动把观察到的字符串变成登记，等于把「来源是事实」换成「来源是曾经出现过的东西」，那和现在没有区别。探针来源正是靠人工确认才能被识别出来的那一类。
+
+### D6 三类来源，三种可信依据——不能压成一条规则
+
+实测把初稿的一处设计错误暴露出来：`extract:*` 占 93 条提案的 84%，而它是**进程内**写的（`src/bench/extraction.py:796`），没有凭据可验。若沿用「查登记表」的统一规则，要么拒掉全部流水线产物，要么给 `extract:` 开一条谁都能命中的口子。
+
+因此校验按前缀分三类，各用各自的可信依据：
+
+| 类别 | 可信依据 | 外部 HTTP | 进程内 |
+|---|---|---|---|
+| `fleet:<id>/<post>` | 已登记、未吊销、绑定本域的舰队 + 凭据 | 允许 | 允许 |
+| `extract:<model>:<ver>` | **调用位置本身**（不在 HTTP 面上） | **拒绝** | 允许 |
+| `agent:<role>@<domain>` | 平台已铸身份 + 域活跃成员 | 允许 | 允许 |
+
+关键取舍：`extract:` 的可信依据是「这段代码不在网络面上」，因此**外部提交端点对 `extract:` 一律拒绝**——这不是配置项，是安全边界。放宽它等于允许任何人自报为流水线。
+
+**Alternatives considered**：① 给流水线也发一条登记与 token —— 否决，进程内调用加凭据只是把「不可伪造的位置」降级成「可泄露的秘密」；② 只校验 `fleet:`、其余放行 —— 否决，`agent:` 前缀受自提自确认禁令保护，自报该前缀会让禁令在错误身份上生效（见 `agent_ids.py` 的设计说明）。
 
 ## Risks / Trade-offs
 
@@ -69,12 +107,16 @@ See `proposal.md` — Why. 只补设计和落地需要、但从动机里看不�
 - [外部回写的 `counts` 口径与内核不一致，让「六项质量比」不可比] → 回写只写 `counts` 与 `artifact_refs`，比率仍由 `domain_quality_metrics` 从库重算；回写值只进台账展示，不进比率分子分母。
 - [`assignee` 保留人读名会让授权判断拿到展示名] → 授权统一改读 `assignee_kind` + `assignee_ref`；`mine = assignee in {sub,email,name}` 只在 `assignee_kind='human'` 分支保留。
 - [同表分列后，team 页排序把两类混在一起] → 排序键改为 `started_at DESC`，`origin` 只作分列与筛选，不参与排序（否则「最新一轮」会被某一类垄断）。
+- [`via` 参数传错即等于没有校验] → `extract:` 的放行**只依赖** `via="in_process"` 这一个值；两个调用点各传常量（HTTP 路由传 `"http"`、内部端点传 `"in_process"`），并有一条测试**从真实 HTTP 路由**发 `source=extract:...` 断言 403——测的是路由，不是函数。
+- [抽取流水线改造后忘了传 `in_process`] → 症状是该域抽取产物全部 403 且不入箱；测试覆盖「进程内路径放行」，回归即红。
 - [迁移期既有 `domain_proposals.source` 里存在无法对应任何舰队的历史值] → 归入 `legacy` 保留可读，不参与校验、不阻断读面；`legacy` 行的数量进迁移报告。
 
 ## Migration Plan
 
+实测存量很小，迁移可以一次做完并有明确的零判据。
+
 1. **加列（幂等）**：`ensure_schema` 增 `authoring_tasks.assignee_kind/assignee_ref`、`distribution_consumers.kind/fleet_ref`、`domain_agent_runs.origin/runner_ref`，全部带 `DEFAULT` 使存量行可读（`assignee_kind='human'`、`kind='machine'`、`origin='kernel'`）。
-2. **回填**：`scripts/backfill_assignee_kind.py` 按 `GAP_ROUTE` 把既有派单行的 `assignee_kind` 归到 `kernel-role`（仅当 `assignee` 命中内核岗位名），dry-run 出计数。
-3. **登记**：`scripts/register_fleet.py --from-observed` dry-run → 人确认 → 写登记。
-4. **翻校验**：先 `lenient`（记 legacy），跑一轮真实提交与回写，确认 `legacy` 计数为 0 后翻 `strict`。
+2. **回填**：`scripts/backfill_assignee_kind.py` 按 `GAP_ROUTE` 把既有派单行归类。实测只有 1 行（`agent:concept@legal`），归 `kernel-role`。
+3. **登记**：`scripts/register_fleet.py --from-observed` dry-run → 人确认 → `--apply`。实测待登记 2 个 fleet id + 1 条探针（探针应显式不登记，走 legacy）。
+4. **翻校验**：先 `lenient`（记 legacy），跑一轮真实提交与回写，确认 `legacy` 计数为 0 后翻 `strict`。注意即使 `lenient`，外部提交 `extract:*` 也拒绝（D6）。
 5. **回退**：把校验档位切回 `lenient`（一行配置），不动数据；列保留不影响读。

@@ -5,7 +5,7 @@
 
 ## 0. 前置：先把事实钉住
 
-- [ ] 0.1 基线取证（只读，写进 `design.md` 或 `acceptance.md`）：生产 `law_bench` 上 `authoring_tasks` 的 `assignee` 去重值清单与计数、`domain_proposals.source` 的去重值清单与计数、`domain_agent_runs` 现有行数。判据＝三张表的真实读数，不是估计
+- [x] 0.1 基线取证（只读，2026-11-13 实测生产 `law_bench`）：`domain_proposals` 93 行 → `extract:*` 78 / `fleet:*` 12（含 1 条 `credential-probe` 探针）/ `agent:*` 4；`authoring_tasks` 1 行（`agent:concept@legal`）；`domain_agent_runs` 17 行且确认无 `origin`/`runner_ref`；`distribution_consumers` 2 行（`fd-wire`、`ontology-fleet-win`，均绑 legal）；`domains` 4 个。读数已写入 `design.md`「基线读数」，并据此把校验改为按前缀分三类（D6）
 - [ ] 0.2 DDL 进 `src/bench/workspace_store.py`（全部带 DEFAULT，幂等 `ADD COLUMN IF NOT EXISTS`）：`authoring_tasks.assignee_kind`（默认 `human`）/ `assignee_ref`、`distribution_consumers.kind`（默认 `machine`）/ `fleet_ref`、`domain_agent_runs.origin`（默认 `kernel`）/ `runner_ref`；`ensure_schema` 一次建齐
 - [ ] 0.3 启动壳测试扩展 `tests/test_boot_schema.py`：空库跑 boot 后六列就位（跨新连接复核已提交）、重复执行幂等、旧库（无这些列）跑一次后列出现且存量行取到默认值
 - [ ] 0.4 `docs/domain-proposal-contract.md` 增来源校验与结局读面两节；`tests/test_domain_proposal_contract_doc.py` 双侧校验保持不漂（文档字段集 ↔ 实现字段集）
@@ -27,11 +27,12 @@
 ## 2. 舰队登记与来源校验（`fleet-submitter-contract` / `knowledge-distribution`）
 
 - [ ] 2.1 `src/bench/distribution.py`：`register_consumer` 增 `kind` 与 `fleet_ref`；校验「同一实体至多一条未吊销登记」；`list_consumers` 投影两列
-- [ ] 2.2 `src/bench/distribution.py`：新增 `resolve_submitter(conn, source, domain_key)` 纯读函数，返回 `(consumer, verdict)`，`verdict ∈ {ok, unregistered, revoked, domain_mismatch}`；无副作用、不抛
-- [ ] 2.3 `src/bench/proposals.py`：`submit` 前调 2.2；四类 verdict 分别映射 403 报明文；`legacy` 档（`BENCH_PROPOSAL_STRICT_SOURCE=0`）允许入库但写 `attrs` 标记与迁移计数
+- [ ] 2.2 `src/bench/distribution.py`：新增 `resolve_submitter(conn, source, domain_key, *, via="http"|"in_process")` 纯读函数，返回 `(consumer, verdict)`，`verdict ∈ {ok, unregistered, revoked, domain_mismatch, pipeline_impersonation, agent_domain_mismatch, unknown_prefix}`；无副作用、不抛
+- [ ] 2.3 `src/bench/proposals.py`：`submit` 前调 2.2 并区分三类的可信依据——`fleet:` 查登记、`extract:` 仅当 `via="in_process"` 放行、`agent:` 查已铸身份与域成员一致；`unknown_prefix` 与 `pipeline_impersonation` 在任何档位都拒绝
+- [ ] 2.3b `src/web/routes/console.py` 的内部提案端点显式传 `via="in_process"`；外部 `POST /api/d/{key}/proposals` 传 `via="http"`（两处必须分开，`extract:` 的放行只依赖这一个值）
 - [ ] 2.4 迁移计数要有读面：`GET /api/v1/distribution/legacy-sources`（admin scope），返回去重来源与计数，供翻硬档前判零
 - [ ] 2.5 `scripts/register_fleet.py`：`--fleet-ref` / `--domains` / `--name`；`--from-observed` 从 `domain_proposals.source` 枚举 `fleet:*` 去重值，dry-run 输出建议映射与计数，`--apply` 才写
-- [ ] 2.6 单测：未登记 403、吊销后 403、跨域 403、宽松档入库且计数 +1、同一舰队重复登记被拒、`resolve_submitter` 四类 verdict 各一条
+- [ ] 2.6 单测：`fleet:` 未登记 403 / 吊销后 403 / 跨域 403；`extract:` 外部 403（伪装）而进程内放行；`agent:` 域不一致 403、域一致放行；未知前缀 403；宽松档下未知前缀入库且计数 +1、但 `extract:` 外部仍 403；同一舰队重复登记被拒；`resolve_submitter` 七类 verdict 各一条
 - [ ] 2.7 排他性测试：两个来源标识不能同时解析到同一条登记（`fleet_ref` 唯一有效档）
 
 ## 3. 运行台账分来源与外部回写（`domain-run-ledger`）
