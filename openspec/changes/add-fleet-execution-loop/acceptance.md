@@ -70,6 +70,15 @@
 | 同 digest 拒 / 换 digest 收 | 复用既有判据 | 不变 |
 | 迁移计数 | `GET /api/v1/distribution/legacy-sources` | 仅平台管理员（非管理员 403）；`mode` 与实际档位一致 |
 
+### 4b. 机器执行面（§1.11 / §3.5b）
+
+| 判据 | 怎么判 | 读数 |
+|---|---|---|
+| 舰队只看到自己的未关闭单 | `test_a_fleet_sees_only_its_own_open_orders` | 4 张单里正好返回 2 张（`ontology` 待领、`knowledge` 已领）；已关闭的、派给人的、派给别支舰队的都不在 |
+| 载荷字段齐 | 同上 | `id/target_kind/target_key/title/detail/created_at/status` 齐；已领的单带 `claimed_by` |
+| 重复拉取零副作用 | 同上 | 载荷逐字相同；`authoring_events` 行数不变；状态不变 |
+| 只放舰队凭据 | `test_the_order_pull_requires_a_fleet_token` | 无令牌 401；未绑定域 403 |
+
 ### 5. 闭环（§6.4 离线那半 / §7.1）
 
 `tests/test_fleet_loop_e2e.py`：**一条测试全走真实 HTTP**，不调内核函数（除造世界）：
@@ -112,7 +121,7 @@ EXIT=0 并报 `tasks: 0`。
 
 `database_url=law_bench .venv/bin/python -m pytest tests/ -q` 首次 **2105 passed / 59 skipped / 2 failed**（12:29）；
 定性并处置后（下面两条），排除环境性的那一条再跑一次：
-**2109 passed, 59 skipped, 1 deselected, 0 failed**（4:13，含随后补的 3 条入参校验用例）。
+**2112 passed, 59 skipped, 1 deselected, 0 failed**（4:05，含机器读面与入参校验用例）。
 
 | 失败 | 定性 | 依据 |
 |---|---|---|
