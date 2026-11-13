@@ -42,6 +42,7 @@
 
 - [x] 3.1 `src/bench/agent_runs.py`：`start`/`finish` 增 `origin` 与 `runner_ref`；内核岗位调用点**不改语义**（`origin` 缺省 `kernel`）
 - [x] 3.2 `src/bench/agent_runs.py`：新增 `record_external_run(conn, *, runner_ref, role, domain_key, outcome, counts, artifact_refs, remaining=None, detail=None)`——按 `runner_ref` 存在性检查幂等，重复调用返回既有行且不改任何字段
+- [x] 3.3b **并发兜底**：存在性检查与插入之间有 TOCTOU 窗口（两个重试同时查不到→同时插入→台账多一行「同一轮」）。加**部分**唯一索引 `domain_agent_runs_runner_ref_key (runner_ref) WHERE runner_ref IS NOT NULL`：只约束外部回写那个必须唯一的域，内核 null 行不受影响。撞索引时回读赢家并报 `created=False`，不把冲突当故障抛给调用方。测试两条（索引形态 + 只蒙住第一次检查以复现竞态），两处注入各转红（去掉兜底 / 去掉索引）
 - [x] 3.3 幂等实现必须走存在性检查而非唯一索引（`runner_ref` 允许为空，空值不参与唯一性）；测试用两次同 `runner_ref` 断言行数 1 且字段逐一相等
 - [x] 3.4 `src/web/routes/console.py` 的 team 区：台账按 `started_at DESC` 排序、`origin` 只作分列与筛选不参与排序；`domain_console_team.html` 增来源列与外部执行方标识列（`fleet:` 行显示完整 `runner_ref`，内核行显示「—」）
 - [x] 3.5b **机器写面补齐**（闭环必需，原任务漏了）：`POST /api/v1/distribution/{domain_key}/work-orders/{id}/claim`、`.../complete`、`POST .../runs`。会话路由把非人档当「不是我的」，所以「等待舰队认领」这句话在只有会话路由的世界里**永远不会发生**——那正是这个 change 要拆的「看着闭合其实没接」。授权读 `assignee_kind`+`assignee_ref`（显示名相同不算），重复认领 409、跨舰队 runner_ref 403、结局出词表 422

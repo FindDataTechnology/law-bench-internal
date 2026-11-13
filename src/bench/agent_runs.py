@@ -213,28 +213,44 @@ def record_external_run(
     if existing is not None:
         return existing, False
 
-    row = conn.execute(
-        "INSERT INTO domain_agent_runs "
-        "(role, domain_key, task_id, run_key, outcome, counts, remaining, "
-        " artifact_refs, detail, origin, runner_ref, ended_at) "
-        "VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb, %s, 'fleet', %s, now()) "
-        "RETURNING id, role, domain_key, task_id, run_key, outcome, input_digest, "
-        "          counts, remaining, artifact_refs, detail, started_at, ended_at, "
-        "          origin, runner_ref",
-        (
-            role,
-            domain_key,
-            task_id,
-            ref,
-            outcome,
-            _json(counts or {}),
-            remaining,
-            _json(artifact_refs or []),
-            detail,
-            ref,
-        ),
-    ).fetchone()
-    conn.commit()
+    # 存在性检查有 TOCTOU 窗口：两个重试可以同时查不到、同时插入。部分唯一索引
+    # （`domain_agent_runs_runner_ref_key`，只覆盖 runner_ref 非空的行）是兜底，
+    # 撞上它说明这一轮确实已经被别人写进去了——回读那一行、照旧报「已存在」，
+    # 而不是把唯一性冲突抛给调用方当故障去重试。
+    try:
+        row = conn.execute(
+            "INSERT INTO domain_agent_runs "
+            "(role, domain_key, task_id, run_key, outcome, counts, remaining, "
+            " artifact_refs, detail, origin, runner_ref, ended_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb, %s, 'fleet', %s, now()) "
+            "RETURNING id, role, domain_key, task_id, run_key, outcome, input_digest, "
+            "          counts, remaining, artifact_refs, detail, started_at, ended_at, "
+            "          origin, runner_ref",
+            (
+                role,
+                domain_key,
+                task_id,
+                ref,
+                outcome,
+                _json(counts or {}),
+                remaining,
+                _json(artifact_refs or []),
+                detail,
+                ref,
+            ),
+        ).fetchone()
+        conn.commit()
+    except Exception as exc:  # noqa: BLE001 - 只兜唯一性冲突，其余照抛
+        if type(exc).__name__ != "UniqueViolation":
+            raise
+        try:
+            conn.rollback()
+        except Exception:  # noqa: BLE001 - 回滚失败也不该掩盖原始冲突
+            pass
+        winner = get_by_runner_ref(conn, runner_ref=ref)
+        if winner is None:  # 理论上不可达：冲突了却查不到行，说明不是这条索引
+            raise
+        return winner, False
     return dict(row), True
 
 

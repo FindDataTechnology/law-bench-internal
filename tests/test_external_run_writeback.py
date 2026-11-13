@@ -131,3 +131,56 @@ def test_get_by_runner_ref_finds_only_that_round(conn):
     got = agent_runs.get_by_runner_ref(conn, runner_ref="fleet:test-fleet/post-1#a")
     assert got is not None and got["runner_ref"].endswith("#a")
     assert agent_runs.get_by_runner_ref(conn, runner_ref="fleet:nope/x#1") is None
+
+
+# ------------------------------------------------ 并发重试的兜底（不是替代）
+
+
+def test_the_partial_unique_index_covers_only_external_rows(conn):
+    """兜底索引只约束 runner_ref 非空的行：内核岗位的 null 行一行都不受影响。"""
+    row = conn.execute(
+        "SELECT indexdef FROM pg_indexes "
+        "WHERE tablename = 'domain_agent_runs' "
+        "AND indexname = 'domain_agent_runs_runner_ref_key'"
+    ).fetchone()
+    assert row is not None, "缺了兜底索引：并发重试会写出两行「同一轮」"
+    assert "UNIQUE" in row["indexdef"]
+    assert "runner_ref IS NOT NULL" in row["indexdef"]
+
+    # 内核行（runner_ref 为空）可以有任意多行：空值不参与唯一性，这是刻意的。
+    for _ in range(3):
+        agent_runs.start(conn, role="agent:warden@legal", domain_key="legal")
+    assert conn.execute(
+        "SELECT count(*) AS n FROM domain_agent_runs WHERE runner_ref IS NULL"
+    ).fetchone()["n"] == 3
+
+
+def test_a_lost_race_returns_the_winner_instead_of_a_duplicate(conn, monkeypatch):
+    """存在性检查漏看时（TOCTOU），第二次插入撞索引 → 回读赢家，不多出一行。
+
+    只让**第一次**检查漏看：那正是竞态的形状（这一瞬间两方都查不到）。若把检查
+    整个蒙住，兜底分支的回读也看不到行，测到的就变成「理论上不可达」那条路。
+    """
+    first, created = _fleet_run(conn)
+    assert created is True
+
+    real = agent_runs.get_by_runner_ref
+    calls = {"n": 0}
+
+    def flaky(*a, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return None          # ← 竞态窗口：存在性检查漏看
+        return real(*a, **kw)    # ← 兜底分支的回读照常
+
+    monkeypatch.setattr(agent_runs, "get_by_runner_ref", flaky)
+    again, created_again = _fleet_run(conn, outcome="failed", counts={"drafts": 99})
+
+    assert created_again is False, "撞了索引也算幂等命中，不能报成新建"
+    assert again["id"] == first["id"]
+    assert again["outcome"] == "ok", "重放不得改写已记录的结局"
+    n = conn.execute(
+        "SELECT count(*) AS n FROM domain_agent_runs WHERE runner_ref = %s",
+        ("fleet:test-fleet/post-1#2026-11-13",),
+    ).fetchone()["n"]
+    assert n == 1, "同一轮只能有一行"

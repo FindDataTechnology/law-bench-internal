@@ -343,4 +343,14 @@ ALTER TABLE domain_agent_runs
         CHECK (origin IN ('kernel','fleet'));
 ALTER TABLE domain_agent_runs
     ADD COLUMN IF NOT EXISTS runner_ref TEXT;
+-- 幂等的**兜底**（不是替代）：回写去重靠存在性检查（`agent_runs.record_external_run`），
+-- 但那一步有 TOCTOU 窗口——两个重试同时查不到行，于是同时插入，台账就会多一行
+-- 「同一轮完成两次」。规格禁止的是「用唯一约束**代替**存在性检查」（`run_key` 允许
+-- 为空、空值不参与唯一性，那种约束是假安全感），不禁止再加一道真能兜住的约束。
+--
+-- 部分索引只覆盖 `runner_ref IS NOT NULL`：只有外部回写受唯一性约束；内核岗位从不
+-- 传 runner_ref，它们的 null 行一行都不受影响。兜底该有的形状就是约束那个必须唯一的域。
+CREATE UNIQUE INDEX IF NOT EXISTS domain_agent_runs_runner_ref_key
+    ON domain_agent_runs (runner_ref)
+ WHERE runner_ref IS NOT NULL;
 """

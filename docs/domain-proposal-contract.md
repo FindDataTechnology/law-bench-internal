@@ -139,6 +139,11 @@ GET  /api/v1/distribution/{domain_key}/runs?runner_ref=…
 | `complete` | `{"note"?, "artifact_refs"?: [...]}` | 必须先认领（未认领 409）；**不写知识单元** |
 | `runs` | `{"runner_ref", "role", "outcome", "counts"?, "artifact_refs"?, "remaining"?, "detail"?, "task_id"?}` | 同 `runner_ref` 重放返回 `created: false` 且不改任何字段；结局不在四态 **422** |
 
+**认领之后失联怎么办**：认领是排他的，所以一张单被领走后不会自动回到待领。执行方
+中途挂掉时，这张单停在 `in_progress`，由域负责人在控制台**取消**（取消后该缺口可
+重新派单）；执行方不能自行重新认领（会拿到 409，那不是失败而是「这张单已经在你名下」）。
+这一条要写在接线说明里：把 409 当故障去无限重试，只会刷日志而不解决问题。
+
 授权读的是 `assignee_kind` + `assignee_ref`，**不是显示名**：两支舰队可以把名字都叫
 `ontology-fleet`，只有登记引用能分清谁被派了活。`runner_ref` 必须形如
 `fleet:<自己的 fleet_ref>/<post_id>#<round>`——拿别人的 ref 回写是 403，不是「记到别人

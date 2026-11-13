@@ -66,7 +66,9 @@ See `proposal.md` — Why. 只补设计和落地需要、但从动机里看不�
 
 `domain_agent_runs` 加 `origin`（`kernel` / `fleet`）与 `runner_ref`（`fleet:<id>/<post>#<round>`）。同表的价值是四态、进度不变量、`counts` 口径全部**共用一份判定代码**；两本账会让「`thin` 要不要升级给人」这类判定出现两套实现。
 
-外部回写用 `run_key` 幂等：`run_key = runner_ref`，重放不新增行（`guard` 在 `agent_runs.start` 已有的 `run_key` 语义上扩展为唯一约束或等价的存在性检查）。**必须选存在性检查而非唯一索引**：`run_key` 允许为空（内核岗位有用例不传），Postgres 的 `UNIQUE` 对 NULL 不去重，加唯一索引会给出「看起来防住了其实没防」的安全感。
+外部回写用 `run_key` 幂等：`run_key = runner_ref`，重放不新增行（`guard` 在 `agent_runs.start` 已有的 `run_key` 语义上扩展为唯一约束或等价的存在性检查）。**必须选存在性检查，而不是靠唯一索引去判断**：`run_key` 允许为空（内核岗位有用例不传），Postgres 的 `UNIQUE` 对 NULL 不去重，一个覆盖全表的唯一索引会给出「看起来防住了其实没防」的安全感。
+
+实施时补了一道**部分**唯一索引（`WHERE runner_ref IS NOT NULL`）作兜底：存在性检查与插入之间有 TOCTOU 窗口，两个重试可以同时查不到、同时插入，台账就会写下「同一轮完成两次」。部分索引只约束那个必须唯一的域（外部回写），内核的 null 行一行都不受影响——所以它不是替代，是兜底。撞上它时回读既有行、照旧报「已存在」（`created=False`），不把冲突抛给调用方当故障去重试。
 
 **Alternatives considered**：① 建 `fleet_runs` 表 —— 否决，判定逻辑分叉；② 回写时直接 `INSERT` 依赖调用方不重放 —— 否决，网络重试是常态。
 

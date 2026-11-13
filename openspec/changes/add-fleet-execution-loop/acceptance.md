@@ -45,6 +45,8 @@
 | 回写不进质量比 | `quality.all_metrics` 前后对比 | 完全相等 |
 | 两类同屏可辨 | `test_team_ledger_separates_the_two_origins` | 表头「外部执行方」在、`fleet:fleet_a/post_1#1` 完整显示；去掉两列表头后该条转红 |
 | 回执可读回 | `tests/test_run_readback.py` 11 条 | 自己 1 行；别人的前缀 **403 而非空列表**；machine 档 403；吊销 403 |
+| 并发重试不多出一行 | `test_a_lost_race_returns_the_winner_instead_of_a_duplicate` | 只蒙住**第一次**存在性检查（竞态的真实形状）→ 插入撞部分唯一索引 → 回读赢家、`created=False`、结局未被改写、行数 1 |
+| 兜底索引只覆盖外部回写 | `test_the_partial_unique_index_covers_only_external_rows` | `indexdef` 含 `UNIQUE` 且含 `runner_ref IS NOT NULL`；内核 null 行连插 3 行不冲突 |
 | 回执隔离判据 | 三处注入 | 去掉前缀判据转红 3 条、前缀改子串转红 1 条、去掉 fleet 种类检查转红 1 条 |
 | 写面入参校验 | `test_fleet_loop_e2e.py` | `role` 为空 422「role 不能为空」；`task_id` 指到别域的工单 404；`counts` 非对象 / `artifact_refs` 非数组 422；**写坏的 JSON 422 而不是当空体**（当空体会让舰队以为 note 记上了）。关单空体仍合法（200） |
 
@@ -121,7 +123,7 @@ EXIT=0 并报 `tasks: 0`。
 
 `database_url=law_bench .venv/bin/python -m pytest tests/ -q` 首次 **2105 passed / 59 skipped / 2 failed**（12:29）；
 定性并处置后（下面两条），排除环境性的那一条再跑一次：
-**2112 passed, 59 skipped, 1 deselected, 0 failed**（4:05，含机器读面与入参校验用例）。
+**2114 passed, 59 skipped, 1 deselected, 0 failed**（3:48，含机器读面、入参校验与并发兜底用例）。
 
 | 失败 | 定性 | 依据 |
 |---|---|---|
