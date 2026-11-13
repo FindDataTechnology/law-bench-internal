@@ -112,7 +112,7 @@ EXIT=0 并报 `tasks: 0`。
 
 `database_url=law_bench .venv/bin/python -m pytest tests/ -q` 首次 **2105 passed / 59 skipped / 2 failed**（12:29）；
 定性并处置后（下面两条），排除环境性的那一条再跑一次：
-**2106 passed, 59 skipped, 1 deselected, 0 failed**（5:04）。
+**2109 passed, 59 skipped, 1 deselected, 0 failed**（4:13，含随后补的 3 条入参校验用例）。
 
 | 失败 | 定性 | 依据 |
 |---|---|---|

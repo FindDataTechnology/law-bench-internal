@@ -468,7 +468,12 @@ async def record_run(
     task_id = payload.get("task_id")
     if task_id is not None:
         # 引用的工单必须在本域：跨域 task_id 会让「这轮做的是哪张单」指到别人家。
-        _fleet_task(db, domain_key=domain_key, task_id=int(task_id), fleet_ref=fleet_ref)
+        # 非整数先拒成 422——让它冒到 int() 里就变成 500，那读起来像我们的故障。
+        try:
+            task_id = int(task_id)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="task_id 必须是整数") from exc
+        _fleet_task(db, domain_key=domain_key, task_id=task_id, fleet_ref=fleet_ref)
     counts = payload.get("counts")
     refs = payload.get("artifact_refs")
     for name, value, kind in (

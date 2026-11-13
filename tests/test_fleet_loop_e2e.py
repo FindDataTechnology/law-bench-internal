@@ -374,3 +374,16 @@ def test_a_malformed_completion_body_is_422_not_a_silent_note(world):
     assert "JSON 对象" in bad.json()["detail"]
     assert empty.status_code == 200, empty.text
     assert empty.json()["task"]["status"] == "done"
+
+
+def test_a_non_integer_task_id_is_422_not_a_500(world):
+    """形状错误要是 422：冒成 500 就读起来像我们的故障，调用方会去重试。"""
+    with _machine(world) as m:
+        r = m.post(
+            f"/api/v1/distribution/{DOMAIN}/runs",
+            json={"runner_ref": f"fleet:{FLEET_REF}/p#1", "role": "concept",
+                  "outcome": "ok", "task_id": "abc"},
+            headers=_machine_headers(),
+        )
+    assert r.status_code == 422
+    assert "task_id 必须是整数" in r.json()["detail"]
