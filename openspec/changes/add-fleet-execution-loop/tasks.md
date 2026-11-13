@@ -63,7 +63,7 @@
 
 ## 6. 迁移与上产
 
-- [ ] 6.1 `scripts/backfill_assignee_kind.py`：按 `GAP_ROUTE` 把存量派单行归类，`--dry-run` 出三档计数；只改 `assignee_kind`/`assignee_ref`，不改 `assignee` 展示名  → **未做**：存量只有 1 行派单，脚本待写但风险为零
+- [x] 6.1 `scripts/backfill_assignee_kind.py`：按展示名形状归类存量派单行（只认平台自铸的 `agent:<role>@<domain>` → `kernel-role`、`fleet:<ref>/...` → `fleet`，其余含人名一律留 `human`），`--dry-run` 出三档计数；只改 `assignee_kind`/`assignee_ref`，不改 `assignee` 展示名。已类型化的行一律跳过（哪怕展示名像另一种身份）。**登记在案的局限**：`human` 是列默认值，脚本无法区分「默认」与「刻意的 human」——因此这条判据只对形状可判的行成立，人名行本来就不动。`tests/test_backfill_assignee_kind.py` 7 条，去跳过判据后 2 条转红。本地空/旧库两条路径都实跑过：无列时 EXIT=2 并指明「先跑启动步骤」，跑完 `ensure_schema` 后 EXIT=0
 - [ ] 6.2 生产库真身核对：起一次 pod，确认 `ensure_schema` 把六列建齐且存量行取到默认值（判据＝列存在 + 存量行非空默认值）  → **未做**：要等出片后真 pod 起一次
 - [ ] 6.3 登记：`register_fleet.py --from-observed` dry-run → 人确认 → `--apply`；翻硬前 `legacy-sources` 计数须为 0  → **未做**：依赖 2.5 脚本
 - [ ] 6.4 一轮真跑（跨仓，与 paas `add-bench-ops-tools` 联合）：喂一个真缺口 → 派给舰队 → 舰队领单 → 回写运行 → 提交提案 → 域负责人确认 → `knowledge_units` 出现该键；四份证据（工单行、运行行、提案行、单元行）都在  → **未做**：跨仓，需 paas 侧 `add-bench-ops-tools`
