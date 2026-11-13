@@ -139,7 +139,18 @@ def _register(
 
 
 def _legacy(conn) -> int:
-    from src.bench import proposals
+    """Print the migration counter **and how to read it**.
+
+    「数到 0」是一条错判据：历史行不会消失，所以总数永远不会是 0（产库那条
+    `fleet:credential-probe/post_probe` 探针就是永久一组——它不是一个舰队，
+    永远不该被登记）。真正决定能不能翻硬的问题只有一个：
+
+        **现在还活着的提交方，有没有谁的新提交会被拒？**
+
+    历史行只说明过去写过什么；strict 档拒绝的是**新提交**。所以判据是「每个仍有
+    客户端的来源都已登记」，不是「这张表空了」。
+    """
+    from src.bench import proposals, submitters
 
     rows = proposals.legacy_sources(conn)
     mode = proposals._submitter_mode()
@@ -154,11 +165,35 @@ def _legacy(conn) -> int:
         # 任何判定可读，所以单独标出来，不假装成某个 verdict。
         verdict = r["verdict"] or "(历史行·无判定)"
         print(f"  {r['source']:<50} {verdict:<24} {r['n']:>4} 行")
+
+    # 这一组提示是这条命令的重点：没有它，「数还没到 0」会被读成「还不能翻硬」，
+    # 而实际上可能只差一条永远不会再提交的历史探针。
+    live_risk = [
+        r for r in rows
+        if (r["verdict"] in (None, "unregistered", "revoked", "domain_mismatch",
+                             "unknown_prefix", "malformed", "user_mismatch",
+                             "agent_domain_mismatch", "agent_not_member"))
+    ]
+    print(
+        "\n怎么读这个数：**不要**等它变成 0——历史行不会消失。要问的是"
+        "「现在还在提交的来源里，有谁的**新提交**会被拒」。"
+    )
     if unknown:
         print(
-            f"\n其中 {unknown} 行没有任何判定（列不存在时写入）。它们不会自己变绿："
-            "\n按来源确认该登记成什么，再让该来源以新形态重新提交一次。"
+            f"  · {unknown} 行没有判定（列不存在时写入）：它们只说明历史，"
+            "不会再提交；除非那正是某个仍在跑的来源的旧形态。"
         )
+    if live_risk:
+        print("  · 下列来源若**现在**再提交会被拒——先确认它是否还有客户端在跑，"
+              "有就登记，没有就记为历史：")
+        for r in live_risk:
+            print(f"      {r['source']}  ({r['verdict'] or '无判定'})")
+    else:
+        print("  · 剩余各组都不是「会被拒」的形态，可以翻硬。")
+    print(
+        f"\n翻硬 = 不再设 {proposals._SUBMITTER_MODE_ENV}（默认即 strict）。"
+        "翻转后本条命令仍会列出同样的历史行，这是预期的。"
+    )
     return 0
 
 

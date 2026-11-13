@@ -145,3 +145,23 @@ See `proposal.md` — Why. 只补设计和落地需要、但从动机里看不�
 3. **登记**：`scripts/register_fleet.py --from-observed` dry-run → 人确认 → `--apply`。实测待登记 2 个 fleet id + 1 条探针（探针应显式不登记，走 legacy）。
 4. **翻校验**：先 `lenient`（记 legacy），跑一轮真实提交与回写，确认 `legacy` 计数为 0 后翻 `strict`。注意即使 `lenient`，外部提交 `extract:*` 也拒绝（D6）。
 5. **回退**：把校验档位切回 `lenient`（一行配置），不动数据；列保留不影响读。
+
+### 上线顺序（实施后补记，含环境变量与观测点）
+
+默认档是 `strict`，而产库有 12 条历史 `fleet:` 来源。**镜像一落地就 strict，等于把正在跑的舰队当场切断**——这正是 `register_fleet.py` 存在的理由。所以上线只有两条安全路径：
+
+**路径 A（推荐）：先登记，再 strict。**
+1. 对新镜像起一次 boot（任意一次性 Job 即可），确认六列 + 部分唯一索引就位、存量行取到默认值。
+2. `register_fleet.py --from-observed` → 人确认 → `--apply`（需该舰队**现有** token）。
+3. `--legacy` 的「现在再提交会被拒」清单里只剩历史行（探针、旧错配）→ 滚新镜像，不设 `BENCH_SUBMITTER_MODE`。
+
+**路径 B：先 lenient，再收窗。**
+1. 滚新镜像时在清单里加 `BENCH_SUBMITTER_MODE=lenient`（`_submitter_mode()` 每次调用读环境，所以这是唯一开关，不需要改代码）。
+2. 跑一轮真实提交：`GET /api/v1/distribution/legacy-sources` 看 `mode: lenient` 与新增组。
+3. 完成登记后，去掉该环境变量并重启 → 默认即 `strict`。
+4. 收窗判据：`--legacy` 的「会被拒」清单里**没有仍在提交的来源**。不是「计数为 0」——历史行不会消失。
+
+**回退**：设回 `lenient`（只改环境，不动数据）；或回滚镜像——列是加法，旧代码忽略它们，新写入的行仍带 `submitter_verdict`，回滚后读面照常。
+
+**观测点（三条，都可只读核对）**：六列 + 索引存在且存量行非空默认值；`legacy-sources` 的 `mode` 与实际档位一致；一次真提交返回 200 并带 `created`。
+

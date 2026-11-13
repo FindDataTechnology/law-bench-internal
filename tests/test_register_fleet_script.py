@@ -100,7 +100,7 @@ def test_a_row_written_before_the_column_is_reported_as_unknown(conn, capsys):
     out = capsys.readouterr().out
     assert "extract:qwen:2025-10" in out
     assert "(历史行·无判定)" in out
-    assert "1 行没有任何判定" in out
+    assert "1 行没有判定" in out
 
 
 # ------------------------------------------------------- --from-observed
@@ -199,3 +199,60 @@ def test_apply_registers_a_fleet_bound_to_its_domain(conn, monkeypatch):
         "SELECT submitter_verdict FROM domain_proposals WHERE external_key = 'k9'"
     ).fetchone()["submitter_verdict"]
     assert verdict == "ok"
+
+
+# ------------------------------------------------- 计数怎么读（不是「数到 0」）
+
+
+def test_legacy_output_says_the_counter_never_reaches_zero(conn, capsys):
+    """历史行不会消失，所以「等它变 0」是错判据——命令必须自己说清怎么读。"""
+    distribution.register_consumer(
+        conn, name="fleet-a", domains=["legal"],
+        token_hash=hashlib.sha256(b"a").hexdigest(), created_by="t",
+        kind="fleet", fleet_ref="fleet_a",
+    )
+    _submit(conn, "fleet:fleet_a/p1", "k1")
+    conn.execute(
+        "INSERT INTO domain_proposals (domain_id, source, kind, external_key, body, evidence, "
+        "evidence_digest, state, submitted_by, sources) "
+        "SELECT id, 'fleet:credential-probe/post_probe', 'company', 'probe-1', 'b', "
+        "'{}'::jsonb, 'd2', 'pending', 'probe', '[\"fleet:credential-probe/post_probe\"]'::jsonb "
+        "FROM domains"
+    )
+    conn.execute(
+        "UPDATE domain_proposals SET submitter_verdict = 'unregistered' "
+        "WHERE source = 'fleet:credential-probe/post_probe'"
+    )
+    conn.commit()
+
+    script = _load_script()
+    mp = pytest.MonkeyPatch()
+    mp.setattr(script, "_connect", lambda: _borrowed(conn))
+    try:
+        assert script.main(["--legacy"]) == 0
+    finally:
+        mp.undo()
+
+    out = capsys.readouterr().out
+    assert "不要**等它变成 0" in out or "不要" in out
+    assert "历史行不会消失" in out
+    # 探针这类历史来源必须被单列出来，让人判断「还有没有客户端在跑」。
+    assert "credential-probe" in out
+    assert "现在**再提交会被拒" in out
+
+
+def test_legacy_says_clear_when_nothing_would_be_refused(conn, capsys):
+    distribution.register_consumer(
+        conn, name="fleet-a", domains=["legal"],
+        token_hash=hashlib.sha256(b"a").hexdigest(), created_by="t",
+        kind="fleet", fleet_ref="fleet_a",
+    )
+    _submit(conn, "fleet:fleet_a/p1", "k1")   # 已登记、判定 ok
+    script = _load_script()
+    mp = pytest.MonkeyPatch()
+    mp.setattr(script, "_connect", lambda: _borrowed(conn))
+    try:
+        assert script.main(["--legacy"]) == 0
+    finally:
+        mp.undo()
+    assert "legacy sources: none" in capsys.readouterr().out
