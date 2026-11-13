@@ -777,8 +777,12 @@ def test_token_hash_only_storage_no_plaintext_column(db_conn):
     # the kernel stores exactly the digest it was given
     assert created["token_hash"] == fake_hash
     # the projected row exposes no plaintext-token field at all
+    # (``kind``/``fleet_ref`` joined this projection in add-fleet-execution-loop:
+    # a fleet registration carries a stable ref, a machine one is refused for
+    # carrying it at all — neither is a credential field.)
     assert set(created) == {
         "id", "name", "domains", "token_hash", "created_by", "created_at", "revoked_at",
+        "kind", "fleet_ref",
     }
     assert not any("token" in k and k != "token_hash" for k in created)
 

@@ -85,6 +85,23 @@ def classify_source(source: Optional[str]) -> Tuple[Optional[str], Optional[dict
     return None, None, False
 
 
+def verdict_for_fleet(*, domain_key: str, fleet: Optional[Mapping[str, Any]]) -> str:
+    """Fleet 档的判定，单独成函数给「按 fleet_ref 直接查」的调用方用。
+
+    工单指派人校验手里只有 ``fleet_ref``，没有一条完整的 ``source`` 可解析。让它
+    拼一个假 source 去走 :func:`verdict` 是可行的，但那样「判定」就被藏在一次
+    字符串往返里；单独一个入口，两边共用同一份规则，谁也不用假装有 post_id。
+    """
+    if fleet is None:
+        return "unregistered"
+    if fleet.get("revoked"):
+        return "revoked"
+    domains = fleet.get("domains") or []
+    if (domain_key or "").strip() not in domains:
+        return "domain_mismatch"
+    return "ok"
+
+
 def verdict(
     source: Optional[str],
     *,
@@ -116,15 +133,7 @@ def verdict(
             return "agent_domain_mismatch"
         return "ok" if agent_is_member else "agent_not_member"
 
-    # fleet
-    if fleet is None:
-        return "unregistered"
-    if fleet.get("revoked"):
-        return "revoked"
-    domains = fleet.get("domains") or []
-    if (domain_key or "").strip() not in domains:
-        return "domain_mismatch"
-    return "ok"
+    return verdict_for_fleet(domain_key=domain_key, fleet=fleet)
 
 
 def is_allowed(result: str) -> bool:
