@@ -387,3 +387,81 @@ def test_a_non_integer_task_id_is_422_not_a_500(world):
         )
     assert r.status_code == 422
     assert "task_id 必须是整数" in r.json()["detail"]
+
+
+# ------------------------------------------------------------------ 机器读面
+
+
+def test_a_fleet_sees_only_its_own_open_orders(world):
+    """舰队看不见的活没法领。读面只给「派给本舰队、本域、未关闭」的那几张。"""
+    conn = world
+    domain = workspaces.get_domain(conn, domain_key=DOMAIN)
+    from src.bench import authoring
+
+    def task(key, *, assignee_kind="fleet", ref=FLEET_REF, status="pending"):
+        t = authoring.authoring_create_task(
+            conn, domain_id=domain["id"], assignee=f"x-{key}", title=f"t-{key}",
+            detail="d", target_kind="estate-gap", target_key=key, created_by="lara",
+            assignee_kind=assignee_kind, assignee_ref=ref,
+        )
+        if status == "in_progress":
+            authoring.authoring_claim_task(conn, task_id=t["id"], actor=ref)
+        elif status == "done":
+            authoring.authoring_claim_task(conn, task_id=t["id"], actor=ref)
+            authoring.authoring_complete_task(conn, task_id=t["id"], actor=ref)
+        return t
+
+    task("ontology")
+    task("knowledge", status="in_progress")
+    task("eval", status="done")             # 已关闭：不是待领的活
+    task("quality:grounding", assignee_kind="human", ref=None)  # 不是舰队单
+    distribution.register_consumer(
+        conn, name="other-fleet", domains=[DOMAIN],
+        token_hash=hashlib.sha256(b"other2").hexdigest(), created_by="seed",
+        kind="fleet", fleet_ref="fleet_other",
+    )
+    task("quality:evidence", ref="fleet_other")  # 别人家的单
+
+    events_before = conn.execute(
+        "SELECT count(*) AS n FROM authoring_events"
+    ).fetchone()["n"]
+    with _machine(conn) as m:
+        first = m.get(f"/api/v1/distribution/{DOMAIN}/work-orders",
+                      headers=_machine_headers())
+        second = m.get(f"/api/v1/distribution/{DOMAIN}/work-orders",
+                       headers=_machine_headers())
+
+    assert first.status_code == 200, first.text
+    body = first.json()
+    assert body["fleet_ref"] == FLEET_REF
+    assert body["count"] == 2
+    keys = {w["target_key"] for w in body["work_orders"]}
+    assert keys == {"ontology", "knowledge"}
+    claimed = {w["target_key"]: w["claimed_by"] for w in body["work_orders"]}
+    assert claimed == {"ontology": None, "knowledge": FLEET_REF}
+    # 载荷字段：工单标识/目标/标题/详情/创建时间/状态都在。
+    sample = body["work_orders"][0]
+    for field in ("id", "target_kind", "target_key", "title", "detail",
+                  "created_at", "status"):
+        assert field in sample, field
+
+    # 重复拉取无副作用：载荷逐字相同、事件流一行不增、状态不变。
+    assert second.json() == body
+    assert conn.execute(
+        "SELECT count(*) AS n FROM authoring_events"
+    ).fetchone()["n"] == events_before
+    statuses = {
+        r["target_key"]: r["status"]
+        for r in conn.execute("SELECT target_key, status FROM authoring_tasks").fetchall()
+    }
+    assert statuses["ontology"] == "pending" and statuses["knowledge"] == "in_progress"
+
+
+def test_the_order_pull_requires_a_fleet_token(world):
+    with _machine(world) as m:
+        missing = m.get(f"/api/v1/distribution/{DOMAIN}/work-orders")
+    assert missing.status_code == 401
+    with _machine(world) as m:
+        other_domain = m.get("/api/v1/distribution/not-bound/work-orders",
+                            headers=_machine_headers())
+    assert other_domain.status_code == 403

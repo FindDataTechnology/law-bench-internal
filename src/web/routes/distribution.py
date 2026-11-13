@@ -344,6 +344,73 @@ def _fleet_task(db: Any, *, domain_key: str, task_id: int, fleet_ref: str) -> di
     return task
 
 
+@read_only_router.get(
+    "/api/v1/distribution/{domain_key}/work-orders",
+    name="distribution_list_work_orders",
+)
+def list_work_orders(
+    domain_key: str,
+    request: Request,
+    db: DbConn = Depends(get_db),
+):
+    """The fleet's own **open** work orders in this domain.
+
+    A fleet cannot claim work it cannot see: the console page is for people, and
+    the ledger page answers "what ran", not "what is waiting for me". So the
+    pull side exists — and it is strictly the caller's own orders:
+
+    - only ``pending`` / ``in_progress`` (a closed order is not work to claim),
+    - only ``assignee_kind='fleet'`` with ``assignee_ref == this fleet``,
+    - only this domain (the token's binding already gated the path).
+
+    Reading has no side effects at all — no status change, no event, no
+    pull-footprint row: the ontology pull writes a footprint because "who fetched
+    which snapshot" is an audit question; "a fleet polled its queue" is not.
+    """
+    from ...bench import authoring, workspaces
+
+    consumer = _fleet_consumer(request, db, domain_key)
+    fleet_ref = consumer["fleet_ref"]
+    domain = workspaces.get_domain(db, domain_key=domain_key)
+    if domain is None:
+        raise HTTPException(status_code=404, detail=f"域 {domain_key!r} 不存在")
+
+    tasks = [
+        t
+        for t in authoring.authoring_list_tasks(db, domain_id=domain["id"])
+        if t["status"] in ("pending", "in_progress")
+        and t.get("assignee_kind") == "fleet"
+        and t.get("assignee_ref") == fleet_ref
+    ]
+    return {
+        "domain": domain_key,
+        "fleet_ref": fleet_ref,
+        "count": len(tasks),
+        "work_orders": [
+            {
+                "id": t["id"],
+                "target_kind": t.get("target_kind"),
+                "target_key": t.get("target_key"),
+                "title": t["title"],
+                "detail": t.get("detail"),
+                "status": t["status"],
+                "created_at": t.get("created_at"),
+                # 认领过就把「谁、什么时候」一起给出去：执行方要能分清
+                # 「这张单还没人动」与「我自己上一轮已经领了」。
+                "claimed_by": next(
+                    (
+                        e.get("by")
+                        for e in reversed(t.get("transitions") or [])
+                        if e.get("to") == "in_progress"
+                    ),
+                    None,
+                ),
+            }
+            for t in tasks
+        ],
+    }
+
+
 @write_router.post(
     "/api/v1/distribution/{domain_key}/work-orders/{task_id}/claim",
     name="distribution_claim_work_order",
