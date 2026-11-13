@@ -722,6 +722,44 @@ def batches(conn: Any, *, domain_key: str) -> list[dict]:
     return [merged[k] for k in sorted(merged, reverse=True)]
 
 
+def list_outcomes(
+    conn: Any, *, source: str, domain_key: Optional[str] = None, limit: int = 200
+) -> list[dict]:
+    """Proposals this submitter has a stake in, with the decision trail.
+
+    "Has a stake in" means ``sources`` contains it — a claim filed by two
+    producers is one row, and both of them must be able to read how it ended.
+    The row's own ``decision_note`` is the rejection reason the operator typed;
+    it is projected verbatim, never summarised: a submitter that is told
+    "rejected" without the reason can only guess what to fix.
+
+    A caller MUST pass its own resolved ``source``; isolation is the caller's
+    job (the route resolves the submitter first), and this function trusts the
+    argument to be that identity.
+    """
+    ref = (source or "").strip()
+    if not ref:
+        raise ValueError("source is required")
+    sql = (
+        f"SELECT p.{', p.'.join(_PROPOSAL_KEYS)}, d.key AS domain_key "
+        "FROM domain_proposals p JOIN domains d ON d.id = p.domain_id "
+        "WHERE p.sources @> %s::jsonb"
+    )
+    params: list[Any] = [json.dumps([ref], ensure_ascii=False)]
+    if domain_key:
+        sql += " AND d.key = %s"
+        params.append(domain_key)
+    sql += " ORDER BY p.submitted_at DESC, p.id DESC LIMIT %s"
+    params.append(max(1, min(int(limit or 200), 500)))
+
+    out: list[dict] = []
+    for row in conn.execute(sql, tuple(params)).fetchall():
+        item = _proposal_to_dict(row)
+        item["domain_key"] = row["domain_key"]
+        out.append(item)
+    return out
+
+
 def legacy_sources(conn: Any, *, verdict: Optional[str] = None) -> list[dict]:
     """Sources admitted by the lenient window, with counts, worst first.
 

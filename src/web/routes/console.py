@@ -286,15 +286,37 @@ async def console_task_transition(
         raise HTTPException(status_code=404, detail="task not found in this domain")
     form = await request.form()
     to_status = (form.get("to") or "").strip()
+    actor = user.email or user.name or user.sub
     role = workspaces.get_active_role(db, domain_id=domain["id"], user_id=user.sub)
-    mine = task["assignee"] in {user.sub, user.email, user.name}
+    # Authorization reads the type first: a human order is personal (its display
+    # name IS the identity reference), while kernel-role/fleet orders belong to
+    # an execution side no logged-in person *is* — only a lead/admin moves those,
+    # so a human whose name coincides with a fleet label cannot inherit it.
+    kind = task.get("assignee_kind") or "human"
+    mine = (
+        task["assignee"] in {user.sub, user.email, user.name}
+        if kind == "human"
+        else False
+    )
     if not (mine or role == "lead" or is_platform_admin(user)):
         raise HTTPException(status_code=403, detail="only the assignee or a domain lead may update this task")
     try:
-        bench_authoring.authoring_transition_task(
-            db, task_id=task_id, to_status=to_status,
-            actor=user.email or user.name or user.sub,
-        )
+        # Claim and completion are their own transitions (exclusive claim,
+        # no pending→done shortcut); everything else keeps the old path.
+        if to_status == "in_progress":
+            bench_authoring.authoring_claim_task(db, task_id=task_id, actor=actor)
+        elif to_status == "done":
+            bench_authoring.authoring_complete_task(
+                db, task_id=task_id, actor=actor,
+                note=(form.get("note") or "").strip() or None,
+            )
+        else:
+            bench_authoring.authoring_transition_task(
+                db, task_id=task_id, to_status=to_status, actor=actor,
+            )
+    except bench_authoring.TaskAlreadyClaimed as exc:
+        return _flash(f"/d/{quote(domain_key)}/inbox", "flash.task_already_claimed",
+                      err=True, detail=str(exc))
     except ValueError as exc:
         return _flash(f"/d/{quote(domain_key)}/inbox", "flash.task_transition_failed",
                       err=True, detail=str(exc))
@@ -441,16 +463,27 @@ async def console_dispatch_confirm(
     db: DbConn = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Create one task per domain still missing the gap (idempotent per pillar)."""
+    """Create one task per domain still missing the gap (idempotent per pillar).
+
+    The assignee is typed now: ``assignee_kind`` picks which of the three kinds
+    it is, and the reference is what authorization reads. Dispatch never decides
+    *who* on its own — it records the operator's choice and refuses choices the
+    route table contradicts (a kernel-owned gap cannot be handed to someone the
+    table never assigned it to).
+    """
     form = await request.form()
     gap = (form.get("gap") or "").strip()
     assignee = (form.get("assignee") or "").strip()
+    assignee_kind = (form.get("assignee_kind") or "human").strip()
+    assignee_ref = (form.get("assignee_ref") or "").strip() or None
     domains = _estate_domains(db, user)
     try:
         rows = dispatch.rows_for_gap(db, domains=domains, gap=gap)
         result = dispatch.dispatch(
             db, rows=rows, gap=gap, assignee=assignee,
             created_by=user.email or user.name or user.sub,
+            assignee_kind=assignee_kind,
+            assignee_ref=assignee_ref,
         )
     except ValueError as exc:
         return _flash("/d", str(exc), err=True)
@@ -1703,4 +1736,65 @@ async def console_proposal_submit(
         # fleet reports 新增 vs 幂等命中 from this flag; without it both look
         # identical and the round's count cannot be trusted.
         "created": created,
+    }
+
+
+@read_only_router.get(
+    "/api/d/{domain_key}/proposals/outcomes", include_in_schema=False,
+    name="console_proposal_outcomes",
+    dependencies=[Depends(require_scope("content:read"))],
+)
+def console_proposal_outcomes(
+    domain_key: str,
+    source: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """What happened to the proposals this submitter filed in this domain.
+
+    A submitter MUST see its own outcomes and nobody else's: the ``source`` is
+    checked against the caller's identity (or admin), not trusted because it was
+    passed in. Without this read face a fleet learns "rejected" only by being
+    refused on resubmission — and never learns *why*.
+    """
+    resolve_domain(db, domain_key)  # 404 for an unknown domain, before any read
+    wanted = (source or "").strip()
+    _consumer, verdict = bench_distribution.resolve_submitter(
+        db, source=wanted, domain_key=domain_key,
+        via=bench_submitters.VIA_HTTP, authenticated_as=_operator_of(user),
+    )
+    if verdict != "ok" and not is_platform_admin(user):
+        raise HTTPException(
+            status_code=403,
+            detail=f"只能读取自己来源的结局：{wanted!r}（{verdict}）",
+        )
+    return {
+        "domain": domain_key,
+        "source": wanted,
+        "outcomes": bench_proposals.list_outcomes(
+            db, source=wanted, domain_key=domain_key
+        ),
+    }
+
+
+@read_only_router.get(
+    "/api/v1/distribution/legacy-sources", include_in_schema=False,
+    name="console_legacy_sources",
+    dependencies=[Depends(require_scope("content:read"))],
+)
+def console_legacy_sources(
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Sources admitted by the lenient window — the number that closes it.
+
+    Admin only: this is the migration's control reading, not a browsing surface.
+    ``mode`` is reported alongside so the operator sees whether enforcement is
+    currently strict or lenient in this process.
+    """
+    if not is_platform_admin(user):
+        raise HTTPException(status_code=403, detail="需要平台管理员")
+    return {
+        "mode": bench_proposals._submitter_mode(),
+        "sources": bench_proposals.legacy_sources(db),
     }

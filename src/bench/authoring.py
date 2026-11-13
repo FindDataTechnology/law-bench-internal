@@ -59,8 +59,14 @@ _EVENT_KEYS = (
 
 _TASK_COLS = (
     "id, domain_id, assignee, title, detail, target_kind, target_key, "
-    "status, transitions, created_by, created_at, updated_at"
+    "status, transitions, created_by, created_at, updated_at, "
+    "assignee_kind, assignee_ref"
 )
+
+#: 三档指派人。``human`` 的引用是被授权的人身份；``kernel-role`` 是岗位词表内的
+#: 名字；``fleet`` 是一条已登记且绑定本域的舰队登记引用。把「展示成什么」与
+#: 「授权给谁」分开，是这个枚举存在的唯一理由。
+ASSIGNEE_KINDS: tuple[str, ...] = ("human", "kernel-role", "fleet")
 _TASK_KEYS = (
     "id",
     "domain_id",
@@ -74,6 +80,8 @@ _TASK_KEYS = (
     "created_by",
     "created_at",
     "updated_at",
+    "assignee_kind",
+    "assignee_ref",
 )
 
 
@@ -137,6 +145,8 @@ def _task_to_dict(row: Any) -> dict:
         "created_by": values[9],
         "created_at": _iso(values[10]),
         "updated_at": _iso(values[11]),
+        "assignee_kind": values[12] or "human",
+        "assignee_ref": values[13],
     }
 
 
@@ -918,16 +928,52 @@ def authoring_create_task(
     target_kind: Optional[str],
     target_key: Optional[str],
     created_by: str,
+    assignee_kind: str = "human",
+    assignee_ref: Optional[str] = None,
 ) -> dict:
-    """Create one work task in status ``pending`` with the first trail entry."""
+    """Create one work task in status ``pending`` with the first trail entry.
+
+    ``assignee`` stays the human-readable label; ``assignee_kind``/``assignee_ref``
+    are what authorization reads. A ``fleet`` assignee must resolve to a live
+    registration bound to this task's domain — the check lives here rather than
+    at the route so no second call site can create an undeliverable task.
+    """
     if not assignee or not title:
         raise ValueError("assignee and title are required")
+    if assignee_kind not in ASSIGNEE_KINDS:
+        raise ValueError(
+            f"assignee_kind must be one of {list(ASSIGNEE_KINDS)}; got {assignee_kind!r}"
+        )
+    if assignee_kind == "fleet":
+        if not (assignee_ref or "").strip():
+            raise ValueError("assignee_kind='fleet' requires an assignee_ref")
+        domain = conn.execute(
+            "SELECT key FROM domains WHERE id = %s", (domain_id,)
+        ).fetchone()
+        if domain is None:
+            raise ValueError(f"domain {domain_id} not found")
+        from . import distribution
+
+        _consumer, verdict = distribution.resolve_fleet(
+            conn, fleet_ref=assignee_ref, domain_key=domain["key"]
+        )
+        if verdict != "ok":
+            raise ValueError(
+                f"assignee_ref {assignee_ref!r} 不是本域可用的舰队登记（{verdict}）"
+            )
+    elif assignee_kind == "kernel-role":
+        ref = (assignee_ref or assignee or "").strip()
+        if not ref:
+            raise ValueError("assignee_kind='kernel-role' requires a role name")
+        assignee_ref = ref
+
     entry = {"from": None, "to": "pending", "by": created_by, "at": _now()}
     cur = conn.execute(
         f"INSERT INTO authoring_tasks "
         f"(domain_id, assignee, title, detail, target_kind, target_key, "
-        f"status, transitions, created_by) "
-        f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING {_TASK_COLS}",
+        f"status, transitions, created_by, assignee_kind, assignee_ref) "
+        f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+        f"RETURNING {_TASK_COLS}",
         (
             domain_id,
             assignee,
@@ -938,6 +984,8 @@ def authoring_create_task(
             "pending",
             json.dumps([entry]),
             created_by,
+            assignee_kind,
+            assignee_ref,
         ),
     )
     task = _task_to_dict(cur.fetchone())
@@ -1000,5 +1048,91 @@ def authoring_transition_task(
         (to_status, moment, json.dumps([entry]), task_id),
     )
     task = _task_to_dict(cur.fetchone())
+    conn.commit()
+    return task
+
+
+class TaskAlreadyClaimed(ValueError):
+    """Another executor won the claim. Distinct from "task not found".
+
+    The two need different handling at the edge: "not found" is a bad id; "already
+    claimed" means someone else is doing it, so the caller should pick another
+    order instead of retrying this one.
+    """
+
+
+def authoring_claim_task(conn: Any, *, task_id: int, actor: str) -> dict:
+    """Claim a ``pending`` task for ``actor`` (``pending`` → ``in_progress``).
+
+    **Exclusive by construction**: the guard is the ``WHERE status = 'pending'``
+    on the UPDATE itself, and the affected-row count decides the winner. Reading
+    the status first and then updating would let two executors both read
+    ``pending`` and both succeed.
+
+    A ``done``/``cancelled`` task cannot be claimed (nothing left to do), and a
+    task already ``in_progress`` belongs to whoever claimed it first.
+    """
+    moment = _now()
+    entry = {"from": "pending", "to": "in_progress", "by": actor, "at": moment}
+    cur = conn.execute(
+        f"UPDATE authoring_tasks SET status = 'in_progress', updated_at = %s, "
+        f"transitions = transitions || %s::jsonb "
+        f"WHERE id = %s AND status = 'pending' RETURNING {_TASK_COLS}",
+        (moment, json.dumps([entry]), task_id),
+    )
+    row = cur.fetchone()
+    if row is None:
+        current = authoring_get_task(conn, task_id=task_id)
+        if current is None:
+            raise ValueError(f"task {task_id} not found")
+        raise TaskAlreadyClaimed(
+            f"task {task_id} 已被认领（当前状态 {current['status']}）"
+        )
+    task = _task_to_dict(row)
+    conn.commit()
+    return task
+
+
+def authoring_complete_task(
+    conn: Any,
+    *,
+    task_id: int,
+    actor: str,
+    artifact_refs: Optional[list] = None,
+    note: Optional[str] = None,
+) -> dict:
+    """Close an ``in_progress`` task (``in_progress`` → ``done``).
+
+    ``pending`` may **not** jump straight to ``done``: an order nobody claimed has
+    no executor to attribute the result to, and the ledger would then show work
+    that nobody did.
+
+    Completion records artifacts and a note **in the trail entry**, not in a
+    second table: the task row stays the single place that answers "what happened
+    to this order", and ``transitions`` is append-only by construction.
+    Completing MUST NOT write knowledge units — content still goes through the
+    proposal path or the kernel write path.
+    """
+    moment = _now()
+    entry: dict[str, Any] = {"from": "in_progress", "to": "done", "by": actor, "at": moment}
+    if artifact_refs:
+        entry["artifacts"] = list(artifact_refs)
+    if note:
+        entry["note"] = note
+    cur = conn.execute(
+        f"UPDATE authoring_tasks SET status = 'done', updated_at = %s, "
+        f"transitions = transitions || %s::jsonb "
+        f"WHERE id = %s AND status = 'in_progress' RETURNING {_TASK_COLS}",
+        (moment, json.dumps(entry), task_id),
+    )
+    row = cur.fetchone()
+    if row is None:
+        current = authoring_get_task(conn, task_id=task_id)
+        if current is None:
+            raise ValueError(f"task {task_id} not found")
+        raise ValueError(
+            f"task {task_id} 必须先认领才能完成（当前状态 {current['status']}）"
+        )
+    task = _task_to_dict(row)
     conn.commit()
     return task

@@ -703,3 +703,55 @@ def test_every_legacy_path_still_resolves_for_a_platform_admin(seeded_db):
         domain_admin = c.get(f"/admin/domains/{A_KEY}").status_code
     assert set(admin.values()) == {200}
     assert domain_admin == 200
+
+
+# =========================================================================== #
+# 结局回流与迁移计数（add-fleet-execution-loop §4 / §2.4）                      #
+# =========================================================================== #
+
+
+def test_outcomes_are_readable_only_by_their_own_submitter(seeded_db):
+    """A submitter reads how its draft ended — and cannot read anyone else's.
+
+    ``alice`` files as herself; ``bob`` asks for alice's source and must be
+    refused, because the route authorizes the *claimed* source against the
+    caller's identity instead of trusting the query string.
+    """
+    _seed_world(seeded_db)
+    with _client(seeded_db, _user("alice", _READ_WRITE)) as c:
+        proposal = _submit(c, key="outcome-1", evidence={"url": "https://example.test/o"})
+    # Rejection is a lead act; the submitter and the judge are different people.
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        reject = c.post(
+            f"/d/{A_KEY}/inbox/{proposal['id']}/reject",
+            data={"note": "依据无法回源"}, follow_redirects=False,
+        )
+        assert reject.status_code == 303
+    with _client(seeded_db, _user("alice", _READ_WRITE)) as c:
+        mine = c.get(f"/api/d/{A_KEY}/proposals/outcomes",
+                     params={"source": "user:alice@example.com"})
+    assert mine.status_code == 200, mine.text
+    rows = mine.json()["outcomes"]
+    assert len(rows) == 1
+    assert rows[0]["state"] == "rejected"
+    assert rows[0]["decision_note"] == "依据无法回源"
+
+    with _client(seeded_db, _user("bob", _READ_WRITE)) as c:
+        theirs = c.get(f"/api/d/{A_KEY}/proposals/outcomes",
+                       params={"source": "user:alice@example.com"})
+    assert theirs.status_code == 403
+    assert "只能读取自己来源" in theirs.json()["detail"]
+
+
+def test_legacy_counts_are_admin_only(seeded_db):
+    _seed_world(seeded_db)
+    with _client(seeded_db, _user("alice", _READ_WRITE)) as c:
+        denied = c.get("/api/v1/distribution/legacy-sources")
+    assert denied.status_code == 403
+
+    with _client(seeded_db, _user("root", ["*"])) as c:
+        allowed = c.get("/api/v1/distribution/legacy-sources")
+    assert allowed.status_code == 200
+    body = allowed.json()
+    assert body["mode"] in ("strict", "lenient")
+    assert "sources" in body
