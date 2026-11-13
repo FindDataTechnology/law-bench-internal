@@ -98,7 +98,7 @@ def test_the_whole_loop_over_http(world):
     conn = world
 
     # ① 缺口存在：本域还没有自己的知识单元（estate 判据与派单同源）。
-    from src.bench import dispatch, estate
+    from src.bench import estate
 
     domain = workspaces.get_domain(conn, domain_key=DOMAIN)
     rows = estate.matrix(conn, domains=[domain])
