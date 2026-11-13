@@ -150,7 +150,7 @@ def _legacy(conn) -> int:
     历史行只说明过去写过什么；strict 档拒绝的是**新提交**。所以判据是「每个仍有
     客户端的来源都已登记」，不是「这张表空了」。
     """
-    from src.bench import proposals, submitters
+    from src.bench import proposals
 
     rows = proposals.legacy_sources(conn)
     mode = proposals._submitter_mode()
