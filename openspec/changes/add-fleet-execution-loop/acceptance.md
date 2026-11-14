@@ -166,6 +166,10 @@ EXIT=0 并报 `tasks: 0`。
 定性并处置后（下面两条），排除环境性的那一条再跑一次：
 **2118 passed, 59 skipped, 1 deselected, 0 failed**（3:43，含机器读面、入参校验、并发兜底、重试幂等与计数器读法用例）。
 
+补完原地升级、机器提交面、参考客户端与「种类」列之后的最终一轮（2026-11-14 09:53）：
+**2144 passed, 59 skipped, 1 deselected, 0 failed**（12:33）。逐步增量：升级面 11 条 →
+`--from-observed` 认 machine 行 1 条 → 机器提交/结局 4 条 + 参考客户端 9 条 + 管理页 1 条。
+
 | 失败 | 定性 | 依据 |
 |---|---|---|
 | `test_contract_artifact_storage.py::test_generate_stored_real_minio` | **环境**：本机没有 MinIO | `nc -z 127.0.0.1 9000` → closed；单独跑该测试挂到 180s 超时（EXIT=124）。测试自身写着「unreachable 就 skip」，但客户端没有超时设置，所以是挂死而不是跳过。未碰任何 storage 代码 |
