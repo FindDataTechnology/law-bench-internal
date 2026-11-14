@@ -134,6 +134,144 @@ def _print_observed(conn) -> int:
     return 0
 
 
+def _promote_by_name(
+    conn,
+    *,
+    fleet_ref: str,
+    name: str,
+    apply: bool,
+) -> int:
+    """按 ``name`` 定位既有登记并原地升级，**不需要凭据**。
+
+    为什么需要这条路（2026-11-14 生产实况）：产库那条 ``ontology-fleet-win``
+    是真舰队，但它的凭据明文只在登记那一刻显示过一次，登记的会话早已结束，
+    ``distribution_pull_events`` 全表只有创建后 10 秒那一条探针——**明文确实不可得**。
+    而升级本身**不动 token_hash**（``promote_consumer_to_fleet`` 只改 kind/fleet_ref），
+    所以「拿不出凭据」在这里不构成风险：没有任何客户端的凭据被换掉。
+
+    它**不等于**「随便改谁的登记」：默认只做 dry run，真要写必须 ``--apply``；
+    已吊销、``fleet_ref`` 被另一条活登记占用、名字不存在，一律拒绝并说明下一步。
+    强授权路径（按 token_hash 定位）仍然是 ``--token-env`` 那条，它证明「持有凭据」。
+    """
+    from src.bench import distribution
+
+    key = (name or "").strip()
+    ref = (fleet_ref or "").strip()
+    if not key:
+        print("refused: --promote-by-name needs --name (which existing registration)", file=sys.stderr)
+        return 1
+    if not ref:
+        print("refused: --promote-by-name needs --fleet-ref", file=sys.stderr)
+        return 1
+
+    row = next((c for c in distribution.list_consumers(conn) if c["name"] == key), None)
+    if row is None:
+        print(
+            f"refused: 没有名为 {key!r} 的登记。\n"
+            f"  第一次登记要新建（--fleet-ref/--name/--domains + 现有凭据）；"
+            f"本条路只用于升级既有登记。",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"name      : {row['name']} (id={row['id']})")
+    print(f"kind      : {row['kind']} → fleet")
+    print(f"fleet_ref : {row.get('fleet_ref') or '-'} → {ref}")
+    print(f"domains   : {sorted(row['domains'] or [])} (unchanged)")
+    print(f"credential: sha256:{str(row['token_hash'])[:12]}… (unchanged — 升级不动凭据)")
+    if row["revoked_at"] is not None:
+        print(
+            f"refused: 登记 {key!r} 已吊销；吊销的登记不升级，重新登记一条新的。",
+            file=sys.stderr,
+        )
+        return 1
+
+    if not apply:
+        print("\n(would promote in place; dry run — nothing written, re-run with --apply)")
+        return 0
+
+    try:
+        promoted = distribution.promote_consumer_to_fleet(conn, name=key, fleet_ref=ref)
+    except ValueError as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 1
+    print(
+        f"\npromoted id={promoted['id']} name={promoted['name']!r} "
+        f"kind={promoted['kind']} fleet_ref={promoted['fleet_ref']}"
+    )
+    print("凭据未变：原本持着那枚 token 的一方照旧可用。")
+    return 0
+
+
+def _rotate_token(
+    conn,
+    *,
+    name: str,
+    token_env: str,
+    apply: bool,
+) -> int:
+    """给既有登记就地换一枚凭据；明文**只打印一次**。
+
+    为什么需要它：``--promote-by-name`` 解决了「升级」，但机器面要能用还需要
+    一枚**已知的**消费者令牌；而原明文丢失后，``register_consumer`` 的两条唯一
+    约束（name / token_hash）让「同名重登记」不可能，吊销重登记又会换掉名字——
+    审计链会断在名字上。所以补第三条路：id / name / domains / kind / fleet_ref
+    一个不动，只换 ``token_hash``。
+
+    代价必须说清：**旧持有者当场失效**。所以它只用于「那枚明文确实丢了」，
+    不是图省事。新值可从 ``--token-env`` 取（自己生成的那种），缺省则本脚本用
+    系统 CSPRNG 生成 ``lbc_`` 前缀的一枚——与提案面的 ``lbk_`` 前缀刻意不同，
+    运维一眼能分清这枚属于哪个面。
+    """
+    import hashlib
+    import secrets
+
+    from src.bench import distribution
+
+    key = (name or "").strip()
+    if not key:
+        print("refused: --rotate-token needs --name", file=sys.stderr)
+        return 1
+
+    row = next((c for c in distribution.list_consumers(conn) if c["name"] == key), None)
+    if row is None:
+        print(
+            f"refused: 没有名为 {key!r} 的登记；要新建请用 --fleet-ref/--domains 那条路。",
+            file=sys.stderr,
+        )
+        return 1
+
+    given = (os.environ.get(token_env or "") or "").strip() if token_env else ""
+    plaintext = given or ("lbc_" + secrets.token_urlsafe(32))
+    digest = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
+
+    print(f"name      : {row['name']} (id={row['id']}) kind={row['kind']}")
+    print(f"current   : sha256:{str(row['token_hash'])[:12]}…")
+    print(f"new       : sha256:{digest[:12]}…")
+    if row["revoked_at"] is not None:
+        print(f"refused: 登记 {key!r} 已吊销；吊销的登记不轮换（重新登记一条新的）。", file=sys.stderr)
+        return 1
+    if row["token_hash"] == digest:
+        print("\n这枚凭据已经就是当前那枚——不写库（幂等）。")
+        return 0
+    if not apply:
+        print("\n(would rotate the credential; dry run — nothing written, re-run with --apply)")
+        return 0
+
+    try:
+        rotated = distribution.rotate_consumer_token(conn, name=key, token_hash=digest)
+    except ValueError as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 1
+
+    print("\nrotated id={} name={!r}（旧值立即失效）".format(rotated["id"], rotated["name"]))
+    print("=" * 72)
+    print("新凭据（只显示这一次；下一步：把它写进部署环境的 BENCH_FLEET_TOKEN）：")
+    print(plaintext)
+    print("=" * 72)
+    return 0
+
+
 def _register(
     conn,
     *,
@@ -429,11 +567,32 @@ def main(argv: list[str] | None = None) -> int:
         help="when promoting an existing registration, also update its bound domains to --domains "
              "(refused by default: promotion changes kind/fleet_ref only)",
     )
+    ap.add_argument(
+        "--promote-by-name",
+        action="store_true",
+        help="locate an EXISTING registration by --name alone and promote it in place; no "
+             "credential needed, because promotion does not touch token_hash. Use ONLY when that "
+             "registration's plaintext is genuinely unrecoverable (the operator who created it is "
+             "gone and nobody else ever held it) — it does not prove you hold the credential.",
+    )
+    ap.add_argument(
+        "--rotate-token",
+        action="store_true",
+        help="issue a NEW credential for an existing registration (in-place token_hash "
+             "replacement); the plaintext is printed exactly once. This deliberately cuts off "
+             "whoever holds the old value, so it is for 'that value is lost', not a convenience.",
+    )
     ap.add_argument("--apply", action="store_true", help="actually write (default is a dry run)")
     args = ap.parse_args(argv)
 
-    if not (args.from_observed or args.legacy or args.fleet_ref or args.schema):
-        ap.error("nothing to do: pass --from-observed, --legacy, --schema, or --fleet-ref")
+    if not (
+        args.from_observed or args.legacy or args.fleet_ref or args.schema
+        or args.rotate_token or args.promote_by_name
+    ):
+        ap.error(
+            "nothing to do: pass --from-observed, --legacy, --schema, --fleet-ref, "
+            "--promote-by-name, or --rotate-token"
+        )
 
     try:
         conn = _connect()
@@ -469,6 +628,17 @@ def _dispatch(conn, args) -> int:
         return _legacy(conn)
     if args.from_observed:
         return _print_observed(conn)
+
+    if args.promote_by_name:
+        return _promote_by_name(
+            conn, fleet_ref=(args.fleet_ref or "").strip(), name=(args.name or "").strip(),
+            apply=args.apply,
+        )
+
+    if args.rotate_token:
+        return _rotate_token(
+            conn, name=(args.name or "").strip(), token_env=args.token_env, apply=args.apply,
+        )
 
     if not args.domains:
         print("refused: --domains is required (a fleet with no domain can submit nowhere)",

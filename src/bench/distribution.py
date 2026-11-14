@@ -727,6 +727,66 @@ def set_consumer_domains(conn: Any, *, name: str, domains: list[str]) -> dict:
     return consumer
 
 
+def rotate_consumer_token(conn: Any, *, name: str, token_hash: str) -> dict:
+    """Replace one registration's credential digest **in place**.
+
+    Why this exists: ``promote_consumer_to_fleet`` deliberately leaves
+    ``token_hash`` alone ("凭据不变，客户端无感"), and both ``register_consumer``
+    uniqueness rules make re-registration impossible under the same name. So
+    when a registration's plaintext is genuinely lost (the operator who created
+    it is gone, and the credential was never stored anywhere else), the only
+    remaining options were "revoke + register under a new name" — which changes
+    the identity the audit trail is keyed on — or nothing. This is the third
+    option: same ``id``, same ``name``, same ``domains``, same ``kicker``
+    (``kind``/``fleet_ref``); only the digest moves.
+
+    What it does NOT do: prove the caller holds the old credential. That is the
+    caller's problem (``scripts/register_fleet.py --rotate-token`` prints the
+    new plaintext exactly once at issuance, which is the same "shown once"
+    contract the console's own key creation uses). Rotating is a *deliberate
+    cut-off* of the previous holder — legitimate when the old value is lost,
+    never as a convenience.
+
+    Idempotent on the hash: passing the digest already stored returns the row
+    unchanged instead of rewriting (and so does not perturb ``created_at``
+    ordering in an audit diff).
+    """
+    key = (name or "").strip()
+    digest = (token_hash or "").strip()
+    if not key:
+        raise ValueError("name is required")
+    if not digest:
+        raise ValueError("token_hash is required")
+    current = conn.execute(
+        f"SELECT {_CONSUMER_COLS} FROM distribution_consumers WHERE name = %s",
+        (key,),
+    ).fetchone()
+    if current is None:
+        raise ValueError(f"consumer {key!r} not found")
+    consumer = _consumer_to_dict(current)
+    if consumer["revoked_at"] is not None:
+        raise ValueError(
+            f"登记 {key!r} 已吊销；吊销的登记不轮换凭据（重新登记一条新的，而不是复活旧的）"
+        )
+    if consumer["token_hash"] == digest:
+        return consumer
+    # 另一条活登记拿着同一枚摘要会撞 token_hash 唯一约束；先判再写，让报错说人话。
+    other = conn.execute(
+        f"SELECT name FROM distribution_consumers WHERE token_hash = %s AND id <> %s",
+        (digest, consumer["id"]),
+    ).fetchone()
+    if other is not None:
+        raise ValueError(f"这枚凭据已经属于登记 {other['name']!r}，不能同时给 {key!r}")
+    cur = conn.execute(
+        f"UPDATE distribution_consumers SET token_hash = %s WHERE id = %s "
+        f"RETURNING {_CONSUMER_COLS}",
+        (digest, consumer["id"]),
+    )
+    rotated = _consumer_to_dict(cur.fetchone())
+    conn.commit()
+    return rotated
+
+
 def revoke_consumer(conn: Any, *, name: str) -> dict:
     """Revoke the consumer's credential (``revoked_at`` is set).
 
