@@ -14,6 +14,9 @@ it is a real row in production and it is not a fleet, so a machine cannot decide
 this.
 
 Run:
+    # 0) 只读：这个库有没有本变更要的六列与两条索引（出片后第一件事）
+    uv run python scripts/register_fleet.py --schema
+
     # 1) look, write nothing
     uv run python scripts/register_fleet.py --from-observed --dry-run
 
@@ -278,6 +281,70 @@ def _promote(
     return 0
 
 
+#: 本变更要求在部署后的库上就位的六列 + 两条索引（§6.2 的判据，一个不许少）。
+_REQUIRED_COLUMNS = (
+    ("authoring_tasks", "assignee_kind"),
+    ("authoring_tasks", "assignee_ref"),
+    ("distribution_consumers", "kind"),
+    ("distribution_consumers", "fleet_ref"),
+    ("domain_agent_runs", "origin"),
+    ("domain_agent_runs", "runner_ref"),
+)
+_REQUIRED_INDEXES = (
+    # 同一舰队至多一条未吊销登记（部分唯一索引：吊销的不占住标识）。
+    ("distribution_consumers_fleet_ref_uk", "fleet_ref"),
+    # 外部回写的幂等兜底（部分唯一索引：只约束非空 runner_ref）。
+    ("domain_agent_runs_runner_ref_key", "runner_ref"),
+)
+
+
+def _schema(conn) -> int:
+    """只读核对：本变更要的列与索引在**这个库**上到底有没有。
+
+    这条命令存在的理由是「看起来部署好了」和「真的部署好了」在产库上长得一模一样：
+    镜像起来了、页面 200、`rollout status` 成功，而某列没落地时只有第一次读它的那个
+    请求会 500。所以判据要能被一次只读查询答完，而不是等某条路径走到才现形。
+
+    EXIT 0 = 六列两索引都在；EXIT 1 = 有缺项（部署没完成，或这个库不是新代码碰过的库）。
+    """
+    rows = conn.execute(
+        "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public'"
+    ).fetchall()
+    present = {(r["table_name"], r["column_name"]) for r in rows}
+    index_rows = conn.execute(
+        "SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = 'public'"
+    ).fetchall()
+    indexes = {r["indexname"]: r["indexdef"] for r in index_rows}
+
+    missing = 0
+    print("列（§6.2）：")
+    for table, column in _REQUIRED_COLUMNS:
+        ok = (table, column) in present
+        print(f"  {'✓' if ok else '✗'} {table}.{column}")
+        missing += 0 if ok else 1
+    print("索引（幂等与「同一舰队至多一条活登记」）：")
+    for name, column in _REQUIRED_INDEXES:
+        definition = indexes.get(name) or ""
+        # 存在 ≠ 对：部分唯一索引的**形状**才是判据（少了 WHERE 就变成“全表唯一”，
+        # 内核 null 行会撞车；少了 UNIQUE 就什么也没约束住）。
+        ok = bool(definition) and "UNIQUE" in definition.upper() and column in definition
+        print(f"  {'✓' if ok else '✗'} {name}"
+              + ("" if ok else f"  （{'未建立' if not definition else definition}）"))
+        missing += 0 if ok else 1
+
+    if missing:
+        print(
+            f"\n{missing} 项缺失：这个库还没有本变更的 schema。"
+            "\n  修法：滚一次新镜像，`docker-entrypoint.sh` 会在 uvicorn 之前跑"
+            "\n  `python -m src.eval.bootstrap` → `ensure_schema` → `WORKSPACE_SCHEMA`（含这些列与索引），"
+            "\n  失败则容器 crash-loop 而不是带半套 schema 提供服务。",
+            file=sys.stderr,
+        )
+        return 1
+    print("\n六列两索引都在：这个库已经是本变更之后的形状。")
+    return 0
+
+
 def _legacy(conn) -> int:
     """Print the migration counter **and how to read it**.
 
@@ -352,6 +419,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--legacy", action="store_true", help="print the migration counter")
     ap.add_argument(
+        "--schema", action="store_true",
+        help="read-only: are this change's six columns and two indexes on this database? "
+             "(the §6.2 check — run it on prod right after a rollout)",
+    )
+    ap.add_argument(
         "--set-domains",
         action="store_true",
         help="when promoting an existing registration, also update its bound domains to --domains "
@@ -360,8 +432,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--apply", action="store_true", help="actually write (default is a dry run)")
     args = ap.parse_args(argv)
 
-    if not (args.from_observed or args.legacy or args.fleet_ref):
-        ap.error("nothing to do: pass --from-observed, --legacy, or --fleet-ref")
+    if not (args.from_observed or args.legacy or args.fleet_ref or args.schema):
+        ap.error("nothing to do: pass --from-observed, --legacy, --schema, or --fleet-ref")
 
     try:
         conn = _connect()
@@ -391,6 +463,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _dispatch(conn, args) -> int:
+    if args.schema:
+        return _schema(conn)
     if args.legacy:
         return _legacy(conn)
     if args.from_observed:

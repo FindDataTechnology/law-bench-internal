@@ -19,6 +19,13 @@
 | `distribution_consumers` | 2 行（`fd-wire`、`ontology-fleet-win`，均绑 legal） |
 | `domains` | 4 |
 
+**§6.2 的基线读数（2026-11-14 复核，只读）**：`register_fleet.py --schema` 的同一套查询在
+产库上返回**零行**——六列（`authoring_tasks.assignee_kind/assignee_ref`、
+`distribution_consumers.kind/fleet_ref`、`domain_agent_runs.origin/runner_ref`）与两条部分
+唯一索引一个都没有。正对照证明不是打错库：`distribution_consumers` 有 2 行，列恰好是
+`id,name,domains,token_hash,created_by,created_at,revoked_at`；`authoring_tasks` 有 1 行。
+所以本变更**尚未部署**，正在跑的舰队不受影响。
+
 这条基线推翻了初稿「source 必须解析到一条已登记消费者」的假设（78 条提取产物会被全部
 拒掉，而它们正是最大生产者），校验因此改为按前缀四类分流。
 
@@ -178,10 +185,23 @@ EXIT=0 并报 `tasks: 0`。
 ## 四、未做项与阻塞
 | 项 | 状态 | 阻塞 |
 |---|---|---|
-| §6.2 生产库真身核对（六列在真 pod 上就位） | **未做** | 要等出片后有 pod 起一次 |
+| §6.2 生产库真身核对（六列在真 pod 上就位） | **判据与基线已就绪，等出片** | 现在有 **一条只读命令**答这件事：`register_fleet.py --schema`（六列 + 两条部分唯一索引，缺项逐条 ✗ 并给修法，EXIT=1）。产库当前读数见 §0：**0/8**，即尚未部署。出片后同一条命令应变成全 ✓——**不需要**再临时拼查询 |
 | §6.3 生产登记（`--from-observed` → 人确认 → `--apply`） | **未做** | 需要该舰队**现有** token；脚本拒绝发明凭据（发明＝切断正在跑的舰队）。**产库那条 `ontology-fleet-win` 走原地升级**（`machine → fleet`，凭据不变），本地五面都验过（见 §4c）——所以这一跑只差人交出那枚 token，不再是「没有可行路径」 |
-| §6.4 跨仓真跑 | **离线那半已做**（见上） | 需 paas 侧按同一 HTTP 契约接入（`add-bench-ops-tools`） |
+| §6.4 跨仓真跑 | **离线那半已做**（见上） | 需 paas 侧按同一 HTTP 契约接入（`add-bench-ops-tools`）；本仓已备 `scripts/fleet_client.py` 作为可照抄的参照实现与联调工具 |
 | §8.1–8.3 | 明确不做 | 直接调度 / 优先级计费 / 舰队侧客户端，均超出本 change |
+
+### 出片链路（核实过的事实，供执行的人直接用）
+
+1. **镜像**：`.github/workflows/image.yml` 在 **`law-bench-internal` 的 `main` 分支 push** 时构建
+   `law-template`（hkccr → cheap-3 relay → ccr）。所以镜像版本 = 该仓某个 main 提交的 `sha-<7>`。
+2. **schema 随启动落地，且失败即 crash-loop**：`scripts/docker-entrypoint.sh`（`PUBLIC_API!=1` 分支）
+   在 `exec uvicorn` 之前跑 `python -m src.eval.bootstrap` → `ensure_schema` →
+   `WORKSPACE_SCHEMA`（六列与两条索引都在这里）。半套 schema 不会被端出去。
+3. **清单与 Argo**：`argocd/application.yaml` 的源是**公开仓** `gitee.com/FindDataTechnology/law-bench.git`
+   的 `main`、`path: deploy`。也就是说**出片要动公开仓的 `deploy/deployment.yaml`**（这是发布决定，
+   不是对齐动作）；本仓同名文件的 tag 目前与线上一致（`law-template:sha-afb4e71`）。
+4. **公开 pod 不跑 DDL**（`PUBLIC_API=1` 分支直接 uvicorn），它的库是复制来的 dump——所以
+   `--schema` 要在 **origin 库**上跑，公开库缺列属正常、且新机器面也没挂在公开 pod 上。
 
 ## 五、这一轮最该记住的三条
 

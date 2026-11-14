@@ -392,6 +392,49 @@ def test_a_name_taken_by_another_credential_is_refused_before_anything_is_writte
     assert len(distribution.list_consumers(conn)) == 1
 
 
+# ------------------------------------------------ --schema（§6.2 的核对面）
+
+
+def test_schema_says_all_present_on_a_booted_database(conn, capsys, monkeypatch):
+    """`ensure_schema` 跑过的库＝本变更之后的形状：六列两索引都在。"""
+    script = _load_script()
+    monkeypatch.setattr(script, "_connect", lambda: _borrowed(conn))
+
+    assert script.main(["--schema"]) == 0
+    out = capsys.readouterr().out
+    for column in ("assignee_kind", "assignee_ref", "kind", "fleet_ref", "origin", "runner_ref"):
+        assert f"✓ " in out and column in out
+    assert "distribution_consumers_fleet_ref_uk" in out
+    assert "domain_agent_runs_runner_ref_key" in out
+    assert "六列两索引都在" in out
+
+
+def test_schema_goes_red_on_a_database_without_the_change(empty_db, capsys, monkeypatch):
+    """没有这张表也能判：缺项必须逐条 ✗ 且 EXIT=1。
+
+    这条测试同时钉住「判据能红」——只验正例的话，一个恒返回 0 的检查也会全绿。
+    """
+    script = _load_script()
+    monkeypatch.setattr(script, "_connect", lambda: _borrowed(empty_db))
+
+    assert script.main(["--schema"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out.count("✗") == 8          # 六列 + 两索引
+    assert "还没有本变更的 schema" in captured.err
+    assert "crash-loop" in captured.err          # 修法要指明，不然只会去手补列
+
+
+def test_schema_checks_the_shape_of_the_partial_indexes(conn, capsys, monkeypatch):
+    """索引「在」不算数：少了 UNIQUE 或少了 WHERE 列，等于没约束住。"""
+    conn.execute("DROP INDEX distribution_consumers_fleet_ref_uk")
+    conn.commit()
+    script = _load_script()
+    monkeypatch.setattr(script, "_connect", lambda: _borrowed(conn))
+
+    assert script.main(["--schema"]) == 1
+    assert "distribution_consumers_fleet_ref_uk" in capsys.readouterr().out
+
+
 # ------------------------------------------------- 计数怎么读（不是「数到 0」）
 
 
