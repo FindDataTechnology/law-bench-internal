@@ -68,6 +68,7 @@ from ...bench import estate
 from ...bench import templates
 from ...bench import libraries as library_store
 from ...bench import proposals as bench_proposals
+from ...bench import submitters as bench_submitters
 from ...search import library_index
 from ...bench import templates as bench_templates
 from ...bench import workspaces
@@ -285,15 +286,37 @@ async def console_task_transition(
         raise HTTPException(status_code=404, detail="task not found in this domain")
     form = await request.form()
     to_status = (form.get("to") or "").strip()
+    actor = user.email or user.name or user.sub
     role = workspaces.get_active_role(db, domain_id=domain["id"], user_id=user.sub)
-    mine = task["assignee"] in {user.sub, user.email, user.name}
+    # Authorization reads the type first: a human order is personal (its display
+    # name IS the identity reference), while kernel-role/fleet orders belong to
+    # an execution side no logged-in person *is* — only a lead/admin moves those,
+    # so a human whose name coincides with a fleet label cannot inherit it.
+    kind = task.get("assignee_kind") or "human"
+    mine = (
+        task["assignee"] in {user.sub, user.email, user.name}
+        if kind == "human"
+        else False
+    )
     if not (mine or role == "lead" or is_platform_admin(user)):
         raise HTTPException(status_code=403, detail="only the assignee or a domain lead may update this task")
     try:
-        bench_authoring.authoring_transition_task(
-            db, task_id=task_id, to_status=to_status,
-            actor=user.email or user.name or user.sub,
-        )
+        # Claim and completion are their own transitions (exclusive claim,
+        # no pending→done shortcut); everything else keeps the old path.
+        if to_status == "in_progress":
+            bench_authoring.authoring_claim_task(db, task_id=task_id, actor=actor)
+        elif to_status == "done":
+            bench_authoring.authoring_complete_task(
+                db, task_id=task_id, actor=actor,
+                note=(form.get("note") or "").strip() or None,
+            )
+        else:
+            bench_authoring.authoring_transition_task(
+                db, task_id=task_id, to_status=to_status, actor=actor,
+            )
+    except bench_authoring.TaskAlreadyClaimed as exc:
+        return _flash(f"/d/{quote(domain_key)}/inbox", "flash.task_already_claimed",
+                      err=True, detail=str(exc))
     except ValueError as exc:
         return _flash(f"/d/{quote(domain_key)}/inbox", "flash.task_transition_failed",
                       err=True, detail=str(exc))
@@ -424,10 +447,30 @@ def console_dispatch_preview(
         plan = dispatch.plan(db, rows=rows, gap=gap, assignee="")
     except ValueError as exc:
         return _flash("/d", str(exc), err=True)
+
+    route = dispatch.route_for(gap)
+    kernel_role = dispatch.kernel_role_for(gap)
+    # 舰队下拉只列「绑定了本次将派到的域」的活登记：列一支绑在别的域的舰队，
+    # 是给操作者一个点了必然失败的选项。
+    target_keys = {d["key"] for d in plan["will_create"] + plan["already_open"]}
+    fleets = [
+        c
+        for c in bench_distribution.list_consumers(db)
+        if (c.get("kind") or "machine") == "fleet"
+        and c.get("revoked_at") is None
+        and target_keys & set(c.get("domains") or [])
+    ]
     return _templates.TemplateResponse(
         request,
         "domain_dispatch.html",
-        {"plan": plan, "platform_admin": is_platform_admin(user)},
+        {
+            "plan": plan,
+            "platform_admin": is_platform_admin(user),
+            "route": route,
+            "kernel_role": kernel_role,
+            "human_only": route == dispatch.HUMAN_ROUTE,
+            "fleets": fleets,
+        },
     )
 
 
@@ -440,16 +483,27 @@ async def console_dispatch_confirm(
     db: DbConn = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Create one task per domain still missing the gap (idempotent per pillar)."""
+    """Create one task per domain still missing the gap (idempotent per pillar).
+
+    The assignee is typed now: ``assignee_kind`` picks which of the three kinds
+    it is, and the reference is what authorization reads. Dispatch never decides
+    *who* on its own — it records the operator's choice and refuses choices the
+    route table contradicts (a kernel-owned gap cannot be handed to someone the
+    table never assigned it to).
+    """
     form = await request.form()
     gap = (form.get("gap") or "").strip()
     assignee = (form.get("assignee") or "").strip()
+    assignee_kind = (form.get("assignee_kind") or "human").strip()
+    assignee_ref = (form.get("assignee_ref") or "").strip() or None
     domains = _estate_domains(db, user)
     try:
         rows = dispatch.rows_for_gap(db, domains=domains, gap=gap)
         result = dispatch.dispatch(
             db, rows=rows, gap=gap, assignee=assignee,
             created_by=user.email or user.name or user.sub,
+            assignee_kind=assignee_kind,
+            assignee_ref=assignee_ref,
         )
     except ValueError as exc:
         return _flash("/d", str(exc), err=True)
@@ -616,7 +670,9 @@ def console_overview(
     db: DbConn = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Domain overview: four real counts, my tasks, vocabulary, recent changes."""
+    """Domain overview: four real counts, my tasks, who is running, recent changes."""
+    from ...bench import agent_runs
+
     domain = resolve_domain(db, domain_key)
     schema = _anchored_schema(db, domain)
     ctx = console_context(db, domain, user, touch=True)
@@ -637,6 +693,14 @@ def console_overview(
                     db, domain_id=domain["id"], assignee=user.sub
                 )
             ),
+            # 「谁在跑」：两类执行方各取最近一轮，各自留空态。合成一句「最近活动」
+            # 会把「舰队从没动过」说成「有人在跑」——那是两个不同的判断。
+            "who_runs": {
+                origin: (agent_runs.list_runs(
+                    db, domain_key=domain_key, origin=origin, limit=1
+                ) or [None])[0]
+                for origin in ("kernel", "fleet")
+            },
             "recent_events": curation.get("recent_events") or [],
         },
     )
@@ -1008,12 +1072,18 @@ def console_inbox(
     # tasks exist, block re-dispatch (idempotency), and nobody can see or close
     # them.
     tasks = bench_authoring.authoring_list_tasks(db, domain_id=domain["id"])
+    # 来源列要显示「解析后的来源」，不是一串原始标识：只写 `fleet:<id>/<post>`
+    # 时复核的人看不出这是哪支舰队、登记还在不在。未解析的显式标 legacy。
+    source_views = bench_proposals.describe_sources(
+        db, sources=[p["source"] for p in proposals], domain_key=domain_key
+    )
     return _templates.TemplateResponse(
         request,
         "domain_console_inbox.html",
         {
             **console_context(db, domain, user),
             "proposals": proposals,
+            "source_views": source_views,
             "state_filter": state,
             "tasks": tasks,
             "open_tasks": [t for t in tasks if t["status"] in ("pending", "in_progress")],
@@ -1225,6 +1295,12 @@ def console_team(
         b for b in bench_proposals.batches(db, domain_key=domain_key)
         if b.get("pending")
     ]
+    # 工单在团队区与工单页同源：**同一次查询**，不另写一份口径。值班的人先看
+    # 「谁在跑」，紧接着要问「还有谁该跑」，中间不该跳页。
+    open_orders = [
+        t for t in bench_authoring.authoring_list_tasks(db, domain_id=domain["id"])
+        if t["status"] in ("pending", "in_progress")
+    ]
     return _templates.TemplateResponse(
         request,
         "domain_console_team.html",
@@ -1237,9 +1313,92 @@ def console_team(
             "ledger": agent_runs.summary(db, domain_key=domain_key),
             "runs": agent_runs.list_runs(db, domain_key=domain_key, limit=20),
             "batches": batches,
+            "open_orders": open_orders,
+            "order_counts": {
+                kind: sum(1 for t in open_orders if t.get("assignee_kind") == kind)
+                for kind in bench_authoring.ASSIGNEE_KINDS
+            },
             "plan": agent_team.plan(domain_key),
         },
     )
+
+
+# ------------------------------------------------------- work orders view #
+
+
+@read_only_router.get(
+    "/d/{domain_key}/work-orders", include_in_schema=False, name="console_work_orders",
+    dependencies=_READ_GATES,
+)
+def console_work_orders(
+    request: Request,
+    domain_key: str,
+    status: Optional[str] = None,
+    kind: Optional[str] = None,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """The domain's work orders, filterable by state and assignee kind.
+
+    Why this page exists separately from the overview's "my tasks": that list
+    matches ``assignee == user.sub``, which is *one* of three kinds. A work order
+    handed to a kernel role or a fleet is invisible there — it exists, blocks
+    re-dispatch, and nobody can see or close it. The kind is therefore a first
+    class filter, not a decoration: "who is this waiting on" is the question the
+    page answers.
+    """
+    from ...bench import dispatch as bench_dispatch
+
+    domain = resolve_domain(db, domain_key)
+    cap = capability(db, domain, user)
+    if status is not None and status not in ("pending", "in_progress", "done", "cancelled"):
+        raise HTTPException(status_code=422, detail=f"未知状态：{status!r}")
+    if kind is not None and kind not in bench_authoring.ASSIGNEE_KINDS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"未知指派人档位：{kind!r}（可用：{list(bench_authoring.ASSIGNEE_KINDS)}）",
+        )
+
+    tasks = bench_authoring.authoring_list_tasks(
+        db, domain_id=domain["id"], status=status
+    )
+    if kind is not None:
+        tasks = [t for t in tasks if t.get("assignee_kind") == kind]
+
+    # 每行带一句「它在等谁」：三档的后果不同，同一个「已派出」会把等待舰队认领
+    # 说成「下一轮就跑了」，值班的人据此判断要不要催。
+    for task in tasks:
+        task["consequence"] = _consequence_key(task)
+        task["trail"] = [e for e in (task.get("transitions") or []) if e.get("from")]
+
+    return _templates.TemplateResponse(
+        request,
+        "domain_work_orders.html",
+        {
+            **console_context(db, domain, user),
+            "cap": cap,
+            "tasks": tasks,
+            "status_filter": status,
+            "kind_filter": kind,
+            "kinds": bench_authoring.ASSIGNEE_KINDS,
+            "route_hint": {
+                gap: bench_dispatch.route_for(gap) for gap in bench_dispatch.GAP_TASKS
+            },
+        },
+    )
+
+
+def _consequence_key(task: dict) -> str:
+    """What the assignee kind actually means for this task's next move.
+
+    Three kinds, three different sentences — sharing one "dispatched" wording
+    would state something false about two of them.
+    """
+    kind = task.get("assignee_kind") or "human"
+    return {
+        "kernel-role": "consequence_kernel",
+        "fleet": "consequence_fleet",
+    }.get(kind, "consequence_human")
 
 
 # ------------------------------------------------------- corpus documents #
@@ -1680,7 +1839,17 @@ async def console_proposal_submit(
             submitted_by=str(payload.get("submitted_by") or "").strip()
             or _operator_of(user),
             with_created=True,
+            # External channel, always. ``extract:`` sources are refused here
+            # because their trust basis is that the pipeline is unreachable
+            # from the network; this constant is the only thing saying so.
+            via=bench_submitters.VIA_HTTP,
+            # ``agent:``/``user:`` sources may only name the caller themselves.
+            authenticated_as=_operator_of(user),
         )
+    except bench_proposals.SubmitterRefused as exc:
+        # 403, not 400: the request is well-formed; the caller is not allowed to
+        # submit as that source.
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
@@ -1692,4 +1861,115 @@ async def console_proposal_submit(
         # fleet reports 新增 vs 幂等命中 from this flag; without it both look
         # identical and the round's count cannot be trusted.
         "created": created,
+    }
+
+
+@read_only_router.get(
+    "/api/d/{domain_key}/proposals/outcomes", include_in_schema=False,
+    name="console_proposal_outcomes",
+    dependencies=[Depends(require_scope("content:read"))],
+)
+def console_proposal_outcomes(
+    domain_key: str,
+    source: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """What happened to the proposals this submitter filed in this domain.
+
+    A submitter MUST see its own outcomes and nobody else's: the ``source`` is
+    checked against the caller's identity (or admin), not trusted because it was
+    passed in. Without this read face a fleet learns "rejected" only by being
+    refused on resubmission — and never learns *why*.
+    """
+    resolve_domain(db, domain_key)  # 404 for an unknown domain, before any read
+    wanted = (source or "").strip()
+    _consumer, verdict = bench_distribution.resolve_submitter(
+        db, source=wanted, domain_key=domain_key,
+        via=bench_submitters.VIA_HTTP, authenticated_as=_operator_of(user),
+    )
+    if verdict != "ok" and not is_platform_admin(user):
+        raise HTTPException(
+            status_code=403,
+            detail=f"只能读取自己来源的结局：{wanted!r}（{verdict}）",
+        )
+    return {
+        "domain": domain_key,
+        "source": wanted,
+        "outcomes": bench_proposals.list_outcomes(
+            db, source=wanted, domain_key=domain_key
+        ),
+    }
+
+
+@read_only_router.get(
+    "/api/d/{domain_key}/runs", include_in_schema=False,
+    name="console_domain_runs",
+    dependencies=[Depends(require_scope("content:read"))],
+)
+def console_domain_runs(
+    domain_key: str,
+    runner_ref: str | None = None,
+    origin: str | None = None,
+    limit: int = 50,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """The ledger as a machine-readable read face (session channel).
+
+    Why a JSON face exists at all: the team *page* shows runs to a human, but a
+    submitter must be able to answer "did this round of mine land, and how did it
+    end?" without parsing HTML. Without it a fleet's only feedback is silence —
+    it writes back, gets 200, and never learns whether the row is there.
+
+    Isolation is :func:`submitters.may_read_runner_ref`, the same predicate the
+    machine-token twin under ``/api/v1/distribution`` uses: a fleet reads only
+    its own rounds; a domain member (who already sees the whole ledger page) and
+    an admin read the domain's. Asking for someone else's prefix is 403, not an
+    empty list — an empty list would read as "your write-back did not land".
+    """
+    from ...bench import agent_runs as bench_agent_runs
+
+    domain = resolve_domain(db, domain_key)  # 404 before any read
+    wanted = (runner_ref or "").strip() or None
+    admin = is_platform_admin(user)
+    member = admin or workspaces.get_active_role(
+        db, domain_id=domain["id"], user_id=user.sub
+    ) is not None
+    if not bench_submitters.may_read_runner_ref(
+        wanted, is_member=member, is_admin=admin
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail=f"只能读取自己来源的运行：runner_ref={wanted!r}",
+        )
+    return {
+        "domain": domain_key,
+        "runner_ref": wanted,
+        "runs": bench_agent_runs.list_runs(
+            db, domain_key=domain_key, origin=origin, runner_ref=wanted, limit=limit,
+        ),
+    }
+
+
+@read_only_router.get(
+    "/api/v1/distribution/legacy-sources", include_in_schema=False,
+    name="console_legacy_sources",
+    dependencies=[Depends(require_scope("content:read"))],
+)
+def console_legacy_sources(
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Sources admitted by the lenient window — the number that closes it.
+
+    Admin only: this is the migration's control reading, not a browsing surface.
+    ``mode`` is reported alongside so the operator sees whether enforcement is
+    currently strict or lenient in this process.
+    """
+    if not is_platform_admin(user):
+        raise HTTPException(status_code=403, detail="需要平台管理员")
+    return {
+        "mode": bench_proposals._submitter_mode(),
+        "sources": bench_proposals.legacy_sources(db),
     }

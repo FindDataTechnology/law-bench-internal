@@ -26,6 +26,7 @@ bare zh string is not proof that a page rendered it.
 from __future__ import annotations
 
 import hashlib
+import re
 from urllib.parse import parse_qs, quote, urlparse
 
 import pytest
@@ -133,6 +134,15 @@ def _no_idp(monkeypatch):
 
 def _params(location: str) -> dict:
     return {k: v[0] for k, v in parse_qs(urlparse(location).query).items()}
+
+
+def _rendered(html: str) -> str:
+    """HTML 去掉 i18n 引导脚本。
+
+    页面里嵌着整份 `window.__LOCALE__`，所以一个裸中文串**不能**证明页面渲染了
+    它——它可能在引导脚本里。判「这一句出现在页面上」必须先去掉那份脚本。
+    """
+    return re.sub(r"<script>window\.__LOCALE__.*?</script>", "", html, flags=re.S)
 
 
 # =========================================================================== #
@@ -391,7 +401,10 @@ def test_ledger_curation_layer_offers_authoring_entries_by_role(seeded_db):
 
 
 def _submit(c: TestClient, *, key: str, evidence: dict, kind: str = "company",
-            domain_key: str = A_KEY, source: str = "fleet") -> dict:
+            domain_key: str = A_KEY, as_user: str = "alice",
+            source: str | None = None) -> dict:
+    """Submit as ``as_user`` — the caller may only claim its own identity."""
+    source = source or f"user:{as_user}@example.com"
     r = c.post(
         f"/api/d/{domain_key}/proposals",
         json={
@@ -420,7 +433,7 @@ def test_inbox_confirm_writes_through_the_kernel(seeded_db):
         inbox = c.get(f"/d/{A_KEY}/inbox")
         assert inbox.status_code == 200
         assert "ai-corp" in inbox.text
-        assert "fleet" in inbox.text
+        assert "user:alice" in inbox.text
         confirm = c.post(
             f"/d/{A_KEY}/inbox/{proposal['id']}/confirm", follow_redirects=False
         )
@@ -438,7 +451,8 @@ def test_inbox_forbids_self_confirmation(seeded_db):
     duties); the platform admin may, but only with the override recorded."""
     _seed_world(seeded_db)
     with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
-        proposal = _submit(c, key="self-serv", evidence={"url": "https://example.test/s"})
+        proposal = _submit(c, key="self-serv", evidence={"url": "https://example.test/s"},
+                           as_user="lara")
         denied = c.post(
             f"/d/{A_KEY}/inbox/{proposal['id']}/confirm", follow_redirects=False
         )
@@ -479,7 +493,7 @@ def test_inbox_reject_requires_a_reason_and_blocks_identical_resubmission(seeded
         same = c.post(
             f"/api/d/{A_KEY}/proposals",
             json={
-                "source": "fleet", "kind": "company", "external_key": "weak-source",
+                "source": "user:alice@example.com", "kind": "company", "external_key": "weak-source",
                 "body": "同一条目再提", "evidence": evidence,
             },
         )
@@ -498,7 +512,7 @@ def test_inbox_requires_evidence_at_the_edge(seeded_db):
         r = c.post(
             f"/api/d/{A_KEY}/proposals",
             json={
-                "source": "fleet", "kind": "company", "external_key": "no-proof",
+                "source": "user:alice@example.com", "kind": "company", "external_key": "no-proof",
                 "body": "没有依据的条目", "evidence": {},
             },
         )
@@ -699,3 +713,334 @@ def test_every_legacy_path_still_resolves_for_a_platform_admin(seeded_db):
         domain_admin = c.get(f"/admin/domains/{A_KEY}").status_code
     assert set(admin.values()) == {200}
     assert domain_admin == 200
+
+
+# =========================================================================== #
+# 结局回流与迁移计数（add-fleet-execution-loop §4 / §2.4）                      #
+# =========================================================================== #
+
+
+def test_outcomes_are_readable_only_by_their_own_submitter(seeded_db):
+    """A submitter reads how its draft ended — and cannot read anyone else's.
+
+    ``alice`` files as herself; ``bob`` asks for alice's source and must be
+    refused, because the route authorizes the *claimed* source against the
+    caller's identity instead of trusting the query string.
+    """
+    _seed_world(seeded_db)
+    with _client(seeded_db, _user("alice", _READ_WRITE)) as c:
+        proposal = _submit(c, key="outcome-1", evidence={"url": "https://example.test/o"})
+    # Rejection is a lead act; the submitter and the judge are different people.
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        reject = c.post(
+            f"/d/{A_KEY}/inbox/{proposal['id']}/reject",
+            data={"note": "依据无法回源"}, follow_redirects=False,
+        )
+        assert reject.status_code == 303
+    with _client(seeded_db, _user("alice", _READ_WRITE)) as c:
+        mine = c.get(f"/api/d/{A_KEY}/proposals/outcomes",
+                     params={"source": "user:alice@example.com"})
+    assert mine.status_code == 200, mine.text
+    rows = mine.json()["outcomes"]
+    assert len(rows) == 1
+    assert rows[0]["state"] == "rejected"
+    assert rows[0]["decision_note"] == "依据无法回源"
+
+    with _client(seeded_db, _user("bob", _READ_WRITE)) as c:
+        theirs = c.get(f"/api/d/{A_KEY}/proposals/outcomes",
+                       params={"source": "user:alice@example.com"})
+    assert theirs.status_code == 403
+    assert "只能读取自己来源" in theirs.json()["detail"]
+
+
+def test_legacy_counts_are_admin_only(seeded_db):
+    _seed_world(seeded_db)
+    with _client(seeded_db, _user("alice", _READ_WRITE)) as c:
+        denied = c.get("/api/v1/distribution/legacy-sources")
+    assert denied.status_code == 403
+
+    with _client(seeded_db, _user("root", ["*"])) as c:
+        allowed = c.get("/api/v1/distribution/legacy-sources")
+    assert allowed.status_code == 200
+    body = allowed.json()
+    assert body["mode"] in ("strict", "lenient")
+    assert "sources" in body
+
+
+# --- §2.6b 来自真实 HTTP 路由的提交方判定 ------------------------------------- #
+# 函数级测试已经覆盖九类结论，但路由是**另一处**必须传对 ``via`` 的地方：传错等于
+# 没有校验，而函数级的绿完全看不出来。所以这一节只用真请求，不碰判定函数。
+
+
+def _post(c, *, source, key, domain_key=A_KEY):
+    return c.post(
+        f"/api/d/{domain_key}/proposals",
+        json={
+            "source": source, "kind": "company", "external_key": key,
+            "body": f"{key} 正文", "evidence": {"url": f"https://example.test/{key}"},
+        },
+    )
+
+
+def test_http_call_cannot_claim_an_extract_source(seeded_db):
+    """``extract:`` 的信任前提是「管线从网络不可达」；公网面必须当场否掉。"""
+    _seed_world(seeded_db)
+    with _client(seeded_db, _user("alice", _READ_WRITE)) as c:
+        r = _post(c, source="extract:qwen:2025-10", key="impersonated")
+    assert r.status_code == 403, r.text
+    assert "进程内" in r.json()["detail"]
+
+    written = seeded_db.execute(
+        "SELECT count(*) AS n FROM domain_proposals WHERE external_key = 'impersonated'"
+    ).fetchone()["n"]
+    assert written == 0, "被拒的冒充不能留下半行"
+
+
+def test_http_call_from_an_unregistered_fleet_is_refused(seeded_db):
+    _seed_world(seeded_db)
+    with _client(seeded_db, _user("alice", _READ_WRITE)) as c:
+        r = _post(c, source="fleet:fleet_nobody/post_1", key="stranger")
+    assert r.status_code == 403
+    assert "未登记" in r.json()["detail"]
+
+
+def test_http_call_from_a_registered_fleet_is_accepted(seeded_db):
+    _seed_world(seeded_db)
+    bench_distribution.register_consumer(
+        seeded_db, name="ontology-fleet", domains=[A_KEY],
+        token_hash=hashlib.sha256(b"tok").hexdigest(), created_by="seed",
+        kind="fleet", fleet_ref="fleet_a",
+    )
+    with _client(seeded_db, _user("alice", _READ_WRITE)) as c:
+        ok = _post(c, source="fleet:fleet_a/post_1", key="from-fleet")
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["created"] is True
+
+    # 登记绑域：同一个 fleet_ref 在别人域里仍是未登记。这里必须换成 B 域自己的
+    # 成员来发——拿 A 域的人去发会先被域权限门（403「无该域权限」）挡掉，那样
+    # 测到的是门，不是绑域。
+    with _client(seeded_db, _user("bob", _READ_WRITE)) as c:
+        cross = _post(c, source="fleet:fleet_a/post_1", key="cross", domain_key=B_KEY)
+    assert cross.status_code == 403
+    # 说不成「未登记」：这个 fleet_ref 确实登记过，错的是域。结论要指对原因，
+    # 否则运维会去重新登记一个已经存在的舰队。
+    assert "域不在绑定范围" in cross.json()["detail"]
+
+
+def test_http_call_cannot_claim_another_persons_identity(seeded_db):
+    _seed_world(seeded_db)
+    with _client(seeded_db, _user("alice", _READ_WRITE)) as c:
+        r = _post(c, source="user:bob@example.com", key="stolen-identity")
+    assert r.status_code == 403
+    assert "只能以自己的身份提交" in r.json()["detail"]
+
+    # 正例在 bob 自己的域里做（在 A 域他连门都过不去，测不到身份判定）。
+    with _client(seeded_db, _user("bob", _READ_WRITE)) as c:
+        own = _post(c, source="user:bob@example.com", key="own-identity", domain_key=B_KEY)
+    assert own.status_code == 200, own.text
+
+
+# =========================================================================== #
+# 工单 / 派单 / 台账的来源：三档后果必须分开说                                 #
+# =========================================================================== #
+
+
+def _task(seeded_db, domain, **kw):
+    params = dict(
+        domain_id=domain["id"], assignee="alice", title="t", detail="d",
+        target_kind="estate-gap", target_key="ontology", created_by="lara",
+    )
+    params.update(kw)
+    return bench_authoring.authoring_create_task(seeded_db, **params)
+
+
+def test_work_orders_page_shows_all_three_kinds(seeded_db):
+    """总览的「我的任务」只匹配人；另外两档必须还有一页能看见，否则它们无法关闭。"""
+    world = _seed_world(seeded_db)
+    _task(seeded_db, world["a"], assignee="alice@example.com")
+    _task(seeded_db, world["a"], assignee="agent:builder@aw-key",
+          assignee_kind="kernel-role", assignee_ref="builder", target_key="knowledge")
+    bench_distribution.register_consumer(
+        seeded_db, name="ontology-fleet", domains=[A_KEY],
+        token_hash=hashlib.sha256(b"t").hexdigest(), created_by="seed",
+        kind="fleet", fleet_ref="fleet_a",
+    )
+    _task(seeded_db, world["a"], assignee="ontology-fleet",
+          assignee_kind="fleet", assignee_ref="fleet_a", target_key="eval")
+
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        page = c.get(f"/d/{A_KEY}/work-orders")
+    body = _rendered(page.text)
+    assert page.status_code == 200, page.text
+    assert "ontology-fleet" in body
+    assert "<code>builder</code>" in body
+    # 三档各一句后果：共用一句「已派出」会把「等舰队认领」说成「下一轮就跑」。
+    assert "内核岗位下一轮执行" in body
+    assert "等待舰队认领" in body
+    assert "由人处理" in body
+
+
+def test_work_orders_can_be_filtered_by_kind_and_status(seeded_db):
+    world = _seed_world(seeded_db)
+    _task(seeded_db, world["a"], assignee="alice@example.com", target_key="ontology")
+    _task(seeded_db, world["a"], assignee="agent:builder@aw-key",
+          assignee_kind="kernel-role", assignee_ref="builder", target_key="knowledge")
+
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        only_role = c.get(f"/d/{A_KEY}/work-orders", params={"kind": "kernel-role"})
+        only_human = c.get(f"/d/{A_KEY}/work-orders", params={"kind": "human"})
+        bad = c.get(f"/d/{A_KEY}/work-orders", params={"kind": "robot"})
+    role_body, human_body = _rendered(only_role.text), _rendered(only_human.text)
+    assert "<code>builder</code>" in role_body
+    assert "alice@example.com" not in role_body
+    assert "alice@example.com" in human_body
+    assert "<code>builder</code>" not in human_body
+    assert bad.status_code == 422
+
+
+def test_work_orders_is_empty_honestly_when_there_are_none(seeded_db):
+    _seed_world(seeded_db)
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        page = c.get(f"/d/{A_KEY}/work-orders")
+    assert page.status_code == 200
+    assert "本域没有工单" in _rendered(page.text)
+
+
+def test_work_orders_is_domain_scoped(seeded_db):
+    _seed_world(seeded_db)
+    with _client(seeded_db, _user("bob", _READ_WRITE)) as c:
+        assert c.get(f"/d/{B_KEY}/work-orders").status_code == 200
+        assert c.get(f"/d/{A_KEY}/work-orders").status_code == 403
+
+
+def test_dispatch_page_offers_the_route_table_role(seeded_db):
+    _seed_world(seeded_db)
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        page = c.get("/d/dispatch", params={"gap": "ontology"})
+    assert page.status_code == 200, page.text
+    body = _rendered(page.text)
+    assert "kernel:builder" in body
+    # 选择器存在，且默认选项就是分诊表指定的那个岗位。
+    assert 'name="assignee_kind"' in body
+    assert "下一轮执行" in body
+
+
+def test_dispatch_page_refuses_to_offer_agents_for_a_human_gap(seeded_db):
+    """归人的缺口只有一档可选：给智能体选项等于让人以为它能替人做复核。"""
+    _seed_world(seeded_db)
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        page = c.get("/d/dispatch", params={"gap": "quality:review_lag"})
+    assert page.status_code == 200, page.text
+    body = _rendered(page.text)
+    assert "这个缺口归人" in body
+    # 判据是「没有智能体可选项」：这个缺口下没有任何 domain 会给出 fleet/岗位按钮。
+    assert 'value="fleet"' not in body
+    assert 'value="kernel-role"' not in body
+
+
+def test_dispatch_page_lists_only_fleets_bound_to_the_target_domains(seeded_db):
+    _seed_world(seeded_db)
+    bench_distribution.register_consumer(
+        seeded_db, name="bound-fleet", domains=[A_KEY],
+        token_hash=hashlib.sha256(b"a").hexdigest(), created_by="seed",
+        kind="fleet", fleet_ref="fleet_a",
+    )
+    bench_distribution.register_consumer(
+        seeded_db, name="other-fleet", domains=[B_KEY],
+        token_hash=hashlib.sha256(b"b").hexdigest(), created_by="seed",
+        kind="fleet", fleet_ref="fleet_b",
+    )
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        page = c.get("/d/dispatch", params={"gap": "ontology"})
+    body = _rendered(page.text)
+    assert "bound-fleet" in body
+    assert "other-fleet" not in body
+
+
+def test_team_ledger_separates_the_two_origins(seeded_db):
+    """值班长要在一份台账里看出谁在跑：来源与外部执行方各占一列。"""
+    from src.bench import agent_runs
+
+    _seed_world(seeded_db)
+    agent_runs.start(seeded_db, role="agent:warden@aw-key", domain_key=A_KEY)
+    agent_runs.record_external_run(
+        seeded_db, runner_ref="fleet:fleet_a/post_1#1", role="concept",
+        domain_key=A_KEY, outcome="ok", counts={"drafts": 2},
+    )
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        page = c.get(f"/d/{A_KEY}/team")
+    body = _rendered(page.text)
+    assert page.status_code == 200, page.text
+    # 表头本身也要在（裸串在引导脚本里也有一份，所以先去掉那份脚本）。
+    assert "<th>外部执行方</th>" in body
+    assert "<code>fleet:fleet_a/post_1#1</code>" in body
+
+
+def test_overview_says_who_is_running_per_class(seeded_db):
+    from src.bench import agent_runs
+
+    _seed_world(seeded_db)
+    agent_runs.start(seeded_db, role="agent:warden@aw-key", domain_key=A_KEY)
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        page = c.get(f"/d/{A_KEY}")
+    body = _rendered(page.text)
+    assert page.status_code == 200, page.text
+    assert "<h2>谁在跑</h2>" in body
+    # 内核跑过、舰队没跑过：两类各自给结论，不能合成一句「有活动」。
+    assert "<code>agent:warden@aw-key</code>" in body
+    assert "还没有跑过" in body
+
+
+def test_inbox_shows_the_resolved_source_and_marks_legacy(seeded_db):
+    world = _seed_world(seeded_db)
+    bench_distribution.register_consumer(
+        seeded_db, name="ontology-fleet", domains=[A_KEY],
+        token_hash=hashlib.sha256(b"t").hexdigest(), created_by="seed",
+        kind="fleet", fleet_ref="fleet_a",
+    )
+    seeded_db.execute(
+        "INSERT INTO domain_proposals (domain_id, source, kind, external_key, body, "
+        "evidence, evidence_digest, state, submitted_by, sources) VALUES "
+        "(%s, 'fleet:fleet_a/post_1', 'company', 'known-1', 'b', '{\"u\":1}'::jsonb, "
+        "'d1', 'pending', 'fleet:fleet_a/post_1', '[\"fleet:fleet_a/post_1\"]'::jsonb), "
+        "(%s, 'fleet:credential-probe/post_probe', 'company', 'probe-1', 'b', "
+        "'{\"u\":2}'::jsonb, 'd2', 'pending', 'probe', "
+        "'[\"fleet:credential-probe/post_probe\"]'::jsonb)",
+        (world["a"]["id"], world["a"]["id"]),
+    )
+    seeded_db.commit()
+
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        page = c.get(f"/d/{A_KEY}/inbox")
+    body = _rendered(page.text)
+    assert page.status_code == 200, page.text
+    # 已登记：显示舰队名 + 岗位，而不是一串原始标识。
+    assert "<strong>ontology-fleet</strong>" in body
+    assert "<code>post_1</code>" in body
+    # 未登记：原样显示并标 legacy——那行没有任何登记能约束它。
+    assert "<code>fleet:credential-probe/post_probe</code>" in body
+    assert "badge-warn\">legacy</span>" in body
+
+
+def test_team_shows_open_work_orders_by_kind(seeded_db):
+    """团队区与工单页同源展示未完成工单，并按档位分组——混一个总数等于没回答「还在等谁」。"""
+    world = _seed_world(seeded_db)
+    _task(seeded_db, world["a"], assignee="alice@example.com", target_key="ontology")
+    _task(seeded_db, world["a"], assignee="agent:builder@aw-key",
+          assignee_kind="kernel-role", assignee_ref="builder", target_key="knowledge")
+
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        page = c.get(f"/d/{A_KEY}/team")
+    body = _rendered(page.text)
+    assert page.status_code == 200, page.text
+    assert "未完成工单" in body
+    assert "内核岗位 1" in body
+    assert "人 1" in body
+    assert "舰队 0" in body
+
+
+def test_team_reports_no_open_orders_honestly(seeded_db):
+    _seed_world(seeded_db)
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        page = c.get(f"/d/{A_KEY}/team")
+    assert "没有未完成的工单" in _rendered(page.text)

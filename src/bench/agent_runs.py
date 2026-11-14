@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from . import agent_ids, workspaces
+from . import agent_ids, submitters, workspaces
 
 #: 结局词表。``running`` 只是"还没收尾"，不是结论。
 OUTCOMES = ("running", "ok", "thin", "failed", "stopped")
@@ -67,10 +67,12 @@ def start(
     if workspaces.get_domain(conn, domain_key=domain_key) is None:
         raise ValueError(f"domain {domain_key!r} not found")
     row = conn.execute(
-        "INSERT INTO domain_agent_runs (role, domain_key, task_id, run_key, input_digest) "
-        "VALUES (%s, %s, %s, %s, %s) "
+        "INSERT INTO domain_agent_runs "
+        "(role, domain_key, task_id, run_key, input_digest, origin) "
+        "VALUES (%s, %s, %s, %s, %s, 'kernel') "
         "RETURNING id, role, domain_key, task_id, run_key, outcome, input_digest, "
-        "          counts, remaining, artifact_refs, detail, started_at, ended_at",
+        "          counts, remaining, artifact_refs, detail, started_at, ended_at, "
+        "          origin, runner_ref",
         (role, domain_key, task_id, run_key, input_digest),
     ).fetchone()
     conn.commit()
@@ -105,7 +107,8 @@ def finish(
         "artifact_refs = %s::jsonb, detail = %s, ended_at = now() "
         "WHERE id = %s AND outcome = 'running' "
         "RETURNING id, role, domain_key, task_id, run_key, outcome, input_digest, "
-        "          counts, remaining, artifact_refs, detail, started_at, ended_at",
+        "          counts, remaining, artifact_refs, detail, started_at, ended_at, "
+        "          origin, runner_ref",
         (
             outcome,
             _json(counts or {}),
@@ -122,7 +125,8 @@ def finish(
 def get(conn: Any, *, run_id: int) -> Optional[dict]:
     row = conn.execute(
         "SELECT id, role, domain_key, task_id, run_key, outcome, input_digest, "
-        "       counts, remaining, artifact_refs, detail, started_at, ended_at "
+        "       counts, remaining, artifact_refs, detail, started_at, ended_at, "
+        "       origin, runner_ref "
         "FROM domain_agent_runs WHERE id = %s",
         (run_id,),
     ).fetchone()
@@ -130,20 +134,136 @@ def get(conn: Any, *, run_id: int) -> Optional[dict]:
 
 
 def list_runs(
-    conn: Any, *, domain_key: str, role: Optional[str] = None, limit: int = 50
+    conn: Any,
+    *,
+    domain_key: str,
+    role: Optional[str] = None,
+    origin: Optional[str] = None,
+    runner_ref: Optional[str] = None,
+    limit: int = 50,
 ) -> list[dict]:
+    """The domain's ledger, newest first.
+
+    ``origin`` filters kernel rounds from fleet write-backs; ``runner_ref`` answers
+    the submitter's own question ("did this round of mine land?"). Neither takes
+    part in ordering — the ledger is one timeline, and a fleet that sorted last
+    because of its source would be invisible exactly when it is late.
+    """
     sql = (
         "SELECT id, role, domain_key, task_id, run_key, outcome, input_digest, "
-        "       counts, remaining, artifact_refs, detail, started_at, ended_at "
+        "       counts, remaining, artifact_refs, detail, started_at, ended_at, "
+        "       origin, runner_ref "
         "FROM domain_agent_runs WHERE domain_key = %s"
     )
     params: list[Any] = [domain_key]
     if role:
         sql += " AND role = %s"
         params.append(role)
+    if origin:
+        sql += " AND origin = %s"
+        params.append(origin)
+    if runner_ref:
+        sql += " AND runner_ref = %s"
+        params.append(runner_ref)
     sql += " ORDER BY started_at DESC LIMIT %s"
     params.append(max(1, min(int(limit or 50), 500)))
     return [dict(r) for r in conn.execute(sql, tuple(params)).fetchall()]
+
+
+def record_external_run(
+    conn: Any,
+    *,
+    runner_ref: str,
+    role: str,
+    domain_key: str,
+    outcome: str,
+    counts: Optional[dict] = None,
+    remaining: Optional[int] = None,
+    artifact_refs: Optional[list] = None,
+    detail: Optional[str] = None,
+    task_id: Optional[int] = None,
+) -> tuple[dict, bool]:
+    """Record a fleet round's outcome — ``(run, created)``.
+
+    Idempotent on ``runner_ref``: a replay returns the existing row untouched
+    and reports ``created=False``. The check is an *existence lookup*, not a
+    unique constraint — ``run_key`` is legitimately null for some kernel rounds,
+    and nulls do not collide in a unique index, so a constraint here would look
+    like protection without being any.
+
+    ``origin`` is always ``fleet``; ``run_key`` mirrors ``runner_ref`` so the
+    ledger answers "which fleet round was this" from one column as well.
+    """
+    if outcome not in OUTCOMES or outcome == "running":
+        raise ValueError(
+            f"结局必须是 {[o for o in OUTCOMES if o != 'running']} 之一（running 只是未收尾）"
+        )
+    ref = (runner_ref or "").strip()
+    if not ref:
+        raise ValueError("runner_ref is required")
+    if submitters.classify_source(ref)[0] != submitters.PREFIX_FLEET:
+        raise ValueError(
+            "runner_ref 必须形如 "
+            f"{submitters.SHAPES[submitters.PREFIX_FLEET]}#<round>；got {runner_ref!r}"
+        )
+    if workspaces.get_domain(conn, domain_key=domain_key) is None:
+        raise ValueError(f"domain {domain_key!r} not found")
+
+    existing = get_by_runner_ref(conn, runner_ref=ref)
+    if existing is not None:
+        return existing, False
+
+    # 存在性检查有 TOCTOU 窗口：两个重试可以同时查不到、同时插入。部分唯一索引
+    # （`domain_agent_runs_runner_ref_key`，只覆盖 runner_ref 非空的行）是兜底，
+    # 撞上它说明这一轮确实已经被别人写进去了——回读那一行、照旧报「已存在」，
+    # 而不是把唯一性冲突抛给调用方当故障去重试。
+    try:
+        row = conn.execute(
+            "INSERT INTO domain_agent_runs "
+            "(role, domain_key, task_id, run_key, outcome, counts, remaining, "
+            " artifact_refs, detail, origin, runner_ref, ended_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb, %s, 'fleet', %s, now()) "
+            "RETURNING id, role, domain_key, task_id, run_key, outcome, input_digest, "
+            "          counts, remaining, artifact_refs, detail, started_at, ended_at, "
+            "          origin, runner_ref",
+            (
+                role,
+                domain_key,
+                task_id,
+                ref,
+                outcome,
+                _json(counts or {}),
+                remaining,
+                _json(artifact_refs or []),
+                detail,
+                ref,
+            ),
+        ).fetchone()
+        conn.commit()
+    except Exception as exc:  # noqa: BLE001 - 只兜唯一性冲突，其余照抛
+        if type(exc).__name__ != "UniqueViolation":
+            raise
+        try:
+            conn.rollback()
+        except Exception:  # noqa: BLE001 - 回滚失败也不该掩盖原始冲突
+            pass
+        winner = get_by_runner_ref(conn, runner_ref=ref)
+        if winner is None:  # 理论上不可达：冲突了却查不到行，说明不是这条索引
+            raise
+        return winner, False
+    return dict(row), True
+
+
+def get_by_runner_ref(conn: Any, *, runner_ref: str) -> Optional[dict]:
+    """The round already recorded under ``runner_ref``, if any."""
+    row = conn.execute(
+        "SELECT id, role, domain_key, task_id, run_key, outcome, input_digest, "
+        "       counts, remaining, artifact_refs, detail, started_at, ended_at, "
+        "       origin, runner_ref "
+        "FROM domain_agent_runs WHERE runner_ref = %s ORDER BY id DESC LIMIT 1",
+        ((runner_ref or "").strip(),),
+    ).fetchone()
+    return dict(row) if row else None
 
 
 def summary(conn: Any, *, domain_key: str) -> dict:

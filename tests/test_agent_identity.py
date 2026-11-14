@@ -37,16 +37,25 @@ def conn(empty_db):  # noqa: F811 - provided by tests/conftest.py
         conn=empty_db, key="legal", name="法律域", template_name="tpl",
         template_version=None, created_by="t",
     )
+    # The minted identity these tests submit as must be a live member of the
+    # domain (add-fleet-execution-loop tightened ``agent:`` source validation).
+    from _fleet_fixtures import add_agent_member, register_fleet
+
+    add_agent_member(empty_db, "agent:concept@legal", domain_key="legal")
+    register_fleet(empty_db, "a", ["legal"])
     yield empty_db
     from src.eval.db import close_shared_conn
     close_shared_conn()
 
 
-def _submit(conn, *, source="agent:concept@legal", key="违约金调整", submitted_by=None):
+def _submit(conn, *, source="agent:concept@legal", key="违约金调整", submitted_by=None,
+            authenticated_as=None):
     return proposals.submit(
         conn, domain_key="legal", source=source, kind="concept", external_key=key,
         body="违约金的调整规则", evidence={"quote": "违约金过高可以请求减少"},
         submitted_by=submitted_by or source,
+        # The caller is the identity being claimed: an agent submits as itself.
+        authenticated_as=authenticated_as if authenticated_as is not None else source,
     )
 
 
@@ -125,8 +134,9 @@ def test_a_human_lead_confirms_an_agent_proposal_normally(conn):
 
 def test_a_human_may_still_confirm_their_own_with_override(conn):
     """The human escape hatch is unchanged — only agents lost it."""
-    proposal = _submit(conn, source="expert@example.com", key="举证责任",
-                       submitted_by="expert@example.com")
+    proposal = _submit(conn, source="user:expert@example.com", key="举证责任",
+                       submitted_by="expert@example.com",
+                       authenticated_as="expert@example.com")
     confirmed = proposals.confirm(
         conn, domain_key="legal", proposal_id=proposal["id"],
         actor="expert@example.com", admin_override=True,

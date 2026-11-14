@@ -24,6 +24,39 @@ from typing import Any, Iterable, Optional
 
 from . import authoring, estate
 
+#: Where each gap goes. **The** routing table — ``team_roles.GAP_OWNER`` is
+#: derived from it, so the two can never disagree about who owns a gap.
+#:
+#: ``kernel:<role>`` — a deterministic in-process role does it (no judgement
+#: needed, and the result is mechanically checkable).
+#: ``fleet``         — needs judgement / an LLM, so it becomes a work order a
+#: registered fleet claims at its own cadence.
+#: ``human``         — neither: review backlog is a person's queue. Dispatching
+#: it to an agent would only move the backlog somewhere less visible.
+#:
+#: Written as data rather than inside a prompt: a rule the model is asked to
+#: follow is a probability; a table is a constraint.
+GAP_ROUTE: dict[str, str] = {
+    "ontology": "kernel:builder",
+    "knowledge": "kernel:scout",
+    "eval": "kernel:eval",
+    "quality:grounding": "kernel:concept",
+    "quality:evidence": "kernel:builder",
+    "quality:referential": "kernel:verifier",
+    "quality:key_hygiene": "kernel:builder",
+    "quality:review_lag": "human",
+}
+
+#: Route prefix for "an in-process deterministic role owns this".
+KERNEL_PREFIX = "kernel:"
+
+#: Route marker for "a person owns this".
+HUMAN_ROUTE = "human"
+
+#: Route marker for "a registered fleet owns this" (kept for the vocabulary even
+#: though every current gap happens to be kernel- or human-owned).
+FLEET_ROUTE = "fleet"
+
 #: Pillar → what the assignee is being asked to do. Kept next to the gap
 #: vocabulary (``estate.PILLARS``) so a new pillar cannot be dispatched with a
 #: blank title.
@@ -91,12 +124,39 @@ def open_targets(conn: Any, *, domain_id: int, target_kind: str = "estate-gap") 
     return {r["target_key"] for r in rows if r["target_key"]}
 
 
+def route_for(gap: str) -> str:
+    """Who owns ``gap``: ``kernel:<role>``, ``fleet`` or ``human``.
+
+    Unknown gaps are refused rather than defaulting to a route — a silent
+    default would let a new pillar be dispatched to the wrong kind of owner and
+    nobody would notice until the work did not happen.
+    """
+    if gap not in GAP_TASKS:
+        raise ValueError(f"unknown pillar {gap!r}; expected one of {sorted(GAP_TASKS)}")
+    try:
+        return GAP_ROUTE[gap]
+    except KeyError:  # a pillar exists without a route — refuse, do not guess
+        raise ValueError(
+            f"pillar {gap!r} has no route; add it to GAP_ROUTE"
+        ) from None
+
+
+def kernel_role_for(gap: str) -> Optional[str]:
+    """The in-process role that owns ``gap``, or ``None`` when it is not a kernel gap."""
+    route = route_for(gap)
+    if route.startswith(KERNEL_PREFIX):
+        return route[len(KERNEL_PREFIX):]
+    return None
+
+
 def plan(
     conn: Any,
     *,
     rows: Iterable[dict],
     gap: str,
     assignee: str,
+    assignee_kind: Optional[str] = None,
+    assignee_ref: Optional[str] = None,
 ) -> dict:
     """What a confirmation would do — computed without writing anything."""
     targets = dispatchable(rows, gap)
@@ -111,6 +171,9 @@ def plan(
     return {
         "gap": gap,
         "assignee": (assignee or "").strip(),
+        "assignee_kind": assignee_kind or "human",
+        "assignee_ref": assignee_ref,
+        "route": route_for(gap),
         "pillar": GAP_TASKS[gap],
         "will_create": will,
         "already_open": already,
@@ -124,12 +187,32 @@ def dispatch(
     gap: str,
     assignee: str,
     created_by: str,
+    assignee_kind: str = "human",
+    assignee_ref: Optional[str] = None,
 ) -> dict:
-    """Create one task per domain still missing ``gap`` (idempotent per pillar)."""
+    """Create one task per domain still missing ``gap`` (idempotent per pillar).
+
+    ``assignee`` is the human-readable label; ``assignee_kind``/``assignee_ref``
+    say which of the three kinds it is and carry the reference authorization
+    reads. When ``assignee_kind`` is ``kernel-role`` the route table is the
+    authority: the caller may pick a person or a fleet, but it must not hand a
+    kernel-owned gap to someone the table never assigned it to.
+    """
     assignee = (assignee or "").strip()
     if not assignee:
         raise ValueError("assignee is required")
-    planned = plan(conn, rows=rows, gap=gap, assignee=assignee)
+    route = route_for(gap)
+    kernel_role = kernel_role_for(gap)
+    if kernel_role is not None and assignee_kind == "kernel-role":
+        if (assignee_ref or assignee) != kernel_role:
+            raise ValueError(
+                f"缺口 {gap!r} 由内核岗位 {kernel_role!r} 负责，不能派给 {assignee_ref or assignee!r}"
+            )
+
+    planned = plan(
+        conn, rows=rows, gap=gap, assignee=assignee,
+        assignee_kind=assignee_kind, assignee_ref=assignee_ref,
+    )
     created: list[dict] = []
     for domain in planned["will_create"]:
         created.append(
@@ -142,11 +225,16 @@ def dispatch(
                 target_kind="estate-gap",
                 target_key=gap,
                 created_by=created_by,
+                assignee_kind=assignee_kind,
+                assignee_ref=assignee_ref,
             )
         )
     return {
         "gap": gap,
         "assignee": assignee,
+        "assignee_kind": assignee_kind,
+        "assignee_ref": assignee_ref,
+        "route": route,
         "created": created,
         "already_open": planned["already_open"],
     }

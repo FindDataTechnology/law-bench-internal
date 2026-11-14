@@ -20,16 +20,12 @@ from . import (agent_ids, agent_runs, agent_team, authoring, corpus_catalog, dis
                estate, libraries, proposals, workspaces)
 from src.search import library_index
 
-#: 缺口 → 该由谁处理。``None`` = 人（复核积压不是智能体能替的）。
+#: 缺口 → 该由哪个内核岗位处理；``None`` = 人（复核积压不是智能体能替的）。
+#:
+#: **派生自 ``dispatch.GAP_ROUTE``，不另写一份**：两张表各写一遍，早晚会漂移，
+#: 而漂移的那一次会让一个岗位去干另一个岗位的活，事后只能靠人发现。
 GAP_OWNER: dict[str, Optional[str]] = {
-    "ontology": "builder",
-    "knowledge": "scout",
-    "eval": "eval",
-    "quality:grounding": "concept",
-    "quality:evidence": "builder",
-    "quality:referential": "verifier",
-    "quality:key_hygiene": "builder",
-    "quality:review_lag": None,
+    gap: dispatch.kernel_role_for(gap) for gap in dispatch.GAP_TASKS
 }
 
 #: 质检员能机器判定的项。顺序即报告顺序（先便宜且确定的后贵的）。

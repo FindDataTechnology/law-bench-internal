@@ -47,6 +47,7 @@
     <thead>
       <tr>
         <th>{{ t.admin.distribution.col_name }}</th>
+        <th>{{ t.admin.distribution.col_kind }}</th>
         <th>{{ t.admin.distribution.col_domains }}</th>
         <th>{{ t.admin.distribution.col_created_by }}</th>
         <th>{{ t.admin.distribution.col_created_at }}</th>
@@ -58,6 +59,16 @@
       {% for c in consumers %}
       <tr>
         <td><strong>{{ c.name }}</strong></td>
+        <td>
+          {# 种类必须显示：machine → fleet 的原地升级只改 kind/fleet_ref，界面上看不出来
+             就意味着「这一行是不是舰队」只能靠 SQL 核对，而这正是本变更要拆掉的静默态。 #}
+          {% if c.kind == 'fleet' %}
+          <span class="badge">{{ t.admin.distribution.kind_fleet }}</span>
+          {% if c.fleet_ref %}<br><code class="muted">{{ c.fleet_ref }}</code>{% endif %}
+          {% else %}
+          <span class="badge muted">{{ t.admin.distribution.kind_machine }}</span>
+          {% endif %}
+        </td>
         <td>
           {% for d in c.domains or [] %}<span class="badge"><code>{{ d }}</code></span> {% else %}<span class="muted">{{ t.admin.templates.none }}</span>{% endfor %}
         </td>

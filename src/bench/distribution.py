@@ -37,7 +37,7 @@ from typing import Any, Optional
 
 from fd_ontology_kernel import manifest as kernel_manifest
 
-from . import authoring, templates, workspaces
+from . import authoring, submitters, templates, workspaces
 
 # The contract surface carried per knowledge-unit entry in a manifest.
 # Relationship entries additionally carry the structured endpoints
@@ -74,7 +74,7 @@ _PUBLICATION_KEYS = (
 )
 
 _CONSUMER_COLS = (
-    "id, name, domains, token_hash, created_by, created_at, revoked_at"
+    "id, name, domains, token_hash, created_by, created_at, revoked_at, kind, fleet_ref"
 )
 _CONSUMER_KEYS = (
     "id",
@@ -84,7 +84,14 @@ _CONSUMER_KEYS = (
     "created_by",
     "created_at",
     "revoked_at",
+    "kind",
+    "fleet_ref",
 )
+
+#: Registered consumer kinds. ``machine`` only pulls published artefacts;
+#: ``fleet`` additionally submits proposals and writes back runs, so its stable
+#: ``fleet_ref`` is the anchor that turns a ``source`` string into a fact.
+CONSUMER_KINDS: tuple[str, ...] = ("machine", "fleet")
 
 
 def _iso(val: Any) -> Any:
@@ -139,6 +146,8 @@ def _consumer_to_dict(row: Any) -> dict:
         "created_by": values[4],
         "created_at": _iso(values[5]),
         "revoked_at": _iso(values[6]),
+        "kind": values[7] or "machine",
+        "fleet_ref": values[8],
     }
 
 
@@ -463,12 +472,25 @@ def list_publications(conn: Any, *, domain_key: str) -> list[dict]:
 
 
 def register_consumer(
-    conn: Any, *, name: str, domains: list[str], token_hash: str, created_by: str
+    conn: Any,
+    *,
+    name: str,
+    domains: list[str],
+    token_hash: str,
+    created_by: str,
+    kind: str = "machine",
+    fleet_ref: Optional[str] = None,
 ) -> dict:
     """Register one consumer: name, bound domain keys, credential digest.
 
     Only the credential digest is stored — the plaintext token never reaches
     this layer. A duplicate consumer name is refused.
+
+    ``kind='fleet'`` additionally requires a stable ``fleet_ref`` (the bare id,
+    e.g. ``fleet_1794335712751_wfa3ww`` — the same token that appears after
+    ``fleet:`` in a submission's ``source``). At most one *live* registration
+    may claim a given ``fleet_ref``: a revoked row keeps its history but stops
+    claiming the identity, so a fleet can be re-registered after revocation.
     """
     if not name:
         raise ValueError("name is required")
@@ -476,20 +498,193 @@ def register_consumer(
         raise ValueError("token_hash is required")
     if not created_by:
         raise ValueError("created_by is required")
+    if kind not in CONSUMER_KINDS:
+        raise ValueError(f"kind must be one of {list(CONSUMER_KINDS)}; got {kind!r}")
+    if kind == "fleet":
+        if not (fleet_ref or "").strip():
+            raise ValueError("kind='fleet' requires a non-empty fleet_ref")
+    elif fleet_ref:
+        raise ValueError("kind='machine' must not carry a fleet_ref")
+
     bound = _normalize_domain_keys(domains)
     existing = conn.execute(
         "SELECT 1 FROM distribution_consumers WHERE name = %s LIMIT 1", (name,)
     ).fetchone()
     if existing:
         raise ValueError(f"consumer {name!r} already exists")
+    if kind == "fleet":
+        live = _consumer_by_fleet_ref(conn, fleet_ref.strip(), live_only=True)
+        if live is not None:
+            raise ValueError(
+                f"fleet {fleet_ref!r} is already registered as {live['name']!r}; "
+                "revoke that registration before registering it again"
+            )
     cur = conn.execute(
-        f"INSERT INTO distribution_consumers (name, domains, token_hash, created_by) "
-        f"VALUES (%s, %s, %s, %s) RETURNING {_CONSUMER_COLS}",
-        (name, bound, token_hash, created_by),
+        f"INSERT INTO distribution_consumers "
+        f"(name, domains, token_hash, created_by, kind, fleet_ref) "
+        f"VALUES (%s, %s, %s, %s, %s, %s) RETURNING {_CONSUMER_COLS}",
+        (name, bound, token_hash, created_by, kind, fleet_ref.strip() if kind == "fleet" else None),
     )
     consumer = _consumer_to_dict(cur.fetchone())
     conn.commit()
     return consumer
+
+
+def promote_consumer_to_fleet(
+    conn: Any,
+    *,
+    name: Optional[str] = None,
+    token_hash: Optional[str] = None,
+    fleet_ref: str,
+) -> dict:
+    """把一条既有登记**原地**升为舰队档：``machine`` → ``fleet``。
+
+    为什么需要这条路：升级前登记的消费者全是 ``machine``，而其中就有真正在跑的
+    舰队（产库 `ontology-fleet-win`）。部署后它的 ``kind`` 取列默认值 ``machine``、
+    ``fleet_ref`` 为空，于是它的 ``fleet:*`` 提交会判成「来源未登记」——**而我们没有
+    任何办法修**：``register_consumer`` 只会新建，撞 ``name`` 与 ``token_hash`` 两条
+    唯一约束；吊销再重登记又会换掉 token，等于把在跑的舰队切断。
+
+    所以升级只动两列（``kind`` / ``fleet_ref``），身份（id / name / token_hash /
+    domains）一个字不改——凭据不变，客户端无感。定位可以按 ``name`` 或 ``token_hash``；
+    后者更强：**持有那枚 token 本身就是授权**。
+
+    重复调用幂等：已经是同一 ``fleet_ref`` 的舰队档时原样返回，不写库。
+    """
+    ref = (fleet_ref or "").strip()
+    if not ref:
+        raise ValueError("fleet_ref 不能为空")
+    key = (name or "").strip()
+    digest = (token_hash or "").strip()
+    if not key and not digest:
+        raise ValueError("需要 name 或 token_hash 之一来定位既有登记")
+
+    if key:
+        row = conn.execute(
+            f"SELECT {_CONSUMER_COLS} FROM distribution_consumers WHERE name = %s", (key,)
+        ).fetchone()
+    else:
+        row = conn.execute(
+            f"SELECT {_CONSUMER_COLS} FROM distribution_consumers WHERE token_hash = %s",
+            (digest,),
+        ).fetchone()
+    if row is None:
+        raise ValueError(
+            f"找不到要升级的登记（name={key or None!r} token_hash={'(given)' if digest else None}）"
+        )
+    consumer = _consumer_to_dict(row)
+
+    # 按 token_hash 定位时必须和给到的 name 一致，否则调用方以为在改 A、实际改的是 B。
+    if key and digest and consumer["token_hash"] != digest:
+        raise ValueError(
+            f"登记 {consumer['name']!r} 的凭据与提供的 token 不一致——不升级（拿不出它的凭据就不算授权）"
+        )
+    if consumer["revoked_at"] is not None:
+        raise ValueError(
+            f"登记 {consumer['name']!r} 已吊销；吊销的登记不升级，重新登记一条新的"
+        )
+
+    if consumer["kind"] == "fleet":
+        if consumer["fleet_ref"] == ref:
+            return consumer  # 幂等：已经是这个舰队的登记
+        raise ValueError(
+            f"登记 {consumer['name']!r} 已绑定另一个舰队标识 {consumer['fleet_ref']!r}；"
+            "要改绑定请先把旧的那条处理掉（吊销或改回 machine）"
+        )
+
+    other = _consumer_by_fleet_ref(conn, ref, live_only=True)
+    if other is not None and other["id"] != consumer["id"]:
+        raise ValueError(
+            f"舰队标识 {ref!r} 已被登记 {other['name']!r} 占用；先处理那一条再升级"
+        )
+
+    cur = conn.execute(
+        f"UPDATE distribution_consumers SET kind = 'fleet', fleet_ref = %s "
+        f"WHERE id = %s RETURNING {_CONSUMER_COLS}",
+        (ref, consumer["id"]),
+    )
+    promoted = _consumer_to_dict(cur.fetchone())
+    conn.commit()
+    return promoted
+
+
+def _consumer_by_fleet_ref(
+    conn: Any, fleet_ref: str, *, live_only: bool = False
+) -> Optional[dict]:
+    """The registration claiming ``fleet_ref`` (optionally only the live one)."""
+    sql = f"SELECT {_CONSUMER_COLS} FROM distribution_consumers WHERE fleet_ref = %s"
+    params: list[Any] = [fleet_ref]
+    if live_only:
+        sql += " AND revoked_at IS NULL"
+    sql += " ORDER BY id DESC LIMIT 1"
+    row = conn.execute(sql, tuple(params)).fetchone()
+    return _consumer_to_dict(row) if row else None
+
+
+def resolve_fleet(conn: Any, *, fleet_ref: str, domain_key: str) -> tuple[Optional[dict], str]:
+    """Resolve a bare ``fleet_ref`` against the registry for one domain.
+
+    Returns ``(consumer_or_None, verdict)`` where the verdict comes from the
+    same vocabulary the source judgement uses (``submitters.verdict_for_fleet``).
+    Used by work-order assignment, which holds a ``fleet_ref`` and no ``source``.
+    """
+    consumer = _consumer_by_fleet_ref(conn, (fleet_ref or "").strip())
+    projection = (
+        None
+        if consumer is None
+        else {"domains": consumer["domains"], "revoked": consumer["revoked_at"] is not None}
+    )
+    return consumer, submitters.verdict_for_fleet(domain_key=domain_key, fleet=projection)
+
+
+def resolve_submitter(
+    conn: Any,
+    *,
+    source: str,
+    domain_key: str,
+    via: str,
+    authenticated_as: Optional[str] = None,
+) -> tuple[Optional[dict], str]:
+    """Resolve a submission's ``source`` into ``(registration_or_None, verdict)``.
+
+    This function only *fetches the facts*; the judgement itself lives in
+    ``submitters.verdict`` so both call sites (HTTP and in-process) and the
+    pure tests share one implementation.
+
+    ``via`` must be the caller's own channel constant — ``extract:`` is accepted
+    only for ``in_process``, and passing the wrong value does not make the check
+    lenient, it makes it disappear.
+    """
+    prefix, parts, _malformed = submitters.classify_source(source)
+    consumer: Optional[dict] = None
+    fleet: Optional[dict] = None
+    agent_is_member: Optional[bool] = None
+
+    if prefix == submitters.PREFIX_FLEET and parts:
+        consumer = _consumer_by_fleet_ref(conn, parts["fleet_id"])
+        if consumer is not None:
+            fleet = {
+                "domains": consumer["domains"],
+                "revoked": consumer["revoked_at"] is not None,
+            }
+
+    if prefix == submitters.PREFIX_AGENT and parts:
+        domain = workspaces.get_domain(conn, domain_key=parts["domain"])
+        agent_is_member = bool(domain) and (
+            workspaces.get_active_role(
+                conn, domain_id=domain["id"], user_id=(source or "").strip()
+            )
+            is not None
+        )
+
+    return consumer, submitters.verdict(
+        source,
+        domain_key=domain_key,
+        via=via,
+        fleet=fleet,
+        agent_is_member=agent_is_member,
+        authenticated_as=authenticated_as,
+    )
 
 
 def list_consumers(conn: Any) -> list[dict]:

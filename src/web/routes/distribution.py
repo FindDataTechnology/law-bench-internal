@@ -69,6 +69,17 @@ Two audiences live in this module:
    the C1 domain detail page; its context is fetched in
    ``admin.py::admin_domain_detail`` (this module owns the publish POST).
 
+3. **Machine run read-back** — ``GET /api/v1/distribution/{domain_key}/runs``
+   (``add-fleet-execution-loop`` §3.5). Same credential and same three-state
+   check as the pull API, but only a ``fleet`` registration may call it: a fleet
+   writes back its round through the kernel and then needs to answer "did it
+   land, and how did it end?" without a browser session. A plain ``machine``
+   consumer (a publication reader) is refused with 403 rather than served an
+   empty ledger, and a fleet only ever sees rounds under its own
+   ``fleet:<fleet_ref>/`` prefix. The session twin is
+   ``GET /api/d/{domain_key}/runs`` in ``console.py``; both share the predicate
+   ``submitters.may_read_runner_ref``.
+
 Token discipline follows the C1 invitation pattern: ``secrets.token_urlsafe(32)``,
 only ``hashlib.sha256(token).hexdigest()`` persisted via
 ``distribution.register_consumer(token_hash=...)``, plaintext shown exactly
@@ -81,6 +92,7 @@ thin web surface with the ``admin.py`` flash/redirect style.
 from __future__ import annotations
 
 import hashlib
+import json
 import secrets
 from typing import Any, Optional
 from urllib.parse import quote
@@ -147,6 +159,29 @@ _NO_PUBLICATION_DETAIL = "该域尚无发布"
 _ALLOWED_FORMATS = ("json", "yaml")
 
 
+def _authenticate_consumer(request: Request, db: Any, domain_key: str) -> dict:
+    """Three-state machine auth, shared by every ``/api/v1/distribution`` route.
+
+    One implementation on purpose: the read-back route below answers "did my run
+    land?" for the *same* credential that pulls content. A second copy of this
+    check would drift, and the drift would look like a scope bug rather than a
+    missing branch.
+    """
+    token = request.headers.get("x-consumer-token")
+    if not token:
+        raise HTTPException(status_code=401, detail=_MISSING_TOKEN_DETAIL)
+    # Hash immediately; the plaintext never reaches a log, DB row, or error.
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    consumer = distribution.get_consumer_by_token_hash(db, token_hash=token_hash)
+    if consumer is None:
+        raise HTTPException(status_code=403, detail=_UNREGISTERED_DETAIL)
+    if consumer.get("revoked_at") is not None:
+        raise HTTPException(status_code=403, detail=_REVOKED_DETAIL)
+    if domain_key not in (consumer.get("domains") or []):
+        raise HTTPException(status_code=403, detail=_OUT_OF_SCOPE_DETAIL)
+    return consumer
+
+
 @read_only_router.get("/api/v1/distribution/{domain_key}/ontology", name="distribution_pull_ontology")
 def pull_domain_ontology(
     domain_key: str,
@@ -169,18 +204,7 @@ def pull_domain_ontology(
             detail="invalid format: allowed values are 'json' or 'yaml'",
         )
 
-    token = request.headers.get("x-consumer-token")
-    if not token:
-        raise HTTPException(status_code=401, detail=_MISSING_TOKEN_DETAIL)
-    # Hash immediately; the plaintext never reaches a log, DB row, or error.
-    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    consumer = distribution.get_consumer_by_token_hash(db, token_hash=token_hash)
-    if consumer is None:
-        raise HTTPException(status_code=403, detail=_UNREGISTERED_DETAIL)
-    if consumer.get("revoked_at") is not None:
-        raise HTTPException(status_code=403, detail=_REVOKED_DETAIL)
-    if domain_key not in (consumer.get("domains") or []):
-        raise HTTPException(status_code=403, detail=_OUT_OF_SCOPE_DETAIL)
+    consumer = _authenticate_consumer(request, db, domain_key)
 
     publication = distribution.get_publication(db, domain_key=domain_key, version=version)
     if publication is None:
@@ -222,6 +246,462 @@ def pull_domain_ontology(
         body = yaml.safe_dump(payload, allow_unicode=True, sort_keys=False)
         return Response(content=body, media_type="application/x-yaml")
     return JSONResponse(content=payload)
+
+
+@read_only_router.get(
+    "/api/v1/distribution/{domain_key}/runs", name="distribution_run_readback",
+)
+def read_back_runs(
+    domain_key: str,
+    request: Request,
+    runner_ref: Optional[str] = None,
+    limit: int = 50,
+    db: DbConn = Depends(get_db),
+):
+    """Read back the fleet's own run rows — "did my write-back land?".
+
+    Same credential as the pull API (``X-Consumer-Token``), same three-state
+    check. Only a ``fleet`` registration may ask: a plain ``machine`` consumer is
+    a reader of publications, not a submitter, and 403 is the honest answer
+    rather than an empty ledger.
+
+    Isolation: a fleet sees only ``fleet:<its own fleet_ref>/`` rounds, and the
+    response always says which fleet answered and which rows matched — so a fleet
+    that wrote back under a slightly different ``fleet_ref`` sees "0 rows" *next
+    to its own identity*, not an ambiguous empty list.
+    """
+    from ...bench import agent_runs, submitters
+
+    consumer = _authenticate_consumer(request, db, domain_key)
+    fleet_ref = consumer.get("fleet_ref")
+    if (consumer.get("kind") or "machine") != "fleet" or not fleet_ref:
+        raise HTTPException(
+            status_code=403,
+            detail="只有舰队登记可以读取运行回执（该消费者不是 fleet 种类）",
+        )
+
+    wanted = (runner_ref or "").strip() or None
+    if wanted is not None and not submitters.may_read_runner_ref(wanted, fleet_ref=fleet_ref):
+        raise HTTPException(
+            status_code=403,
+            detail=f"只能读取本舰队的运行：runner_ref={wanted!r} 不属于 {fleet_ref}",
+        )
+
+    rows = agent_runs.list_runs(
+        db, domain_key=domain_key, runner_ref=wanted, limit=limit
+    )
+    # 未指定 runner_ref 时只返回本舰队的行：一个舰队读面没有理由把它们全公布。
+    rows = [r for r in rows if submitters.may_read_runner_ref(
+        r.get("runner_ref"), fleet_ref=fleet_ref
+    )]
+    return {
+        "domain": domain_key,
+        "fleet_ref": fleet_ref,
+        "runner_ref": wanted,
+        "count": len(rows),
+        "runs": rows,
+    }
+
+
+def _fleet_consumer(request: Request, db: Any, domain_key: str) -> dict:
+    """Authenticate AND require a ``fleet`` registration, returning it.
+
+    Every mutating machine route needs the same two steps; a second copy would
+    drift and the drift would read as a scope bug rather than a missing branch.
+    """
+    consumer = _authenticate_consumer(request, db, domain_key)
+    if (consumer.get("kind") or "machine") != "fleet" or not consumer.get("fleet_ref"):
+        raise HTTPException(
+            status_code=403,
+            detail="只有舰队登记可以调用该接口（该消费者不是 fleet 种类）",
+        )
+    return consumer
+
+
+def _fleet_task(db: Any, *, domain_key: str, task_id: int, fleet_ref: str) -> dict:
+    """The task, if it is genuinely assigned to this fleet in this domain.
+
+    Authorization reads ``assignee_kind`` + ``assignee_ref``, never the display
+    name: a fleet called "ontology-fleet" and another one displaying the same
+    string are two different identities, and only the registered ref decides.
+    """
+    from ...bench import authoring, workspaces
+
+    domain = workspaces.get_domain(db, domain_key=domain_key)
+    if domain is None:
+        raise HTTPException(status_code=404, detail=f"域 {domain_key!r} 不存在")
+    task = authoring.authoring_get_task(db, task_id=task_id)
+    if task is None or task["domain_id"] != domain["id"]:
+        raise HTTPException(status_code=404, detail=f"工单 {task_id} 不在本域")
+    if task.get("assignee_kind") != "fleet" or task.get("assignee_ref") != fleet_ref:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"该工单不是派给舰队 {fleet_ref!r} 的"
+                f"（现在是 {task.get('assignee_kind')}/{task.get('assignee_ref')!r}）"
+            ),
+        )
+    return task
+
+
+@read_only_router.get(
+    "/api/v1/distribution/{domain_key}/work-orders",
+    name="distribution_list_work_orders",
+)
+def list_work_orders(
+    domain_key: str,
+    request: Request,
+    db: DbConn = Depends(get_db),
+):
+    """The fleet's own **open** work orders in this domain.
+
+    A fleet cannot claim work it cannot see: the console page is for people, and
+    the ledger page answers "what ran", not "what is waiting for me". So the
+    pull side exists — and it is strictly the caller's own orders:
+
+    - only ``pending`` / ``in_progress`` (a closed order is not work to claim),
+    - only ``assignee_kind='fleet'`` with ``assignee_ref == this fleet``,
+    - only this domain (the token's binding already gated the path).
+
+    Reading has no side effects at all — no status change, no event, no
+    pull-footprint row: the ontology pull writes a footprint because "who fetched
+    which snapshot" is an audit question; "a fleet polled its queue" is not.
+    """
+    from ...bench import authoring, workspaces
+
+    consumer = _fleet_consumer(request, db, domain_key)
+    fleet_ref = consumer["fleet_ref"]
+    domain = workspaces.get_domain(db, domain_key=domain_key)
+    if domain is None:
+        raise HTTPException(status_code=404, detail=f"域 {domain_key!r} 不存在")
+
+    tasks = [
+        t
+        for t in authoring.authoring_list_tasks(db, domain_id=domain["id"])
+        if t["status"] in ("pending", "in_progress")
+        and t.get("assignee_kind") == "fleet"
+        and t.get("assignee_ref") == fleet_ref
+    ]
+    return {
+        "domain": domain_key,
+        "fleet_ref": fleet_ref,
+        "count": len(tasks),
+        "work_orders": [
+            {
+                "id": t["id"],
+                "target_kind": t.get("target_kind"),
+                "target_key": t.get("target_key"),
+                "title": t["title"],
+                "detail": t.get("detail"),
+                "status": t["status"],
+                "created_at": t.get("created_at"),
+                # 认领过就把「谁、什么时候」一起给出去：执行方要能分清
+                # 「这张单还没人动」与「我自己上一轮已经领了」。
+                "claimed_by": next(
+                    (
+                        e.get("by")
+                        for e in reversed(t.get("transitions") or [])
+                        if e.get("to") == "in_progress"
+                    ),
+                    None,
+                ),
+            }
+            for t in tasks
+        ],
+    }
+
+
+@write_router.post(
+    "/api/v1/distribution/{domain_key}/work-orders/{task_id}/claim",
+    name="distribution_claim_work_order",
+)
+def claim_work_order(
+    domain_key: str,
+    task_id: int,
+    request: Request,
+    db: DbConn = Depends(get_db),
+):
+    """A fleet claims the work order addressed to it.
+
+    Why a machine route exists at all: the session route treats a non-human
+    assignee as "not mine", so only a lead could move it — and a lead clicking
+    "in progress" on a fleet's behalf is not the fleet claiming. Without this the
+    wording "waiting for a fleet to claim it" would describe something that can
+    never happen, which is exactly the kind of closed-looking loop this change
+    exists to remove.
+
+    Exclusive by construction: the kernel's claim is one ``UPDATE ... WHERE
+    status='pending'``, so two fleets racing produce one winner and one 409.
+
+    **Own retries are idempotent.** A machine endpoint gets retried by the
+    network, not by a human who remembers clicking. "Already claimed — by me" is
+    a success (``created: false``); only *another* fleet's claim is a conflict.
+    Answering 409 to our own retry would make a healthy fleet log a failure it
+    cannot fix by retrying again.
+    """
+    from ...bench import authoring
+
+    consumer = _fleet_consumer(request, db, domain_key)
+    existing = _fleet_task(db, domain_key=domain_key, task_id=task_id,
+                           fleet_ref=consumer["fleet_ref"])
+    actor = consumer.get("fleet_ref")
+    if existing["status"] == "in_progress":
+        claimed_by = next(
+            (e.get("by") for e in reversed(existing.get("transitions") or [])
+             if e.get("to") == "in_progress"),
+            None,
+        )
+        if claimed_by == actor:
+            return {"task": existing, "claimed_by": actor, "created": False}
+        raise HTTPException(
+            status_code=409,
+            detail=f"工单 {task_id} 已被 {claimed_by!r} 认领",
+        )
+    try:
+        task = authoring.authoring_claim_task(db, task_id=task_id, actor=actor)
+    except authoring.TaskAlreadyClaimed as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"task": task, "claimed_by": actor, "created": True}
+
+
+@write_router.post(
+    "/api/v1/distribution/{domain_key}/work-orders/{task_id}/complete",
+    name="distribution_complete_work_order",
+)
+async def complete_work_order(
+    domain_key: str,
+    task_id: int,
+    request: Request,
+    db: DbConn = Depends(get_db),
+):
+    """A fleet closes the work order it claimed (artifact refs + note optional).
+
+    Completing writes **no** knowledge unit: a work order says "this got done".
+    Content still arrives through the proposal inbox, so "task done" can never
+    quietly become "knowledge published".
+
+    Idempotent on retry: an already-`done` order returns ``created: false``
+    instead of a conflict. The desired end state holds, so a retried request is a
+    success — a fresh `done` event is never appended twice.
+    """
+    from ...bench import authoring
+
+    consumer = _fleet_consumer(request, db, domain_key)
+    current = _fleet_task(db, domain_key=domain_key, task_id=task_id,
+                          fleet_ref=consumer["fleet_ref"])
+    if current["status"] == "done":
+        return {"task": current, "created": False}
+    body: dict = {}
+    # 空体合法（关单可以什么都不说）；**写坏的 JSON 不合法**——把它当空体处理，
+    # 舰队会以为 note 记上了，而台账里一个字都没有。这两种情况必须分开。
+    raw = await request.body()
+    if raw.strip():
+        try:
+            payload = json.loads(raw)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=422, detail="请求体必须是 JSON 对象") from exc
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=422, detail="请求体必须是 JSON 对象")
+        body = payload
+
+    refs = body.get("artifact_refs")
+    if refs is not None and not isinstance(refs, list):
+        raise HTTPException(status_code=422, detail="artifact_refs 必须是数组")
+    try:
+        task = authoring.authoring_complete_task(
+            db, task_id=task_id, actor=consumer["fleet_ref"],
+            artifact_refs=refs, note=(body.get("note") or None),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"task": task, "created": True}
+
+
+@write_router.post(
+    "/api/v1/distribution/{domain_key}/runs", name="distribution_record_run",
+)
+async def record_run(
+    domain_key: str,
+    request: Request,
+    db: DbConn = Depends(get_db),
+):
+    """A fleet writes back one round's outcome — idempotent on ``runner_ref``.
+
+    The kernel refuses to invent fields here: an outcome outside the four-state
+    vocabulary is 422, a ``runner_ref`` belonging to another fleet is 403, and a
+    replay returns ``created: false`` with the existing row unchanged. Without
+    that flag a fleet cannot tell "recorded" from "already recorded", and its
+    per-round counts become untrustworthy.
+    """
+    from ...bench import agent_runs, submitters
+
+    consumer = _fleet_consumer(request, db, domain_key)
+    fleet_ref = consumer["fleet_ref"]
+    try:
+        payload = await request.json()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=422, detail="请求体必须是 JSON 对象") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="请求体必须是 JSON 对象")
+
+    runner_ref = str(payload.get("runner_ref") or "").strip()
+    if not submitters.may_read_runner_ref(runner_ref, fleet_ref=fleet_ref):
+        raise HTTPException(
+            status_code=403,
+            detail=f"runner_ref 必须形如 fleet:{fleet_ref}/<post>#<round>；got {runner_ref!r}",
+        )
+    role = str(payload.get("role") or "").strip()
+    if not role:
+        # 台账的第一列是岗位。允许空岗位，这条「谁在跑」的回答就永久缺一角。
+        raise HTTPException(status_code=422, detail="role 不能为空（台账要回答是哪个岗位跑的）")
+    task_id = payload.get("task_id")
+    if task_id is not None:
+        # 引用的工单必须在本域：跨域 task_id 会让「这轮做的是哪张单」指到别人家。
+        # 非整数先拒成 422——让它冒到 int() 里就变成 500，那读起来像我们的故障。
+        try:
+            task_id = int(task_id)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="task_id 必须是整数") from exc
+        _fleet_task(db, domain_key=domain_key, task_id=task_id, fleet_ref=fleet_ref)
+    counts = payload.get("counts")
+    refs = payload.get("artifact_refs")
+    for name, value, kind in (
+        ("counts", counts, dict), ("artifact_refs", refs, list),
+    ):
+        if value is not None and not isinstance(value, kind):
+            raise HTTPException(
+                status_code=422, detail=f"{name} 必须是 {kind.__name__}"
+            )
+    try:
+        run, created = agent_runs.record_external_run(
+            db,
+            runner_ref=runner_ref,
+            role=role,
+            domain_key=domain_key,
+            outcome=str(payload.get("outcome") or ""),
+            counts=counts,
+            remaining=payload.get("remaining"),
+            artifact_refs=refs,
+            detail=(payload.get("detail") or None),
+            task_id=(int(task_id) if task_id is not None else None),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"run": run, "created": created}
+
+
+@write_router.post(
+    "/api/v1/distribution/{domain_key}/proposals", name="distribution_submit_proposal",
+)
+async def submit_proposal(
+    domain_key: str,
+    request: Request,
+    db: DbConn = Depends(get_db),
+):
+    """A fleet submits a product **as itself**, with the token it already holds.
+
+    Why this exists: the three machine routes above let a fleet claim, run and
+    report — but the product of that work (the proposal) could only be filed
+    through the session face, which requires a credential that represents a
+    *person*. D7 rejected exactly that ("服务账号会话" would erase the
+    human/machine boundary), yet the loop as first built still needed it: a
+    token-only fleet could do the work and never hand it in. That is not a
+    closed loop; it is a loop whose last step silently requires a human.
+
+    The source is **not** free-form here. It must be ``fleet:<自己的 fleet_ref>/…``
+    — the same prefix rule that governs run write-backs — so a token can only
+    ever speak for its own registration. ``submitted_by`` is derived from that
+    source, never taken from the body: a machine has one identity.
+
+    ``via`` is the external channel, so ``extract:`` stays refused (its trust
+    basis is that the pipeline is unreachable from the network), and
+    ``authenticated_as`` is None, so ``agent:``/``user:`` can never be claimed
+    by a token. Idempotency and the self-confirm gate are the library's.
+    """
+    from ...bench import proposals as bench_proposals
+    from ...bench import submitters as bench_submitters
+
+    consumer = _fleet_consumer(request, db, domain_key)
+    fleet_ref = consumer["fleet_ref"]
+    try:
+        payload = await request.json()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=422, detail="请求体必须是 JSON 对象") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="请求体必须是 JSON 对象")
+
+    source = str(payload.get("source") or "").strip()
+    if not bench_submitters.may_submit_as_source(source, fleet_ref=fleet_ref):
+        raise HTTPException(
+            status_code=403,
+            detail=f"source 必须形如 fleet:{fleet_ref}/<post>；got {source!r}"
+                   "（机器面只能以自己的身份提交）",
+        )
+    try:
+        proposal, created = bench_proposals.submit(
+            db,
+            domain_key=domain_key,
+            source=source,
+            kind=str(payload.get("kind") or "").strip(),
+            external_key=str(payload.get("external_key") or "").strip(),
+            body=str(payload.get("body") or "").strip(),
+            evidence=payload.get("evidence"),
+            impact=str(payload.get("impact") or ""),
+            submitted_by=source,
+            with_created=True,
+            via=bench_submitters.VIA_HTTP,
+            authenticated_as=None,
+        )
+    except bench_proposals.SubmitterRefused as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {
+        "id": proposal["id"],
+        "state": proposal["state"],
+        "external_key": proposal["external_key"],
+        "evidence_digest": proposal["evidence_digest"],
+        "created": created,
+    }
+
+
+@read_only_router.get(
+    "/api/v1/distribution/{domain_key}/proposals/outcomes",
+    name="distribution_proposal_outcomes",
+)
+def proposal_outcomes(
+    domain_key: str,
+    request: Request,
+    source: str,
+    db: DbConn = Depends(get_db),
+):
+    """What happened to the proposals this fleet filed — **only its own**.
+
+    The other half of the same gap: a fleet told "rejected" on resubmission can
+    never learn *why*, so it fixes the wrong thing or stops trying. The
+    ``source`` is checked against the caller's registration rather than trusted
+    because it was passed in — asking for another fleet's source is 403, not an
+    empty list (an empty list reads as "nothing happened", which is a different
+    and false statement).
+    """
+    from ...bench import proposals as bench_proposals
+    from ...bench import submitters as bench_submitters
+
+    consumer = _fleet_consumer(request, db, domain_key)
+    fleet_ref = consumer["fleet_ref"]
+    wanted = (source or "").strip()
+    if not bench_submitters.may_submit_as_source(wanted, fleet_ref=fleet_ref):
+        raise HTTPException(
+            status_code=403,
+            detail=f"只能读取自己来源的结局：{wanted!r} 不属于 fleet:{fleet_ref}/",
+        )
+    return {
+        "domain": domain_key,
+        "source": wanted,
+        "outcomes": bench_proposals.list_outcomes(db, source=wanted, domain_key=domain_key),
+    }
 
 
 # --------------------------------------------------------- consumer registry #

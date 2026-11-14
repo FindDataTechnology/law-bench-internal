@@ -47,7 +47,20 @@
   <tbody>
     {% for p in proposals %}
     <tr>
-      <td><code>{{ p.source }}</code></td>
+      <td>
+        {#- 解析后的来源：登记过的舰队显示「舰队名 · 岗位」，未解析的原样显示并
+            标 legacy——那种行没有任何登记能约束它，标出来才能被清理。 -#}
+        {% set sv = source_views.get(p.source) %}
+        {% if sv and sv.fleet_name %}
+          <strong>{{ sv.fleet_name }}</strong><span class="muted"> · <code>{{ sv.post_id }}</code></span>
+          {% if sv.legacy %}<span class="badge badge-warn">legacy</span>{% endif %}
+        {% elif sv %}
+          <code>{{ p.source }}</code>
+          {% if sv.legacy %}<span class="badge badge-warn">legacy</span>{% endif %}
+        {% else %}
+          <code>{{ p.source }}</code>
+        {% endif %}
+      </td>
       <td><code>{{ p.kind }}</code></td>
       <td class="muted"><code>{{ p.external_key }}</code></td>
       <td class="muted">{{ p.evidence_digest[:12] }}</td>
