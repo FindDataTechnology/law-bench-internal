@@ -135,6 +135,8 @@
 | **参考客户端打得通真路由** | `test_the_reference_client_speaks_to_the_real_app`（把它自己的 `urlopen` 接到 ASGI 上，六步全走 `Client`） | 拉单 → 认领（重试 `created:false`）→ 回写 → 读回 `count=1` → 提交 `created:true` → 负责人确认 → 结局 `confirmed` → 关单 `done` |
 | 真 403 变成 `Refused` | `test_the_reference_client_turns_a_403_into_a_refusal` | `Refused` 里带 `403` 与服务端原话（退出码 1，不是崩、不是当成功） |
 | 这套测试会红 | 注入：把 `PREFIX` 改成 `/api/v1/distributions` | 闭环那条**当场断**（`1 failed`），改回即绿 |
+| 公开面**没有**机器面 | `tests/test_public_app.py::test_the_fleet_machine_surface_is_not_registered`（七条路径逐个断言 **404 而不是 401**） | 全 404；注入：把 `distribution.read_only_router` 挂到 `create_public_app` 上 → **当场断**，还原即绿 |
+| 迁移的 `--schema` 能红 | `tests/test_register_fleet_script.py`（空库 / 删索引两条） | 空库 8 项全 ✗ 且 EXIT=1；删掉 `distribution_consumers_fleet_ref_uk` 后该项 ✗ |
 
 > 这一格是本轮补的**最后一个缝**：三个机器写面让舰队能领单/执行/报数，产物却仍只能走
 > 会话提交——而会话要求一个能代表人的凭据（D7 已否决）。e2e 里原来靠 `svc-fleet` 服务账号
