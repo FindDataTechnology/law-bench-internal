@@ -490,3 +490,131 @@ def test_legacy_says_clear_when_nothing_would_be_refused(conn, capsys):
     finally:
         mp.undo()
     assert "legacy sources: none" in capsys.readouterr().out
+
+
+# ------------------------------ --promote-by-name（明文丢失时的升级路径，11-14 实况）
+
+
+def test_promote_by_name_upgrades_without_needing_the_credential(conn, capsys, monkeypatch):
+    """产库那条登记的真实处境：真舰队，凭据明文只在登记那一刻显示过一次。
+
+    `distribution_pull_events` 全表只有创建后 10 秒那一条探针 ⇒ 明文确实不可得。
+    升级不动 token_hash，所以「拿不出凭据」在这里不构成风险——这条测试钉住三件事：
+    dry run 不写、apply 只动 kind/fleet_ref、原持有方的凭据照旧可用。
+    """
+    before = _machine(conn)
+    script = _load_script()
+    monkeypatch.setattr(script, "_connect", lambda: _borrowed(conn))
+    args = ["--promote-by-name", "--fleet-ref", "fleet_1794335712751_wfa3ww",
+            "--name", "ontology-fleet-win"]
+
+    assert script.main(args) == 0
+    assert "would promote in place" in capsys.readouterr().out
+    assert distribution.list_consumers(conn)[0]["kind"] == "machine"  # dry run 没写
+
+    assert script.main(args + ["--apply"]) == 0
+    out = capsys.readouterr().out
+    assert "promoted" in out and "凭据未变" in out
+
+    after = distribution.list_consumers(conn)[0]
+    assert (after["id"], after["name"]) == (before["id"], before["name"])
+    assert after["token_hash"] == before["token_hash"]  # 升级不动凭据
+    assert (after["kind"], after["fleet_ref"], after["domains"]) == (
+        "fleet", "fleet_1794335712751_wfa3ww", ["legal"],
+    )
+    # 原持有方照旧能按 token 被认出来
+    assert distribution.get_consumer_by_token_hash(
+        conn, token_hash=hashlib.sha256(b"win-token").hexdigest()
+    )["name"] == "ontology-fleet-win"
+
+
+def test_promote_by_name_refuses_a_revoked_registration(conn, capsys, monkeypatch):
+    _machine(conn)
+    distribution.revoke_consumer(conn, name="ontology-fleet-win")
+    script = _load_script()
+    monkeypatch.setattr(script, "_connect", lambda: _borrowed(conn))
+    rc = script.main(["--promote-by-name", "--fleet-ref", "fleet_x",
+                      "--name", "ontology-fleet-win", "--apply"])
+    assert rc == 1
+    assert "已吊销" in capsys.readouterr().err
+    assert distribution.list_consumers(conn)[0]["kind"] == "machine"
+
+
+def test_promote_by_name_refuses_a_name_it_cannot_find(conn, capsys, monkeypatch):
+    script = _load_script()
+    monkeypatch.setattr(script, "_connect", lambda: _borrowed(conn))
+    rc = script.main(["--promote-by-name", "--fleet-ref", "fleet_x", "--name", "nope", "--apply"])
+    assert rc == 1
+    assert "没有名为" in capsys.readouterr().err
+
+
+# ------------------------------------------- --rotate-token（明文丢失后的补凭据）
+
+
+def test_rotate_token_replaces_the_digest_and_prints_the_value_once(conn, capsys, monkeypatch):
+    before = _machine(conn)
+    monkeypatch.setenv("BENCH_NEW_FLEET_TOKEN", "lbc_brand-new-value")
+    script = _load_script()
+    monkeypatch.setattr(script, "_connect", lambda: _borrowed(conn))
+
+    assert script.main(["--rotate-token", "--name", "ontology-fleet-win",
+                        "--token-env", "BENCH_NEW_FLEET_TOKEN", "--apply"]) == 0
+    out = capsys.readouterr().out
+
+    # 明文只出现一次，且 id/name/domains 一个字没动
+    assert out.count("lbc_brand-new-value") == 1
+    after = distribution.list_consumers(conn)[0]
+    assert (after["id"], after["name"], after["domains"]) == (
+        before["id"], before["name"], before["domains"],
+    )
+    assert after["token_hash"] != before["token_hash"]
+    # 新值能认人，旧值认不到
+    assert distribution.get_consumer_by_token_hash(
+        conn, token_hash=hashlib.sha256(b"lbc_brand-new-value").hexdigest()
+    ) is not None
+    assert distribution.get_consumer_by_token_hash(
+        conn, token_hash=hashlib.sha256(b"win-token").hexdigest()
+    ) is None
+
+
+def test_rotate_token_dry_run_never_prints_a_credential(conn, capsys, monkeypatch):
+    """还没写库的值不该出现在输出里：dry run 打印明文等于把「没签发的凭据」发出去。"""
+    before = _machine(conn)
+    monkeypatch.setenv("BENCH_NEW_FLEET_TOKEN", "lbc_should-not-leak")
+    script = _load_script()
+    monkeypatch.setattr(script, "_connect", lambda: _borrowed(conn))
+
+    assert script.main(["--rotate-token", "--name", "ontology-fleet-win",
+                        "--token-env", "BENCH_NEW_FLEET_TOKEN"]) == 0
+    out = capsys.readouterr().out
+    assert "would rotate" in out
+    assert "lbc_should-not-leak" not in out
+    assert distribution.list_consumers(conn)[0]["token_hash"] == before["token_hash"]
+
+
+def test_rotate_token_refuses_a_value_that_belongs_to_another_registration(conn, capsys, monkeypatch):
+    _machine(conn)
+    distribution.register_consumer(
+        conn, name="other", domains=["legal"],
+        token_hash=hashlib.sha256(b"taken").hexdigest(), created_by="t",
+    )
+    monkeypatch.setenv("BENCH_NEW_FLEET_TOKEN", "taken")
+    script = _load_script()
+    monkeypatch.setattr(script, "_connect", lambda: _borrowed(conn))
+
+    rc = script.main(["--rotate-token", "--name", "ontology-fleet-win",
+                      "--token-env", "BENCH_NEW_FLEET_TOKEN", "--apply"])
+    assert rc == 1
+    assert "已经属于登记" in capsys.readouterr().err
+
+
+def test_rotate_token_is_idempotent_on_the_current_value(conn, capsys, monkeypatch):
+    before = _machine(conn)
+    monkeypatch.setenv("BENCH_NEW_FLEET_TOKEN", "win-token")
+    script = _load_script()
+    monkeypatch.setattr(script, "_connect", lambda: _borrowed(conn))
+
+    assert script.main(["--rotate-token", "--name", "ontology-fleet-win",
+                        "--token-env", "BENCH_NEW_FLEET_TOKEN", "--apply"]) == 0
+    assert "不写库" in capsys.readouterr().out
+    assert distribution.list_consumers(conn)[0]["token_hash"] == before["token_hash"]
