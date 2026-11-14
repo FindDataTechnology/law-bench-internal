@@ -102,6 +102,20 @@ class Client:
                 detail = raw
             if exc.code >= 500:
                 raise Unreachable(f"HTTP {exc.code}: {detail}") from exc
+            if exc.code == 404:
+                # 404 与 401/403 是**两种完全不同的处置**，而它们的形状都是「报错」：
+                #   404 = 这条路由根本不在这片镜像上（对端还没滚到含机器面的片，或
+                #         base-url 指到了公开 pod —— 公开面刻意不挂机器面）；
+                #   401/403 = 路由在、凭据不对（换 token/登记）。
+                # 混成一句 "HTTP 404" 会让人去查凭据，白查一轮。实测过：故意打一个不存在的
+                # 前缀得到的就是裸 `HTTP 404: Not Found`。所以这里把**该面未上线**写进消息，
+                # 并把确认动作一起给出来。
+                raise Refused(
+                    f"HTTP 404: 该面未上线（{method} {path} 在 {self.base_url} 上不存在）"
+                    f"—— 先确认对端已滚到含机器面的片（origin 上 `register_fleet.py --schema` "
+                    f"应 8/8 且机器面回 401/403），并确认 base-url 指的不是公开 pod；"
+                    f"原始响应：{detail}"
+                ) from exc
             raise Refused(f"HTTP {exc.code}: {detail}") from exc
         except urllib.error.URLError as exc:
             raise Unreachable(str(exc.reason)) from exc

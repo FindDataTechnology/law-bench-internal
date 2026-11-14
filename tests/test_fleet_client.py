@@ -115,6 +115,45 @@ def test_a_refusal_exits_1_and_prints_the_servers_reason(monkeypatch, capsys):
     assert "refused" in err and "只能以自己的身份提交" in err
 
 
+def test_a_404_says_the_face_is_not_deployed(monkeypatch, capsys):
+    """404 必须被读成「该面未上线」，不能只是一句裸 `HTTP 404`。
+
+    两种 4xx 的处置完全不同，而它们的形状都是「报错」：
+      404      = 这条路由不在这片镜像上（对端没滚到含机器面的片，或 base-url 指到公开 pod）；
+      401/403  = 路由在、凭据不对（换 token / 登记）。
+    混成一句会让人去查凭据——白查一轮，而这正是本 change 要消掉的那类歧义。
+    这里走**真实** `_call`（只把 urlopen 换成抛 404），所以断言的是判据本身，不是桩。
+    """
+    import urllib.error
+
+    mod = _load()
+    client = mod.Client(base_url="https://bench.test", token="t")
+
+    def not_found(request, timeout=None):
+        raise urllib.error.HTTPError(
+            request.full_url, 404, "Not Found", {}, __import__("io").BytesIO(b'{"detail":"Not Found"}')
+        )
+
+    monkeypatch.setattr(mod.urllib.request, "urlopen", not_found)
+    with pytest.raises(mod.Refused) as exc:
+        client.orders("legal")
+    msg = str(exc.value)
+    assert "该面未上线" in msg, msg
+    assert "--schema" in msg, msg          # 给出确认动作，而不是只报错
+    assert "404" in msg
+
+    # 401/403 不能被改写成「未上线」——那会把「换 help 凭据」误导成「等部署」。
+    def forbidden(request, timeout=None):
+        raise urllib.error.HTTPError(
+            request.full_url, 403, "Forbidden", {}, __import__("io").BytesIO(b'{"detail":"token not registered"}')
+        )
+
+    monkeypatch.setattr(mod.urllib.request, "urlopen", forbidden)
+    with pytest.raises(mod.Refused) as exc2:
+        client.orders("legal")
+    assert "该面未上线" not in str(exc2.value)
+
+
 def test_unreachable_exits_2(monkeypatch, capsys):
     mod = _load()
 
