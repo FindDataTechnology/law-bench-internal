@@ -18,7 +18,19 @@ spec:
           restartPolicy: Never
           containers:
             - name: sync
-              image: postgres:16-alpine
+              # 底座换成 `alpine:3.20` + `apk add postgresql16-client`（2026-11-14）。
+              #
+              # 原来是 `postgres:16-alpine`，而本作业**没有任何卷/节点约束** ⇒ 调度器可以把它
+              # 放到任意节点，落到没缓存该镜像的那台上就是永久 `ImagePullBackOff`：docker.io 的
+              # 代理专属域名当天已注销、拉取永久失效。实测七台节点里只有 cheap-6 / cheap-8 /
+              # 两台 liuliang 缓存了 `postgres:16-alpine`，cheap-4 / cheap-5 / cheap-7 没有；
+              # 而 `alpine:3.20` **七台全有**（所有卷备份作业的底座都是它）。
+              # 卷保护闸现在按「每个可落节点都有该镜像」判，会点名这条为 `⚠`（不是通过）。
+              #
+              # 客户端版本必须与服务端同为 16：实测 `postgresql16-client` → pg_dump/psql **16.14**。
+              # 不改成 `nodeSelector` 钉节点：那等于把这条数据链押在单台机上，而它本来无卷、可去任意节点。
+              image: docker.io/library/alpine:3.20
+              imagePullPolicy: IfNotPresent
               env:
                 - name: PGORIGIN
                   valueFrom: {secretKeyRef: {name: law-bench-db, key: database_url}}
@@ -29,6 +41,12 @@ spec:
                 - -c
                 - |
                   set -e
+                  # 底座没有 pg_dump/psql，现装（tuna 镜像；七台节点都能连）。
+                  # 装不上即失败——不要退化成"跑了一遍但什么都没同步"。
+                  echo "https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.20/main" > /etc/apk/repositories
+                  echo "https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.20/community" >> /etc/apk/repositories
+                  apk add --quiet --no-cache postgresql16-client >/dev/null 2>&1 \
+                    || { echo "FATAL: 装不上 postgresql16-client（离线？）"; exit 1; }
                   echo "sync start $(date -Iseconds)"
                   pg_dump "$PGORIGIN" --no-owner --clean --if-exists > /tmp/seed.sql
                   BYTES=$(wc -c < /tmp/seed.sql)
