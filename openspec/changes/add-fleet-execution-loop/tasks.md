@@ -76,7 +76,7 @@
 ## 7. 验收
 
 - [x] 7.1 浏览器链路 e2e：登录 → `/estate` 派单给舰队 → `/d/{key}` 看到工单 → 团队区看到两类运行 → 提案箱看到解析后的来源与驳回理由。落在 `tests/test_fleet_loop_e2e.py`：**一条测试走完整闭环**（缺口→派单→舰队领单→回写运行→提案入箱→负责人确认→单元落库→缺口消失→对提交方可见→关单），四份证据逐份核对；另有 4 条只测「不该通的那几条路」。三处注入各转红一条，把机器面收窄后闭环测试当场断在领单
-- [x] 7.2 判据测试套件：§1.10 / §2.6 / §3.6 / §4.5 全部纳入回归，`pytest` 全绿。新增 12 个测试模块全部入回归：`test_submitter_contract`(36) / `test_fleet_registration`(16) / `test_external_run_writeback`(9) / `test_work_orders`(18) / `test_proposal_outcomes`(11) / `test_register_fleet_script`(17) / `test_run_readback`(11) / `test_backfill_assignee_kind`(7) / `test_fleet_loop_e2e`(19) / `test_fleet_client`(9，另有 2 条接在 e2e 里打真路由) / 控制台新增 12 条 / 契约文档 6 条
+- [x] 7.2 判据测试套件：§1.10 / §2.6 / §3.6 / §4.5 全部纳入回归，`pytest` 全绿。新增 12 个测试模块全部入回归：`test_submitter_contract`(36) / `test_fleet_registration`(16) / `test_external_run_writeback`(9) / `test_work_orders`(18) / `test_proposal_outcomes`(11) / `test_register_fleet_script`(17) / `test_run_readback`(11) / `test_backfill_assignee_kind`(7) / `test_fleet_loop_e2e`(19) / `test_fleet_client`(9，另有 2 条接在 e2e 里打真路由) / `test_public_app`(+1：机器面不在公开面) / 控制台新增 12 条 / 契约文档 6 条
 - [x] 7.3 `openspec validate add-fleet-execution-loop --strict` 过绿
 - [x] 7.4 写 `acceptance.md`：逐条判据 + 真库/真请求读数。已落 `openspec/changes/add-fleet-execution-loop/acceptance.md`：六节读数（基线 / 四类分流 / 台账 / 工单 / 结局 / 闭环 / 回退演练），每条判据写明「怎么判、读数多少、注入后是否转红」；未做项（6.2 生产列、6.3 生产登记、6.4 跨仓）逐条写明阻塞原因
 
