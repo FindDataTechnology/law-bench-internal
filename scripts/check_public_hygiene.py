@@ -51,8 +51,16 @@ CONTENT_RULES = [
         ),
     ),
     (
+        # 前缀用**负向后视**而不是字符类：2026-11-14 实测漏了一个真实泄漏——
+        # `docs/fleet-loop-program.md` 里写着 `` `law-bench-internal/src/...` ``，
+        # 而原来的 `(^|[\s'\"(])` 不含反引号，于是 markdown 最常用来写路径的那种
+        # 形态（行内代码）整个绕过判据，闸报 OK。文档恰恰是最容易写进内部路径的
+        # 地方，所以这里改成「前面不是单词字符或连字符」即可，反引号、括号、引号、
+        # 行首都覆盖，且不会把 `my-law-bench-internal/` 误判成命中。
         "internal repo import/path reference",
-        re.compile(r"(^|[\s'\"(])(from\s+law_bench_internal|import\s+law_bench_internal|law-bench-internal/)"),
+        re.compile(
+            r"(?<![\w-])(from\s+law_bench_internal|import\s+law_bench_internal|law-bench-internal/)"
+        ),
     ),
 ]
 

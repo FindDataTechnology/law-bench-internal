@@ -100,4 +100,4 @@
 | P2 `add-typed-publications` | 尺子/金集可发布（种类由 pack 注册、digest 复用既有内核）+ 按种类拉取面；本体发布契约零改动 | P2 | 📝 规划完成（strict 绿，+5）；本体与尺子双表并存 |
 | P3 `add-domain-next-actions` | 区级「下一步」与总览优先清单、三类空态各自指引、入口可达性、纯读 | P3 | 📝 规划完成（strict 绿，+5 ~1）；依赖 P1/P2 的读面 |
 
-> 上述四件的顺序、判据与两条岔路的裁决见 `docs/fleet-loop-program.md`（2026-11-13 立）。
+> 上述四件的顺序、判据与两条岔路的裁决见 `openspec/program.md`（2026-11-13 立）。

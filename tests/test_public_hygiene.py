@@ -36,6 +36,33 @@ def test_internal_repo_path_reference_detected():
     assert any(p.search(line2) for _, p in hyg.CONTENT_RULES)
 
 
+def test_a_backticked_internal_path_is_detected():
+    """markdown 行内代码里的内部路径必须被抓到。
+
+    2026-11-14 实测漏过一次：判据的前缀集不含反引号，而
+    `` `law-bench-internal/src/web/auth/scopes.py` `` 正好是文档里写路径的常见形态
+    ⇒ 一条真实泄漏从闸底下走过去，闸报 OK。文档是最容易写进内部路径的地方。
+    """
+
+    def hits(line: str) -> list[str]:
+        return [n for n, p in hyg.CONTENT_RULES if p.search(line)]
+
+    for line in (
+        "| 共享身份 | Logto | `law-bench-internal/src/web/auth/scopes.py` |",
+        "*`law-bench-internal/x.py`*",
+        "见( law-bench-internal/y.py )",
+        "law-bench-internal/z.py 开头即命中",
+    ):
+        assert "internal repo import/path reference" in hits(line), line
+
+    # 反例：散文里提仓名、或粘在别的标识符后面，都不该红。
+    for line in (
+        "真源在 law-bench-internal 仓里（散文提仓名允许）",
+        "my-law-bench-internal/x.py 不是本仓",
+    ):
+        assert "internal repo import/path reference" not in hits(line), line
+
+
 def test_sk_key_and_pem_detected():
     assert any(p.search("key = 'sk-abcdefghijklmnop123456'") for _, p in hyg.CONTENT_RULES)
     assert any(p.search("-----BEGIN RSA PRIVATE KEY-----") for _, p in hyg.CONTENT_RULES)

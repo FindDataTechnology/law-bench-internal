@@ -44,6 +44,6 @@
   - `src/bench/proposals.py` 与 `src/web/routes/console.py`：提案结局读面与 `source` 校验。
   - `src/web/routes/console.py`：派单选人、工单可见、运行台账按来源分列。
   - 迁移：既有 `authoring_tasks.assignee` 与 `domain_proposals.source` 存量行不得改写为「未登记」；对已存在的 `fleet:*` 语义来源提供一次性登记或显式归入 `legacy` 的处理路径，并由 dry-run 给出计数。
-- **外部依赖（paas）**：本 change 不实现 paas 侧客户端；但 `source` 收紧后，paas 侧必须先按登记值提交。落地顺序见 `docs/fleet-loop-program.md`（paas `add-bench-ops-tools` 与之并行）。
+- **外部依赖（paas）**：本 change 不实现 paas 侧客户端；但 `source` 收紧后，paas 侧必须先按登记值提交。落地顺序见 `openspec/program.md`（paas `add-bench-ops-tools` 与之并行）。
 - **契约**：`docs/domain-proposal-contract.md` 的字段与错误码表随之更新，`tests/test_domain_proposal_contract_doc.py` 双向校验保持不漂。
 - **风险**：`source` 收紧是有意的**破坏性收紧**——松着不改，来源就永远是注释而不是事实。回退路径是登记表加回宽松档，而不是删校验。
