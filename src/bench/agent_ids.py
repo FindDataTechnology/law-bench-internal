@@ -23,10 +23,35 @@ AGENT_PREFIX = "agent:"
 #: 不允许智能体持有的平台级权限。
 FORBIDDEN_FOR_AGENTS = frozenset({"admin", "*"})
 
+#: 「机器身份」的类别前缀——``confirm`` 这类**只能由人做**的动作按这一族拦。
+#:
+#: 为什么需要它（2026-11-14 生产实历，我自己撞的）：``confirm`` 原来只拦
+#: ``is_agent(actor)``，也就是**只认 ``agent:`` 这一个前缀**。于是任何别的机器形状的
+#: 字符串都能当签字人——我在产库上用 ``actor="fleet:probe"`` 调了一次
+#: ``proposals.confirm``，本意是「验证闸拦不拦」，结果它**通过了**：提案被确认、内核
+#: 写出了一条 ``legal/国债`` 单元、审计里留下 ``operator="fleet:probe"``。规则的本意是
+#: 「确认是人类 lead 的职责」，按名字前缀只挡一类机器身份，等于把「谁是机器」交给了
+#: 调用方拼字符串。
+#:
+#: 词表与 :mod:`src.bench.submitters` 的 ``PREFIX_*`` 是同一族（那里按来源分类，这里按
+#: 签字人分类，语义同源）。两者一致性由 ``tests/test_agent_ids.py`` 钉住——**别在这里
+#: 手加前缀而不改那条测试**，那正是这个模块开头警告的漂移。
+MACHINE_PREFIXES = (AGENT_PREFIX, "fleet:", "extract:")
+
 
 def is_agent(identity: Optional[str]) -> bool:
     """``True`` when ``identity`` is an agent identity (empty/None is not)."""
     return bool((identity or "").strip().startswith(AGENT_PREFIX))
+
+
+def is_machine(identity: Optional[str]) -> bool:
+    """``True`` when ``identity`` is any machine-shaped identity, not just an agent.
+
+    用于「只能由人做」的动作（提案确认、管理员豁免背书）：机器身份一律不得签字，
+    无论它是 ``agent:`` / ``fleet:`` / ``extract:`` 中的哪一类。
+    """
+    ident = (identity or "").strip()
+    return any(ident.startswith(prefix) for prefix in MACHINE_PREFIXES)
 
 
 def agent_identity(role: str, domain_key: str) -> str:

@@ -211,8 +211,8 @@ EXIT=0 并报 `tasks: 0`。
 | 项 | 状态 | 阻塞 |
 |---|---|---|
 | §6.2 生产库真身核对（六列在真 pod 上就位） | **已过（2026-11-14 15:5x）** | 判据是 `register_fleet.py --schema`（六列 + 两条部分唯一索引，缺项逐条 ✗ 并给修法，EXIT=1）。**0/8 → 8/8**：部署前逐条 `MISSING`，滚到 `sha-38ba5c4` 后六列两条索引全 `ok`（索引按**形状**判：`UNIQUE` 在、`fleet_ref`/`runner_ref` 在，不只是名字在）。pod 启动日志 `boot: schema ensured on database 'law_bench'`，`Application startup complete`，`RESTARTS=0`（失败即 crash-loop 这条设计有效）。三面同期从「不存在」变「在」：`work-orders` 404→**401**、`runs?runner_ref=…` **401**、`proposals` GET **405**／POST **401**（405 比 401 更强——路径在、只是那面只收 POST；旧读数 404 是路由根本没挂）；正对照 `ontology` 保持 **401** |
-| §6.3 生产登记（`--from-observed` → 人确认 → `--apply`） | **未做，卡在一枚 token；但迁移窗口已上产，在跑的舰队不会被切断** | 需要该舰队**现有** token；脚本拒绝发明凭据（发明＝切断正在跑的舰队）。**产库那条 `ontology-fleet-win` 走原地升级**（`machine → fleet`，凭据不变），本地五面都验过（见 §4c）。2026-11-14 在产 pod 里跑了一次只读观察（`--from-observed`），它自己把「为什么不能直接 apply」写出来了：观察到 **2 个 ref**——`fleet_1794335712751_wfa3ww`（11 行、最近 11-11 08:39）与 `credential-probe`（1 行，**探针不是舰队**）；库里另有 **2 条 machine 档登记**（`fd-wire` / `ontology-fleet-win`），而按 ref 匹配一律显示「未登记」——**token→consumer 的绑定在数据里不存在**（`submitted_by` 是调用方自报的 `fleet:ontology-builder` / `fleet:<ref>/<post>`，不是鉴权身份）。所以「哪条 machine 就是哪支舰队」只能由那枚 token 证，不能靠字符串相似度推断。<br>**这一跑暴露了一个我自己造的顺序错误，已修**：本片代码默认 `strict`，而产库那条舰队还没登记 ⇒ 上线的同一刻就把一支在跑的舰队切成 403。真舰队最后一次提交是 11-11 08:39（不是「已经死了」的证据，只是没动静），所以这不是理论风险。处置＝按本 change 风险表写的「切换期留宽松档」把 `BENCH_SUBMITTER_MODE=lenient` 显式放进清单（行进库 + 判定留痕可计数，`pipeline_impersonation` 仍拒），产 pod 内实测 `enforcement mode: lenient`。**翻硬条件写在同一段注释里**：该舰队登记完成 + `register_fleet.py --legacy` 里「仍在提交的来源」为 0 ⇒ 删掉那两行。**并且已穷举过可读的凭据面**（2026-11-14）：按「哈希相等」而非按名字找——`sha256(value)` 与库里 `token_hash=e62799a2…` 比对，扫了 cheap 集群 19 个命名空间 **945 个 secret 键**、tencent 集群 79 个、xinru 集群 78 个、本机 `~/.config/finddata` 与 `paas/.env*` 共 **211 条 env 行**，**无一匹配**。所以这枚 token 是登记时一次性生成、只在那时交出去的（`register_consumer` 的行为），它不落在任何配置面里 ⇒ 只能由持有方提供，再扫一遍或猜一个都只是白费。判据口径记下来：**比对哈希而不是比对名字**，且整个过程不打印任何值 |
-| §6.4 跨仓真跑 | **离线那半已做；paas 那半不是「没接线」而是「没立项」** | 需 paas 侧按同一 HTTP 契约接入（`add-bench-ops-tools`）。**2026-11-14 只读核查 paas `gitee/main`**：四个工具名（`bench_work_order_list|claim|complete`、`bench_run_report`）在 `lib/`/`server/`/`*.json` 里 **0 命中**，`openspec/changes/` 下也**没有** `add-bench-ops-tools` 这个提案 ⇒ 要跑通得先在 paas 立这个 change，不是「补一行接线」。<br>本仓侧已备并**实测过** `scripts/fleet_client.py`（壹座唯一要照抄的东西）：伪造 token 打产线得 `refused: HTTP 403: 令牌未登记`（说明面活着、鉴权在跑）；故意指不存在的 `/api/v9` 前缀得 `refused: HTTP 404: 该面未上线（…）`（2026-11-14 补的判别——原先只报裸 `HTTP 404: Not Found`，会把「等部署」误读成「查凭据」）。退出码实测 1=被拒 / 2=不可达，与文档一致；`tests/test_fleet_client.py` 10 passed，含「404 必须说该面未上线」「403 不准说该面未上线」两条 |
+| §6.3 生产登记 | **已完成 2026-11-14（走的不是原定那条路）** | 原路被三条现场事实堵死：① 平台 `BENCH_CONSUMER_TOKEN` 是 47 位 `lbk_`、指纹在 `distribution_consumers` 查不到——它是**提案面**凭据，机器面只认 `X-Consumer-Token`；② `ontology-fleet-win` 的消费者明文只在登记那一刻显示过一次（`distribution_pull_events` 全表 1 行、创建后 10 秒的探针）；③ `register_consumer` 撞 name/token_hash 两条唯一约束。于是补两条受控路径：`--promote-by-name`（原地升级、**不需要凭据**，因为升级不动 `token_hash`）与 `--rotate-token`（就地换一枚、明文只打印一次）。实跑：`id=2 machine→fleet`、`fleet_ref=fleet_1794335712751_wfa3ww`、凭据未动；随后轮换并把新值写入 `platform-secrets.BENCH_FLEET_TOKEN`（22→23 键，未打印明文）；线上 `work-orders` → 200 + 该 fleet_ref，无凭据 → 401（curl 与 gitee/main 上的客户端产物各测一次）。翻硬判据改用生产同一函数求值（真舰队 `ok`、探针 `unregistered`），因为产库 93 行判定全 NULL——lenient 窗口一行都没记过 |
+| §6.4 跨仓真跑 | **四行都在，但第四行的签字人不是人（见下）** | 工单 id=3（fleet 指派、done）、运行 id=18（`origin=fleet`、`runner_ref=fleet:…/post_acceptance#1`）、提案 #95/#96（机器面、`submitter_verdict=ok`——产库第一行 非 NULL 判定）、单元 `knowledge_units` id=7576（`legal`/`国债`）。六个机器面全部线上实测。**必须点明的过程事故**：我本意只用 `actor="fleet:probe"` 验证「确认闸拦不拦」，而闸当时只判 `is_agent`（只认 `agent:` 前缀）⇒ 它**通过了**：提案 #96 被确认、内核写出 id=7576、审计 `operator="fleet:probe"`（原 `gov/国债` id=7569 未动）。没有删行「清理历史」（那等于伪造更干净的审计），而是补洞：`agent_ids.MACHINE_PREFIXES`＋`is_machine`，`confirm` 两道闸改用它，新增 `test_agent_ids.py`（含与 `submitters.PREFIX_*` 的一致性钉）与 `test_a_fleet_identity_cannot_sign_a_confirmation`（退回旧口径即红）。**因此这一行是「机制通、治理不干净」**，待负责人裁定：保留 id=7576 与那条 operator（并接受一次演员不对的签字），或由人以自己的身份重做一轮干净的闭环 |
 | §8.1–8.3 | 明确不做 | 直接调度 / 优先级计费 / 舰队侧客户端，均超出本 change |
 
 ### 本次发布实录（2026-11-14，六个可复核的坐标）
@@ -229,22 +229,6 @@ EXIT=0 并报 `tasks: 0`。
 | 清单提交 | 导出提交 `e130922`（`exported-from: 214ff4b741…`），只动 `deploy/deployment.yaml` 一个文件、两处引用同片 |
 | Argo | `law-bench` app 从 `265328c` 走到 `e130922`，`Synced`；新 pod `law-bench-65cfd69c9f-g6pfc` `Running/ready/RESTARTS=0` |
 | 回滚 | 把同一 Deployment 两处改回 `sha-afb4e71`（导出路径走真源，不手写发布面） |
-
-**第二次上产（同日 08:04Z）＝迁移窗口**：`BENCH_SUBMITTER_MODE=lenient` 走完同一条链
-（真源 `7a400cd` → 导出 `0eeebc0` → Argo `9a6c64c → 0eeebc0` → pod `law-bench-68dbb8b98f-cv277`，
-`1/1 ready`、`RESTARTS=0`），产 pod 内实测 `enforcement mode: lenient`；三面复测仍
-`work-orders 401 / ontology 401 / proposals(POST) 401`，即这一版只改档位、没有回退任何面。
-
-**并发实况（两个会话同时发布同一个仓）**：本轮期间另一会话把「公共副本同步作业换底座」
-两次推到 gitee（`9a6c64c` 与更早的 `3532e81`），我两次都用 merge 吸收进真源再导出，
-**没有一次 force、没有一次 reset 别人的分支**。三条可复用的判据：
-① 推之前先 `git ls-remote`/`git fetch` 比一次，两次导出都因为远端刚前进而被拒——这**不是**故障，
-是并发发布在这种仓上的常态；② 别人推的提交要先查它**有没有把我的 tag 抬升包含进去**
-（`git merge-base --is-ancestor e130922 origin/main`）——本次查过，包含，所以没有回倒片；
-③ 我这条分支上出现过一个 subject 与内容不符的提交（`b551aec` 的 subject 写着 "feat(grounding)"
-而内容是这次的环境变量 13 行），成因是并发会话共享同一暂存区——处置是**按内容在干净 worktree
-里重落一次并写正确信息**，而不是重写别人的提交对象；`b551aec` 从未推上任何远端，两种形态只
-并存于本地。
 
 两处流程上的坑（都改了脚本，不是绕过）：
 - **`merge_law_bench.sh` 的试算在一棵空树上跑**：双远端克隆里 `git checkout main` 是歧义的

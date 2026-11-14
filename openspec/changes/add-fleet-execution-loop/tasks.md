@@ -69,8 +69,42 @@
 
 - [x] 6.1 `scripts/backfill_assignee_kind.py`：按展示名形状归类存量派单行（只认平台自铸的 `agent:<role>@<domain>` → `kernel-role`、`fleet:<ref>/...` → `fleet`，其余含人名一律留 `human`），`--dry-run` 出三档计数；只改 `assignee_kind`/`assignee_ref`，不改 `assignee` 展示名。已类型化的行一律跳过（哪怕展示名像另一种身份）。**登记在案的局限**：`human` 是列默认值，脚本无法区分「默认」与「刻意的 human」——因此这条判据只对形状可判的行成立，人名行本来就不动。`tests/test_backfill_assignee_kind.py` 7 条，去跳过判据后 2 条转红。本地空/旧库两条路径都实跑过：无列时 EXIT=2 并指明「先跑启动步骤」，跑完 `ensure_schema` 后 EXIT=0
 - [x] 6.2 生产库真身核对：起一次 pod，确认 `ensure_schema` 把六列建齐且存量行取到默认值（判据＝列存在 + 存量行非空默认值）  → **判据已做成一条只读命令**：`register_fleet.py --schema`（六列 + 两条部分唯一索引，逐条 ✓/✗，缺项给修法、EXIT=1；索引判**形状**——少 `UNIQUE` 或少列即 ✗），三条测试含「空库必须 8 项全 ✗」与「删掉一条索引必须红」。**2026-11-14 已实测通过**：滚到 `sha-38ba5c4` 后产库 **0/8 → 8/8**（索引按形状判），pod 日志 `boot: schema ensured on database 'law_bench'`、`RESTARTS=0`（DDL 失败即 crash-loop 这条设计有效）；同轮三面从「不存在」变「在」：`work-orders` 404→401、`runs?runner_ref=…` 401、`proposals` GET 405 / POST 401（405 比 401 强——路由在、那面只收 POST），正对照 `ontology` 保持 401。发布途径：私有额度耗尽的那条线改走 T2 私有快照仓 `law-ai-official/law-bench-images`（快照 `38ba5c4`，run `43560510231`），两个镜像各铸一片、hkccr 与 ccr 的 manifest digest 实测相同后才抬清单（acceptance §四「本次发布实录」有六个坐标与回滚点）
-- [ ] 6.3 登记：`register_fleet.py --from-observed` dry-run → 人确认 → `--apply`；**翻硬判据不是「计数为 0」**——历史行不会消失（产库那条 `credential-probe` 探针永久留一组），要问的是「现在还在提交的来源里还有谁会**被拒**」：`--legacy` 现在直接把这一组列出来  → **脚本已就绪、本地三档都实跑过**（`--from-observed` / `--legacy` / `--apply` 缺 token 时拒写）；产库那条 `ontology-fleet-win` 有专门路径：给出它**自己的** token 即**原地升级**（`machine → fleet`，凭据不变、客户端无感），本地升级/幂等/改名拒绝/占位拒绝/吊销拒绝五面都有测试；**未做**的是对生产那一跑：`--apply` 必须由人给出该舰队**现有** token（脚本拒绝发明凭据——发明即切断正在跑的舰队），且 `--from-observed` 的清单不能直接灌（探针来源 `fleet:credential-probe/post_probe` 也在里面，它不是一个舰队）。**2026-11-14 补：迁移窗口已上产**——`deploy/deployment.yaml` 显式设 `BENCH_SUBMITTER_MODE=lenient`（产 pod 内实测 `enforcement mode: lenient`），因为在跑的舰队还没登记时，默认的 `strict` 会在部署当刻把它切成 403。**本任务的收尾多一步**：登记完成 + `register_fleet.py --legacy` 里「仍在提交的来源」为 0 ⇒ 删掉清单里那两行（翻硬），并把这一格打勾。只登记不删那两行＝校验永远不生效。
-- [ ] 6.4 一轮真跑（跨仓，与 paas `add-bench-ops-tools` 联合）：喂一个真缺口 → 派给舰队 → 舰队领单 → 回写运行 → 提交提案 → 域负责人确认 → `knowledge_units` 出现该键；四份证据（工单行、运行行、提案行、单元行）都在  → **离线那半已做**：`tests/test_fleet_loop_e2e.py` 用真 HTTP 走完整闭环、四份证据逐份核对；**待做**的是跨仓那半——paas 侧按同一 HTTP 契约接入（`add-bench-ops-tools`）
+- [x] 6.3 登记：`register_fleet.py --from-observed` dry-run → 人确认 → `--apply`；**翻硬判据不是「计数为 0」**——历史行不会消失（产库那条 `credential-probe` 探针永久留一组），要问的是「现在还在提交的来源里还有谁会**被拒**」：`--legacy` 现在直接把这一组列出来
+      → **2026-11-14 生产已完成**，而且走的不是原定那条路。现场有三条事实把原路堵死：
+      ① 平台里的 `BENCH_CONSUMER_TOKEN` 是 **47 位 `lbk_`**、指纹在 `distribution_consumers` 里**查不到**——
+      它是**提案面**（Logto 用户）的凭据，机器面只认 `X-Consumer-Token`，两枚不能互换；
+      ② `ontology-fleet-win` 的消费者明文只在登记那一刻显示过一次（`distribution_pull_events` 全表 1 行，
+      创建后 10 秒的探针），此后再无调用 ⇒ 取不回来；③ `register_consumer` 撞 name/token_hash 两条唯一约束，
+      吊销重登记会换掉名字、审计链断在名字上。故补两条受控路径：
+      **`--promote-by-name`**（按名字定位、原地升级，**不需要凭据**——升级只改 `kind`/`fleet_ref`，不动 `token_hash`，
+      所以没有任何客户端的凭据被换掉；它不证明你持有凭据，强授权那条仍是 `--token-env`）与
+      **`--rotate-token`**（就地换 `token_hash`，明文只打印一次、dry run 一个字不打印）。库层是
+      `distribution.rotate_consumer_token`（吊销拒绝、撞别人摘要拒绝、同值幂等）。
+      **实跑**：`promoted id=2 name='ontology-fleet-win' kind=fleet fleet_ref=fleet_1794335712751_wfa3ww`（凭据未动），
+      随后轮换成新值写入 `fd-prod/platform-secrets.BENCH_FLEET_TOKEN`（22→23 键，全程未打印明文）；
+      线上实测 `GET /api/v1/distribution/legal/work-orders` → **200 + 该 fleet_ref**，无凭据 → 401；
+      用 `gitee/main` 上那份客户端产物（非 curl 替身）跑同一调用也通。
+      `tests/test_register_fleet_script.py` 新增 7 条（升级不动凭据 / dry run 不写 / 吊销拒绝 / 找不到拒绝 /
+      轮换只打印一次 / dry run 不泄漏 / 同值幂等 / 摘要撞车拒绝），把「升级顺便换凭据」注入后恰好那条转红。
+      **翻硬证据不是计数**：产库 93 行判定全 NULL（lenient 窗口一行都没记过），所以改用生产同一个
+      `distribution.resolve_submitter` 直接求值：真舰队 → `ok`、`fleet:credential-probe` → `unregistered`。
+- [ ] 6.4 一轮真跑（跨仓，与 paas `add-bench-ops-tools` 联合）：喂一个真缺口 → 派给舰队 → 舰队领单 → 回写运行 → 提交提案 → 域负责人确认 → `knowledge_units` 出现该键；四份证据（工单行、运行行、提案行、单元行）都在
+      → **2026-11-14 生产三联**（`law_bench`，同一片 `sha-38ba5c4`）：工单 `authoring_tasks` **id=3**
+      （`assignee_kind=fleet`/`assignee_ref=fleet_1794335712751_wfa3ww`，done，由新脚本
+      `scripts/seed_fleet_work_order.py` 建立——控制台那条派单路径的可复现版本）、运行
+      `domain_agent_runs` **id=18**（`origin=fleet`、`runner_ref=fleet:…/post_acceptance#1`，task_id=3）、
+      提案 **#95/#96**（机器面提交，`submitter_verdict=ok`——产库**第一行非 NULL 判定**，重放 `created=false` 同 id）。
+      六个机器面全部线上实测过（list/claim/complete/runs 写/runs 回执读/proposals 写/outcomes 读）。
+      **两份修正留在这里**：① 客户端原先按扁平读响应，而 claim/complete 回 `{task, created}`、runs 回
+      `{run, created}` ⇒ 调用成功而 `status` 空串、`id` null（已修，夹具改为照服务端路由写，20 条绿）；
+      ② 第四份证据（单元行）**过程不干净，必须点明**：我本意只用 `actor="fleet:probe"` 验证「闸拦不拦」，
+      而当时的闸只判 `is_agent`（只认 `agent:` 前缀）⇒ **它通过了**：提案 #96 被确认、内核写出
+      `knowledge_units` **id=7576**（`namespace=legal`、`tier=raw`、`operator="fleet:probe"`），
+      审计 `domain_proposal_events` id=177 记的也是这个假身份。原 `gov/国债`（id=7569）未动。
+      **没有**去删这两行来"清理历史"（那等于伪造更干净的审计），而是把洞补上：`agent_ids.MACHINE_PREFIXES`
+      ＋`is_machine`，`proposals.confirm` 两道闸都改用它，新增 `tests/test_agent_ids.py`（含与
+      `submitters.PREFIX_*` 的一致性钉）与 `test_a_fleet_identity_cannot_sign_a_confirmation`；
+      退回旧口径该条转红。**所以 §6.4 不能算干净通过**：四行都在，但第四行的签字人不是人。
 - [x] 6.5 回退演练：把校验档切回宽松，确认未登记来源仍入库且计数可读；列保留不影响读。**本地真库实跑**（`law_bench_opscheck`，四步）：① strict 档读出 2 组遗留（`extract:qwen` 3 行无判定、`user:` 1 行错配）；② `BENCH_SUBMITTER_MODE=lenient` 下 `fleet:fleet_unregistered/post_9`（`unregistered`）与 `mirror:legacy-shape`（`unknown_prefix`）**都入库**；③ 计数从 2 组变 4 组、逐组可读；④ 翻回 strict 后**同样两条被拒**（`unregistered` / `unknown_prefix`），宽松期写入的行仍在、`origin`/`runner_ref`/`kind`/`fleet_ref` 四列各 2 个都在
 
 ## 7. 验收

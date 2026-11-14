@@ -514,3 +514,48 @@ def test_different_evidence_for_the_same_key_stays_two_rows(db_conn):
         "SELECT external_key, sources FROM domain_proposals WHERE state='pending'").fetchall()
     assert len(rows) == 2
     assert all(r["sources"] for r in rows), "每行都要记自己的提交方"
+
+
+# ------------------------------------- 机器身份不得当确认人（不止 agent:）
+
+
+def test_a_fleet_identity_cannot_sign_a_confirmation(db_conn):
+    """2026-11-14 生产实历的回归钉子。
+
+    原来的闸只判 `is_agent(actor)`（只认 `agent:` 前缀），于是我在产库上用
+    `actor="fleet:probe"` 调了一次 `confirm`——它**通过了**：提案被确认、内核写出单元、
+    审计里留下 `operator="fleet:probe"`。规则的本意是「确认是人类 lead 的职责」，
+    按名字前缀只挡一类机器身份，等于把「谁是机器」交给调用方拼字符串。
+    """
+    domain = make_domain(db_conn, "dom-machine-sign")
+    _ = domain
+    proposal = submit_company(
+        db_conn, "dom-machine-sign",
+        submitted_by="fleet:fleet_1794335712751_wfa3ww/post_x",
+    )
+
+    for actor in ("fleet:probe", "fleet:fleet_1794335712751_wfa3ww/post_x"):
+        with pytest.raises(PermissionError, match="机器身份不得确认提案"):
+            proposals.confirm(
+                db_conn,
+                domain_key="dom-machine-sign",
+                proposal_id=proposal["id"],
+                actor=actor,
+            )
+
+    # 拒绝必须发生在写之前：状态不变、内核没被调用
+    assert proposals.get(
+        db_conn, domain_key="dom-machine-sign", proposal_id=proposal["id"]
+    )["state"] == "pending"
+    assert ku_count(db_conn, "dom-machine-sign") == 0
+
+    # 人（lead）照常能确认同一张提案
+    confirmed = proposals.confirm(
+        db_conn,
+        domain_key="dom-machine-sign",
+        proposal_id=proposal["id"],
+        actor="lead-1",
+    )
+    assert confirmed["state"] == "confirmed"
+    assert confirmed["decided_by"] == "lead-1"
+    assert ku_count(db_conn, "dom-machine-sign") == 1
