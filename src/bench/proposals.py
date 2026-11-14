@@ -576,19 +576,21 @@ def confirm(
             "a rejected proposal must be resubmitted with new evidence"
         )
 
-    # 两道智能体闸，顺序重要：先拦"智能体当签字人"，再拦"管理员豁免替智能体背书"。
+    # 两道机器身份闸，顺序重要：先拦「机器当签字人」，再拦「管理员豁免替机器背书」。
     #
-    # 第一道覆盖任何 agent 身份，包括它在确认别人的提案——硬停清单里 confirm
-    # 不发给智能体，这一道是内核侧的兜底（工具面没有那个动词，但内核不能假设
-    # 调用方一定经过工具面）。
-    if agent_ids.is_agent(actor):
-        raise PermissionError("智能体不得确认提案；确认是人类 lead 的职责")
-    # 第二道堵 admin 豁免：豁免的存在是给人救火用的，一旦它能替智能体提交的
-    # 提案背书，`admin` scope 就等于一张自签通行证。所以只要提交方是 agent，
-    # 豁免一律不生效——人工 lead 正常确认（submitted_by != actor）仍然可以。
-    if admin_override and agent_ids.is_agent(proposal["submitted_by"]):
+    # 第一道覆盖**任何机器形状的身份**，不只是 agent：硬停清单里 confirm 不发给机器，
+    # 这一道是内核侧的兜底（工具面没有那个动词，但内核不能假设调用方一定经过工具面）。
+    # 2026-11-14 这里只判 `is_agent`（只认 `agent:` 前缀），于是 `fleet:` 形状的字符串
+    # 能签字——产库上 `actor="fleet:probe"` 一次就通过了，写出了一条单元并留下那条
+    # operator。机器身份的类别前缀现在集中在 `agent_ids.MACHINE_PREFIXES`。
+    if agent_ids.is_machine(actor):
+        raise PermissionError("机器身份不得确认提案；确认是人类 lead 的职责")
+    # 第二道堵 admin 豁免：豁免的存在是给人救火用的，一旦它能替机器提交的提案背书，
+    # `admin` scope 就等于一张自签通行证。所以只要提交方是机器身份，豁免一律不生效
+    # ——人工 lead 正常确认（submitted_by != actor）仍然可以。
+    if admin_override and agent_ids.is_machine(proposal["submitted_by"]):
         raise PermissionError(
-            "管理员豁免不适用于智能体提交的提案；请由人类负责人正常确认"
+            "管理员豁免不适用于机器身份提交的提案；请由人类负责人正常确认"
         )
     if proposal["submitted_by"] == actor and not admin_override:
         raise PermissionError("提案人不得自提自确认")
