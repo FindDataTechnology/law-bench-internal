@@ -142,7 +142,7 @@ See `proposal.md` — Why. 只补设计和落地需要、但从动机里看不�
 
 1. **加列（幂等）**：`ensure_schema` 增 `authoring_tasks.assignee_kind/assignee_ref`、`distribution_consumers.kind/fleet_ref`、`domain_agent_runs.origin/runner_ref`，全部带 `DEFAULT` 使存量行可读（`assignee_kind='human'`、`kind='machine'`、`origin='kernel'`）。
 2. **回填**：`scripts/backfill_assignee_kind.py` 按 `GAP_ROUTE` 把既有派单行归类。实测只有 1 行（`agent:concept@legal`），归 `kernel-role`。
-3. **登记**：`scripts/register_fleet.py --from-observed` dry-run → 人确认 → `--apply`。实测待登记 2 个 fleet id + 1 条探针（探针应显式不登记，走 legacy）。
+3. **登记**：`scripts/register_fleet.py --from-observed` dry-run → 人确认 → `--apply`。实测待登记 2 个 fleet id + 1 条探针（探针应显式不登记，走 legacy）。**既有的 `machine` 登记是原地升级，不是重登记**：产库 `ontology-fleet-win` 就是一条真舰队的老登记，而 `register_consumer` 只新建（撞 `name`/`token_hash` 两条唯一约束），吊销重登记又会换掉 token、把在跑的舰队切断。所以脚本拿到一枚**已在库里的** token 时走 `distribution.promote_consumer_to_fleet`：只改 `kind`/`fleet_ref`，`id`/`name`/`token_hash`/`domains` 一个字不动，客户端无感。改名、改域、或那枚 token 属于另一条登记，一律拒绝并说明下一步（域要改加 `--set-domains`）。
 4. **翻校验**：先 `lenient`（记 legacy），跑一轮真实提交与回写，确认 `legacy` 计数为 0 后翻 `strict`。注意即使 `lenient`，外部提交 `extract:*` 也拒绝（D6）。
 5. **回退**：把校验档位切回 `lenient`（一行配置），不动数据；列保留不影响读。
 
@@ -152,7 +152,7 @@ See `proposal.md` — Why. 只补设计和落地需要、但从动机里看不�
 
 **路径 A（推荐）：先登记，再 strict。**
 1. 对新镜像起一次 boot（任意一次性 Job 即可），确认六列 + 部分唯一索引就位、存量行取到默认值。
-2. `register_fleet.py --from-observed` → 人确认 → `--apply`（需该舰队**现有** token）。
+2. `register_fleet.py --from-observed` → 人确认 → `--apply`（需该舰队**现有** token）。产库那条已存在的 `ontology-fleet-win` 会被**原地升级**（`machine → fleet`，token 不变），不会因为名字已存在而失败。
 3. `--legacy` 的「现在再提交会被拒」清单里只剩历史行（探针、旧错配）→ 滚新镜像，不设 `BENCH_SUBMITTER_MODE`。
 
 **路径 B：先 lenient，再收窗。**

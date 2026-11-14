@@ -85,6 +85,27 @@
 | 完成重试不加事件 | `test_completing_twice_is_an_idempotent_hit` | 第二次 200 `created:false`，`done` 事件仍 1 条 |
 
 
+### 4c. 既有登记原地升级（§2.5，2026-11-14 补）
+
+产库读数暴露了一个真缺口：`distribution_consumers` 里 `ontology-fleet-win` 是**真舰队**，
+但它登记在 `machine` 档——新镜像一落地，它的 `fleet:*` 提交会判成「未登记」，而**没有任何
+办法修**：`register_consumer` 只新建（撞 `name` 与 `token_hash` 两条唯一约束），吊销重登记
+又会发一枚新 token，等于把在跑的舰队当场切断。补的是 `distribution.promote_consumer_to_fleet`
+＋脚本里的升级分支。
+
+| 判据 | 怎么判 | 读数 / 注入 |
+|---|---|---|
+| 只动两列 | `test_promotion_locates_by_credential_and_changes_only_two_columns` | `kind`/`fleet_ref` 变，`id`/`name`/`token_hash`/`domains` 逐字相等 |
+| 升级后立刻可提交 | 脚本测试同条尾部发 `fleet:<ref>/post_1` | `submitter_verdict='ok'`（升级的全部意义） |
+| 按凭据定位即授权 | 脚本测试（不给 `--name`） | 定位到那条行、升级成功 |
+| 改名被拒 | `test_promotion_refuses_a_name_that_is_not_the_stored_one` | 1 + 「属于登记」；行仍是 `machine` |
+| 凭据与名字不匹配被拒 | `test_promotion_refuses_when_the_given_name_is_not_the_credential_owner` | `ValueError`「凭据与提供的 token 不一致」 |
+| `fleet_ref` 被占被拒 | `test_promotion_refuses_a_fleet_ref_another_registration_already_claims` | 1 + 「占用」；两条行都没变 |
+| 已吊销被拒 | `test_promotion_refuses_a_revoked_registration` | 1 + 「已吊销」 |
+| 域不一致默认拒 | `test_promotion_refuses_to_change_domains_silently` | 1 + 提示 `--set-domains`；加该开关后同 id 行域改为 `knowledge` |
+| 幂等重跑 | `test_promoting_twice_says_nothing_to_change` | 第二次 0 + 「nothing to change」，行数仍 1 |
+| dry run 不撒谎 | `test_promotion_dry_run_reports_the_upgrade_and_writes_nothing` / `test_a_name_taken_by_another_credential_is_refused_before_anything_is_written` | 前者「would PROMOTE」且不写；后者**不 apply 也拒**（说「会登记」的 dry run 比没有更坏） |
+
 ### 5. 闭环（§6.4 离线那半 / §7.1）
 
 `tests/test_fleet_loop_e2e.py`：**一条测试全走真实 HTTP**，不调内核函数（除造世界）：
@@ -138,7 +159,7 @@ EXIT=0 并报 `tasks: 0`。
 | 项 | 状态 | 阻塞 |
 |---|---|---|
 | §6.2 生产库真身核对（六列在真 pod 上就位） | **未做** | 要等出片后有 pod 起一次 |
-| §6.3 生产登记（`--from-observed` → 人确认 → `--apply`） | **未做** | 需要该舰队**现有** token；脚本拒绝发明凭据（发明＝切断正在跑的舰队） |
+| §6.3 生产登记（`--from-observed` → 人确认 → `--apply`） | **未做** | 需要该舰队**现有** token；脚本拒绝发明凭据（发明＝切断正在跑的舰队）。**产库那条 `ontology-fleet-win` 走原地升级**（`machine → fleet`，凭据不变），本地五面都验过（见 §4c）——所以这一跑只差人交出那枚 token，不再是「没有可行路径」 |
 | §6.4 跨仓真跑 | **离线那半已做**（见上） | 需 paas 侧按同一 HTTP 契约接入（`add-bench-ops-tools`） |
 | §8.1–8.3 | 明确不做 | 直接调度 / 优先级计费 / 舰队侧客户端，均超出本 change |
 

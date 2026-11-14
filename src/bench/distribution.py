@@ -530,6 +530,84 @@ def register_consumer(
     return consumer
 
 
+def promote_consumer_to_fleet(
+    conn: Any,
+    *,
+    name: Optional[str] = None,
+    token_hash: Optional[str] = None,
+    fleet_ref: str,
+) -> dict:
+    """把一条既有登记**原地**升为舰队档：``machine`` → ``fleet``。
+
+    为什么需要这条路：升级前登记的消费者全是 ``machine``，而其中就有真正在跑的
+    舰队（产库 `ontology-fleet-win`）。部署后它的 ``kind`` 取列默认值 ``machine``、
+    ``fleet_ref`` 为空，于是它的 ``fleet:*`` 提交会判成「来源未登记」——**而我们没有
+    任何办法修**：``register_consumer`` 只会新建，撞 ``name`` 与 ``token_hash`` 两条
+    唯一约束；吊销再重登记又会换掉 token，等于把在跑的舰队切断。
+
+    所以升级只动两列（``kind`` / ``fleet_ref``），身份（id / name / token_hash /
+    domains）一个字不改——凭据不变，客户端无感。定位可以按 ``name`` 或 ``token_hash``；
+    后者更强：**持有那枚 token 本身就是授权**。
+
+    重复调用幂等：已经是同一 ``fleet_ref`` 的舰队档时原样返回，不写库。
+    """
+    ref = (fleet_ref or "").strip()
+    if not ref:
+        raise ValueError("fleet_ref 不能为空")
+    key = (name or "").strip()
+    digest = (token_hash or "").strip()
+    if not key and not digest:
+        raise ValueError("需要 name 或 token_hash 之一来定位既有登记")
+
+    if key:
+        row = conn.execute(
+            f"SELECT {_CONSUMER_COLS} FROM distribution_consumers WHERE name = %s", (key,)
+        ).fetchone()
+    else:
+        row = conn.execute(
+            f"SELECT {_CONSUMER_COLS} FROM distribution_consumers WHERE token_hash = %s",
+            (digest,),
+        ).fetchone()
+    if row is None:
+        raise ValueError(
+            f"找不到要升级的登记（name={key or None!r} token_hash={'(given)' if digest else None}）"
+        )
+    consumer = _consumer_to_dict(row)
+
+    # 按 token_hash 定位时必须和给到的 name 一致，否则调用方以为在改 A、实际改的是 B。
+    if key and digest and consumer["token_hash"] != digest:
+        raise ValueError(
+            f"登记 {consumer['name']!r} 的凭据与提供的 token 不一致——不升级（拿不出它的凭据就不算授权）"
+        )
+    if consumer["revoked_at"] is not None:
+        raise ValueError(
+            f"登记 {consumer['name']!r} 已吊销；吊销的登记不升级，重新登记一条新的"
+        )
+
+    if consumer["kind"] == "fleet":
+        if consumer["fleet_ref"] == ref:
+            return consumer  # 幂等：已经是这个舰队的登记
+        raise ValueError(
+            f"登记 {consumer['name']!r} 已绑定另一个舰队标识 {consumer['fleet_ref']!r}；"
+            "要改绑定请先把旧的那条处理掉（吊销或改回 machine）"
+        )
+
+    other = _consumer_by_fleet_ref(conn, ref, live_only=True)
+    if other is not None and other["id"] != consumer["id"]:
+        raise ValueError(
+            f"舰队标识 {ref!r} 已被登记 {other['name']!r} 占用；先处理那一条再升级"
+        )
+
+    cur = conn.execute(
+        f"UPDATE distribution_consumers SET kind = 'fleet', fleet_ref = %s "
+        f"WHERE id = %s RETURNING {_CONSUMER_COLS}",
+        (ref, consumer["id"]),
+    )
+    promoted = _consumer_to_dict(cur.fetchone())
+    conn.commit()
+    return promoted
+
+
 def _consumer_by_fleet_ref(
     conn: Any, fleet_ref: str, *, live_only: bool = False
 ) -> Optional[dict]:

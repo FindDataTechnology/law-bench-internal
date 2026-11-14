@@ -119,6 +119,44 @@ def test_revoked_registration_frees_the_fleet_ref(db_conn):
     assert again["name"] == "second" and again["revoked_at"] is None
 
 
+# ------------------------------------------------- promote (machine → fleet)
+
+
+def test_promotion_locates_by_credential_and_changes_only_two_columns(db_conn):
+    """凭据本身就是授权：按 token 定位，只改 kind / fleet_ref。"""
+    before = distribution.register_consumer(
+        db_conn, name="ontology-fleet-win", domains=["legal"], token_hash="h-promote",
+        created_by="admin",
+    )
+    after = distribution.promote_consumer_to_fleet(
+        db_conn, token_hash="h-promote", fleet_ref="fleet_win",
+    )
+    assert (after["kind"], after["fleet_ref"]) == ("fleet", "fleet_win")
+    assert (after["id"], after["name"], after["token_hash"], after["domains"]) == (
+        before["id"], before["name"], "h-promote", ["legal"],
+    )
+
+
+def test_promotion_refuses_when_the_given_name_is_not_the_credential_owner(db_conn):
+    distribution.register_consumer(
+        db_conn, name="owner", domains=["legal"], token_hash="h-owner", created_by="admin",
+    )
+    with pytest.raises(ValueError, match="凭据与提供的 token 不一致"):
+        distribution.promote_consumer_to_fleet(
+            db_conn, name="owner", token_hash="h-other", fleet_ref="fleet_x",
+        )
+    assert distribution.list_consumers(db_conn)[0]["kind"] == "machine"
+
+
+def test_promotion_needs_something_to_locate_by(db_conn):
+    with pytest.raises(ValueError, match="需要 name 或 token_hash"):
+        distribution.promote_consumer_to_fleet(db_conn, fleet_ref="fleet_x")
+    with pytest.raises(ValueError, match="找不到要升级的登记"):
+        distribution.promote_consumer_to_fleet(
+            db_conn, name="nobody", token_hash="h-none", fleet_ref="fleet_x",
+        )
+
+
 # ------------------------------------------------------------ resolve_fleet
 
 

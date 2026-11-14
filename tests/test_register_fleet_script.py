@@ -201,6 +201,165 @@ def test_apply_registers_a_fleet_bound_to_its_domain(conn, monkeypatch):
     assert verdict == "ok"
 
 
+# ------------------------------------- --apply 撞上既有登记：原地升级，不重登记
+
+
+def _machine(conn, *, name="ontology-fleet-win", token=b"win-token", domains=("legal",)):
+    return distribution.register_consumer(
+        conn, name=name, domains=list(domains),
+        token_hash=hashlib.sha256(token).hexdigest(), created_by="before-the-change",
+    )
+
+
+def test_apply_promotes_the_registration_that_already_holds_the_token(
+    conn, capsys, monkeypatch
+):
+    """产库那条 `ontology-fleet-win` 就是这种形态：真舰队，但登记在 machine 档。
+
+    `register_consumer` 只会新建，撞 name/token_hash 两条唯一约束；吊销重登记又会
+    换掉 token，把还在跑的舰队切断。所以脚本必须走原地升级：只动 kind / fleet_ref。
+    """
+    before = _machine(conn)
+    monkeypatch.setenv("BENCH_FLEET_TOKEN", "win-token")
+    script = _load_script()
+    monkeypatch.setattr(script, "_connect", lambda: _borrowed(conn))
+
+    assert script.main([
+        "--fleet-ref", "fleet_1794335712751_wfa3ww",
+        "--domains", "legal", "--apply",
+    ]) == 0
+    out = capsys.readouterr().out
+    assert "promoted" in out and "凭据未变" in out
+
+    after = distribution.list_consumers(conn)[0]
+    assert (after["id"], after["name"]) == (before["id"], before["name"])
+    assert after["token_hash"] == before["token_hash"]  # 凭据一个字没改
+    assert after["created_by"] == "before-the-change"
+    assert (after["kind"], after["fleet_ref"], after["domains"]) == (
+        "fleet", "fleet_1794335712751_wfa3ww", ["legal"],
+    )
+
+    # 升级后这条来源在严格档里立刻可提交——这才是升级的全部意义。
+    _submit(conn, "fleet:fleet_1794335712751_wfa3ww/post_1", "k-promoted")
+    verdict = conn.execute(
+        "SELECT submitter_verdict FROM domain_proposals WHERE external_key = 'k-promoted'"
+    ).fetchone()["submitter_verdict"]
+    assert verdict == "ok"
+
+
+def test_promotion_dry_run_reports_the_upgrade_and_writes_nothing(conn, capsys, monkeypatch):
+    _machine(conn)
+    monkeypatch.setenv("BENCH_FLEET_TOKEN", "win-token")
+    script = _load_script()
+    monkeypatch.setattr(script, "_connect", lambda: _borrowed(conn))
+
+    assert script.main(["--fleet-ref", "fleet_win", "--domains", "legal"]) == 0
+    out = capsys.readouterr().out
+    assert "would PROMOTE" in out and "dry run" in out
+    row = distribution.list_consumers(conn)[0]
+    assert (row["kind"], row["fleet_ref"]) == ("machine", None)
+
+
+def test_promoting_twice_says_nothing_to_change(conn, capsys, monkeypatch):
+    _machine(conn)
+    monkeypatch.setenv("BENCH_FLEET_TOKEN", "win-token")
+    script = _load_script()
+    monkeypatch.setattr(script, "_connect", lambda: _borrowed(conn))
+    args = ["--fleet-ref", "fleet_win", "--domains", "legal", "--apply"]
+
+    assert script.main(args) == 0
+    capsys.readouterr()
+    assert script.main(args) == 0
+    assert "nothing to change" in capsys.readouterr().out
+    assert conn.execute("SELECT count(*) AS n FROM distribution_consumers").fetchone()["n"] == 1
+
+
+def test_promotion_refuses_a_name_that_is_not_the_stored_one(conn, capsys, monkeypatch):
+    """拿不出别的凭据却要改名——那不是升级，是拿这枚 token 冒充另一条登记。"""
+    _machine(conn)
+    monkeypatch.setenv("BENCH_FLEET_TOKEN", "win-token")
+    script = _load_script()
+    monkeypatch.setattr(script, "_connect", lambda: _borrowed(conn))
+
+    assert script.main([
+        "--fleet-ref", "fleet_win", "--name", "somebody-else",
+        "--domains", "legal", "--apply",
+    ]) == 1
+    assert "属于登记" in capsys.readouterr().err
+    assert distribution.list_consumers(conn)[0]["kind"] == "machine"
+
+
+def test_promotion_refuses_to_change_domains_silently(conn, capsys, monkeypatch):
+    _machine(conn, domains=("legal",))
+    monkeypatch.setenv("BENCH_FLEET_TOKEN", "win-token")
+    script = _load_script()
+    monkeypatch.setattr(script, "_connect", lambda: _borrowed(conn))
+
+    assert script.main([
+        "--fleet-ref", "fleet_win", "--domains", "knowledge", "--apply",
+    ]) == 1
+    assert "--set-domains" in capsys.readouterr().err
+    assert distribution.list_consumers(conn)[0]["domains"] == ["legal"]
+
+    # 加了 --set-domains 才改，而且改的是同一条行（id 不变）。
+    before_id = distribution.list_consumers(conn)[0]["id"]
+    assert script.main([
+        "--fleet-ref", "fleet_win", "--domains", "knowledge", "--set-domains", "--apply",
+    ]) == 0
+    row = distribution.list_consumers(conn)[0]
+    assert (row["id"], row["kind"], row["domains"]) == (before_id, "fleet", ["knowledge"])
+
+
+def test_promotion_refuses_a_revoked_registration(conn, capsys, monkeypatch):
+    _machine(conn)
+    distribution.revoke_consumer(conn, name="ontology-fleet-win")
+    monkeypatch.setenv("BENCH_FLEET_TOKEN", "win-token")
+    script = _load_script()
+    monkeypatch.setattr(script, "_connect", lambda: _borrowed(conn))
+
+    assert script.main(["--fleet-ref", "fleet_win", "--domains", "legal", "--apply"]) == 1
+    assert "已吊销" in capsys.readouterr().err
+    assert distribution.list_consumers(conn)[0]["kind"] == "machine"
+
+
+def test_promotion_refuses_a_fleet_ref_another_registration_already_claims(
+    conn, capsys, monkeypatch
+):
+    distribution.register_consumer(
+        conn, name="taken", domains=["legal"],
+        token_hash=hashlib.sha256(b"other").hexdigest(), created_by="t",
+        kind="fleet", fleet_ref="fleet_win",
+    )
+    _machine(conn)
+    monkeypatch.setenv("BENCH_FLEET_TOKEN", "win-token")
+    script = _load_script()
+    monkeypatch.setattr(script, "_connect", lambda: _borrowed(conn))
+
+    assert script.main(["--fleet-ref", "fleet_win", "--domains", "legal", "--apply"]) == 1
+    assert "占用" in capsys.readouterr().err
+    kinds = {c["name"]: c["kind"] for c in distribution.list_consumers(conn)}
+    assert kinds == {"taken": "fleet", "ontology-fleet-win": "machine"}
+
+
+def test_a_name_taken_by_another_credential_is_refused_before_anything_is_written(
+    conn, capsys, monkeypatch
+):
+    """库里叫这个名字的那条不是这枚 token 的——dry run 也得当场拒绝。
+
+    一份「会说会登记」的 dry run 比没有 dry run 更坏：人会照着它去按 --apply。
+    """
+    _machine(conn)
+    monkeypatch.setenv("BENCH_FLEET_TOKEN", "different-token")
+    script = _load_script()
+    monkeypatch.setattr(script, "_connect", lambda: _borrowed(conn))
+    args = ["--fleet-ref", "fleet_win", "--name", "ontology-fleet-win", "--domains", "legal"]
+
+    assert script.main(args) == 1
+    assert "已被 id=" in capsys.readouterr().err
+    assert script.main(args + ["--apply"]) == 1
+    assert len(distribution.list_consumers(conn)) == 1
+
+
 # ------------------------------------------------- 计数怎么读（不是「数到 0」）
 
 

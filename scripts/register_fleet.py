@@ -26,6 +26,14 @@ Run:
     # 3) read the migration counter (must be zero before enforcing strictly)
     uv run python scripts/register_fleet.py --legacy
 
+**An existing registration is promoted in place, never re-registered.** Before this
+change every consumer was registered as ``machine``, and some of them are fleets that
+are running right now (production: ``ontology-fleet-win``). If the token you pass
+already belongs to a registration, ``--apply`` upgrades *that row* —
+``kind: machine → fleet`` plus ``fleet_ref`` — and leaves its id, name, credential and
+domains alone. Revoking and re-registering would mint a new token and cut the running
+fleet off mid-flight, silently.
+
 Exit codes: 0 ok, 1 refused (already registered / bad input), 2 unusable database.
 """
 
@@ -106,19 +114,56 @@ def _print_observed(conn) -> int:
 
 
 def _register(
-    conn, *, fleet_ref: str, name: str, domains: list[str], token_hash: str, apply: bool
+    conn,
+    *,
+    fleet_ref: str,
+    name: str,
+    domains: list[str],
+    token_hash: str,
+    apply: bool,
+    set_domains: bool = False,
 ) -> int:
     from src.bench import distribution
 
-    inferred_name = name or f"fleet-{fleet_ref}"
+    requested_name = (name or "").strip()
+    inferred_name = requested_name or f"fleet-{fleet_ref}"
+    existing = distribution.get_consumer_by_token_hash(conn, token_hash=token_hash)
+
     print(f"fleet_ref : {fleet_ref}")
     print(f"name      : {inferred_name}")
     print(f"domains   : {domains}")
     print(f"kind      : fleet")
     print(f"credential: sha256:{token_hash[:12]}… (never printed in full)")
 
+    if existing is not None:
+        return _promote(
+            conn,
+            existing=existing,
+            fleet_ref=fleet_ref,
+            requested_name=requested_name,
+            domains=domains,
+            token_hash=token_hash,
+            apply=apply,
+            set_domains=set_domains,
+        )
+
+    # 名字被别的登记占着、而凭据又不是它那枚 ⇒ 两条唯一约束都会撞。先判再写：
+    # 一份 dry run 说「会登记」而 apply 当场失败，是最误导的一种报错。
+    same_name = next(
+        (c for c in distribution.list_consumers(conn) if c["name"] == inferred_name), None
+    )
+    if same_name is not None:
+        print(
+            f"refused: 名字 {inferred_name!r} 已被 id={same_name['id']} 占用"
+            f"（kind={same_name['kind']}），而它的凭据与 {fleet_ref!r} 这枚不同。\n"
+            f"  要升级那条既有登记：把 token 换成**它自己的**那枚，本脚本会原地升级；\n"
+            f"  要新登记一条：换一个 --name。",
+            file=sys.stderr,
+        )
+        return 1
+
     if not apply:
-        print("\n(dry run — nothing written; re-run with --apply)")
+        print("\n(would register a NEW consumer; dry run — nothing written, re-run with --apply)")
         return 0
 
     try:
@@ -135,6 +180,83 @@ def _register(
         print(f"refused: {exc}", file=sys.stderr)
         return 1
     print(f"\nregistered id={consumer['id']} name={consumer['name']!r}")
+    return 0
+
+
+def _promote(
+    conn,
+    *,
+    existing: dict,
+    fleet_ref: str,
+    requested_name: str,
+    domains: list[str],
+    token_hash: str,
+    apply: bool,
+    set_domains: bool,
+) -> int:
+    """Upgrade the registration that already holds this credential: machine → fleet.
+
+    为什么不是「吊销再登记」：那会换掉 token，而 token 正是这枚凭据——
+    在跑的舰队会被当场切断，而它自己完全不知道发生了什么。
+    """
+    from src.bench import distribution
+
+    stored = sorted(existing["domains"] or [])
+    wanted = sorted({d.strip() for d in domains if d and d.strip()})
+    print(
+        f"existing  : id={existing['id']} name={existing['name']!r} "
+        f"kind={existing['kind']} fleet_ref={existing['fleet_ref']} domains={stored}"
+    )
+
+    if existing["revoked_at"] is not None:
+        print(
+            f"refused: 登记 {existing['name']!r} 已吊销；吊销的登记不升级"
+            "（它的凭据已经不作数了），改用一枚新凭据登记新的一条。",
+            file=sys.stderr,
+        )
+        return 1
+    if requested_name and requested_name != existing["name"]:
+        print(
+            f"refused: 这枚凭据属于登记 {existing['name']!r}，不是 {requested_name!r}。\n"
+            "  升级只动 kind / fleet_ref，不改名、不改凭据——去掉 --name，或写该登记的名字。",
+            file=sys.stderr,
+        )
+        return 1
+    if wanted != stored and not set_domains:
+        print(
+            f"refused: 域绑定不一致（库里 {stored}，命令行 {wanted}）。\n"
+            "  升级不改域：确认要用命令行这份就加 --set-domains；否则把 --domains 写成库里的值。",
+            file=sys.stderr,
+        )
+        return 1
+
+    change = f"kind={existing['kind']} → fleet, fleet_ref → {fleet_ref!r}"
+    if wanted != stored:
+        change += f", domains {stored} → {wanted}"
+    if existing["kind"] == "fleet" and existing["fleet_ref"] == fleet_ref and wanted == stored:
+        print(
+            f"\nnothing to change: id={existing['id']} {existing['name']!r} is already a fleet "
+            f"under {fleet_ref!r} with domains {stored}."
+        )
+        return 0
+    if not apply:
+        print(f"\n(would PROMOTE id={existing['id']} in place: {change}; name/credential unchanged)")
+        print("(dry run — nothing written, re-run with --apply)")
+        return 0
+
+    try:
+        if wanted != stored:
+            distribution.set_consumer_domains(conn, name=existing["name"], domains=wanted)
+        consumer = distribution.promote_consumer_to_fleet(
+            conn, token_hash=token_hash, fleet_ref=fleet_ref
+        )
+    except ValueError as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 1
+    print(
+        f"\npromoted id={consumer['id']} name={consumer['name']!r}: {change}"
+        f"（凭据未变，客户端无感）"
+    )
     return 0
 
 
@@ -211,6 +333,12 @@ def main(argv: list[str] | None = None) -> int:
              "Required for --apply: a new credential would cut the running fleet off.",
     )
     ap.add_argument("--legacy", action="store_true", help="print the migration counter")
+    ap.add_argument(
+        "--set-domains",
+        action="store_true",
+        help="when promoting an existing registration, also update its bound domains to --domains "
+             "(refused by default: promotion changes kind/fleet_ref only)",
+    )
     ap.add_argument("--apply", action="store_true", help="actually write (default is a dry run)")
     args = ap.parse_args(argv)
 
@@ -271,7 +399,7 @@ def _dispatch(conn, args) -> int:
     return _register(
         conn, fleet_ref=args.fleet_ref.strip(), name=(args.name or "").strip(),
         domains=[d.strip() for d in args.domains if d.strip()],
-        token_hash=token_hash, apply=args.apply,
+        token_hash=token_hash, apply=args.apply, set_domains=args.set_domains,
     )
 
 
