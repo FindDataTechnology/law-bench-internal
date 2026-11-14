@@ -1,7 +1,7 @@
 # domain-agent-team Specification
 
 ## Purpose
-TBD - created by archiving change add-domain-agent-team. Update Purpose after archive.
+岗位按契约定义而不是按人格：每个岗位产出类型化的件，契约先于实现。权限矩阵与硬停清单是这套定义的另一半——智能体不能给自己的提案签字、不能给自己开权限，其身份是域成员而非平台管理员。它存在的理由是「有个 agent 在干活」这句话在没有人格化契约与权限边界时无法审计，也无法拒绝。
 
 ## Requirements
 

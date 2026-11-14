@@ -1,7 +1,7 @@
 # gov-concept-layer Specification
 
 ## Purpose
-TBD - created by archiving change add-gov-concept-layer. Update Purpose after archive.
+政务域把概念当作本体实体接进来，并与公文建立依据关系：概念接地、悬空概念不算接地、反向关系被拒，v1 锚点仍然拒绝概念（旧域的形状不因新域而被改写）。接地率的读数必须区分「没有」与「空」——这两种在读数上都是一片零，而处置方向相反。
 
 ## Requirements
 

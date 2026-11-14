@@ -1,7 +1,7 @@
 # domain-quality-metrics Specification
 
 ## Purpose
-TBD - created by archiving change add-domain-agent-team. Update Purpose after archive.
+六项质量比从库里的行反算，不看自报的数字：接地率、证据率按单位类型区分，悬空关系即刻可见。它存在的理由是「缺口关闭」被当成「质量达标」——灌量能关掉缺口而不提高任何一项质量比，评审时滞同样是一项缺口，积压要被看见而不是被计数掩盖。
 
 ## Requirements
 

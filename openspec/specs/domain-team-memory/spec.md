@@ -1,7 +1,7 @@
 # domain-team-memory Specification
 
 ## Purpose
-TBD - created by archiving change add-domain-agent-team. Update Purpose after archive.
+团队记忆在 MCP 服务端担保捕获：不写记忆的岗位也会留痕，捕获失败不阻断业务。三层各司其职——交接让下一班不必重推、拒因进入可检索事实；命名空间按域与岗位隔离，一条线的经验不污染另一条。它存在的理由是记忆如果靠每个岗位自觉写，最需要留痕的那些回合恰好没有留。
 
 ## Requirements
 

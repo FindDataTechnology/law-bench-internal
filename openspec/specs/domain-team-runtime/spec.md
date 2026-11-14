@@ -1,7 +1,7 @@
 # domain-team-runtime Specification
 
 ## Purpose
-TBD - created by archiving change add-domain-agent-team. Update Purpose after archive.
+执行面是壹座，权限由工具面兜底（没有那个动词就没有那个动作）；节奏由平台调度而不靠人记得，停摆要看得见；每回合的工具调用可从台账追回。它存在的理由是「岗位在跑」原先只以日志为准，而一个岗位连续几轮什么都没做，与它做完了，在日志里长得一样。
 
 ## Requirements
 

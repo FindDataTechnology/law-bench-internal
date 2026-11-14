@@ -1,7 +1,7 @@
 # corpus-document-adoption Specification
 
 ## Purpose
-TBD - created by archiving change add-corpus-document-adoption. Update Purpose after archive.
+把一部法规从来源取进本体，只走内核那条写路径：取入是幂等的、词表外类型被拒、条款切分确定性且如实标记截断。它存在的理由是「取料」在很长一段时间里是脚本里的临时逻辑——同一部法取两遍会多出一份，切不出的部分被静默丢掉，而库里看不出哪一种是发生过的事。
 
 ## Requirements
 
