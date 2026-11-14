@@ -19,6 +19,12 @@
 | `distribution_consumers` | 2 行（`fd-wire`、`ontology-fleet-win`，均绑 legal） |
 | `domains` | 4 |
 
+**`fleet:` 来源去重（2026-11-14 复核）**：只有 **2 个**前缀组——
+`fleet:fleet_1794335712751_wfa3ww`（**11 行**，唯一真舰队）与 `fleet:credential-probe`（1 行探针，
+不是舰队、永不登记）。所以 §6.3 只需要**一条**登记，`ontology-fleet-win` 与
+`fleet_1794335712751_wfa3ww` 就是同一支；`fd-wire` 那条消费者只拉不提交（产库里没有它的
+`fleet:` 来源）。
+
 **§6.2 的基线读数（2026-11-14 复核，只读）**：`register_fleet.py --schema` 的同一套查询在
 产库上返回**零行**——六列（`authoring_tasks.assignee_kind/assignee_ref`、
 `distribution_consumers.kind/fleet_ref`、`domain_agent_runs.origin/runner_ref`）与两条部分
