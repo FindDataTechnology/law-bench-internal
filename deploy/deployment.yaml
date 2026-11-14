@@ -105,19 +105,23 @@ spec:
           image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-38ba5c4
           imagePullPolicy: IfNotPresent
           env:
-            # 提交方校验的**迁移窗口**档位。不给这个变量时代码默认 `strict`（设计如此），
-            # 而产库此刻正处在一个非法的中间态：真舰队 `fleet:fleet_1794335712751_wfa3ww`
-            # 已在提交（11 行），但承载它的登记 `ontology-fleet-win` 还是旧的 `machine` 档、
-            # 没有 fleet_ref ⇒ 判 `unregistered` ⇒ 它**下一次提交会被 403 拒掉**。
-            # 正确顺序是先登记再翻硬（见 acceptance 风险表），登记要用该舰队**自己的**
-            # token（`register_fleet.py --apply` 原地升级，凭据不变），而那枚 token 不在我手里。
-            # `lenient` 只做两件事：行进库 + 判定留痕（可计数），`pipeline_impersonation`
-            # 仍然拒（伪造抽取管道不是历史包袱）。翻硬条件写死：真舰队登记完成、
-            # 且 `register_fleet.py --legacy` 里「仍在提交的来源」为 0 ⇒ 删掉这两行。
-            # 2026-11-14 加：本片之前那一版根本没有这道闸（旧镜像源码 703 行 vs 908 行），
-            # 所以不设这个变量＝部署当天把一支在跑的舰队切断。
-            - name: BENCH_SUBMITTER_MODE
-              value: "lenient"
+            # 提交方校验：**默认即 strict**（本片起不再设 BENCH_SUBMITTER_MODE）。
+            # 迁移窗口在这里结束，2026-11-14 20:0xZ：登记已完成、且现在再提交的来源
+            # 全部判 `ok`，所以删掉 lenient 那两行。
+            #
+            # 走过的路（留下是为了下次不再绕）：产库曾处在非法中间态——真舰队
+            # `fleet:fleet_1794335712751_wfa3ww` 已在提交（11 行），而承载它的登记
+            # `ontology-fleet-win` 还是旧 `machine` 档、没有 fleet_ref ⇒ 判
+            # `unregistered`、下一次提交会被 403。而它的凭据明文只在登记那一刻显示过
+            # 一次（`distribution_pull_events` 全表只有创建后 10 秒那一条探针），拿不出来。
+            # 收尾走的是 `register_fleet.py` 两条新路：`--promote-by-name`（升级不动
+            # token_hash，所以不需要凭据）＋ `--rotate-token`（把凭据换成一枚我们握得住
+            # 的，明文只打印一次、已写入 `fd-prod/platform-secrets.BENCH_FLEET_TOKEN`）。
+            # 翻硬前的实测：`resolve_submitter(fleet:fleet_1794335712751_wfa3ww/…)` → ok；
+            # 工单面 `GET /api/v1/distribution/legal/work-orders` → 200 + 该 fleet_ref。
+            #
+            # 为什么当初要设 lenient：本片之前那一版根本没有这道闸（旧镜像源码 703 行
+            # vs 908 行），不设变量＝部署当天把一支在跑的舰队切断。
             # Admin-assistant runtime (add-admin-copilot-assistant). Non-secret
             # config: the /copilotkit proxy target inside the cluster. Removing
             # this var disables the assistant entirely (proxy 503s, island is
