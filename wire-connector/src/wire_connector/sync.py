@@ -47,8 +47,8 @@ def _law_bench_repo() -> Path:
     if raw:
         root = Path(raw).expanduser().resolve()
     else:
-        # .../finddata/law-bench-internal/wire-connector/src/wire_connector/sync.py
-        # → .../finddata/law-bench
+        # 本仓 wire-connector/src/wire_connector/sync.py 往上四层到工作区根，
+        # 再进同级的 law-bench/（依赖方向：内部 → 公开）
         root = Path(__file__).resolve().parents[4] / "law-bench"
     if not (root / "src" / "bench" / "promotion.py").is_file():
         raise RuntimeError(

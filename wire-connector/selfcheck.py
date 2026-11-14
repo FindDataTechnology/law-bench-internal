@@ -25,7 +25,7 @@ import os
 import sys
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent  # .../law-bench-internal/wire-connector
+HERE = Path(__file__).resolve().parent  # .../wire-connector
 
 
 def _fail(check: str, err: Exception) -> None:

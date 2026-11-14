@@ -13,7 +13,7 @@
 
 | 连接 | 落点 | 证据 |
 |---|---|---|
-| 共享身份 | Logto（bench 认 scope、壹座认 group） | `law-bench-internal/src/web/auth/scopes.py` |
+| 共享身份 | Logto（bench 认 scope、壹座认 group） | 本仓 `src/web/auth/scopes.py` |
 | 工具面 | law-bench 远程 MCP 对 `legal` / `hpe07qejcwk7` 两组可见 | `fd-infra-deploy/all-services/prod/platform.yaml` 的 `registry-groups.json` |
 | 提案单向 | 壹座 `bench_proposal_submit` → `POST /api/d/{key}/proposals` | `paas/server/bench-proposal-mcp.js`；change `switch-fleet-proposals-to-domain-inbox` 3.1–3.3 |
 | 官网门面 | 官网 → `lawbench.finddatatech.cloud/d` | `fd-official-web/src/content/apps/zh/zhiyantai.md` |
