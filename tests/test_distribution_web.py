@@ -698,6 +698,30 @@ def test_set_domains_replaces_binding_wholesale(seeded_db):
     assert [e["external_key"] for e in now_allowed.json()["entities"]] == [ENTITY_B1]
 
 
+def test_the_registry_page_shows_which_rows_are_fleets(seeded_db):
+    """种类必须在页面上看得见。
+
+    `machine → fleet` 的原地升级只改 `kind` / `fleet_ref`：不给这一列，运维要确认
+    「那支舰队现在算不算登记好了」只能去查 SQL——而本变更拆的正是这种静默态。
+    """
+    _seed_world(seeded_db)
+    seeded_db.execute(
+        "INSERT INTO distribution_consumers (name, domains, token_hash, created_by, kind, fleet_ref) "
+        "VALUES ('win-fleet', '{}', %s, 'seed', 'fleet', 'fleet_1794335712751_wfa3ww')",
+        (_digest("fleet-token"),),
+    )
+    seeded_db.commit()
+
+    with _client(seeded_db, _user("admin-u", ["*"])) as admin:
+        page = admin.get("/admin/distribution?lang=zh")
+        assert page.status_code == 200
+        assert "种类" in page.text                    # 表头
+        assert "舰队" in page.text and "机器" in page.text
+        assert "fleet_1794335712751_wfa3ww" in page.text   # fleet_ref 本身也显示
+        # 机器档那行不该凭空长出舰队标识。
+        assert page.text.count("fleet_1794335712751_wfa3ww") == 1
+
+
 def test_non_admin_is_403_on_consumer_registry(seeded_db):
     """admin 专属: a content-scoped user is refused on the registry page AND
     on the register POST (missing scope: admin — platform gate first)."""
