@@ -210,10 +210,34 @@ EXIT=0 并报 `tasks: 0`。
 ## 四、未做项与阻塞
 | 项 | 状态 | 阻塞 |
 |---|---|---|
-| §6.2 生产库真身核对（六列在真 pod 上就位） | **判据与基线已就绪，等出片** | 现在有 **一条只读命令**答这件事：`register_fleet.py --schema`（六列 + 两条部分唯一索引，缺项逐条 ✗ 并给修法，EXIT=1）。产库当前读数见 §0：**0/8**，即尚未部署。出片后同一条命令应变成全 ✓——**不需要**再临时拼查询 |
-| §6.3 生产登记（`--from-observed` → 人确认 → `--apply`） | **未做** | 需要该舰队**现有** token；脚本拒绝发明凭据（发明＝切断正在跑的舰队）。**产库那条 `ontology-fleet-win` 走原地升级**（`machine → fleet`，凭据不变），本地五面都验过（见 §4c）——所以这一跑只差人交出那枚 token，不再是「没有可行路径」 |
+| §6.2 生产库真身核对（六列在真 pod 上就位） | **已过（2026-11-14 15:5x）** | 判据是 `register_fleet.py --schema`（六列 + 两条部分唯一索引，缺项逐条 ✗ 并给修法，EXIT=1）。**0/8 → 8/8**：部署前逐条 `MISSING`，滚到 `sha-38ba5c4` 后六列两条索引全 `ok`（索引按**形状**判：`UNIQUE` 在、`fleet_ref`/`runner_ref` 在，不只是名字在）。pod 启动日志 `boot: schema ensured on database 'law_bench'`，`Application startup complete`，`RESTARTS=0`（失败即 crash-loop 这条设计有效）。三面同期从「不存在」变「在」：`work-orders` 404→**401**、`runs?runner_ref=…` **401**、`proposals` GET **405**／POST **401**（405 比 401 更强——路径在、只是那面只收 POST；旧读数 404 是路由根本没挂）；正对照 `ontology` 保持 **401** |
+| §6.3 生产登记（`--from-observed` → 人确认 → `--apply`） | **未做，卡在一枚 token** | 需要该舰队**现有** token；脚本拒绝发明凭据（发明＝切断正在跑的舰队）。**产库那条 `ontology-fleet-win` 走原地升级**（`machine → fleet`，凭据不变），本地五面都验过（见 §4c）。2026-11-14 在产 pod 里跑了一次只读观察（`--from-observed`），它自己把「为什么不能直接 apply」写出来了：观察到 **2 个 ref**——`fleet_1794335712751_wfa3ww`（11 行、最近 11-11 08:39）与 `credential-probe`（1 行，**探针不是舰队**）；库里另有 **2 条 machine 档登记**（`fd-wire` / `ontology-fleet-win`），而按 ref 匹配一律显示「未登记」——**token→consumer 的绑定在数据里不存在**（`submitted_by` 是调用方自报的 `fleet:ontology-builder` / `fleet:<ref>/<post>`，不是鉴权身份）。所以「哪条 machine 就是哪支舰队」只能由那枚 token 证，不能靠字符串相似度推断 |
 | §6.4 跨仓真跑 | **离线那半已做**（见上） | 需 paas 侧按同一 HTTP 契约接入（`add-bench-ops-tools`）；本仓已备 `scripts/fleet_client.py` 作为可照抄的参照实现与联调工具 |
 | §8.1–8.3 | 明确不做 | 直接调度 / 优先级计费 / 舰队侧客户端，均超出本 change |
+
+### 本次发布实录（2026-11-14，六个可复核的坐标）
+
+发布这条链在第 1 项上死过一次（私有额度耗尽），第 1 项的写法又错过一次（把 gitee 上的
+`image.yml` 当成 GitHub Actions 会跑的东西），所以把实际走通的每一步连同回滚点写死在这里：
+
+| 步骤 | 值 |
+|---|---|
+| 真源提交 | `8f53376`（tag 抬升）/ 其上的 `214ff4b` 只吸收公开仓祖先关系、零内容变化 |
+| 快照仓提交 | `law-ai-official/law-bench-images@38ba5c4`，`BUILD-INFO.json` 记 `baseCommit=de357116b` |
+| 出片 run | `43560510231`：`test` / `law-template` / `law-render` 三个 job 全 success，两镜像各铸 `sha-38ba5c4` |
+| 镜像可见性 | `skopeo inspect --raw` 在 **hkccr 与 ccr 两处**都拿到同一 manifest digest `466555…`——relay 回填是**核过的**，不是等出来的 |
+| 清单提交 | 导出提交 `e130922`（`exported-from: 214ff4b741…`），只动 `deploy/deployment.yaml` 一个文件、两处引用同片 |
+| Argo | `law-bench` app 从 `265328c` 走到 `e130922`，`Synced`；新 pod `law-bench-65cfd69c9f-g6pfc` `Running/ready/RESTARTS=0` |
+| 回滚 | 把同一 Deployment 两处改回 `sha-afb4e71`（导出路径走真源，不手写发布面） |
+
+两处流程上的坑（都改了脚本，不是绕过）：
+- **`merge_law_bench.sh` 的试算在一棵空树上跑**：双远端克隆里 `git checkout main` 是歧义的
+  （`fatal: 'main' matched multiple (2) remote tracking branches`），而克隆用了 `--no-checkout`
+  ⇒ 检出失败后工作树仍为空，试算照样打印「变更 2014 个文件，未解冲突 0 个」。改成
+  `checkout -B main origin/main`。
+- **`die "… $anchor（命中 …"` 在 macOS 上必崩**：自带 bash 3.2 把紧跟其后的全角括号**首字节**
+  吃进变量名（`anchor\xef: unbound variable`），bash 5 上不现形。改成 `${anchor}`，并扫过
+  `scripts/*.sh` 确认只此一处。
 
 ### 出片链路（核实过的事实，供执行的人直接用）
 
