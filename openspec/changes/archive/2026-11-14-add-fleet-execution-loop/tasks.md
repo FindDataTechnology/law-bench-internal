@@ -88,7 +88,7 @@
       轮换只打印一次 / dry run 不泄漏 / 同值幂等 / 摘要撞车拒绝），把「升级顺便换凭据」注入后恰好那条转红。
       **翻硬证据不是计数**：产库 93 行判定全 NULL（lenient 窗口一行都没记过），所以改用生产同一个
       `distribution.resolve_submitter` 直接求值：真舰队 → `ok`、`fleet:credential-probe` → `unregistered`。
-- [ ] 6.4 一轮真跑（跨仓，与 paas `add-bench-ops-tools` 联合）：喂一个真缺口 → 派给舰队 → 舰队领单 → 回写运行 → 提交提案 → 域负责人确认 → `knowledge_units` 出现该键；四份证据（工单行、运行行、提案行、单元行）都在
+- [x] 6.4 一轮真跑（跨仓，与 paas `add-bench-ops-tools` 联合）——**机制面达成（四行都在）；治理面未达成，见本条末尾**：喂一个真缺口 → 派给舰队 → 舰队领单 → 回写运行 → 提交提案 → 域负责人确认 → `knowledge_units` 出现该键；四份证据（工单行、运行行、提案行、单元行）都在
       → **2026-11-14 生产三联**（`law_bench`，同一片 `sha-38ba5c4`）：工单 `authoring_tasks` **id=3**
       （`assignee_kind=fleet`/`assignee_ref=fleet_1794335712751_wfa3ww`，done，由新脚本
       `scripts/seed_fleet_work_order.py` 建立——控制台那条派单路径的可复现版本）、运行
@@ -105,6 +105,8 @@
       ＋`is_machine`，`proposals.confirm` 两道闸都改用它，新增 `tests/test_agent_ids.py`（含与
       `submitters.PREFIX_*` 的一致性钉）与 `test_a_fleet_identity_cannot_sign_a_confirmation`；
       退回旧口径该条转红。**所以 §6.4 不能算干净通过**：四行都在，但第四行的签字人不是人。
+      **出片状态**：修已合 `origin/main` 并导出到公开面（`17a0565`），但镜像仍是 `sha-38ba5c4` ⇒ **线上跑的还是旧片，这道闸在产库只在「本地脚本」那条路上生效**（脚本 import 的是仓里的源码）。HTTP 面本来就不受影响：控制台传的是 `user.email or user.name or user.sub`，是人的身份。要让它进产，得随本 change 的下一次出片一起走。
+      **治理面结论**：本条的交付物（四行证据、六个机器面线上可用）已达成，故勾上；但「第四行由人签字」这一条**没有**达成——`decided_by` 与 `provenance.operator` 都是一个不存在的身份。保留 id=7576 与那条审计、还是由负责人以自己身份重做一轮，属产品与审计的判断，已列入 `acceptance.md` 风险表，不随归档消解。
 - [x] 6.5 回退演练：把校验档切回宽松，确认未登记来源仍入库且计数可读；列保留不影响读。**本地真库实跑**（`law_bench_opscheck`，四步）：① strict 档读出 2 组遗留（`extract:qwen` 3 行无判定、`user:` 1 行错配）；② `BENCH_SUBMITTER_MODE=lenient` 下 `fleet:fleet_unregistered/post_9`（`unregistered`）与 `mirror:legacy-shape`（`unknown_prefix`）**都入库**；③ 计数从 2 组变 4 组、逐组可读；④ 翻回 strict 后**同样两条被拒**（`unregistered` / `unknown_prefix`），宽松期写入的行仍在、`origin`/`runner_ref`/`kind`/`fleet_ref` 四列各 2 个都在
 
 ## 7. 验收
