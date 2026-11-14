@@ -264,11 +264,26 @@ EXIT=0 并报 `tasks: 0`。
 
 ### 发布面的真实形状（2026-11-14 核对，含一条订正）
 
-**公开仓自己也有一条 `image.yml`，跑在免费公开线上**（`hkccr.ccs.tencentyun.com` / `law-bench`，
-push main 触发，先 `test` 再建 `law-template:main`，只有 **digest 变了**才铸 `sha-<公开仓提交 7 位>`
-——内容闸门）。所以「推公开仓 main」同时完成两件事：出片（免费、不占私有额度）+ 让 Argo 读到新清单。
-代价是 tag 指向**公开仓**的提交，不是本仓的；导出提交的 message 写明对应内部 sha
-（上一笔就是 `export(internal): 从真源导出 9bcbaaad1d`）。
+**出片线是 `law-ai-official/law-bench-images`（T2 私有快照仓），不是「公开仓自有免费 CI」**
+——这条我先前的记录是**错的**，2026-11-14 实核后订正如下：
+
+| 我先前写的 | 实际 |
+|---|---|
+| 「公开仓自己也有一条 `image.yml`，跑在免费公开线上」 | `FindDataTechnology/law-bench`（public，763 文件，最后推送 **11-09**）**根本没有 `.github/workflows/`**：`gh run list -R …/law-bench --workflow=image.yml` → `HTTP 404: workflow image.yml not found on the default branch`。`image.yml` 只存在于 **gitee** 那棵树（1947 文件）里，而 GitHub Actions 不在 gitee 上跑 |
+| 「推公开仓 main 同时完成出片 + 让 Argo 读到新清单」 | 推 gitee 只完成**第二件**（Argo 盯 gitee `deploy/`）。出片要走 `fd-build-snapshot` |
+
+**真实通道**：`fd-build-channel status` 把阶梯写得很直白——T1「公开仓直出」要求**公开**仓里
+有 `image.yml`，本仓没有；实际在跑的是 **T2 私有快照仓**（`law-ai-official/*-images` 模式，
+每账号 2000 min/月）。产线现用那片 `law-template:sha-afb4e71` 就是这条线 **2026-11-11 04:45**
+出的；该线最近一次成功是 **2026-11-12 03:20 `1e90e56`**，之后无 run（不是坏，是没人推）。
+
+**命令与代价**：`fd-build-snapshot <干净 clone> -R law-ai-official/law-bench-images --ref main`
+→ 快照提交（本次 `38ba5c4`，`BUILD-INFO.json` 记源真 sha `de357116b`）→ 该仓 `image.yml`
+先跑 `test` 再建 `law-template` + `law-render`，只有 **digest 变了**才铸 `sha-<快照提交 7 位>`。
+**tag 指向快照仓的提交，不指本仓**——所以清单 tag 与内部提交之间靠 `BUILD-INFO.json` 与导出
+提交 message（`export(internal): 从真源导出 <内部 sha>`）两条指针接起来，不是靠 tag 本身。
+`--ref` 是必填：工具拒绝「拿 origin 默认分支当安全默认」（无 ref 直接拒，实测）。
+`law-ai-official` 当日用量 529/2000，本次构建前剩 1471 min。
 
 **订正一条我先前的错判**：`openspec/changes/**` **不是**整体排除。公开仓里这个目录有
 **502 个文件**——89 个已归档 change 里 **83 个已公开**，另有 1 个在途 change
