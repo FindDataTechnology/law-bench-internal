@@ -67,7 +67,7 @@ spec:
             - lawbench.finddatatech.cloud
       initContainers:
         - name: seed-db
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-afb4e71
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-38ba5c4
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsUser: 0
@@ -94,12 +94,15 @@ spec:
           # 任何域的知识。本片加：qdrant / pgvector-external 只读后端、库表
           # location（只存环境变量名）、按 embedding_model 路由嵌入器（两个
           # 1024 维空间不可混用）、缺口矩阵按外部库自数。
-          # 出片=私有快照仓 law-ai-official/law-bench-images（快照 afb4e71（源 4a6ef7a））。
+          # 出片=私有快照仓 law-ai-official/law-bench-images（快照 38ba5c4（源 de35711））。
+          # 本片=add-fleet-execution-loop：工单三档指派人、运行台账 origin/runner_ref、
+          # 舰队机器写/读面、提案结局回流；启动时 ensure_schema 落六列两索引（幂等，
+          # 失败即 crash-loop 而不是带半套 schema 提供服务）。
           # 为什么换仓：真源是私有仓，而 FindDataTechnology 的私有 CI 额度已耗尽
           # （2006/2000），它的 Actions 停摆；law-ai-official 是独立额度池。
           # 该仓的 image.yml 就是本仓自己那份（通用平台的冒烟闸不认 8010/DSN，替换过）。
-          # 回滚=sha-75d95bd。
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-afb4e71
+          # 回滚=sha-afb4e71。
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-38ba5c4
           imagePullPolicy: IfNotPresent
           env:
             # Admin-assistant runtime (add-admin-copilot-assistant). Non-secret
