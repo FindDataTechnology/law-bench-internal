@@ -90,6 +90,31 @@ def test_doc_names_the_read_faces_a_submitter_needs():
         assert route in text, f"read face {route!r} undocumented"
 
 
+def test_every_endpoint_the_reference_client_calls_is_documented():
+    """文档 ↔ 参照客户端：客户端真打的每个面，契约档里必须有一行 `METHOD path`。
+
+    手工维护的清单会漏。这条不靠清单，而是从 `scripts/fleet_client.py` 里把
+    `_call("METHOD", f"{PREFIX}/…")` 逐条抽出来，再要求文档里有对应的一行。
+    2026-11-14 实测抓到过一次：`GET /work-orders`（列工单，舰队这条链的第一步）
+    文档里根本没有独立一行——它只能作为 `…/work-orders/{task_id}/claim` 的前缀
+    子串被人「看见」，于是任何按子串做的检查都会假绿。
+    """
+    import re
+
+    src = (REPO_ROOT / "scripts" / "fleet_client.py").read_text(encoding="utf-8")
+    calls = set(re.findall(r'_call\(\s*"(GET|POST)",\s*f"\{PREFIX\}/([^"]*)"', src))
+    assert calls, "没从 fleet_client.py 抽出任何端点——抽取判据失效（别让它静默通过）"
+
+    # 文档里 `GET  /api/...` 用的是对齐空格，所以先把连续空白压成一个再比。
+    doc = re.sub(r"[ \t]+", " ", DOC.read_text(encoding="utf-8"))
+    missing = []
+    for method, suffix in sorted(calls):
+        path = f"/api/v1/distribution/{suffix.replace('{domain}', '{domain_key}')}"
+        if f"{method} {path}" not in doc:
+            missing.append(f"{method} {path}")
+    assert missing == [], f"参照客户端在打、契约档却没写：{missing}"
+
+
 def test_refusals_still_exist_in_the_code():
     """The other direction: the doc must not promise messages nobody raises."""
     haystack = "\n".join(
