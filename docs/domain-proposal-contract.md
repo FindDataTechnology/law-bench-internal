@@ -132,10 +132,11 @@ GET /api/v1/distribution/{domain_key}/runs?runner_ref=…        # 机器面，X
 > 打公开主机只会拿到 404，而不是权限错误。这一条必须写清：404 会被读成「你们没实现」，
 > 而实际是打错了门。
 
-舰队是机器，没有会话。下面四个写面与两个读面都只用 `X-Consumer-Token`（与拉取面同一枚，
-只存 sha256），**且只放 `kind='fleet'` 的登记**：
+舰队是机器，没有会话。下面四个写面与三个读面（共七个端点）都只用 `X-Consumer-Token`
+（与拉取面同一枚，只存 sha256），**且只放 `kind='fleet'` 的登记**：
 
 ```
+GET  /api/v1/distribution/{domain_key}/work-orders
 POST /api/v1/distribution/{domain_key}/work-orders/{task_id}/claim
 POST /api/v1/distribution/{domain_key}/work-orders/{task_id}/complete
 POST /api/v1/distribution/{domain_key}/runs
@@ -144,8 +145,13 @@ POST /api/v1/distribution/{domain_key}/proposals
 GET  /api/v1/distribution/{domain_key}/proposals/outcomes?source=…
 ```
 
+> **先有读面才有写面**：舰队不能认领它看不见的活。`GET work-orders` 是这条链的第一步，
+> 少了它，「工单派给舰队」在机器侧等于不存在——面板是给人看的，台账页答的是「跑过什么」，
+> 都不是「现在有什么等着我」。
+
 | 端点 | 请求体 | 幂等 / 拒绝 |
 |---|---|---|
+| `work-orders`（GET） | 无 | **只读、零副作用**（不改状态、不写事件、不记拉取足迹）：只回**本舰队**（`assignee_kind='fleet'` 且 `assignee_ref` 等于自己）在**本域**的 `pending` / `in_progress` 工单。响应 `{"domain", "fleet_ref", "count", "work_orders": [{"id", "target_kind", "target_key", "title", "detail", "status", "created_at", "claimed_by"}]}`；`claimed_by` 是上次认领者（`null` = 没人动过），执行方要能分清「还没人领」与「我上一轮已经领了」。域不存在 **404** |
 | `claim` | 无（工单号在路径里） | 排他：**别的舰队**认领 **409**；自己重试是幂等命中（200 + `created:false`）；不是派给本舰队的工单 **403** |
 | `complete` | `{"note"?, "artifact_refs"?: [...]}` | 必须先认领（未认领 409）；已 `done` 的重试幂等（200 + `created:false`）；**不写知识单元** |
 | `runs` | `{"runner_ref", "role", "outcome", "counts"?, "artifact_refs"?, "remaining"?, "detail"?, "task_id"?}` | 同 `runner_ref` 重放返回 `created: false` 且不改任何字段；结局不在四态 **422** |
