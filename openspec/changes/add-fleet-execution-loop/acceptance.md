@@ -118,6 +118,9 @@
 | 无凭据 401 | `test_machine_submission_requires_a_fleet_token` | 401「缺少机器凭据：X-Consumer-Token 请求头」 |
 | 重放幂等 | `test_the_whole_loop_over_http` 第 ⑤ 步 | 第二次 200 + `created:false` 且 id 与首次相同 |
 | 结局自己读得到、别人的 403 | `test_a_fleet_reads_only_its_own_proposal_outcomes` | 自己 200；别人的前缀 403「只能读取自己来源的结局」 |
+| **参考客户端打得通真路由** | `test_the_reference_client_speaks_to_the_real_app`（把它自己的 `urlopen` 接到 ASGI 上，六步全走 `Client`） | 拉单 → 认领（重试 `created:false`）→ 回写 → 读回 `count=1` → 提交 `created:true` → 负责人确认 → 结局 `confirmed` → 关单 `done` |
+| 真 403 变成 `Refused` | `test_the_reference_client_turns_a_403_into_a_refusal` | `Refused` 里带 `403` 与服务端原话（退出码 1，不是崩、不是当成功） |
+| 这套测试会红 | 注入：把 `PREFIX` 改成 `/api/v1/distributions` | 闭环那条**当场断**（`1 failed`），改回即绿 |
 
 > 这一格是本轮补的**最后一个缝**：三个机器写面让舰队能领单/执行/报数，产物却仍只能走
 > 会话提交——而会话要求一个能代表人的凭据（D7 已否决）。e2e 里原来靠 `svc-fleet` 服务账号

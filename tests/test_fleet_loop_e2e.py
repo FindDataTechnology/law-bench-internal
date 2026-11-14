@@ -15,6 +15,11 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
+import io
+import urllib.error
+import urllib.request
+from pathlib import Path
 
 import pytest
 from fastapi import Request
@@ -27,6 +32,15 @@ from src.web.app import create_app
 from src.web.auth import logto
 from src.web.auth.deps import User, get_current_user
 from src.web.deps import get_db
+
+CLIENT_SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "fleet_client.py"
+
+
+def _load_fleet_client():
+    spec = importlib.util.spec_from_file_location("fleet_client_under_test", CLIENT_SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 DOMAIN = "loop-domain"
 TOKEN = "loop-fleet-token"
@@ -482,6 +496,125 @@ def test_a_fleet_reads_only_its_own_proposal_outcomes(world):
     assert own.status_code == 200, own.text
     assert stolen.status_code == 403
     assert "只能读取自己来源的结局" in stolen.json()["detail"]
+
+
+# ------------------------------- 参考客户端 × 真路由（别让接入件只对着假传输绿）
+
+
+class _FakeResponse:
+    """`urlopen` 返回值的最小形状（context manager + read）。"""
+
+    def __init__(self, body: bytes) -> None:
+        self._body = body
+
+    def read(self) -> bytes:
+        return self._body
+
+    def __enter__(self) -> "_FakeResponse":
+        return self
+
+    def __exit__(self, *exc) -> bool:
+        return False
+
+
+def _client_over_app(app, token: str):
+    """把 `fleet_client.Client` 的传输层接到 ASGI app 上。
+
+    参考客户端此前只被假传输测过——路径写错、方法写错、把 4xx 当成功，那套测试一条都
+    抓不到。这里让它的**真实**路径/请求头/JSON 编解码打到真路由上：接入方要照抄的就是
+    这个文件，它自己不能是唯一没碰过真 app 的一段。
+    """
+    module = _load_fleet_client()
+    client = module.Client(base_url="http://bench.test", token=token)
+    transport = TestClient(app)   # 真 ASGI 传输层：路由、路径参数、请求头解析、依赖注入全在
+
+    def urlopen(request, timeout=None):  # noqa: ANN001 - 与 urlopen 同签名
+        full = request.full_url
+        assert full.startswith("http://bench.test"), full
+        path = full[len("http://bench.test"):]
+        headers = {k.lower(): v for k, v in request.header_items()}
+        response = transport.request(
+            request.get_method(), path, content=request.data, headers=headers
+        )
+        if response.status_code >= 400:
+            raise urllib.error.HTTPError(
+                full, response.status_code, "refused", {}, io.BytesIO(response.content)
+            )
+        return _FakeResponse(response.content)
+
+    return module, client, urlopen
+
+
+def test_the_reference_client_speaks_to_the_real_app(world, monkeypatch):
+    """六步全用 `fleet_client.Client` 走，一步都不许直连路由。
+
+    断言的是「接入件能干活」：拉单 → 认领 → 回写 → 提交 → 读结局 → 关单。
+    """
+    import urllib.request
+
+    conn = world
+    domain = workspaces.get_domain(conn, domain_key=DOMAIN)
+    from src.bench import authoring
+
+    task = authoring.authoring_create_task(
+        conn, domain_id=domain["id"], assignee="loop-fleet", title="t-client",
+        detail="d", target_kind="estate-gap", target_key="editorial", created_by="lara",
+        assignee_kind="fleet", assignee_ref=FLEET_REF,
+    )
+
+    app = create_app()
+    app.dependency_overrides[get_db] = lambda: conn
+    module, client, urlopen = _client_over_app(app, TOKEN)
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+
+    orders = client.orders(DOMAIN)
+    assert [o["id"] for o in orders["work_orders"]] == [task["id"]]
+
+    claimed = client.claim(DOMAIN, task["id"])
+    assert claimed["task"]["status"] == "in_progress"
+    assert client.claim(DOMAIN, task["id"])["created"] is False   # 自己的重试幂等
+
+    runner_ref = f"fleet:{FLEET_REF}/post_client#1"
+    assert client.record_run(
+        DOMAIN, runner_ref=runner_ref, role="concept", outcome="ok",
+        counts={"drafts": 1}, task_id=task["id"],
+    )["created"] is True
+    assert client.read_runs(DOMAIN, runner_ref=runner_ref)["count"] == 1
+
+    filed = client.submit(
+        DOMAIN, source=f"fleet:{FLEET_REF}/post_client", kind="company",
+        external_key="client-corp", body="接入件交的主体",
+        evidence={"url": "https://e.test/client"},
+    )
+    assert filed["created"] is True
+
+    # 域负责人确认（会话身份）→ 舰队读自己的结局。
+    with _human(conn) as h:
+        confirmed = h.post(f"/d/{DOMAIN}/inbox/{filed['id']}/confirm", follow_redirects=False)
+    assert confirmed.status_code == 303
+    assert "err=1" not in confirmed.headers["location"]
+
+    outcomes = client.outcomes(DOMAIN, source=f"fleet:{FLEET_REF}/post_client")
+    assert outcomes["outcomes"][0]["state"] == "confirmed"
+
+    assert client.complete(DOMAIN, task["id"], note="接入件关单", artifact_refs=None)[
+        "task"
+    ]["status"] == "done"
+
+
+def test_the_reference_client_turns_a_403_into_a_refusal(world, monkeypatch):
+    """真路由回来的 403 必须被识别成 `Refused`（退出码 1），不是崩或当成功。"""
+    import urllib.request
+
+    conn = world
+    app = create_app()
+    app.dependency_overrides[get_db] = lambda: conn
+    module, client, urlopen = _client_over_app(app, TOKEN)
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+
+    with pytest.raises(module.Refused) as exc:
+        client.outcomes(DOMAIN, source="fleet:fleet_other/post_1")
+    assert "403" in str(exc.value) and "只能读取自己来源的结局" in str(exc.value)
 
 
 # ------------------------------------------------------------------ 机器读面
