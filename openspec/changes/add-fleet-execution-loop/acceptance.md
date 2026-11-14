@@ -256,6 +256,28 @@ EXIT=0 并报 `tasks: 0`。
 只看到 401 不见 8/8 说明镜像换了但库没落地（会 crash-loop，所以几乎不会出现）；
 只见 8/8 不见 401 说明库是别处跑的 DDL，镜像还没换。
 
+### 发布面的真实形状（2026-11-14 核对，含一条订正）
+
+**公开仓自己也有一条 `image.yml`，跑在免费公开线上**（`hkccr.ccs.tencentyun.com` / `law-bench`，
+push main 触发，先 `test` 再建 `law-template:main`，只有 **digest 变了**才铸 `sha-<公开仓提交 7 位>`
+——内容闸门）。所以「推公开仓 main」同时完成两件事：出片（免费、不占私有额度）+ 让 Argo 读到新清单。
+代价是 tag 指向**公开仓**的提交，不是本仓的；导出提交的 message 写明对应内部 sha
+（上一笔就是 `export(internal): 从真源导出 9bcbaaad1d`）。
+
+**订正一条我先前的错判**：`openspec/changes/**` **不是**整体排除。公开仓里这个目录有
+**502 个文件**——89 个已归档 change 里 **83 个已公开**，另有 1 个在途 change
+（`add-domain-first-workbench`，10 个文件）也已公开；`evidence/` 也有 6 个文件公开。真正取舍是
+**逐目录选择性的**：6 个已归档 change（如 `2026-11-05-close-wire-real-loop`、
+`2026-11-11-add-image-build-fallback`）与 `add-judge-misread-remediation` 至今只在内部。
+**结论：这份取舍规则无法从树里推出来**（它不是「某目录全排」），所以导出这一步要由它的
+所有者执行，或先把规则写明——我不该拿「按目录排除」去替它。
+
+**本 change 的发布增量**（`9bcbaaad1..HEAD`，72 个文件）：**51 个**是产品代码/测试/文档
+（`src/bench/*` 8 个、`src/web/*` 8 个、`tests/*` 24 个、`scripts/*` 3 个、`docs/*` 3 个、
+`openspec/specs/domain-run-ledger` 1 个、`.gitignore`），其余 21 个在
+`openspec/changes/`、`evidence/`、`line-manifest.json`、`ontology-adapter.json`、
+`knowledge-surface.yml` 之下。`check_public_hygiene.py` 在整棵树上通过（2014 个受跟踪文件、零命中）。
+
 ## 五、这一轮最该记住的三条
 
 1. **「看起来闭合」的闭环最容易骗人**：数据面区分了来源，界面还合着说；会话路由拒绝
