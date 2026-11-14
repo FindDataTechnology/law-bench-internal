@@ -206,6 +206,35 @@ EXIT=0 并报 `tasks: 0`。
 4. **公开 pod 不跑 DDL**（`PUBLIC_API=1` 分支直接 uvicorn），它的库是复制来的 dump——所以
    `--schema` 要在 **origin 库**上跑，公开库缺列属正常、且新机器面也没挂在公开 pod 上。
 
+### 出片通道现在是坏的（2026-11-14 实测，与本 change 无关但挡住 §6.2）
+
+`gh run list --workflow=image.yml`：**94 失败 / 6 成功**，最后一次成功 **2026-11-03 22:30**，
+最后一次真实跑完（有 step、耗 712s）是 **11-05 22:25**；**11-05 22:38 起 93 笔全部在 3–5 秒内死**
+（`steps: []`，`build-push` 一律 skipped）。失败注解原文：
+
+> The job was not started because recent account payments have failed or your
+> spending limit needs to be increased. Please check the 'Billing & plans' section in your settings
+
+`fd-build-channel status`（2026-11-14T11:30）给出的真实原因不是「支付失败」，而是**额度耗尽**：
+
+| 账号 | 用量 / 额度 | 状态 |
+|---|---|---|
+| `FindDataTechnology`（本仓所在） | **2006 / 2000** | ⛔ 已耗尽（私有 CI 全停；公开仓不受影响） |
+| `testaction003` | 69 / 2000 | 剩 1931 min |
+| `law-ai-official` | 529 / 2000 | 剩 1471 min |
+
+**为什么 11 天没人发现**：Argo 只在 `deploy/deployment.yaml` 的 tag 变化时才滚，而 tag 一直是
+`sha-afb4e71`（11-03 那片），所以产线一切正常、所有健康判据都绿——**冻结的是「下一次发布」，
+不是「现在正在跑的服务」**。这一类「通道自己死了」不在任何现有闸的判据里
+（`check_image_referencers.py` 查 tag 一致性、`fd-image-coherence-gate.py` 查同片，都不查
+「最近一次构建成功没有」）。
+
+**处置（两条，任选）**：① 等月初额度重置，或把本仓 CI 换到还有余额的账号池
+（`fd-build-snapshot` + `BUILD_NAMESPACE/BUILD_IMAGE`，T2 通道）；② 用本目录 `Jenkinsfile`
+出片——但那是 **in-cluster Harbor**（`100.64.0.8:30880/law-bench/law-template`），不是产线拉的
+`ccr.ccs.tencentyun.com`，走这条路要同时改清单的镜像地址。**注意**：无论哪条，产线要滚还得改
+**公开仓**的清单 tag（见第 3 条）。
+
 ## 五、这一轮最该记住的三条
 
 1. **「看起来闭合」的闭环最容易骗人**：数据面区分了来源，界面还合着说；会话路由拒绝
