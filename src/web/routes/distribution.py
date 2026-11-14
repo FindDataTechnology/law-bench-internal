@@ -592,6 +592,118 @@ async def record_run(
     return {"run": run, "created": created}
 
 
+@write_router.post(
+    "/api/v1/distribution/{domain_key}/proposals", name="distribution_submit_proposal",
+)
+async def submit_proposal(
+    domain_key: str,
+    request: Request,
+    db: DbConn = Depends(get_db),
+):
+    """A fleet submits a product **as itself**, with the token it already holds.
+
+    Why this exists: the three machine routes above let a fleet claim, run and
+    report — but the product of that work (the proposal) could only be filed
+    through the session face, which requires a credential that represents a
+    *person*. D7 rejected exactly that ("服务账号会话" would erase the
+    human/machine boundary), yet the loop as first built still needed it: a
+    token-only fleet could do the work and never hand it in. That is not a
+    closed loop; it is a loop whose last step silently requires a human.
+
+    The source is **not** free-form here. It must be ``fleet:<自己的 fleet_ref>/…``
+    — the same prefix rule that governs run write-backs — so a token can only
+    ever speak for its own registration. ``submitted_by`` is derived from that
+    source, never taken from the body: a machine has one identity.
+
+    ``via`` is the external channel, so ``extract:`` stays refused (its trust
+    basis is that the pipeline is unreachable from the network), and
+    ``authenticated_as`` is None, so ``agent:``/``user:`` can never be claimed
+    by a token. Idempotency and the self-confirm gate are the library's.
+    """
+    from ...bench import proposals as bench_proposals
+    from ...bench import submitters as bench_submitters
+
+    consumer = _fleet_consumer(request, db, domain_key)
+    fleet_ref = consumer["fleet_ref"]
+    try:
+        payload = await request.json()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=422, detail="请求体必须是 JSON 对象") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="请求体必须是 JSON 对象")
+
+    source = str(payload.get("source") or "").strip()
+    if not bench_submitters.may_submit_as_source(source, fleet_ref=fleet_ref):
+        raise HTTPException(
+            status_code=403,
+            detail=f"source 必须形如 fleet:{fleet_ref}/<post>；got {source!r}"
+                   "（机器面只能以自己的身份提交）",
+        )
+    try:
+        proposal, created = bench_proposals.submit(
+            db,
+            domain_key=domain_key,
+            source=source,
+            kind=str(payload.get("kind") or "").strip(),
+            external_key=str(payload.get("external_key") or "").strip(),
+            body=str(payload.get("body") or "").strip(),
+            evidence=payload.get("evidence"),
+            impact=str(payload.get("impact") or ""),
+            submitted_by=source,
+            with_created=True,
+            via=bench_submitters.VIA_HTTP,
+            authenticated_as=None,
+        )
+    except bench_proposals.SubmitterRefused as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {
+        "id": proposal["id"],
+        "state": proposal["state"],
+        "external_key": proposal["external_key"],
+        "evidence_digest": proposal["evidence_digest"],
+        "created": created,
+    }
+
+
+@read_only_router.get(
+    "/api/v1/distribution/{domain_key}/proposals/outcomes",
+    name="distribution_proposal_outcomes",
+)
+def proposal_outcomes(
+    domain_key: str,
+    request: Request,
+    source: str,
+    db: DbConn = Depends(get_db),
+):
+    """What happened to the proposals this fleet filed — **only its own**.
+
+    The other half of the same gap: a fleet told "rejected" on resubmission can
+    never learn *why*, so it fixes the wrong thing or stops trying. The
+    ``source`` is checked against the caller's registration rather than trusted
+    because it was passed in — asking for another fleet's source is 403, not an
+    empty list (an empty list reads as "nothing happened", which is a different
+    and false statement).
+    """
+    from ...bench import proposals as bench_proposals
+    from ...bench import submitters as bench_submitters
+
+    consumer = _fleet_consumer(request, db, domain_key)
+    fleet_ref = consumer["fleet_ref"]
+    wanted = (source or "").strip()
+    if not bench_submitters.may_submit_as_source(wanted, fleet_ref=fleet_ref):
+        raise HTTPException(
+            status_code=403,
+            detail=f"只能读取自己来源的结局：{wanted!r} 不属于 fleet:{fleet_ref}/",
+        )
+    return {
+        "domain": domain_key,
+        "source": wanted,
+        "outcomes": bench_proposals.list_outcomes(db, source=wanted, domain_key=domain_key),
+    }
+
+
 # --------------------------------------------------------- consumer registry #
 # Platform-admin exclusive: consumers are the machine counterpart of invited
 # members — admission, binding and revocation are all admin-scope operations.

@@ -138,6 +138,38 @@ def test_observed_lists_unregistered_and_registered_side_by_side(conn, capsys):
     assert conn.execute("SELECT count(*) AS n FROM distribution_consumers").fetchone()["n"] == 1
 
 
+def test_observed_surfaces_machine_registrations_that_have_no_fleet_ref(conn, capsys):
+    """产库那种形态：老登记是 `machine` 档、没有 fleet_ref，按 ref 一律显示「未登记」。
+
+    不替人推断「哪条 machine 就是哪支舰队」，但必须把「给它的 token 即可原地升级」
+    这条路摆出来——否则读到「未登记」的人下一步一定是去要一枚新凭据。
+    """
+    _machine(conn)  # name=ontology-fleet-win, kind=machine
+    # 历史行直接插：这正是「变更之前写入、当时还没有校验」的那种行。
+    conn.execute(
+        "INSERT INTO domain_proposals (domain_id, source, kind, external_key, body, evidence, "
+        "evidence_digest, state, submitted_by, sources) "
+        "SELECT id, 'fleet:fleet_1794335712751_wfa3ww/p1', 'company', 'k-machine', 'b', "
+        "'{}'::jsonb, 'd-machine', 'pending', 'fleet:fleet_1794335712751_wfa3ww/p1', "
+        "'[\"fleet:fleet_1794335712751_wfa3ww/p1\"]'::jsonb FROM domains"
+    )
+    conn.commit()
+
+    script = _load_script()
+    mp = pytest.MonkeyPatch()
+    mp.setattr(script, "_connect", lambda: _borrowed(conn))
+    try:
+        assert script.main(["--from-observed"]) == 0
+    finally:
+        mp.undo()
+
+    out = capsys.readouterr().out
+    assert "fleet_1794335712751_wfa3ww" in out and "未登记" in out
+    assert "1 条 `machine` 档登记" in out
+    assert "ontology-fleet-win" in out
+    assert "原地升级" in out and "不要吊销重登" in out
+
+
 # ------------------------------------------------------------- --apply
 
 

@@ -164,6 +164,17 @@ def is_allowed(result: str) -> bool:
     return result == "ok"
 
 
+def may_submit_as_source(source: Any, *, fleet_ref: str) -> bool:
+    """``fleet:<自己的 fleet_ref>/<post>`` —— 机器面**提产物**的归属判据。
+
+    与 :func:`may_read_runner_ref` 是同一条前缀规则，但两个名字必须分开：一个
+    判「读自己那一轮的回执」，一个判「以自己身份提产物」。将来收紧其中之一
+    （例如提交额外要求该工单已被自己认领）时，共用一个名字会让收紧在另一处
+    静默生效。域匹配由调用方保证——``_authenticate_consumer`` 先判过绑定域。
+    """
+    return may_read_runner_ref(source, fleet_ref=fleet_ref)
+
+
 def may_read_runner_ref(
     runner_ref: Any,
     *,

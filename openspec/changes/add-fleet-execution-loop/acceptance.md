@@ -106,29 +106,45 @@
 | 幂等重跑 | `test_promoting_twice_says_nothing_to_change` | 第二次 0 + 「nothing to change」，行数仍 1 |
 | dry run 不撒谎 | `test_promotion_dry_run_reports_the_upgrade_and_writes_nothing` / `test_a_name_taken_by_another_credential_is_refused_before_anything_is_written` | 前者「would PROMOTE」且不写；后者**不 apply 也拒**（说「会登记」的 dry run 比没有更坏） |
 
+| 别人的前缀 403 | `test_a_token_cannot_submit_under_another_fleets_source` | 403「机器面只能以自己的身份提交」，`domain_proposals` 行数 0 |
+| `extract:` / `agent:` / `user:` 三类都拒 | `test_a_token_cannot_submit_an_extract_or_agent_source` | 三类各 403，零行 |
+| 无凭据 401 | `test_machine_submission_requires_a_fleet_token` | 401「缺少机器凭据：X-Consumer-Token 请求头」 |
+| 重放幂等 | `test_the_whole_loop_over_http` 第 ⑤ 步 | 第二次 200 + `created:false` 且 id 与首次相同 |
+| 结局自己读得到、别人的 403 | `test_a_fleet_reads_only_its_own_proposal_outcomes` | 自己 200；别人的前缀 403「只能读取自己来源的结局」 |
+
+> 这一格是本轮补的**最后一个缝**：三个机器写面让舰队能领单/执行/报数，产物却仍只能走
+> 会话提交——而会话要求一个能代表人的凭据（D7 已否决）。e2e 里原来靠 `svc-fleet` 服务账号
+> 走那一步，「闭环」因此在最后一格上仍要求一个人。现在提交与结局读都走 `X-Consumer-Token`，
+> 服务账号成员已从夹具里删除；确认仍只有会话面，所以自提自确认在机器道上**不可能**发生。
+
 ### 5. 闭环（§6.4 离线那半 / §7.1）
 
 `tests/test_fleet_loop_e2e.py`：**一条测试全走真实 HTTP**，不调内核函数（除造世界）：
 
 ```
 缺口存在 → 派单给舰队(303) → 舰队领单(200, in_progress)
-        → 重复领单(409) → 回写运行(created=true) → 重放(created=false, 结局未被改写)
-        → 回执读回(count=1) → 提案入箱(200) → 负责人确认(303, 无 err)
-        → knowledge_units 出现该键(1 行) → 缺口消失 → 结局可见(confirmed) → 关单(done)
+        → 自领重试(200, created=false) → 回写运行(created=true) → 重放(created=false, 结局未被改写)
+        → 回执读回(count=1) → 提案入箱(200, created=true，**机器面**)
+        → 重放(created=false, 同一 id) → 负责人确认(303, 无 err)
+        → knowledge_units 出现该键(1 行) → 缺口消失 → 结局可见(confirmed，**机器面**) → 关单(done)
         → 四份证据齐（done 工单 1 / runner_ref 运行 1 / confirmed 提案 1）
 ```
 
-四个只测「不该通的路」：别的舰队领单 403、`machine` 档消费者 403、跨舰队 `runner_ref`
-403、结局出词表 422 且零行。
+五个只测「不该通的路」：别的舰队领单 403、`machine` 档消费者 403、跨舰队 `runner_ref`
+403、越界 `source` 提交 403（含 `extract:`/`agent:`/`user:`）、读别人结局 403；另有结局
+出词表 422 且零行。
 
 注入（各转红一条）：去掉工单归属校验 → 跨舰队那条红；去掉 `runner_ref` 归属 → 跨舰队
-回写那条红；把机器面收窄成只放 `machine` 档 → **整条闭环当场断在领单**。
+回写那条红；把机器面收窄成只放 `machine` 档 → **整条闭环当场断在领单**；去掉 `source`
+前缀判据 → 越界提交那条红并多落一行。
 
-> 这一处是本 change 唯一「原任务漏了」的地方：会话路由把非人档当「不是我的」，所以
-> 「等待舰队认领」这句话在只有会话路由的世界里**永远不会发生**。补齐三个机器写面
-> （claim / complete / runs）之后，闭环才真的闭。
-> 闭环里还有一个必须分开的身份：提交用舰队侧服务身份（`svc-fleet`, expert），复核用
-> 域负责人（`lara`, lead）。两个人时自提自确认闸放行；同一个人时被拦（实测 `err=1`
+> **两处「原任务漏了」**：① 会话路由把非人档当「不是我的」，所以「等待舰队认领」这句话
+> 在只有会话路由的世界里**永远不会发生**；② 补了 claim/complete/runs 之后产物仍只能走
+> **会话**提交，于是闭环在最后一格要求一个人——那正是 D7 否决的「服务账号会话」。所以本轮
+> 又补了 `POST /api/v1/distribution/{key}/proposals` 与 `.../proposals/outcomes`：提交与
+> 结局读都用同一枚 token，`source` 必须是自己登记的前缀。
+> 复核仍是域负责人（`lara`, lead）的会话身份：机器凭据没有确认入口，所以自提自确认在机器
+> 道上**不可能**发生（不是靠两个人绕过去）。同一个会话身份既提又确认时仍被拦（实测 `err=1`
 > 「提案人不得自提自确认」）——这条不是障碍，是判据。
 
 ### 6. 回退演练（§6.5，本地真库四步）
@@ -177,18 +193,18 @@ EXIT=0 并报 `tasks: 0`。
 
 ### 6.1 归档时应打印的合计
 
-按逐文件实测，delta 共 **13 条 requirement**：
+按逐文件实测，delta 共 **14 条 requirement**：
 
 | capability | ADDED | MODIFIED |
 |---|---|---|
 | `domain-work-order`（**新**） | 5 | 0 |
-| `fleet-submitter-contract`（**新**） | 3 | 0 |
+| `fleet-submitter-contract`（**新**） | 4 | 0 |
 | `domain-run-ledger` | 2 | 1 |
 | `domain-estate-console` | 0 | 1 |
 | `knowledge-distribution` | 0 | 1 |
-| **合计** | **10** | **3** |
+| **合计** | **11** | **3** |
 
-`openspec archive add-fleet-execution-loop` 之后应看到 `Totals: + 10, ~ 3, - 0, → 0`。
+`openspec archive add-fleet-execution-loop` 之后应看到 `Totals: + 11, ~ 3, - 0, → 0`。
 数字对不上就是有 delta 段被静默丢弃（每个文件每个操作只能有一个段，多写的那个会被丢且仍报成功）。
 
 ### 6.2 两个新 capability 的 Purpose 会在归档时变成 `TBD`

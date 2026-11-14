@@ -111,11 +111,13 @@ Content-Type: application/json
 ```
 GET /api/d/{domain_key}/proposals/outcomes?source=<你的 source>
 GET /api/d/{domain_key}/runs?runner_ref=<你的 runner_ref>     # 会话面
+GET /api/v1/distribution/{domain_key}/proposals/outcomes?source=…   # 机器面，X-Consumer-Token
 GET /api/v1/distribution/{domain_key}/runs?runner_ref=…        # 机器面，X-Consumer-Token
 ```
 
 - **结局**：按 `source` 读，返回该来源在**本域**的提案行（`state`、`decision_note` 是驳回理由
   原文，不重写不摘要）。读别人的来源 → 403 `只能读取自己来源的结局：<source>`；平台管理员例外。
+  机器面同一条判据：`source` 不在自己登记的 `fleet:<fleet_ref>/` 前缀内即 403。
 - **运行回执**：舰队回写一轮运行后，用 `runner_ref` 读回来确认它落库了（`count` + `runs`）。
   读别人前缀的 `runner_ref` → **403，不是空列表**——空列表会被读成「我的回写没落库」。
   机器面只放 `fleet` 种类的登记，且只返回 `fleet:<自己的 fleet_ref>/` 开头的轮次。
@@ -130,7 +132,7 @@ GET /api/v1/distribution/{domain_key}/runs?runner_ref=…        # 机器面，X
 > 打公开主机只会拿到 404，而不是权限错误。这一条必须写清：404 会被读成「你们没实现」，
 > 而实际是打错了门。
 
-舰队是机器，没有会话。下面三个写面与一个读面都只用 `X-Consumer-Token`（与拉取面同一枚，
+舰队是机器，没有会话。下面四个写面与两个读面都只用 `X-Consumer-Token`（与拉取面同一枚，
 只存 sha256），**且只放 `kind='fleet'` 的登记**：
 
 ```
@@ -138,6 +140,8 @@ POST /api/v1/distribution/{domain_key}/work-orders/{task_id}/claim
 POST /api/v1/distribution/{domain_key}/work-orders/{task_id}/complete
 POST /api/v1/distribution/{domain_key}/runs
 GET  /api/v1/distribution/{domain_key}/runs?runner_ref=…
+POST /api/v1/distribution/{domain_key}/proposals
+GET  /api/v1/distribution/{domain_key}/proposals/outcomes?source=…
 ```
 
 | 端点 | 请求体 | 幂等 / 拒绝 |
@@ -145,6 +149,42 @@ GET  /api/v1/distribution/{domain_key}/runs?runner_ref=…
 | `claim` | 无（工单号在路径里） | 排他：**别的舰队**认领 **409**；自己重试是幂等命中（200 + `created:false`）；不是派给本舰队的工单 **403** |
 | `complete` | `{"note"?, "artifact_refs"?: [...]}` | 必须先认领（未认领 409）；已 `done` 的重试幂等（200 + `created:false`）；**不写知识单元** |
 | `runs` | `{"runner_ref", "role", "outcome", "counts"?, "artifact_refs"?, "remaining"?, "detail"?, "task_id"?}` | 同 `runner_ref` 重放返回 `created: false` 且不改任何字段；结局不在四态 **422** |
+| `proposals` | `{"source", "kind", "external_key", "body", "evidence", "impact"?}` | `source` 必须是自己登记的前缀（`fleet:<自己的 fleet_ref>/`），越界与 `extract:` / `agent:` / `user:` 一律 **403**；同键同依据重放 `created:false` |
+| `proposals/outcomes` | 查询参数 `source` | 只读自己来源；别人的前缀 **403**（不是空列表） |
+
+**提交这一格为什么必须在机器面上**：没有它，只持 token 的舰队能做活、能报数，却交不了
+产物——「闭环」在最后一格要求一个人。`submitted_by` 由 `source` 派生、不读请求体
+（机器只有一个身份）；确认仍只有会话面，所以自提自确认在机器道上**不可能**发生，而不是
+靠两个人绕过去。
+
+**反例（都是 403，都不是 200/空列表）**：拿自己的 token 报别人的 `source`；拿 token 报
+`extract:`（它的可信依据是「流水线在网络上到不了」，不是一枚可泄露的凭据）；报 `agent:` /
+`user:`（那两类必须以人的身份提交）。读别人的结局也 403——**空列表读作「什么都没发生」，
+那是一句假话**。
+
+### 参照实现：`scripts/fleet_client.py`
+
+上面六个面有一个零依赖（仅标准库）的参考客户端，可直接照抄或 vendor 给接入方：
+
+```bash
+export LAWBENCH_BASE_URL=https://lawbench.finddatatech.cloud
+export BENCH_FLEET_TOKEN=…        # 该舰队**现有**那枚；脚本从不打印它
+export BENCH_FLEET_REF=fleet_…    # source 里 `fleet:` 之后、`/` 之前那一段
+
+scripts/fleet_client.py orders   --domain legal
+scripts/fleet_client.py claim    --domain legal --task-id 12
+scripts/fleet_client.py run      --domain legal --post post_x --round 1 \
+    --role concept --outcome ok --counts '{"drafts": 2}' --task-id 12
+scripts/fleet_client.py submit   --domain legal --post post_x --kind company \
+    --external-key corp-1 --body "第一家主体" --evidence '{"url": "https://e.test/1"}'
+scripts/fleet_client.py outcomes --domain legal --post post_x
+scripts/fleet_client.py complete --domain legal --task-id 12 --note "2 条草案"
+```
+
+`source` / `runner_ref` 由 `fleet_ref` + `--post` 拼出，**不接受手写前缀**（手写前缀就是
+冒用的入口）。退出码分档：`0` 已接受、`1` 被服务端拒绝（附原话，重试无用）、`2` 没通
+（配置或网络，修好可重试）。`--dry-run` 打印将要发出的请求、凭据显示为 `<redacted>`，
+可放在子命令前后任意位置。
 
 **认领之后失联怎么办**：认领是排他的，所以一张单被领走后不会自动回到待领。执行方
 中途挂掉时，这张单停在 `in_progress`，由域负责人在控制台**取消**（取消后该缺口可

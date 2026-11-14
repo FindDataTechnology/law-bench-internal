@@ -52,11 +52,9 @@ def world(seeded_db):  # noqa: F811 - provided by tests/conftest.py
     workspaces.add_member(
         conn, domain_id=domain["id"], user_id="lara", role="lead", added_by="seed"
     )
-    # 舰队这一侧是**服务身份**（不是 lara）：提交与复核必须两个人，否则自提自确认
-    # 闸会（正确地）拦下确认，闭环就走不完。
-    workspaces.add_member(
-        conn, domain_id=domain["id"], user_id="svc-fleet", role="expert", added_by="seed"
-    )
+    # 舰队这一侧**不是一个人**：它只持有一枚 token，没有会话，也没有成员身份。
+    # 提交走机器面（源必须是自己那条登记的前缀），复核才有会话身份——自提自确认
+    # 在这里不是靠「两个人」绕过去的，而是机制上做不到（token 没有确认入口）。
     distribution.register_consumer(
         conn, name="loop-fleet", domains=[DOMAIN],
         token_hash=hashlib.sha256(TOKEN.encode()).hexdigest(), created_by="seed",
@@ -175,17 +173,37 @@ def test_the_whole_loop_over_http(world):
     assert replay.json()["run"]["outcome"] == "ok", "重放不得改写已记录的结局"
     assert readback.json()["count"] == 1
 
-    # ⑤ 产物入箱（舰队来源，经登记校验）。提交用舰队侧的服务身份。
-    with _human(conn, "svc-fleet") as h:
-        submitted = h.post(
-            f"/api/d/{DOMAIN}/proposals",
+    # ⑤ 产物入箱：**舰队用自己那枚 token 提交**，全程没有会话。
+    # 这一步最初只能借一个服务账号的会话，于是「闭环」在最后一格上要求一个人——
+    # 而那正是 D7 拒绝的形态（舰队持有一个能代表人的凭据）。现在提交走机器面，
+    # 提交方是登记引用本身，`svc-fleet` 这个服务身份在这里不再需要。
+    with _machine(conn) as m:
+        submitted = m.post(
+            f"/api/v1/distribution/{DOMAIN}/proposals",
             json={
                 "source": f"fleet:{FLEET_REF}/post_ontology",
                 "kind": "company", "external_key": "loop-corp",
                 "body": "闭环域的第一家主体", "evidence": {"url": "https://e.test/1"},
             },
+            headers=_machine_headers(),
         )
     assert submitted.status_code == 200, submitted.text
+    assert submitted.json()["created"] is True
+
+    # 网络重试是幂等命中，而不是第二份产物。
+    with _machine(conn) as m:
+        again = m.post(
+            f"/api/v1/distribution/{DOMAIN}/proposals",
+            json={
+                "source": f"fleet:{FLEET_REF}/post_ontology",
+                "kind": "company", "external_key": "loop-corp",
+                "body": "闭环域的第一家主体", "evidence": {"url": "https://e.test/1"},
+            },
+            headers=_machine_headers(),
+        )
+    assert again.status_code == 200, again.text
+    assert again.json()["created"] is False
+    assert again.json()["id"] == submitted.json()["id"]
 
     # ⑥ 域负责人确认 → 知识单元落库。
     with _human(conn) as h:
@@ -205,10 +223,12 @@ def test_the_whole_loop_over_http(world):
     rows_after = estate.matrix(conn, domains=[workspaces.get_domain(conn, domain_key=DOMAIN)])
     assert "ontology" not in rows_after[0]["gaps"], "闭环走完，缺口应当消失"
 
-    with _human(conn) as h:
-        outcomes = h.get(
-            f"/api/d/{DOMAIN}/proposals/outcomes",
+    # 结果对提交方可见——舰队读自己的结局，同样只用 token。
+    with _machine(conn) as m:
+        outcomes = m.get(
+            f"/api/v1/distribution/{DOMAIN}/proposals/outcomes",
             params={"source": f"fleet:{FLEET_REF}/post_ontology"},
+            headers=_machine_headers(),
         )
     assert outcomes.status_code == 200, outcomes.text
     assert outcomes.json()["outcomes"][0]["state"] == "confirmed"
@@ -394,6 +414,74 @@ def test_a_non_integer_task_id_is_422_not_a_500(world):
         )
     assert r.status_code == 422
     assert "task_id 必须是整数" in r.json()["detail"]
+
+
+# ------------------------------------------- 机器提交面（舰队自己把产物交上去）
+
+
+def _proposal_body(source: str, key: str = "machine-corp") -> dict:
+    return {
+        "source": source, "kind": "company", "external_key": key,
+        "body": "机器面提交的主体", "evidence": {"url": "https://e.test/m"},
+    }
+
+
+def test_a_token_cannot_submit_under_another_fleets_source(world):
+    """token 只能代表它自己那条登记；换个前缀就是冒用，403 而不是「收下了」。"""
+    with _machine(world) as m:
+        r = m.post(
+            f"/api/v1/distribution/{DOMAIN}/proposals",
+            json=_proposal_body("fleet:fleet_other/post_1"),
+            headers=_machine_headers(),
+        )
+    assert r.status_code == 403
+    assert "机器面只能以自己的身份提交" in r.json()["detail"]
+    assert world.execute(
+        "SELECT count(*) AS n FROM domain_proposals"
+    ).fetchone()["n"] == 0
+
+
+def test_a_token_cannot_submit_an_extract_or_agent_source(world):
+    """`extract:` 的可信依据是「流水线在网络上到不了」；`agent:`/`user:` 需要人。
+    机器面三种都不该接受——否则前缀校验一被绕过，凭据就成了万能身份。"""
+    for source in ("extract:qwen:2025-10", "user:someone@example.com", "agent:concept@legal"):
+        with _machine(world) as m:
+            r = m.post(
+                f"/api/v1/distribution/{DOMAIN}/proposals",
+                json=_proposal_body(source),
+                headers=_machine_headers(),
+            )
+        assert r.status_code == 403, (source, r.text)
+    assert world.execute(
+        "SELECT count(*) AS n FROM domain_proposals"
+    ).fetchone()["n"] == 0
+
+
+def test_machine_submission_requires_a_fleet_token(world):
+    with _machine(world) as m:
+        missing = m.post(
+            f"/api/v1/distribution/{DOMAIN}/proposals", json=_proposal_body("fleet:x/p")
+        )
+    assert missing.status_code == 401
+    assert "X-Consumer-Token" in missing.json()["detail"]
+
+
+def test_a_fleet_reads_only_its_own_proposal_outcomes(world):
+    """别人的前缀要 403：空列表读起来是「什么都没发生」，那是一句假话。"""
+    with _machine(world) as m:
+        own = m.get(
+            f"/api/v1/distribution/{DOMAIN}/proposals/outcomes",
+            params={"source": f"fleet:{FLEET_REF}/post_1"},
+            headers=_machine_headers(),
+        )
+        stolen = m.get(
+            f"/api/v1/distribution/{DOMAIN}/proposals/outcomes",
+            params={"source": "fleet:fleet_other/post_1"},
+            headers=_machine_headers(),
+        )
+    assert own.status_code == 200, own.text
+    assert stolen.status_code == 403
+    assert "只能读取自己来源的结局" in stolen.json()["detail"]
 
 
 # ------------------------------------------------------------------ 机器读面

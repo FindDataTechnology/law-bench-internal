@@ -37,6 +37,7 @@
 - [x] 2.6 单测（DB 侧）：`fleet:` 未登记 403 / 吊销后 403 / 跨域 403；`extract:` 外部 403（伪装）而进程内放行；`agent:` 域不一致 403、非成员 403、域一致放行；宽松档下未知前缀入库且计数 +1、但 `extract:` 外部仍 403；同一舰队重复登记被拒
 - [x] 2.6b 路由级测试：**从真实 HTTP 路由**发 `source=extract:...`，断言 403（测路由不测函数——`via` 传错等于没有校验）。四条：`extract:` 外部 403 且**不留半行**、未登记舰队 403、已登记舰队 200 而同一 fleet_ref 在他域 403「域不在绑定范围」（不是「未登记」——错的是域，得指对原因）、冒用他人身份 403 而本人 200。注入验证：把路由的 `via` 改成 `VIA_IN_PROCESS`，`extract:` 那条立刻转红、其余仍绿
 - [x] 2.7 排他性测试：两个来源标识不能同时解析到同一条登记（`fleet_ref` 唯一有效档）
+- [x] 2.8 机器提交面（实施后补，§2 与 §7 的同一个缝）：`POST /api/v1/distribution/{key}/proposals` 与 `GET .../proposals/outcomes`，与 claim/complete/runs 共用 `_fleet_consumer`（`X-Consumer-Token`、`kind='fleet'`、域已绑定）。`source` 必须落在自己登记的 `fleet:<fleet_ref>/` 前缀内（`submitters.may_submit_as_source`，与 `may_read_runner_ref` 同一条前缀规则、两个名字），`submitted_by` 由来源派生不取请求体，`via=HTTP`、`authenticated_as=None`。**理由**：三个写面让舰队能领单/执行/报数，产物却只能走会话提交，而会话要求一枚能代表人的凭据——D7 已否决这种形态；不补这一格，「闭环」在最后一格仍要求一个人，只是被写成了 e2e 里的 `svc-fleet` 服务账号。`tests/test_fleet_loop_e2e.py` 里闭环第 ⑤/⑦ 步改为纯 token，服务账号成员已从夹具删除；越界前缀、`extract:`/`agent:`/`user:`、无凭据、读别人结局各一条（四条 403/401 且零行）
 
 ## 3. 运行台账分来源与外部回写（`domain-run-ledger`）
 
@@ -75,7 +76,7 @@
 ## 7. 验收
 
 - [x] 7.1 浏览器链路 e2e：登录 → `/estate` 派单给舰队 → `/d/{key}` 看到工单 → 团队区看到两类运行 → 提案箱看到解析后的来源与驳回理由。落在 `tests/test_fleet_loop_e2e.py`：**一条测试走完整闭环**（缺口→派单→舰队领单→回写运行→提案入箱→负责人确认→单元落库→缺口消失→对提交方可见→关单），四份证据逐份核对；另有 4 条只测「不该通的那几条路」。三处注入各转红一条，把机器面收窄后闭环测试当场断在领单
-- [x] 7.2 判据测试套件：§1.10 / §2.6 / §3.6 / §4.5 全部纳入回归，`pytest` 全绿。新增 11 个测试模块全部入回归：`test_submitter_contract`(36) / `test_fleet_registration`(16) / `test_external_run_writeback`(9) / `test_work_orders`(18) / `test_proposal_outcomes`(11) / `test_register_fleet_script`(17) / `test_run_readback`(11) / `test_backfill_assignee_kind`(7) / `test_fleet_loop_e2e`(5) / 控制台新增 12 条 / 契约文档 6 条
+- [x] 7.2 判据测试套件：§1.10 / §2.6 / §3.6 / §4.5 全部纳入回归，`pytest` 全绿。新增 12 个测试模块全部入回归：`test_submitter_contract`(36) / `test_fleet_registration`(16) / `test_external_run_writeback`(9) / `test_work_orders`(18) / `test_proposal_outcomes`(11) / `test_register_fleet_script`(17) / `test_run_readback`(11) / `test_backfill_assignee_kind`(7) / `test_fleet_loop_e2e`(17) / `test_fleet_client`(9) / 控制台新增 12 条 / 契约文档 6 条
 - [x] 7.3 `openspec validate add-fleet-execution-loop --strict` 过绿
 - [x] 7.4 写 `acceptance.md`：逐条判据 + 真库/真请求读数。已落 `openspec/changes/add-fleet-execution-loop/acceptance.md`：六节读数（基线 / 四类分流 / 台账 / 工单 / 结局 / 闭环 / 回退演练），每条判据写明「怎么判、读数多少、注入后是否转红」；未做项（6.2 生产列、6.3 生产登记、6.4 跨仓）逐条写明阻塞原因
 

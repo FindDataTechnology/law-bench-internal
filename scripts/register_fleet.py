@@ -91,7 +91,8 @@ def _print_observed(conn) -> int:
         return 0
 
     print(f"{len(observed)} fleet ref(s) observed in domain_proposals.source:\n")
-    existing = {c["fleet_ref"]: c for c in distribution.list_consumers(conn) if c.get("fleet_ref")}
+    consumers = distribution.list_consumers(conn)
+    existing = {c["fleet_ref"]: c for c in consumers if c.get("fleet_ref")}
     for item in observed:
         ref = item["fleet_ref"]
         reg = existing.get(ref)
@@ -104,6 +105,23 @@ def _print_observed(conn) -> int:
         print(
             f"  {ref:<40} {item['rows']:>4} 行  "
             f"最近 {item['last_seen']}  {verdict}"
+        )
+
+    # 本变更之前登记的消费者全是 `machine` 档、没有 fleet_ref，所以上面按 ref 匹配
+    # 一律显示「未登记」——而其中就有真正在跑的舰队（产库 `ontology-fleet-win`）。
+    # 不替人推断「哪条 machine 就是哪支舰队」（那是这个 change 要拆掉的替换），
+    # 但必须把这条路摆出来：新建会撞唯一约束，吊销重登记会换 token 切断它。
+    machines = [c for c in consumers if c["kind"] == "machine" and c["revoked_at"] is None]
+    if machines:
+        print(
+            f"\n库里另有 {len(machines)} 条 `machine` 档登记（没有 fleet_ref，上面按 ref 匹配不到）："
+        )
+        for c in machines:
+            print(f"  id={c['id']:<4} {c['name']:<28} 域 {c['domains']}")
+        print(
+            "  其中若有**就是**上面某支舰队的老登记：给出它**自己的** token 跑 --apply，"
+            "本脚本会**原地升级**（machine → fleet，凭据不变、客户端无感）。\n"
+            "  不要吊销重登——那会发一枚新 token，把正在跑的舰队当场切断。"
         )
 
     print(
