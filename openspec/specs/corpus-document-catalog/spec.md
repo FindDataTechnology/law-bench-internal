@@ -1,7 +1,7 @@
 # corpus-document-catalog Specification
 
 ## Purpose
-TBD - created by archiving change add-corpus-document-adoption. Update Purpose after archive.
+目录回答「这个库里有什么可取材」，且区分两种空：库不可达与库确实没有。它存在的理由是选材时只有一个「空列表」可看，而「连不上」与「没东西」的处置方向相反——前者该等，后者该换源。文档结构由来源自述，换一个库不改代码。
 
 ## Requirements
 
