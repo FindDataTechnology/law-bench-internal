@@ -494,12 +494,14 @@ def test_the_same_claim_from_two_producers_is_one_row(db_conn):
     同时提出同一条主张会变成两行待确认——人眼只有一双。
     """
     make_domain(db_conn, "legal")
+    # `kind` 在这里只是标签，但必须落在夹具模板的词表内（company/indicator）：
+    # 词表外的 proposal 现在在提交口就被拒，而那样一条提案本来就永远确认不了。
     first = proposals.submit(
-        db_conn, domain_key="legal", source="fleet:a/1", kind="concept",
+        db_conn, domain_key="legal", source="fleet:a/1", kind="indicator",
         external_key="indicator-y", body="b", evidence={"quote": "q"},
         submitted_by="fleet:a/1")
     again = proposals.submit(
-        db_conn, domain_key="legal", source="agent:concept@legal", kind="concept",
+        db_conn, domain_key="legal", source="agent:concept@legal", kind="indicator",
         external_key="indicator-y", body="b", evidence={"quote": "q"},
         submitted_by="agent:concept@legal")
 
@@ -512,10 +514,10 @@ def test_the_same_claim_from_two_producers_is_one_row(db_conn):
 def test_different_evidence_for_the_same_key_stays_two_rows(db_conn):
     """证据不同不能合并：分歧本身是信息，交给人判。"""
     make_domain(db_conn, "legal")
-    proposals.submit(db_conn, domain_key="legal", source="fleet:a/1", kind="concept",
+    proposals.submit(db_conn, domain_key="legal", source="fleet:a/1", kind="indicator",
                      external_key="indicator-x", body="b",
                      evidence={"quote": "第一种说法"}, submitted_by="fleet:a/1")
-    proposals.submit(db_conn, domain_key="legal", source="fleet:b/2", kind="concept",
+    proposals.submit(db_conn, domain_key="legal", source="fleet:b/2", kind="indicator",
                      external_key="indicator-x", body="b",
                      evidence={"quote": "第二种说法"}, submitted_by="fleet:b/2")
     rows = db_conn.execute(
@@ -708,3 +710,47 @@ def test_relationship_closed_by_a_pending_endpoint_is_accepted(db_conn):
         evidence={"from_key": "co-batch", "to_key": "co-batch2"}, submitted_by="expert-1",
     )
     assert relation["state"] == "pending"
+
+
+# ------------------------------------------------- 第三类：词表外的 kind
+#
+# 前两类（键已在库、端点未闭合）判的是「目标域此刻有什么」；这一类判的是
+# 「这个域的模板认不认这个 kind」——它同样是确定性的：确认走 `_write_through_kernel`
+# → `_lane_for_kind`，同一张词表在那里抛 ValueError，所以这条提案永远确认不了。
+# 生产实证（2026-11-16 只读）：legal 域 14 条 pending 里 3 条 `kind='n:1'`，
+# source 全是 `fleet:`——直连提交方才是这一类的人群（抽取侧提交前已按同一张
+# 模板词表预筛，见 extraction.py 的 bad_kind）。
+
+
+def test_kind_outside_template_vocabulary_is_refused_at_submit(db_conn):
+    """词表外的 kind 拒在提交口：不入箱，并点名模板版本与两张词表。"""
+    make_domain(db_conn, "dom-vocab")
+
+    with pytest.raises(proposals.ProposalTargetExists) as caught:
+        proposals.submit(
+            db_conn, domain_key="dom-vocab", source="fleet:a/1", kind="n:1",
+            external_key="co-a->n:1:co-b", body="探针草稿里的基数写法",
+            evidence={"from_key": "co-a", "to_key": "co-b"}, submitted_by="expert-1",
+        )
+
+    assert caught.value.reason == "kind_not_in_vocabulary"
+    # 判词必须印出当事的事实：kind、模板版本、两张词表各一个都不许少，
+    # 否则提交方只会去猜「到底是哪一个字写错了」。
+    assert "n:1" in caught.value.detail
+    assert "v1" in caught.value.detail
+    assert "company" in caught.value.detail and "belongs_to" in caught.value.detail
+    assert caught.value.hint
+    assert proposals.count_pending(db_conn, domain_key="dom-vocab") == 0
+
+
+def test_kind_inside_vocabulary_still_enters_the_inbox(db_conn):
+    """成对的正路：词表内的 kind 照常进箱——拦的必须是词表，不是「所有提交」。"""
+    make_domain(db_conn, "dom-vocab-ok")
+    proposal = proposals.submit(
+        db_conn, domain_key="dom-vocab-ok", source="fleet:a/1", kind="indicator",
+        external_key="ind-1", body="词表内的 kind",
+        evidence={"citation": "台账 p.7"}, submitted_by="expert-1",
+    )
+    assert proposal["state"] == "pending"
+
+
