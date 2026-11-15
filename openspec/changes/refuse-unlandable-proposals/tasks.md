@@ -70,3 +70,23 @@
       运行时文案统一成「机器身份」以覆盖 `fleet:`/`extract:`。测试文件最后一次改是 11-13 ⇒
       **文案漂移，不是我这两天的改动**。只更新期望文案，判据（机器身份不得确认、豁免不替机器
       背书）不变。
+
+## 6. 落地与导出（2026-11-15 晚）
+
+- [x] 6.1 实现已合入真源并推送：`law-bench-internal` **`f530d6d`**（`git log -1` 可见），
+      12 files changed / +628 −7；`openspec validate refuse-unlandable-proposals --strict` 绿。
+- [x] 6.2 全量套件在当前工作树实跑：**2188 passed / 60 skipped / 0 failed**（730s）。
+      对照：分诊前那一轮是 2182 passed + **6 failed**，6 条逐条处置后归零
+      （3 条夹具重排、1 条我自己的禁词注释、2 条既有文案漂移）。
+- [ ] 6.3 **公开面导出被另一会话的在途改动挡住，未做**。`scripts/sync_public_from_internal.sh`
+      与 `scripts/merge_law_bench.sh` 都要求真源工作树干净，而 `law-bench-internal` 里有一份
+      **不属于本变更**的未提交改动 `evidence/ontology-kernel-acceptance.json`——它只是
+      **时间戳漂移**（`2026-11-11T18:53:33` → `2026-11-15T15:04:51`，24 行全是 `created_at`/
+      `updated_at`），看着像今天 15:04 有人跑了验收脚本、没把重新生成的证据提交掉。
+      我没有 stash / revert / 代提交它（那是别人的活线）。解锁顺序（两条命令各跑一次）：
+      ① 由它归属者提交或还原那份 JSON ⇒ 真源干净；
+      ② `./scripts/merge_law_bench.sh --execute`（公开面已领先一个导出提交 `3b4b9de`，
+         不先合回来，导出会把公开仓内容删掉——脚本会拒绝，这是正确行为）；
+      ③ `./scripts/sync_public_from_internal.sh --execute` 生成导出提交（带
+         `exported-from:` trailer）后再 push。
+      另记：公开仓 `3b4b9de` 是 `7f57491` 的导出，即**上一轮导出已跟上**，本变更只差这一次。
