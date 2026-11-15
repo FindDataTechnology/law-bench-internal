@@ -41,11 +41,18 @@
 
 ## 5. 落地
 
-- [ ] 5.1 只 `git add` 本变更涉及的文件，`-F` 提交并推送真源。
-- [ ] 5.2 导出公开面（`SRC_REPO=<干净 worktree>` 走 `sync_public_from_internal.sh`）。
-- [ ] 5.3 归档：备份 specs → `openspec archive --yes` → 核对 `Totals`（期望 `+0 / ~1`，
-      因为这是 MODIFIED）→ 归档后 `openspec validate fleet-submitter-contract --type spec
-      --strict` 绿。
+- [x] 5.1 只 `git add` 本变更涉及的文件（避开另一会话的 `evidence/`），`-F` 提交 **`7aefe0d`**
+      并推送真源；`openspec validate --strict` 绿。
+- [x] 5.2 导出公开面完成：先 `-s ours` 合回导出快照 **`5012ebf`**（public 的独有提交只有
+      `2e65580`，它是 `714c677` 的导出快照、而该提交在真源历史里 ⇒ 树不变、不丢内容），
+      再导出 **`16212b8`**（6 files / +161 −15，`deploy/` 未碰）并推 gitee。
+      **这条现在是常态**：每次导出都会给公开面加一个真源没有的提交 ⇒ 下一次导出前必先合回。
+      判据不是「有没有冲突」，而是「public 独有提交是否都带 `exported-from` 且指向真源历史」。
+- [x] 5.3 归档完成（2026-11-16 02:27）：备份到 `/tmp/openspec-backup-20261116-022722`；
+      `openspec archive --yes` 报 `Totals: + 0, ~ 1, - 0, → 0`——与 delta 的 1 条
+      MODIFIED 逐项对齐（若这条写的是 `+1` 就说明 delta 被当成了 ADDED）。归档后
+      `openspec validate fleet-submitter-contract --type spec --strict` 绿，主 spec 里
+      这条 requirement 现在有 6 个 Scenario（原 5 个名字逐字保留 + 新增 1 个）。
 
 ## 4.4 三条被新规则翻红的既有夹具（判据不变，夹具按真实成因重排）
 
