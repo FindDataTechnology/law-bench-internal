@@ -115,3 +115,15 @@
       而不是顺手塞进现有两类里。附带口径：`data-ontology` 域另有 **7 条** pending，未核。
       同族的确定性缺口还有 `evidence` 缺端点（`#86` 就是），确认时会在
       `_relationship_endpoints` 抛 `ValueError`——**它会响亮地失败**，不会静默。
+
+## 8. §7.2 的「未核」已核完（2026-11-16 03:0x，只读）——结论与当时的猜测相反
+
+- [x] 8.1 §7.2 写「`data-ontology` 域另有 7 条 pending，未核」。**核了：那 7 条一条都不是僵尸。**
+      data-ontology 锚定模板 v1 的词表是实体 `[dataset, entity, field, concept]`、关系
+      `[n:1, 1:n, m:n, has_field, references]`，所以 `entity`×5（88-93）与 `n:1`×2（90/94）
+      **都在词表内**，确认时不会因 kind 失败。
+- [x] 8.2 反过来说，僵尸行全在 `legal`：那 6 条 pending 里 5 条越界（`entity`×3、`company`×1、
+      `n:1`×1），只有 `#97 clause` 落得下去。**同一个 kind 名字在 legal 非法、在 data-ontology
+      合法** ⇒ 任何按「全局 kind 词表」清存量的做法都会同时误伤与漏判。
+- [x] 8.3 所以「清存量」这件事**不该按域外推**：要按域各读一次它锚定的模板。别照 §7.2 那句
+      「未核」去猜——那句话当时只是标了个盲区，不是结论。
