@@ -60,7 +60,12 @@ spec:
             value: "5"
       containers:
         - name: law-bench-mcp
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-57b1465
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-e11cfe6
+          # 2026-11-15 上产 sha-e11cfe6（源 cb9f2c1：公开载荷清理，line-manifest.json
+          # 2515B→798B，5 段 note 移 docs/line-auth-evidence.md；同片无 MCP 行为变化，
+          # /app/line-manifest.json 即 MCP 面端点真源）。公网 /law-bench/.well-known
+          # 的真后端就是本 Deployment（Caddy → law-bench-mcp），滚它公网正文才变。
+          # 出片=共享池 testaction002/build-pool（快照 e11cfe6，BUILD-INFO.json 对账）。
           # 2026-11-12 上产 sha-1e90e56（源 60bb1ec：contract_type_catalog 缓存按
           # include_clause_counts 分键，止住"先 false 后 true 读到假零计数"；
           # 同片含 vendored wheel 的 CI/Dockerfile 挂载修复）。
@@ -68,7 +73,7 @@ spec:
           # 本片除目录计数缓存外，还含 11-12 的 vendored wheel 挂载修复（CI/Dockerfile）——
           # 没有那一修，本仓任何 change 都出不了片（test 作业 42 秒红在依赖解析）。
           # 遥测：`kubectl logs | grep '"event": "search_clauses"'` 仍按调用一行（四态可数）。
-          imagePullPolicy: IfNotPresent  # 现役 sha-1e90e56（目录计数缓存分键）。回滚=sha-5c485d0。
+          imagePullPolicy: IfNotPresent  # 现役 sha-e11cfe6（公开载荷清理片）。回滚=sha-57b1465。
           # 更早：sha-f817384 无 min_score、sha-700f2c5 无真语料检索、sha-2f85e53 连 mcp-auth 都没有。
           command: ["/app/.venv/bin/python", "-m", "fd_coding_law_bench_mcp"]
           env:
