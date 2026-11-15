@@ -416,3 +416,21 @@ def test_endpoint_closure_sees_units_past_the_picker_cap(conn, monkeypatch):
         max_per_chunk=8,
     )
     assert report["skipped"]["bad_endpoint"] == 0, json.dumps(report, ensure_ascii=False)
+
+
+def test_report_carries_the_out_of_vocabulary_bucket(conn, monkeypatch):
+    """报告里必须有 `kind_not_in_vocabulary` 这个桶——**哪怕它结构上恒为 0**。
+
+    提交处的写法是 `report["skipped"][exc.reason] += 1`，所以预检每多一个理由词、
+    这里就多一次 KeyError 风险，而 KeyError 会打断整批（几百行）。这一侧提交前已
+    用同一张模板词表预筛（`bad_kind`），只有直连提交方能把词表外的 kind 送进箱，
+    因此这一桶在本路径上不可达——正常一轮就该是 0。
+    """
+    answer = {"entities": [
+        {"kind": "law", "name": "中华人民共和国合同法", "chunk_id": "c1",
+         "quote": "为了规范合同的订立"}], "relationships": []}
+    report = _run(conn, monkeypatch, answer,
+                  chunks=[{"chunk_id": "c1", "text": CHUNK_TEXT,
+                           "title": "中华人民共和国合同法", "law_id": 1, "chunk_no": 0}])
+    assert "kind_not_in_vocabulary" in report["skipped"]
+    assert report["skipped"]["kind_not_in_vocabulary"] == 0

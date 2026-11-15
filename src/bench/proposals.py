@@ -282,6 +282,24 @@ def _validate_evidence(evidence: Any) -> None:
     raise ValueError("提案必须携带依据")
 
 
+class KindNotInVocabulary(ValueError):
+    """The kind is outside the domain's anchored vocabulary — a verdict, not damage.
+
+    ``_lane_for_kind`` raises plain ``ValueError`` for three *data* problems
+    (anchored template id missing, schema not a dict, no vocabulary declared at
+    all); those mean "cannot judge" and the fix belongs to whoever owns the
+    template. This subclass is raised for exactly one shape: the template does
+    declare a vocabulary, and the kind is in neither list. That one is
+    deterministic — confirmation would fail on the same read — so the submit
+    side may refuse it.
+
+    Subclassing ``ValueError`` is deliberate: the confirmation path
+    (``_write_through_kernel``) and every existing ``except ValueError`` caller
+    keep behaving literally as before; only the preflight opts in to the finer
+    distinction.
+    """
+
+
 def _lane_for_kind(conn: Any, *, domain: dict, kind: str) -> str:
     """Decide which kernel entry point a proposal kind belongs to.
 
@@ -311,10 +329,15 @@ def _lane_for_kind(conn: Any, *, domain: dict, kind: str) -> str:
         return "entity"
     if kind in relationship_kinds:
         return "relationship"
-    raise ValueError(
+    message = (
         f"kind {kind!r} 不在模板 v{domain['template_version']} 词表内："
         f"entity_types={entity_types}, relationship_kinds={relationship_kinds}"
     )
+    # 模板缺失 / schema 不是 dict 是「判不出」（上面两处裸 ValueError，正解是修数据）；
+    # 「模板在、schema 正常、这个 kind 两张表都没有」是裁决。空词表这一档不必单列：
+    # `templates.validate_template_schema` 要求这两个键存在且为非空列表，所以它在
+    # API 面上造不出来；真从旧数据里冒出来时拒绝也是对的——确认走同一张表，照样失败。
+    raise KindNotInVocabulary(message)
 
 
 def _relationship_endpoints(evidence: Any) -> tuple[str, str]:
@@ -406,13 +429,25 @@ def preflight_targets(
     both, and confirming the relationship before the entity fails in the kernel
     as it always did.
 
-    A ``kind`` outside the domain's vocabulary has no lane, so there is nothing
-    to preflight against — this function returns and the existing behaviour
-    (the kind is refused later, where the vocabulary is the authority) stands.
-    Preflighting it here would invent a third refusal this change never declared.
+    A ``kind`` that the anchored template does not declare is refused here too
+    (``KindNotInVocabulary``): confirmation reads the same vocabulary, so that
+    proposal can never land — waiting for the reviewer to discover it only
+    occupies a confirmation slot. A template that declares **no** vocabulary is
+    a different shape (nothing to judge against, and the fix is template data,
+    not the submitter's), so it still returns.
     """
     try:
         lane = _lane_for_kind(conn, domain=domain, kind=kind)
+    except KindNotInVocabulary as exc:
+        raise ProposalTargetExists(
+            "kind_not_in_vocabulary",
+            external_key=external_key,
+            detail=f"{exc}（模板 v{domain['template_version']} 是该域锚定的词表来源）",
+            hint=(
+                "改用词表内的 kind 重提；若这个 kind 本来就该被接受，"
+                "那是一次治理动作——由域负责人扩模板词表，而不是在提交口绕过"
+            ),
+        ) from exc
     except ValueError:
         return
     live = authoring.authoring_live_key_kinds(conn, domain_key=domain["key"])

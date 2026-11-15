@@ -806,3 +806,33 @@ def test_a_relationship_with_a_missing_endpoint_is_409(world):
     assert world.execute(
         "SELECT count(*) AS n FROM domain_proposals"
     ).fetchone()["n"] == 0
+
+
+def test_an_out_of_vocabulary_kind_is_409_at_the_machine_face(world):
+    """词表外的 kind ⇒ 409 kind_not_in_vocabulary，不落提案行。
+
+    这一类的人群是直连提交方：抽取流水线提交前已按同一张模板词表预筛，
+    所以只有 MCP/控制台能把 `n:1` 这种词表外写法送进箱（生产实证：legal 域
+    3 条 `n:1` 的 source 全是 `fleet:`）。确认时 `_lane_for_kind` 照样抛，
+    所以它在箱里唯一的作用就是占住负责人的确认位。
+    """
+    with _machine(world) as m:
+        r = m.post(
+            f"/api/v1/distribution/{DOMAIN}/proposals",
+            json={
+                "source": f"fleet:{FLEET_REF}/post_1",
+                "kind": "n:1",
+                "external_key": "co-a->n:1:co-b",
+                "body": "探针草稿里的基数写法",
+                "evidence": {"from_key": "co-a", "to_key": "co-b"},
+            },
+            headers=_machine_headers(),
+        )
+    assert r.status_code == 409, r.text
+    detail = r.json()["detail"]
+    assert detail["reason"] == "kind_not_in_vocabulary"
+    assert "n:1" in detail["message"]
+    assert detail["hint"]
+    assert world.execute(
+        "SELECT count(*) AS n FROM domain_proposals"
+    ).fetchone()["n"] == 0

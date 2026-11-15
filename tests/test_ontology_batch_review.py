@@ -103,7 +103,16 @@ def test_batch_confirm_writes_through_the_kernel(conn):
 
 def test_partial_failure_does_not_roll_back(conn):
     _submit(conn, "ok1", "b1")
-    _submit(conn, "bad-kind", "b1", kind="spaceship")   # will fail at confirmation
+    # 这一行要「确认时失败」，但**提交口现在会拒词表外的 kind**
+    # （refuse-out-of-vocabulary-kinds），所以不能再靠 `kind="spaceship"` 提交进来。
+    # 那一形态在生产里仍然可达：行在箱里待着的时候模板收窄，或它本身就是加规则之前
+    # 就存在的旧行（生产里 #86/#90/#94 正是）。于是按真实成因构造——先合法入箱，
+    # 再让世界变化。被测件是批量确认（一条失败不拖垮整批），不是提交口。
+    _submit(conn, "bad-kind", "b1")
+    conn.execute(
+        "UPDATE domain_proposals SET kind = 'spaceship' WHERE external_key = %s",
+        ("bad-kind",),
+    )
     with _client(conn, "u-lead") as c:
         r = c.post("/d/legal/inbox/batch", data={"batch": "b1", "action": "confirm"},
                    follow_redirects=False)
