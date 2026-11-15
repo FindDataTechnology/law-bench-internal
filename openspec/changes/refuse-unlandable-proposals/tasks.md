@@ -78,18 +78,25 @@
 - [x] 6.2 全量套件在当前工作树实跑：**2188 passed / 60 skipped / 0 failed**（730s）。
       对照：分诊前那一轮是 2182 passed + **6 failed**，6 条逐条处置后归零
       （3 条夹具重排、1 条我自己的禁词注释、2 条既有文案漂移）。
-- [ ] 6.3 **公开面导出被另一会话的在途改动挡住，未做**。`scripts/sync_public_from_internal.sh`
-      与 `scripts/merge_law_bench.sh` 都要求真源工作树干净，而 `law-bench-internal` 里有一份
-      **不属于本变更**的未提交改动 `evidence/ontology-kernel-acceptance.json`——它只是
-      **时间戳漂移**（`2026-11-11T18:53:33` → `2026-11-15T15:04:51`，24 行全是 `created_at`/
-      `updated_at`），看着像今天 15:04 有人跑了验收脚本、没把重新生成的证据提交掉。
-      我没有 stash / revert / 代提交它（那是别人的活线）。解锁顺序（两条命令各跑一次）：
-      ① 由它归属者提交或还原那份 JSON ⇒ 真源干净；
-      ② `./scripts/merge_law_bench.sh --execute`（公开面已领先一个导出提交 `3b4b9de`，
-         不先合回来，导出会把公开仓内容删掉——脚本会拒绝，这是正确行为）；
-      ③ `./scripts/sync_public_from_internal.sh --execute` 生成导出提交（带
-         `exported-from:` trailer）后再 push。
-      另记：公开仓 `3b4b9de` 是 `7f57491` 的导出，即**上一轮导出已跟上**，本变更只差这一次。
+- [x] 6.3 公开面导出**已完成**（2026-11-16 00:1x，`2e65580` 上 gitee、`714c677` 上真源）。
+      原先卡在「两个脚本都要求真源工作树干净，而 `evidence/ontology-kernel-acceptance.json`
+      是**别人**的未提交改动」。解法不是等，而是**先把这次合并的性质量出来**：
+      公开面只领先 **1 个提交**（`3b4b9de`，即 `7f57491` 的导出快照），在 `/tmp` 的 shared
+      clone 里试算 `git merge public/main` 得 **0 冲突、0 内容变更**——合并结果树与合并前
+      **逐字节相同**。既然这笔合并不携带任何内容，它就只是「补上祖先关系」，于是：
+      ① 在 `git worktree add --detach` 的临时树里用 git 自己的 merge 机制生成合并提交
+         **`714c677`**（树与 `a56a672` 相同，`git diff HEAD^ HEAD` 为空，父数 = 2）；
+      ② `git update-ref -m … refs/heads/main 714c677 a56a672`（**带旧值 CAS**）把指针挪过去——
+         因为树相同，主工作树一个文件都不用动，那份别人的脏文件**全程未被触碰**；
+      ③ 用同一个干净 worktree 作 `SRC_REPO` 跑 `sync_public_from_internal.sh --execute`
+         ⇒ 导出提交 **`2e65580`**（9 files / +431 −7，`deploy/` 未碰 ⇒ Argo 同步面无差异）。
+      判据四条都实测过再推：导出面只有 `src/`+`tests/`+`line-manifest.json`；公开仓那份
+      **未跟踪**的 `line-manifest.json` 与真源同名文件 sha256 相同（`c906c24b…`）⇒ 覆盖无信息损失；
+      导出提交的 `exported-from:` 指向 `714c677`，而该 sha 在真源已推送可达；`image.yml` 只在
+      **GitHub** 仓 push 触发出片，gitee 那份是死文件 ⇒ 推 gitee 不触发出片。
+      回滚点：真源 `refs/backup/…` 无（走 reflog + `714c677^`），公开面 `refs/backup/pre-export-…`（脚本自建）。
+      **未推 GitHub 镜像仓**：它自 11-09 起是另一条分叉线（领先 gitee 6 笔、含
+      「repo renamed to law-bench」），合它不是本变更的事。
 
 ## 7. 取证附带发现（只读核对生产，未动手——留给下一个人决策）
 
