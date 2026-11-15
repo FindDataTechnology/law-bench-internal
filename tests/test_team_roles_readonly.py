@@ -180,17 +180,28 @@ def test_warden_records_a_failure_instead_of_vanishing(conn, monkeypatch):
 
 
 def test_verifier_flags_a_key_that_already_exists(conn):
-    _unit(conn, kind="concept", key="违约金调整")
+    # 真实成因：提案先进箱，之后同一个键被别人确认为活单位 ⇒ 这条待确认提案
+    # 已经重复。提交口预检（refuse-unlandable-proposals）挡的是「先有单位再提」，
+    # 挡不住、也不该挡这个竞态——质检员要看的正是它。
     _submit(conn, key="违约金调整")
+    _unit(conn, kind="concept", key="违约金调整")
     out = team_roles.run_verifier(conn, domain_key="legal")
     assert out["by_check"]["key_already_live"] == 1
     assert out["clean"] == 0
 
 
 def test_verifier_flags_an_open_relationship_endpoint(conn):
+    # 「端点开着的待确认提案」只能由**事后**变化产生：提交口预检
+    # （refuse-unlandable-proposals）已经不允许带着未闭合端点提交。真实成因是
+    # 端点先存在、关系进箱、之后端点被软删——这条用例就按这个顺序构造。
     _unit(conn, kind="concept", key="违约金调整")
+    _unit(conn, kind="concept", key="合同法#第585条")
     _submit(conn, kind="defines", key="违约金调整->defines:合同法#第585条",
             evidence={"from_key": "违约金调整", "to_key": "合同法#第585条", "quote": "q"})
+    authoring.authoring_delete_unit(
+        conn, domain_key="legal", kind="concept", external_key="合同法#第585条",
+        operator="t",
+    )
     out = team_roles.run_verifier(conn, domain_key="legal")
     assert out["by_check"]["endpoint_open"] == 1
 
@@ -227,8 +238,8 @@ def test_the_same_claim_with_the_same_evidence_is_one_row_not_a_duplicate(conn):
 
 
 def test_verifier_never_changes_a_proposal_or_the_ontology(conn):
-    _unit(conn, kind="concept", key="违约金调整")
     p = _submit(conn, key="违约金调整")
+    _unit(conn, kind="concept", key="违约金调整")
     before_units = conn.execute("SELECT COUNT(*) AS n FROM knowledge_units").fetchone()["n"]
     team_roles.run_verifier(conn, domain_key="legal")
     state = conn.execute("SELECT state FROM domain_proposals WHERE id = %s",

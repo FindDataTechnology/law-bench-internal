@@ -106,7 +106,7 @@ def test_a_human_key_may_still_be_admin(conn):
 
 def test_an_agent_can_never_confirm(conn):
     proposal = _submit(conn)
-    with pytest.raises(PermissionError, match="智能体不得确认提案"):
+    with pytest.raises(PermissionError, match="机器身份不得确认提案"):
         proposals.confirm(conn, domain_key="legal", proposal_id=proposal["id"],
                           actor="agent:verifier@legal", admin_override=False)
 
@@ -114,7 +114,7 @@ def test_an_agent_can_never_confirm(conn):
 def test_admin_override_does_not_sign_for_an_agent(conn):
     """The exemption is for humans putting out fires, not for machines signing."""
     proposal = _submit(conn)
-    with pytest.raises(PermissionError, match="管理员豁免不适用于智能体提交的提案"):
+    with pytest.raises(PermissionError, match="管理员豁免不适用于机器身份提交的提案"):
         proposals.confirm(conn, domain_key="legal", proposal_id=proposal["id"],
                           actor="ops@example.com", admin_override=True)
 

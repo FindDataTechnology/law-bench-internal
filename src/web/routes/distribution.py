@@ -656,6 +656,14 @@ async def submit_proposal(
         )
     except bench_proposals.SubmitterRefused as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except bench_proposals.ProposalTargetExists as exc:
+        # 409，不是 422：请求本身没写错，是目标状态与它冲突（键已在本体 /
+        # 端点未入库）。分档有实际后果——422 让调用方去改请求，409 让它去改
+        # 既有单位或先补端点。`reason` 是稳定的机器词，客户端按它分支。
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": exc.reason, "message": exc.detail, "hint": exc.hint},
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {

@@ -379,8 +379,15 @@ def test_confirm_writes_one_ku_through_the_kernel_and_one_event(db_conn):
 
 def test_confirm_relationship_uses_the_relationship_kernel_path(db_conn):
     """A relationship-kind proposal lands as a relationship KU with the
-    kernel's deterministic key (endpoints read from the evidence payload)."""
+    kernel's deterministic key (endpoints read from the evidence payload).
+
+    端点先入库是提交前的硬前提（refuse-unlandable-proposals）：提案箱不替关系
+    造端点，所以「两端都在」必须在提交那一刻就成立。这条用例的意图仍只关于
+    确认走哪条内核路径——前置补上，判据不变。
+    """
     domain = make_domain(db_conn, "dom-rel")
+    _seed_unit(db_conn, "dom-rel", key="co-1")
+    _seed_unit(db_conn, "dom-rel", key="grp-1")
     proposal = proposals.submit(
         db_conn,
         domain_key="dom-rel",
@@ -397,14 +404,15 @@ def test_confirm_relationship_uses_the_relationship_kernel_path(db_conn):
     )
 
     row = db_conn.execute(
-        "SELECT kind, external_key, attrs FROM knowledge_units WHERE namespace = %s",
+        "SELECT kind, external_key, attrs FROM knowledge_units "
+        "WHERE namespace = %s AND kind = 'belongs_to'",
         ("dom-rel",),
     ).fetchone()
     assert row["kind"] == "belongs_to"
     assert row["external_key"] == "co-1->belongs_to:grp-1"
     assert row["attrs"]["from_key"] == "co-1"
     assert row["attrs"]["to_key"] == "grp-1"
-    assert authoring_event_count(db_conn, domain["id"]) == 1
+    assert authoring_event_count(db_conn, domain["id"]) == 3  # 两条端点 + 这条关系
 
 
 # --------------------------------------------------------------- 词表外
@@ -559,3 +567,144 @@ def test_a_fleet_identity_cannot_sign_a_confirmation(db_conn):
     assert confirmed["state"] == "confirmed"
     assert confirmed["decided_by"] == "lead-1"
     assert ku_count(db_conn, "dom-machine-sign") == 1
+
+
+# ─────────────────────────────────────────────────────────── 提交前预检（预检 ≠ 判决）
+# 背景（2026-11-15 生产实测）：legal 域 41 条被驳回的提案里，8 条是「键已在库」、
+# 4 条是「关系端点不闭合」。这两类与内容无关，只看域里此刻有什么，机器判得了。
+# 留给人判的代价不是「多看一眼」，而是确认一步走的是单位 upsert ⇒ 确认一条重复键
+# 提案会**改写**既有单位的正文，而提交方在提交那一刻读不到这件事。
+
+
+def _seed_unit(conn, domain_key: str, *, kind: str = "company", key: str = "co-live",
+               body: str = "既有条目正文") -> dict:
+    from src.bench import authoring
+
+    return authoring.authoring_create_unit(
+        conn, domain_key=domain_key, kind=kind, external_key=key,
+        body=body, operator="expert-0",
+    )
+
+
+def test_duplicate_live_key_is_refused_at_submit_not_at_review(db_conn):
+    """重复键拒在提交口：不入箱、不占确认位、既有单位正文一字不动。"""
+    make_domain(db_conn, "dom-dup")
+    unit = _seed_unit(db_conn, "dom-dup", key="co-live", body="既有条目正文")
+    before = proposals.submit.__module__  # noqa: F841 - 保持 import 形状可读
+
+    with pytest.raises(proposals.ProposalTargetExists) as caught:
+        submit_company(db_conn, "dom-dup", external_key="co-live")
+
+    assert caught.value.reason == "key_already_live"
+    assert str(unit["id"]) in caught.value.detail
+    assert caught.value.hint  # 处置方向必须写得出来，否则等于只说「不行」
+    assert proposals.count_pending(db_conn, domain_key="dom-dup") == 0
+    from src.bench import authoring
+
+    after = authoring.authoring_get_unit(
+        db_conn, domain_key="dom-dup", kind="company", external_key="co-live"
+    )
+    assert after["body"] == "既有条目正文"
+
+
+def test_relationship_with_missing_endpoint_is_refused(db_conn):
+    """关系端点未入库：确认时必失败，所以拒在提交口，并点名缺哪个。"""
+    make_domain(db_conn, "dom-rel")
+    _seed_unit(db_conn, "dom-rel", key="co-left")
+
+    with pytest.raises(proposals.ProposalTargetExists) as caught:
+        proposals.submit(
+            db_conn, domain_key="dom-rel", source="fleet:a/1", kind="belongs_to",
+            external_key="co-left->belongs_to:co-ghost", body="左属于右",
+            evidence={"from_key": "co-left", "to_key": "co-ghost"}, submitted_by="expert-1",
+        )
+
+    assert caught.value.reason == "endpoints_missing"
+    assert "co-ghost" in caught.value.detail
+    assert proposals.count_pending(db_conn, domain_key="dom-rel") == 0
+
+
+def test_relationship_with_both_endpoints_live_is_accepted(db_conn):
+    """成对的正路：两端都在，关系提案照常进箱——预检不能宽到把正路也拦掉。"""
+    make_domain(db_conn, "dom-rel-ok")
+    _seed_unit(db_conn, "dom-rel-ok", key="co-left")
+    _seed_unit(db_conn, "dom-rel-ok", key="co-right")
+
+    proposal = proposals.submit(
+        db_conn, domain_key="dom-rel-ok", source="fleet:a/1", kind="belongs_to",
+        external_key="co-left->belongs_to:co-right", body="左属于右",
+        evidence={"from_key": "co-left", "to_key": "co-right"}, submitted_by="expert-1",
+    )
+    assert proposal["state"] == "pending"
+
+
+def test_same_key_under_another_kind_is_refused_naming_the_live_kind(db_conn):
+    """同键异 kind：那会造出同一键的两条单位，正是键归名一直在防的分叉。"""
+    make_domain(db_conn, "dom-xkind")
+    _seed_unit(db_conn, "dom-xkind", kind="company", key="dup-1")
+
+    with pytest.raises(proposals.ProposalTargetExists) as caught:
+        proposals.submit(
+            db_conn, domain_key="dom-xkind", source="fleet:a/1", kind="indicator",
+            external_key="dup-1", body="同一个键换个 kind",
+            evidence={"citation": "台账 p.3"}, submitted_by="expert-1",
+        )
+
+    assert caught.value.reason == "key_already_live"
+    assert "kind=company" in caught.value.detail
+
+
+def test_idempotent_replay_stays_created_false_despite_preflight(db_conn):
+    """预检排在去重之后：重放仍返回既有提案与 created=false。
+
+    这条是顺序纪律的钉子——预检若跑到去重前面，第一份提案进箱后的合法重放
+    就会变成 409，把「新增 vs 幂等命中」这个报数基石打穿。
+    """
+    make_domain(db_conn, "dom-replay")
+    first, created_first = proposals.submit(
+        db_conn, domain_key="dom-replay", source="fleet:a/1", kind="company",
+        external_key="co-replay", body="条目", evidence={"citation": "x"},
+        submitted_by="expert-1", with_created=True,
+    )
+    assert created_first is True
+
+    second, created_second = proposals.submit(
+        db_conn, domain_key="dom-replay", source="fleet:a/1", kind="company",
+        external_key="co-replay", body="条目", evidence={"citation": "x"},
+        submitted_by="expert-1", with_created=True,
+    )
+    assert created_second is False
+    assert second["id"] == first["id"]
+
+
+def test_preflight_does_not_touch_semantic_judgements(db_conn):
+    """文种名/角色名这类「值不值得入库」是人的裁决，预检不越位。"""
+    make_domain(db_conn, "dom-semantic")
+    proposal = proposals.submit(
+        db_conn, domain_key="dom-semantic", source="fleet:a/1", kind="company",
+        external_key="关于XX的通知", body="文种名，不可跨文复用",
+        evidence={"citation": "标题"}, submitted_by="expert-1",
+    )
+    assert proposal["state"] == "pending"
+
+
+def test_relationship_closed_by_a_pending_endpoint_is_accepted(db_conn):
+    """同批闭合：端点还没入库、但已在箱里 ⇒ 关系提案照常进箱。
+
+    进程内抽取流水线就是这么工作的（实体与关系同一批提交）。第一版预检只认活单位，
+    把这条主路当场拒掉（`test_ontology_extraction.py::test_same_batch_entity_closes_the_endpoint`
+    的 submitted 从 3 掉到 2）。「正在闭合」与「压根没有」必须分开。
+    """
+    make_domain(db_conn, "dom-batch")
+    for key in ("co-batch", "co-batch2"):
+        proposals.submit(
+            db_conn, domain_key="dom-batch", source="fleet:a/1", kind="company",
+            external_key=key, body="同批端点",
+            evidence={"citation": "同批"}, submitted_by="expert-1",
+        )
+    relation = proposals.submit(
+        db_conn, domain_key="dom-batch", source="fleet:a/1", kind="belongs_to",
+        external_key="co-batch->belongs_to:co-batch2", body="同批关系",
+        evidence={"from_key": "co-batch", "to_key": "co-batch2"}, submitted_by="expert-1",
+    )
+    assert relation["state"] == "pending"

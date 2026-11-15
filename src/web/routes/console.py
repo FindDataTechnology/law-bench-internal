@@ -1850,6 +1850,14 @@ async def console_proposal_submit(
         # 403, not 400: the request is well-formed; the caller is not allowed to
         # submit as that source.
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except bench_proposals.ProposalTargetExists as exc:
+        # 会话面与机器面必须是同一个状态码：同一个条件（键已在库 / 端点未闭合）
+        # 对人回 400、对舰队回 409，读起来就成了两件事。409 = 目标状态与这次提交
+        # 冲突，请求本身没有写错。
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": exc.reason, "message": exc.detail, "hint": exc.hint},
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
