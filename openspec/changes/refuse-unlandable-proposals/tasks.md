@@ -90,3 +90,21 @@
       ③ `./scripts/sync_public_from_internal.sh --execute` 生成导出提交（带
          `exported-from:` trailer）后再 push。
       另记：公开仓 `3b4b9de` 是 `7f57491` 的导出，即**上一轮导出已跟上**，本变更只差这一次。
+
+## 7. 取证附带发现（只读核对生产，未动手——留给下一个人决策）
+
+- [x] 7.1 **新规则对现存待确认提案的误伤面＝0**。`legal` 域 6 条 pending 逐条对照活单位
+      （`select ... from domain_proposals p join knowledge_units ... where p.state='pending'`）：
+      `#83/#84/#85`（entity）、`#95`（company）、`#97`（clause）的键都**不在**活单位里；
+      `#86` 是关系类但 `kind='n:1'` **不在模板词表**（见 7.2）⇒ 预检在 `_lane_for_kind`
+      处判不出 lane、按设计直接返回。所以这 6 条今天重投都不会被新规则拒——**没有假红**。
+- [x] 7.2 **`#86`（`kind='n:1'`）是一行永远确认不了的提案**：legal 域锚定模板 v2 的词表是
+      实体 `["clause","law","concept"]`、关系 `["cites_law","superseded_by",
+      "belongs_to_contract_type","defines"]`，`n:1` 两头都不在；它的 `evidence` 里也没有
+      `from_key`/`to_key`。这是 11-11 那批探针草稿留下的（#88–#94 同样是 `n:1`/`entity`）。
+      **它落在一个本变更刻意没碰的第三类**：`kind 不在词表` 同样是「确定性落不下去」，
+      但我没有把它加进预检——那会是在本变更声明的两类之外偷偷加第三类。
+      若下一步要收，做法是显式扩一条 requirement（`kind_not_in_vocabulary`）＋各自证臂，
+      而不是顺手塞进现有两类里。附带口径：`data-ontology` 域另有 **7 条** pending，未核。
+      同族的确定性缺口还有 `evidence` 缺端点（`#86` 就是），确认时会在
+      `_relationship_endpoints` 抛 `ValueError`——**它会响亮地失败**，不会静默。
