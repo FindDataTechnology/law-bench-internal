@@ -740,3 +740,69 @@ def test_completing_twice_is_an_idempotent_hit(world):
     assert second.json()["created"] is False
     dones = [e for e in second.json()["task"]["transitions"] if e.get("to") == "done"]
     assert len(dones) == 1, "重试不得再落一条完成事件"
+
+
+# ------------------------------------- 提交前预检（409：目标状态与这次提交冲突）
+
+
+def _seed_live_unit(db, key: str = "machine-corp") -> dict:
+    from src.bench import authoring
+
+    return authoring.authoring_create_unit(
+        db, domain_key=DOMAIN, kind="company", external_key=key,
+        body="既有正文（不得被提案改写）", operator="seed",
+    )
+
+
+def test_a_duplicate_key_is_409_at_the_machine_face_not_a_pending_row(world):
+    """键已在本体时机器面回 409 + 机器可读理由，且不落提案行。
+
+    为什么要在提交口拒：确认一步走的是单位 upsert ⇒ 批准一条重复键提案
+    等于**静默改写**既有单位正文，而人看到的是「新增」。
+    """
+    _seed_live_unit(world, "machine-corp")
+    with _machine(world) as m:
+        r = m.post(
+            f"/api/v1/distribution/{DOMAIN}/proposals",
+            json=_proposal_body(f"fleet:{FLEET_REF}/post_1", key="machine-corp"),
+            headers=_machine_headers(),
+        )
+    assert r.status_code == 409, r.text
+    detail = r.json()["detail"]
+    assert detail["reason"] == "key_already_live"
+    assert "machine-corp" in detail["message"]
+    assert detail["hint"]
+    assert world.execute(
+        "SELECT count(*) AS n FROM domain_proposals"
+    ).fetchone()["n"] == 0
+    from src.bench import authoring
+
+    kept = authoring.authoring_get_unit(
+        world, domain_key=DOMAIN, kind="company", external_key="machine-corp"
+    )
+    assert kept["body"] == "既有正文（不得被提案改写）"
+
+
+def test_a_relationship_with_a_missing_endpoint_is_409(world):
+    """端点未入库 ⇒ 409 endpoints_missing，点名缺的那个；确认时必失败的事
+    不该先占住负责人的确认位。"""
+    _seed_live_unit(world, "co-left")
+    with _machine(world) as m:
+        r = m.post(
+            f"/api/v1/distribution/{DOMAIN}/proposals",
+            json={
+                "source": f"fleet:{FLEET_REF}/post_1",
+                "kind": "belongs_to",
+                "external_key": "co-left->belongs_to:co-ghost",
+                "body": "左属于右",
+                "evidence": {"from_key": "co-left", "to_key": "co-ghost"},
+            },
+            headers=_machine_headers(),
+        )
+    assert r.status_code == 409, r.text
+    detail = r.json()["detail"]
+    assert detail["reason"] == "endpoints_missing"
+    assert "co-ghost" in detail["message"]
+    assert world.execute(
+        "SELECT count(*) AS n FROM domain_proposals"
+    ).fetchone()["n"] == 0

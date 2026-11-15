@@ -343,6 +343,133 @@ def _relationship_endpoints(evidence: Any) -> tuple[str, str]:
     return from_key, to_key
 
 
+class ProposalTargetExists(ValueError):
+    """The submission targets something the inbox cannot land as a new row.
+
+    Two deterministic shapes, both discovered at submit time by **the same reads
+    confirmation uses** (not by a second opinion that could drift):
+
+    - ``key_already_live``: the key is already a live unit in this domain.
+      Confirmation goes through the kernel's unit upsert, so landing it would
+      *rewrite that unit's body*. The submitter cannot see this from its side,
+      and a reviewer approving it reads "add" while performing "overwrite" —
+      measured 2026-11-15: 8 of the 41 rejected proposals in ``legal`` were
+      exactly this, each caught by a human hand.
+    - ``endpoints_missing``: a relationship needs both endpoints live; the box
+      does not create them, so confirmation is guaranteed to fail (4 more).
+
+    Semantic judgements — a 文种名 that cannot be reused, a body with no
+    principle worth keeping — are deliberately **not** here. Those are the
+    domain owner's call; a machine rule that guessed them would be wrong in a
+    way nobody reviews.
+
+    ``reason`` is the machine-readable word the HTTP face returns; ``hint``
+    names the legitimate path so the caller fixes the right thing.
+    """
+
+    def __init__(
+        self, reason: str, *, external_key: str, detail: str, hint: str
+    ) -> None:
+        self.reason = reason
+        self.external_key = external_key
+        self.detail = detail
+        self.hint = hint
+        super().__init__(f"{detail}；{hint}")
+
+
+def preflight_targets(
+    conn: Any,
+    *,
+    domain: dict,
+    kind: str,
+    external_key: str,
+    evidence: Any,
+) -> None:
+    """Refuse a submission the ontology cannot accept, before it consumes a slot.
+
+    The two reads are the confirmation path's own: ``_lane_for_kind`` (which
+    vocabulary the kind belongs to, from the domain's anchored template) and
+    ``authoring_live_key_kinds`` / ``authoring_get_unit`` (the live-unit set).
+    Nothing here writes, and nothing here invents a third notion of "exists" —
+    a preflight with its own lookup would refuse what confirmation accepts (a
+    false red, worse than a false green: it teaches the fleet to stop
+    submitting legitimate content).
+
+    Soft-deleted keys are *not* live, matching ``authoring_live_keys``.
+
+    A relationship's endpoint counts as "will exist" if it is already live **or
+    already pending in this same inbox**: the in-process extractor submits an
+    entity and the relationship that closes on it in one batch, and at that
+    instant the endpoint is a pending row, not a unit. Refusing that shape would
+    break exactly the flow the box was built for (measured 2026-11-15: the
+    ``same batch entity closes the endpoint`` case). The reviewer still decides
+    both, and confirming the relationship before the entity fails in the kernel
+    as it always did.
+
+    A ``kind`` outside the domain's vocabulary has no lane, so there is nothing
+    to preflight against — this function returns and the existing behaviour
+    (the kind is refused later, where the vocabulary is the authority) stands.
+    Preflighting it here would invent a third refusal this change never declared.
+    """
+    try:
+        lane = _lane_for_kind(conn, domain=domain, kind=kind)
+    except ValueError:
+        return
+    live = authoring.authoring_live_key_kinds(conn, domain_key=domain["key"])
+    pending = {
+        row["external_key"]
+        for row in conn.execute(
+            "SELECT external_key FROM domain_proposals "
+            "WHERE domain_id = %s AND state = 'pending'",
+            (domain["id"],),
+        ).fetchall()
+    }
+    known = set(live) | pending
+
+    if lane == "relationship":
+        from_key, to_key = _relationship_endpoints(evidence)
+        missing = [key for key in (from_key.strip(), to_key.strip()) if key not in known]
+        if missing:
+            raise ProposalTargetExists(
+                "endpoints_missing",
+                external_key=external_key,
+                detail=f"关系端点既不在本域活单位里、也不在本域提案箱里：{', '.join(missing)}",
+                hint=(
+                    "提案箱不替关系造端点：先提交缺的端点（实体提案），或先确认它，"
+                    "再提交这条关系"
+                ),
+            )
+        return
+
+    existing_kind = live.get(external_key)
+    if existing_kind is None:
+        return
+    row = authoring.authoring_get_unit(
+        conn, domain_key=domain["key"], kind=existing_kind, external_key=external_key
+    )
+    if row is None:  # pragma: no cover - the set and the single read agree
+        return
+    if (row.get("tags") or {}).get("deleted"):
+        return  # 软删的不算活单位：与 live 集合一致
+    unit_id = row.get("id")
+    if existing_kind == kind:
+        detail = (
+            f"键 {external_key!r} 在本域已是活单位（id={unit_id}, kind={existing_kind}）："
+            "确认这条提案会改写那条单位的正文"
+        )
+    else:
+        detail = (
+            f"键 {external_key!r} 在本域已作为 kind={existing_kind} 的活单位存在"
+            f"（id={unit_id}）：同一键再以 kind={kind} 提交会造出同键两条单位"
+        )
+    raise ProposalTargetExists(
+        "key_already_live",
+        external_key=external_key,
+        detail=detail,
+        hint="要改既有单位请走更新（控制台的单位编辑），不要用新建提案覆盖它",
+    )
+
+
 def _write_through_kernel(
     conn: Any, *, domain: dict, proposal: dict, actor: str
 ) -> dict:
@@ -514,6 +641,14 @@ def submit(
             external_key=external_key,
             evidence_digest=digest,
         )
+
+    # ③ 预检：这条提案落不落得下去。排在三条去重之后是纪律——重放必须仍是
+    # `created=false`（舰队「新增 vs 幂等命中」的报数基石），预检只回答
+    # 「此刻落不落得下去」，不改幂等语义。两类的处置方向不同，所以理由分开：
+    # 重复键要改既有的、端点缺失要先补端点。语义类否决权仍归人，不在这里。
+    preflight_targets(
+        conn, domain=domain, kind=kind, external_key=external_key, evidence=evidence
+    )
 
     cur = conn.execute(
         f"INSERT INTO domain_proposals "

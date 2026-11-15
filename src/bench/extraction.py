@@ -674,6 +674,11 @@ def run(
             "bad_kind": 0,       # kind outside the declared vocabularies
             "bad_endpoint": 0,   # relation endpoint neither live nor nominated
             "bad_row": 0,        # malformed row / refused by the proposal layer
+            # 提交前预检的两种「都不用判」：键已在库、关系端点未闭合。它们不是
+            # 坏行——内容可能是对的，只是本体里已经有了（或被软删了）。混进
+            # bad_row 会让读报告的人去改提示词，而该做的是换靶子。
+            "key_already_live": 0,
+            "endpoints_missing": 0,
             "missing_parent": 0,  # clause with no identifiable parent document
             "not_clause": 0,     # a structural name (preface/chapter) posing as a clause
             "type_mismatch": 0,  # a "law" whose name is not the block's title
@@ -807,6 +812,11 @@ def run(
                     # the external endpoint from accepting a forged one.
                     via=submitters.VIA_IN_PROCESS,
                 )
+            except proposals.ProposalTargetExists as exc:
+                # 预检拒绝：`key_already_live` / `endpoints_missing` 各记各的桶，
+                # 批照常往下跑（一批几百行，一条重复不该中断整批）。
+                report["skipped"][exc.reason] += 1
+                continue
             except ValueError:
                 report["skipped"]["bad_row"] += 1
                 continue
