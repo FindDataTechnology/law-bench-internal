@@ -67,7 +67,7 @@ spec:
             - lawbench.finddatatech.cloud
       initContainers:
         - name: seed-db
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-38ba5c4
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-e11cfe6
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsUser: 0
@@ -102,7 +102,13 @@ spec:
           # （2006/2000），它的 Actions 停摆；law-ai-official 是独立额度池。
           # 该仓的 image.yml 就是本仓自己那份（通用平台的冒烟闸不认 8010/DSN，替换过）。
           # 回滚=sha-afb4e71。
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-38ba5c4
+          # 本片=公开载荷清理：line-manifest.json 剥离 5 段 note（2515B→798B），
+          # 证据移 docs/line-auth-evidence.md；tests/test_manifest_hygiene.py 防回归。
+          # 出片=共享池 testaction002/build-pool（快照 e11cfe6＝源 cb9f2c1，真 sha 记在
+          # BUILD-INFO.json）；SMOKE_MODE=skip——entrypoint 默认路径先跑 PG 迁移、
+          # 裸 boot 起不来，真判据=pullcheck 一次性 Pod + 滚版 readyReplicas。
+          # 回滚=sha-38ba5c4。
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-e11cfe6
           imagePullPolicy: IfNotPresent
           env:
             # 提交方校验：**默认即 strict**（本片起不再设 BENCH_SUBMITTER_MODE）。
