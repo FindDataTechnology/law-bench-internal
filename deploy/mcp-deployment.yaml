@@ -60,7 +60,9 @@ spec:
             value: "5"
       containers:
         - name: law-bench-mcp
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-e11cfe6
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-720ae6f
+          # 2026-11-16 上产 sha-720ae6f（快照 720ae6f＝源 945b80b：提交口三类拒绝）。
+          # 与 law-bench / law-bench-mcp-assistant 同一 tag 同进同退；回滚=sha-e11cfe6。
           # 2026-11-15 上产 sha-e11cfe6（源 cb9f2c1：公开载荷清理，line-manifest.json
           # 2515B→798B，5 段 note 移 docs/line-auth-evidence.md；同片无 MCP 行为变化，
           # /app/line-manifest.json 即 MCP 面端点真源）。公网 /law-bench/.well-known
