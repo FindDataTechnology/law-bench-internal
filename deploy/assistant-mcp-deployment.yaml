@@ -57,7 +57,9 @@ spec:
             value: "5"
       containers:
         - name: law-bench-mcp-assistant
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-e11cfe6
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-720ae6f
+          # 2026-11-16 跟滚 sha-720ae6f（快照 720ae6f＝源 945b80b：提交口三类拒绝；
+          # 与 law-bench / law-bench-mcp 同一 tag 同进同退；回滚=sha-e11cfe6）。
           # 2026-11-15 跟滚 sha-e11cfe6（公开载荷清理片，同片无 MCP 行为变化；
           # 与 law-bench-mcp 同一镜像、同一清单真源）。
           # 2026-11-12 由 sha-2180036 上滚：同片修 contract_type_catalog 缓存假零
