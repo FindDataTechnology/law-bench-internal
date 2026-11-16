@@ -88,3 +88,20 @@
       而 `#95 company` 也是其中之一（前一笔记「误伤面 0」只查了**键重复**，没查 kind 归属）。
 - [x] 6.3 **预期行为，不是本轮引入的破坏**：本变更只判**新提交**，这 13 行一行不动（它们已是既成事实）。
       要清这批存量得走拒绝流程（人的动作），不是靠预检。
+
+## 上产留痕（2026-11-16）
+
+- [x] 9.1 **本变更曾经「归档但不在产」**（同族于 `refuse-unlandable-proposals`）：真源推了、公开面导了、
+      归档了，而在役 pod 的 `/app/src/bench/proposals.py` 里 `kind_not_in_vocabulary`
+      **一次都 grep 不到**。原因不是测试红，是 canonical 出片通道死了——`FindDataTechnology`
+      私有 CI 额度 2006/2000 耗尽，`image` 作业的 annotation 写着「jobs not started because
+      recent account payments have failed」。
+- [x] 9.2 上产路子：通用池 `testaction002/build-pool`（`fd-build-snapshot`，快照 `720ae6f`＝源
+      `945b80b`，digest `sha256:43497b00…`）→ 临时 `SMOKE_MODE=skip`（跑完**立刻还原成 boot**；
+      裸 boot 会报 `ConfigError: database_url is not set`）→ `skopeo --raw` 确认 ccr 已有该 tag
+      → 清单抬 tag（`9db582c`）→ 导出 gitee（`a50ec89`）→ Argo selfHeal 同步
+      （`rev=a50ec899 health=Healthy`）。
+- [x] 9.3 判据是 pod 内的字符串，不是「Job 绿」：`proposals.py` 35568→43620 B，
+      `kind_not_in_vocabulary`×1、`endpoints_missing`×2、`key_already_live`×2、
+      `ProposalTargetExists|preflight_targets`×2。公网面同时复核：law-bench 端点 200 / 798 B，
+      与仓内 `line-manifest.json` 逐字节相同。

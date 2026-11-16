@@ -127,3 +127,14 @@
       合法** ⇒ 任何按「全局 kind 词表」清存量的做法都会同时误伤与漏判。
 - [x] 8.3 所以「清存量」这件事**不该按域外推**：要按域各读一次它锚定的模板。别照 §7.2 那句
       「未核」去猜——那句话当时只是标了个盲区，不是结论。
+
+## 上产留痕（2026-11-16）
+
+- [x] 9.1 与 `refuse-out-of-vocabulary-kinds` 同片上产（同一镜像 `sha-720ae6f`＝源 `945b80b`）：
+      `key_already_live`×2、`endpoints_missing`×2 在在役 pod 里 grep 到，
+      `preflight_targets` / `ProposalTargetExists` 各 1。
+- [x] 9.2 「归档 ≠ 在产」是本片最贵的一课：canonical 出片通道（私有仓 `image.yml`）因账号额度
+      2006/2000 耗尽从未启动，而公开仓那条「免费无限」的路**结构上建不出来**——发布面没有
+      `vendor/`，`Dockerfile:93` 却是 `COPY vendor ./vendor`（`fd-ontology-kernel` 只在私有 wheel 里）。
+      可走的是通用池 `testaction002/build-pool`（它第 48 行对非 Go tenant 跳过单测）。
+- [x] 9.3 回滚=改回 `sha-e11cfe6` 推 gitee（Argo selfHeal 会立刻拉回该代）。
