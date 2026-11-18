@@ -1288,7 +1288,26 @@ def console_team(
 
     domain = resolve_domain(db, domain_key)
     cap = capability(db, domain, user)
-    metrics = quality.all_metrics(db, domain_key=domain_key, namespace=domain["path"])
+    # The seventh ratio lives on the template, not on the corpus, so it is read
+    # separately and handed in — the console must show "this domain cannot be
+    # measured at all" next to the six ratios, or a ruler-less template looks
+    # like a domain with healthy metrics.
+    from ...bench import template_readiness
+
+    anchored = db.execute(
+        "SELECT schema FROM ontology_templates WHERE id = %s",
+        (domain["template_id"],),
+    ).fetchone()
+    anchored_schema = (anchored or {}).get("schema") or {}
+    if isinstance(anchored_schema, str):
+        import json as _json
+        anchored_schema = _json.loads(anchored_schema)
+    metrics = quality.all_metrics(
+        db, domain_key=domain_key, namespace=domain["path"],
+        template_readiness=template_readiness.readiness(
+            db, domain_path=domain["path"], schema=anchored_schema
+        ),
+    )
     thresholds = dict(quality.QUALITY_THRESHOLDS)
     review = metrics.get("review_lag") or {}
     batches = [

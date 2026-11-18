@@ -150,6 +150,24 @@ def instantiate_domain(
     if problems:
         raise ValueError("template schema is invalid: " + "; ".join(problems))
 
+    # Draft domains are allowed: a domain may exist before its template has
+    # rulers, and the estate matrix reports it as `quality:template` until they
+    # arrive. The refusal belongs to *using* a template's rulers, so instantiation
+    # only refuses one whose rulers were declared and cannot be resolved — that is
+    # a broken promise, not a template still being built.
+    from . import template_readiness
+
+    declared_rulers = template_readiness.rubric_refs(tmpl["schema"])
+    if declared_rulers:
+        readiness = template_readiness.readiness(
+            conn, domain_path=parent_key or key, schema=tmpl["schema"]
+        )
+        if readiness["missing"]:
+            raise ValueError(
+                "template declares rulers that cannot be resolved in this scope: "
+                + "、".join(readiness["missing"])
+            )
+
     existing = conn.execute(
         "SELECT archived_at FROM domains WHERE key = %s LIMIT 1", (key,)
     ).fetchone()
