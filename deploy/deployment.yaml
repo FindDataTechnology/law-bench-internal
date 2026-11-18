@@ -67,7 +67,7 @@ spec:
             - lawbench.finddatatech.cloud
       initContainers:
         - name: seed-db
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-1641e54
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-1d6ca60
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsUser: 0
@@ -111,13 +111,13 @@ spec:
           # 本片=提交口三类拒绝（refuse-unlandable-proposals + refuse-out-of-vocabulary-
           # kinds）：键已在活单位上 / 关系端点不在本域 / kind 不在该域锚定模板词表内，
           # 三类都在提交时拒绝并给出人话 hint，不再产生永远落不下去的 pending 行。
-          # 出片=共享池 testaction005/build-pool（快照 1641e54＝源 41a3879，真 sha 记在
+          # 出片=共享池 testaction005/build-pool（快照 1d6ca60＝源 4b11076，真 sha 记在
           # BUILD-INFO.json）；SMOKE_MODE=skip——entrypoint 默认路径先跑 PG 迁移、
           # 裸 boot 起不来（实测 ConfigError: database_url is not set），
           # 真判据=探针 Pod 内 import 路由表 + 滚版 readyReplicas + 端点实探。
           # 本片内容：评测结论台账 + 建表引导修复 + 机器读面三条只读端点。
-          # 回滚=sha-720ae6f。
-          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-1641e54
+          # 回滚=sha-1641e54（崩溃）/ sha-720ae6f（上一个稳定版）。
+          image: ccr.ccs.tencentyun.com/law-bench/law-template:sha-1d6ca60
           imagePullPolicy: IfNotPresent
           env:
             # 提交方校验：**默认即 strict**（本片起不再设 BENCH_SUBMITTER_MODE）。
