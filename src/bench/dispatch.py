@@ -45,6 +45,9 @@ GAP_ROUTE: dict[str, str] = {
     "quality:referential": "kernel:verifier",
     "quality:key_hygiene": "kernel:builder",
     "quality:review_lag": "human",
+    # 模板改进需要判断（添哪些类型、挂哪些尺子），确定性内核岗位做不了。
+    # 这是 FLEET_ROUTE 第一次真的被用上：此前它只是词汇表里一个常量。
+    "quality:template": "fleet",
 }
 
 #: Route prefix for "an in-process deterministic role owns this".
@@ -103,6 +106,13 @@ GAP_TASKS: dict[str, dict[str, str]] = {
         "title": "清复核积压：提案等待超过阈值",
         "detail": "缺口＝待确认提案最老一条超过阈值。做法：按批复核（不是逐条），"
                   "先在批次里看共同主张与差异清单。验收：最老待确认年龄回到阈值以内。",
+    },
+    "quality:template": {
+        "title": "给模板挂尺子：该域锚定模板无法被评测",
+        "detail": "缺口＝锚定模板的 rubric_refs 为空或声明的尺子解析不到。后果不是一个坏分数，"
+                  "而是永远算不出这个域有没有变差。做法：为该模板补上可用的 rubric 引用"
+                  "（或补建 rubric 后引用），再保存新版本。验收：质量视图的模板可评性由"
+                  "「不可评」变为一个比率，缺口消失。",
     },
 }
 

@@ -90,7 +90,13 @@ def _domains(conn):
 def test_empty_domain_reports_every_gap(conn):
     domains = _domains(conn)
     rows = estate.matrix(conn, domains=domains)
-    assert [r["gaps"] for r in rows] == [["ontology", "knowledge", "eval"]] * 2
+    # quality:template is reported alongside the three empty pillars: the seed
+    # template declares no rubrics, so neither domain can be measured at all.
+    # That is a gap in its own right (change add-layered-ontology-templates) and
+    # must not be folded into "eval", which counts standards that do exist.
+    assert [r["gaps"] for r in rows] == [
+        ["ontology", "knowledge", "eval", "quality:template"]
+    ] * 2
     # The declared vocabulary is still readable even when nothing is curated.
     assert rows[0]["ontology"]["declared_types"] == 2
     assert rows[0]["ontology"]["curated_units"] == 0
@@ -136,8 +142,12 @@ def test_populated_pillars_are_not_gaps(conn):
     assert rows[0]["knowledge"]["sources"] == 1
 
     assert rows[0]["eval"]["standards"] == 1
+    # The template still declares no rubrics, so it remains unmeasurable even
+    # with a standard sitting in the domain — the ruler set lives on the
+    # template, and a rubric on a shelf is not a ruler anyone committed to.
+    assert "quality:template" in rows[0]["gaps"]
     # The child inherits the standard and the corpus, but has no units of its own.
-    assert rows[1]["gaps"] == ["ontology"]
+    assert [g for g in rows[1]["gaps"] if not g.startswith("quality:")] == ["ontology"]
     assert rows[1]["knowledge"]["sources"] == 1
 
 

@@ -66,8 +66,20 @@ def merge_schema(parent: dict, child: dict) -> dict:
     """Merge child over parent: extensible lists union, maps deep-merge.
 
     Raises :class:`InheritanceError` when the child drops an inherited item —
-    the rule is "may add, may override a map entry, may not remove".
+    the rule is "may add, may override a map entry, may not remove" — or when
+    the two sides sit in different ontology layers. Layers are the reason
+    ``extends`` can be trusted: it joins two vocabularies that answer to the
+    same authority. Cross-layer semantics are a *mapping* (``aligned_with``),
+    not a merge; merging would force one side to accept the other's lifecycle.
     """
+    parent_layer = templates.template_layer(parent)
+    child_layer = templates.template_layer(child)
+    if parent_layer != child_layer:
+        raise InheritanceError(
+            f"extends crosses ontology layers: parent is {parent_layer!r}, "
+            f"child is {child_layer!r}. Same-layer inheritance only; declare "
+            "cross-layer equivalence with 'aligned_with' instead."
+        )
     merged = dict(parent)
     for key in EXTENSIBLE_KEYS:
         pv = list(parent.get(key) or [])
@@ -103,6 +115,31 @@ def validate_effective(conn: Any, schema: dict) -> list[str]:
     except InheritanceError as exc:
         return [str(exc)]
     return templates.validate_template_schema(effective)
+
+
+def aligned_types(conn: Any, *, name: str, version: Optional[int] = None) -> dict[str, dict]:
+    """Cross-layer equivalence declared by one template version.
+
+    Returns ``{type: {"aligned_type", "target_template", "target_layer"}}``.
+    A type with no declaration is simply absent — this never guesses. The
+    declarations are *read*, never merged: the template's own vocabulary is
+    unchanged, which is the whole point of not using ``extends`` across layers.
+    """
+    row = templates.get_template(conn, name=name, version=version)
+    if row is None:
+        return {}
+    out: dict[str, dict] = {}
+    for entry in (row["schema"] or {}).get("aligned_with") or []:
+        if not isinstance(entry, dict):
+            continue
+        target = entry.get("target_template")
+        for local_type, target_type in (entry.get("type_map") or {}).items():
+            out[local_type] = {
+                "aligned_type": target_type,
+                "target_template": target,
+                "target_layer": entry.get("target_layer"),
+            }
+    return out
 
 
 # ── knowledge units along the ancestor chain ─────────────────────────────────

@@ -54,6 +54,7 @@ from ..templating import templates as _templates
 from ...bench import declarations as bench_declarations
 from ...bench import distribution as bench_distribution
 from ...bench import templates as bench_templates
+from ...bench import template_readiness as bench_template_readiness
 from ...bench import workspaces
 
 read_only_router = APIRouter(tags=["admin"])
@@ -191,6 +192,12 @@ def admin_template_detail(request: Request, name: str, db: DbConn = Depends(get_
         raise HTTPException(status_code=404, detail=f"template {name!r} not found")
     versions = bench_templates.list_template_versions(db, name=name)
     schema = latest["schema"] or {}
+    # Ruler resolution is reported, not enforced, on this page: save-time stays
+    # permissive so a template can be built in steps. The gate that refuses a
+    # ruler-less template is at instantiation, where a domain starts relying on it.
+    readiness = bench_template_readiness.readiness(
+        db, domain_path="", schema=schema
+    )
     return _templates.TemplateResponse(
         request,
         "admin_template_detail.html",
@@ -198,6 +205,7 @@ def admin_template_detail(request: Request, name: str, db: DbConn = Depends(get_
             "template": latest,
             "versions": versions,
             "schema": schema,
+            "readiness": readiness,
             "schema_pretty": json.dumps(schema, ensure_ascii=False, indent=2),
             "corpus_pretty": json.dumps(
                 schema.get("corpus_declaration") or {}, ensure_ascii=False, indent=2
@@ -255,7 +263,11 @@ async def admin_template_version_create(
         )
     try:
         bench_declarations.check_refs(db, schema.get("corpus_declaration"))
-        bench_templates.update_template(
+        # The version form is a promotion, not an edit: it passes the novelty
+        # gate (a new version must not be worse than the last verdict) and the
+        # two stored-version guards (external vocabulary is read-only here, and
+        # a layer may not change between versions).
+        bench_template_readiness.promote_template_via_gate(
             db, name=name, schema=schema, created_by=_operator_of(user)
         )
     except ValueError as exc:

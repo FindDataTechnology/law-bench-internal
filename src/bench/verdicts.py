@@ -38,6 +38,14 @@ CALIBRATION_GATE = "calibrated"
 #: 校准结论的被评对象种类：判官自身。
 JUDGE_SUBJECT_KIND = "judge"
 
+#: 本体模板作为被评对象（change add-layered-ontology-templates）。
+#:
+#: 种类**不是闭集**——`docs/evaluation-system.md` 把它定义为「任意」，
+#: 且生产里已有 `judge`（校准）与 `knowledge-units`（数据检查）两种取值。
+#: 把集合关上会打死既有写入路径，而收益只是让一个字符串早一点报错。
+#: 这里登记常量是为了让「模板升版门」不必在代码里散落字符串字面量。
+TEMPLATE_SUBJECT_KIND = "template"
+
 
 def verdict_problem(
     *,

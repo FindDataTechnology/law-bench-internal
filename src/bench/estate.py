@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from . import domain_rubrics, libraries, quality
+from . import domain_rubrics, libraries, quality, template_readiness
 
 #: Gap keys, in the order the matrix renders them.
 PILLARS = ("ontology", "knowledge", "eval", "inbox")
@@ -132,6 +132,27 @@ def _pillar_inbox(conn: Any, domain: dict) -> dict:
     }
 
 
+def _template_readiness(conn: Any, domain: dict) -> Optional[dict]:
+    """The anchored template's ruler resolution, or ``None`` when unreadable.
+
+    Read as a *report*, never a gate: a domain whose template declares no rulers
+    is a draft, not a broken domain, and the quality view is where that becomes
+    visible. Instantiation is the place a ruler-less template is refused.
+    """
+    row = conn.execute(
+        "SELECT schema FROM ontology_templates WHERE id = %s", (domain["template_id"],)
+    ).fetchone()
+    if row is None:
+        return None
+    schema = row["schema"]
+    if isinstance(schema, str):
+        import json as _json
+        schema = _json.loads(schema)
+    return template_readiness.readiness(
+        conn, domain_path=domain.get("path") or domain["key"], schema=schema or {}
+    )
+
+
 def matrix(conn: Any, *, domains: list[dict], probed: Optional[dict] = None,
            with_quality: bool = True) -> list[dict]:
     """One row per domain: identity + tree depth + the four pillar summaries."""
@@ -151,7 +172,8 @@ def matrix(conn: Any, *, domains: list[dict], probed: Optional[dict] = None,
         evaluation = _pillar_eval(conn, domain)
         row_quality = (
             quality.all_metrics(conn, domain_key=domain["key"], namespace=path,
-                                probed=probed)
+                                probed=probed,
+                                template_readiness=_template_readiness(conn, domain))
             if with_quality else {}
         )
         rows.append(
@@ -197,6 +219,14 @@ def gaps_for(pillars: dict, quality_metrics: Optional[dict] = None) -> list[str]
         if name == "review_lag":
             if metric.get("over_threshold"):
                 gaps.append("quality:review_lag")
+            continue
+        if name == "template":
+            # 模板一条尺子都没声明是**独立缺口**，不能靠 value=None 悄悄略过：
+            # 一个本体与语料都非空、却完全无法被评的域，正是这条判据要抓的。
+            if metric.get("undeclared"):
+                gaps.append("quality:template")
+            elif quality.below_threshold(name, metric):
+                gaps.append("quality:template")
             continue
         if quality.below_threshold(name, metric):
             gaps.append(f"quality:{name}")

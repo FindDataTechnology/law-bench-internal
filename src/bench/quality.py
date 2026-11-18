@@ -212,10 +212,17 @@ def judge_health(*, probed: Optional[dict] = None) -> dict:
 def all_metrics(
     conn: Any, *, domain_key: str, namespace: Optional[str] = None,
     probed: Optional[dict] = None, review_threshold_hours: float = 24.0,
+    template_readiness: Optional[dict] = None,
 ) -> dict:
-    """六项一起算。``namespace`` 缺省等于域 key（根系域的路径就是 key）。"""
+    """六项一起算。``namespace`` 缺省等于域 key（根系域的路径就是 key）。
+
+    ``template_readiness`` 是第七项，但它不由本模块计算——可评性问的是
+    "锚定模板声明的尺子解析得到吗"，那是模板与 rubric 之间的查询，不是语料
+    统计。调用方把 ``template_readiness.readiness()`` 的结果传进来，本函数
+    只负责让它与其余六项同形呈现。
+    """
     ns = namespace or domain_key
-    return {
+    out = {
         "grounding": grounding(conn, namespace=ns),
         "evidence": evidence(conn, namespace=ns),
         "referential": referential_integrity(conn, namespace=ns),
@@ -224,6 +231,29 @@ def all_metrics(
         "key_hygiene": key_hygiene(conn, domain_key=domain_key, namespace=ns),
         "judge": judge_health(probed=probed),
     }
+    if template_readiness is not None:
+        out["template"] = _template_metric(template_readiness)
+    return out
+
+
+def _template_metric(readiness: dict) -> dict:
+    """模板可评性：已解析 / 已声明。
+
+    分母为 0 时报 ``value=None`` 而不是 0.0 或 1.0——"一条尺子都没声明"
+    与"声明的全解析不到"是两件事，前者连比都没得比，把两者渲染成同一个百分比
+    会让人以为模板没问题。
+    """
+    declared = int(readiness.get("declared") or 0)
+    resolved = int(readiness.get("resolved") or 0)
+    metric = _metric(
+        _ratio(resolved, declared),
+        resolved,
+        declared,
+        "锚定模板声明的尺子中可解析的比例（分母 0 = 模板未声明尺子）",
+        gaps=list(readiness.get("missing") or [])[:20],
+    )
+    metric["undeclared"] = declared == 0
+    return metric
 
 
 # ── 阈值与方向（策略只写在这里，派单与矩阵都读它）────────────────────────────
