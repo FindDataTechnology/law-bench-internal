@@ -286,6 +286,33 @@ CREATE TABLE IF NOT EXISTS contract_artifacts (
 # Additive columns added after the tables' first release, applied idempotically
 # in a single round trip via ``ALTER TABLE IF EXISTS ... ADD COLUMN IF NOT
 # EXISTS`` (a no-op once the columns exist; safe when the table is absent).
+# Primary keys the production databases are missing (measured live 2026-11-18).
+# ``CREATE TABLE IF NOT EXISTS`` cannot add a PK to a table that already exists,
+# so the omission survived every deploy — until a process first created a table
+# with ``REFERENCES <that table>(id)``, at which point the boot crashed with
+# ``InvalidForeignKey: no unique constraint matching given keys``. Running this
+# first makes those references legal.
+#
+# Guarded so it is a no-op once the key exists, and so it fails loudly rather
+# than silently skipping when the data cannot support it (duplicate / NULL ids —
+# in that case a human must reconcile the rows; a PK cannot be conjured).
+_PK_REPAIRS = """
+DO $$
+BEGIN
+    -- Two steps, not one AND: Postgres does not promise left-to-right
+    -- short-circuit for AND, so 'eval_runs'::regclass would still be evaluated on
+    -- a fresh database (where the CREATEs below have not run yet) and raise.
+    IF to_regclass('public.eval_runs') IS NOT NULL THEN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'eval_runs'::regclass AND contype = 'p'
+      ) THEN
+        ALTER TABLE eval_runs ADD CONSTRAINT eval_runs_pkey PRIMARY KEY (id);
+      END IF;
+    END IF;
+END $$;
+"""
+
 _ADDITIVE_COLUMNS = (
     "ALTER TABLE IF EXISTS prompts ADD COLUMN IF NOT EXISTS prompt_type TEXT; "
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS compare_run_id INTEGER; "
@@ -304,8 +331,8 @@ _ADDITIVE_COLUMNS = (
     # came out (outcome: pass/fail/inconclusive). All nullable: a legacy row
     # that predates the ledger reads exactly as before, and a caller that
     # passes none of the new args writes exactly the row it wrote yesterday.
-    # ``baseline_run_id`` is a self-reference; ON DELETE SET NULL because the
-    # FK target is the same table (a deleted run must not strand its children).
+    # ``baseline_run_id`` is a plain column (no FK) — see the note at the ALTER
+    # below for why a self-reference is impossible on the production table.
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS subject_kind TEXT; "
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS subject_key TEXT; "
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS subject_version TEXT; "
@@ -314,6 +341,12 @@ _ADDITIVE_COLUMNS = (
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS ruler_digest TEXT; "
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS gate TEXT; "
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS outcome TEXT; "
+    # The production table predates the IDENTITY-PK DDL and has no primary key
+    # (measured 2026-11-18 on the live pod: zero rows in pg_constraint). That is
+    # repaired by _PK_REPAIRS before this block runs, which is what lets this FK
+    # — and every ``REFERENCES eval_runs(id)`` in the CREATE blocks above — exist
+    # at all. Without the repair, a fresh process crashes at boot with
+    # ``InvalidForeignKey: no unique constraint matching given keys``.
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS baseline_run_id BIGINT "
     "  REFERENCES eval_runs(id) ON DELETE SET NULL; "
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS provisional BOOLEAN NOT NULL DEFAULT false; "
@@ -544,6 +577,12 @@ def ensure_schema(db_path=DEFAULT_DB) -> None:
             # each other. Timing out is NOT success, though: see the handler
             # below and fix-ensure-schema-lock-masking.
             conn.execute(f"SET lock_timeout = '{_lock_timeout_ms()}ms'")
+            # Repair missing primary keys BEFORE any CREATE ... REFERENCES runs.
+            # Several tables declare ``REFERENCES eval_runs(id)``; on a database
+            # whose ``eval_runs`` predates the IDENTITY-PK DDL, those FKs cannot
+            # be created and the boot dies. Measured on the live pod 2026-11-18:
+            # 16 rows, ids non-null and distinct, pg_constraint empty.
+            conn.execute(_PK_REPAIRS)
             conn.execute(RESULTS_SCHEMA)
             conn.execute(LAW_INFO_SCHEMA)
             conn.execute(CLAUSES_SCHEMA)

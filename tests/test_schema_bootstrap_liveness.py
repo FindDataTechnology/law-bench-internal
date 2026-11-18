@@ -199,3 +199,38 @@ def test_shared_connection_follows_a_dsn_change(monkeypatch):
                     (n,),
                 )
                 maint.execute(f"DROP DATABASE IF EXISTS {n}")
+
+
+def test_bootstrap_repairs_a_table_missing_its_primary_key(fresh_db, rapid_lock_timeout):
+    """The production ``eval_runs`` has no PK; the bootstrapper must repair it.
+
+    Measured on the live pod 2026-11-18: ``pg_constraint`` for ``eval_runs`` was
+    empty. ``CREATE TABLE IF NOT EXISTS`` can never add a PK to an existing
+    table, so the omission survived every deploy — until a process first created
+    a table declaring ``REFERENCES eval_runs(id)``, at which point boot died with
+    ``InvalidForeignKey`` (CrashLoopBackOff). The repair runs BEFORE those
+    creates, so both the references and our new column work.
+    """
+    key = fresh_db.info.dbname
+    # Mimic production: the table exists, with data, and has no PK/unique key.
+    fresh_db.execute("CREATE TABLE eval_runs (id bigint, rubric_name text, all_pass integer)")
+    fresh_db.execute("INSERT INTO eval_runs VALUES (1, 'legacy', 1)")
+    fresh_db.commit()
+
+    store_mod._ensured_dbs.discard(key)
+    ensure_schema(fresh_db)  # must not raise
+
+    cols = {
+        r["column_name"]
+        for r in fresh_db.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'eval_runs'"
+        ).fetchall()
+    }
+    assert "baseline_run_id" in cols
+    assert "outcome" in cols
+    # The repair is the point: without it the FK-bearing CREATEs above cannot run.
+    pk = fresh_db.execute(
+        "SELECT contype FROM pg_constraint "
+        "WHERE conrelid = 'eval_runs'::regclass AND contype = 'p'"
+    ).fetchall()
+    assert pk, "the bootstrapper must have added the missing primary key"
