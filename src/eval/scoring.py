@@ -579,6 +579,19 @@ def evaluate_contract(
     if invalid_count:
         summary += f" ({invalid_count} invalid verdict(s) excluded from the score)"
 
+    # Verdict-ledger identity: the ruler is the criteria list that actually ran
+    # (passed in, not re-read — see the rubric_ruler docstring), the subject is
+    # the draft's own text. Computed here because both inputs are local.
+    from src.bench import verdicts as _verdicts
+
+    verdict_identity = {
+        "verdict_subject": _verdicts.text_subject(contract_text),
+        "verdict_ruler": _verdicts.rubric_ruler(rubric_name, criteria=criteria),
+        "verdict_outcome": _verdicts.score_outcome(
+            all_pass, n_total=n_total, n_invalid=invalid_count
+        ),
+    }
+
     return {
         "rubric": rubric_name,
         "score": 1.0 if all_pass else 0.0,
@@ -593,6 +606,13 @@ def evaluate_contract(
         "judge_model": getattr(metrics[0], "evaluation_model", None)
         or os.environ.get("EVAL_MODEL"),
         "scored_at": datetime.now(timezone.utc).isoformat(),
+        # Verdict-ledger identity (add-eval-verdict-ledger 3.1). Stored in the
+        # result dict rather than computed at each call site: the ruler digest
+        # must be the digest of the criteria that ACTUALLY judged this draft,
+        # and only this function holds that list. Call sites that write to the
+        # ledger read these three keys; call sites that don't (the CLI with
+        # --no-store, MCP wrappers) simply ignore them.
+        **verdict_identity,
     }
 
 
