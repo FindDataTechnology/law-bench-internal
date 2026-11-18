@@ -88,8 +88,12 @@ def finish(
     remaining: Optional[int] = None,
     artifact_refs: Optional[list] = None,
     detail: Optional[str] = None,
+    verdict_run_ids: Optional[list] = None,
 ) -> dict:
-    """收尾一轮，写入结局与计数。
+    """收尾一轮，写入结局与计数，以及本轮产出的评测结论 id。
+
+    ``verdict_run_ids`` 缺省 = 本轮没有产出结论，落空数组而不是猜一个「最近的」
+    ——links-to-nothing 和 links-to-the-wrong-thing 是两种不同的谎，后者更坏。
 
     重复收尾是幂等的：已结束的轮次不会被改写（否则"结局"就不可信了）。
     """
@@ -104,17 +108,19 @@ def finish(
         return current  # 已收尾：不改写
     row = conn.execute(
         "UPDATE domain_agent_runs SET outcome = %s, counts = %s::jsonb, remaining = %s, "
-        "artifact_refs = %s::jsonb, detail = %s, ended_at = now() "
+        "artifact_refs = %s::jsonb, detail = %s, verdict_run_ids = %s::jsonb, "
+        "ended_at = now() "
         "WHERE id = %s AND outcome = 'running' "
         "RETURNING id, role, domain_key, task_id, run_key, outcome, input_digest, "
         "          counts, remaining, artifact_refs, detail, started_at, ended_at, "
-        "          origin, runner_ref",
+        "          origin, runner_ref, verdict_run_ids",
         (
             outcome,
             _json(counts or {}),
             remaining,
             _json(artifact_refs or []),
             detail,
+            _json(verdict_run_ids or []),
             run_id,
         ),
     ).fetchone()
@@ -126,7 +132,7 @@ def get(conn: Any, *, run_id: int) -> Optional[dict]:
     row = conn.execute(
         "SELECT id, role, domain_key, task_id, run_key, outcome, input_digest, "
         "       counts, remaining, artifact_refs, detail, started_at, ended_at, "
-        "       origin, runner_ref "
+        "       origin, runner_ref, verdict_run_ids "
         "FROM domain_agent_runs WHERE id = %s",
         (run_id,),
     ).fetchone()
@@ -152,7 +158,7 @@ def list_runs(
     sql = (
         "SELECT id, role, domain_key, task_id, run_key, outcome, input_digest, "
         "       counts, remaining, artifact_refs, detail, started_at, ended_at, "
-        "       origin, runner_ref "
+        "       origin, runner_ref, verdict_run_ids "
         "FROM domain_agent_runs WHERE domain_key = %s"
     )
     params: list[Any] = [domain_key]
@@ -182,6 +188,7 @@ def record_external_run(
     artifact_refs: Optional[list] = None,
     detail: Optional[str] = None,
     task_id: Optional[int] = None,
+    verdict_run_ids: Optional[list] = None,
 ) -> tuple[dict, bool]:
     """Record a fleet round's outcome — ``(run, created)``.
 
@@ -221,11 +228,12 @@ def record_external_run(
         row = conn.execute(
             "INSERT INTO domain_agent_runs "
             "(role, domain_key, task_id, run_key, outcome, counts, remaining, "
-            " artifact_refs, detail, origin, runner_ref, ended_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb, %s, 'fleet', %s, now()) "
+            " artifact_refs, detail, origin, runner_ref, verdict_run_ids, ended_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb, %s, 'fleet', %s, "
+            "        %s::jsonb, now()) "
             "RETURNING id, role, domain_key, task_id, run_key, outcome, input_digest, "
             "          counts, remaining, artifact_refs, detail, started_at, ended_at, "
-            "          origin, runner_ref",
+            "          origin, runner_ref, verdict_run_ids",
             (
                 role,
                 domain_key,
@@ -237,6 +245,7 @@ def record_external_run(
                 _json(artifact_refs or []),
                 detail,
                 ref,
+                _json(verdict_run_ids or []),
             ),
         ).fetchone()
         conn.commit()
@@ -259,7 +268,7 @@ def get_by_runner_ref(conn: Any, *, runner_ref: str) -> Optional[dict]:
     row = conn.execute(
         "SELECT id, role, domain_key, task_id, run_key, outcome, input_digest, "
         "       counts, remaining, artifact_refs, detail, started_at, ended_at, "
-        "       origin, runner_ref "
+        "       origin, runner_ref, verdict_run_ids "
         "FROM domain_agent_runs WHERE runner_ref = %s ORDER BY id DESC LIMIT 1",
         ((runner_ref or "").strip(),),
     ).fetchone()
@@ -280,6 +289,50 @@ def summary(conn: Any, *, domain_key: str) -> dict:
         (domain_key,),
     ).fetchone()
     return {"by_outcome": by_outcome, "last": dict(last) if last else None}
+
+
+def verdicts_for_run(conn: Any, *, run_id: int, db_path: Any = None) -> list[dict]:
+    """The verdict rows this round produced (add-eval-verdict-ledger 4.2).
+
+    往返的另一半：本函数读出本轮指向的结论，:func:`run_for_verdict` 读出产出某条
+    结论的那一轮。两处都只按 id 查，不复制对方的内容。
+
+    空列表意味着「本轮没产出结论」——这是实话，不是故障。指向的结论行若已被清理，
+    该条如实少一条而**不是**补一个占位：编造一条结论比少一条更难发现。
+    """
+    run = get(conn, run_id=run_id)
+    if run is None:
+        return []
+    ids = run.get("verdict_run_ids") or []
+    if not ids:
+        return []
+    from src.eval.store import get_run
+
+    out = []
+    for verdict_id in ids:
+        try:
+            out.append(get_run(int(verdict_id), db_path=conn))
+        except KeyError:
+            continue  # 结论行已不存在：如实少一条，不编造占位
+    return out
+
+
+def run_for_verdict(conn: Any, *, verdict_run_id: int) -> Optional[dict]:
+    """The round that produced a given verdict, or None (4.2, reverse direction).
+
+    ``None`` is honest here: a verdict written by a path that is not a ledger
+    round (a CLI one-shot, a compare cell) has no round to point at, and
+    inventing "the most recent round" would attach evidence to the wrong work.
+    """
+    row = conn.execute(
+        "SELECT id, role, domain_key, task_id, run_key, outcome, input_digest, "
+        "       counts, remaining, artifact_refs, detail, started_at, ended_at, "
+        "       origin, runner_ref, verdict_run_ids "
+        "FROM domain_agent_runs "
+        "WHERE verdict_run_ids @> %s::jsonb ORDER BY id DESC LIMIT 1",
+        (_json([int(verdict_run_id)]),),
+    ).fetchone()
+    return dict(row) if row else None
 
 
 def _json(value: Any) -> str:

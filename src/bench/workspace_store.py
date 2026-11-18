@@ -353,4 +353,12 @@ ALTER TABLE domain_agent_runs
 CREATE UNIQUE INDEX IF NOT EXISTS domain_agent_runs_runner_ref_key
     ON domain_agent_runs (runner_ref)
  WHERE runner_ref IS NOT NULL;
+
+-- 产出结论互链（add-eval-verdict-ledger 4.1）：本轮产出的评测结论 id 列表。
+-- 数组而非单值，因为一轮运行可以对多个知识单元各产出一条结论。
+-- 默认空数组而非 NULL：NULL 要读面再分一次「没有结论」和「字段没填」，
+-- 而这两种在这张表里是同一件事——本轮没产出结论。
+-- 只存 id，不复制结论内容：两处各存一份必然漂移，台账的职责只是指路。
+ALTER TABLE domain_agent_runs
+    ADD COLUMN IF NOT EXISTS verdict_run_ids JSONB NOT NULL DEFAULT '[]'::jsonb;
 """

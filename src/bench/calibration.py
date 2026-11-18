@@ -44,6 +44,7 @@ from typing import Any, Optional
 
 from src.settings import DEFAULT_DB
 
+from . import verdicts
 from src.eval.store import store_result
 
 # Balanced-accuracy bar a calibration run must meet (tunable; historically
@@ -446,6 +447,27 @@ def run_calibration(
     ) + f"samples={samples}"
     if n_calls is not None:
         provenance += f", calls={n_calls}"
+
+    # ── verdict-ledger shape (add-eval-verdict-ledger 3.3) ──────────────────
+    # Subject = the judge itself (model + prompt version); ruler = the gold set
+    # this calibration ran against, with its canonical digest. Editing either
+    # the judge's prompt or the gold set changes an identity that the ledger
+    # records, so yesterday's calibration cannot silently vouch for today's.
+    #
+    # ``outcome`` is THREE-state and deliberately NOT the same thing as
+    # ``all_pass``: gates can pass on too little evidence (n below
+    # CALIBRATION_MIN_SAMPLES) and that is "inconclusive", not "pass". The
+    # legacy ``all_pass`` column keeps its exact meaning so the existing
+    # read paths (is_calibrated, drift_check) are untouched.
+    if not all_pass:
+        calibration_outcome = "fail"
+    elif n < CALIBRATION_MIN_SAMPLES:
+        calibration_outcome = "inconclusive"
+    else:
+        calibration_outcome = "pass"
+    judge_subject = verdicts.judge_subject_key(judge_model, prompt_version)
+    gold_ruler = verdicts.gold_set_ruler(validated, key=f"gold:{judge_subject}")
+
     run_id = store_result(
         {
             "rubric": rubric_name,
@@ -473,6 +495,14 @@ def run_calibration(
         db_path=db_path,
         channel="meta",
         unit_kind="judge",
+        subject_kind=verdicts.JUDGE_SUBJECT_KIND,
+        subject_key=judge_subject,
+        subject_version=gold_ruler["digest"],
+        ruler_kind=gold_ruler["kind"],
+        ruler_key=gold_ruler["key"],
+        ruler_digest=gold_ruler["digest"],
+        gate=verdicts.CALIBRATION_GATE,
+        outcome=calibration_outcome,
     )
 
     return {
@@ -523,7 +553,7 @@ def is_calibrated(
     """
     rubric_name = f"judge-calibration:{judge_model}@{prompt_version}"
     row = conn.execute(
-        "SELECT id, score, all_pass, summary FROM eval_runs "
+        "SELECT id, score, all_pass, summary, outcome FROM eval_runs "
         "WHERE rubric_name = %s AND judge_model = %s "
         "  AND channel = 'meta' AND unit_kind = 'judge' "
         "ORDER BY id DESC LIMIT 1",
@@ -540,6 +570,23 @@ def is_calibrated(
     mono_match = _MONO_FRAGMENT_RE.search(summary)
     ba_match = _BAL_ACC_FRAGMENT_RE.search(summary)
     n: Optional[int] = int(n_match.group(1)) if n_match else None
+
+    # ── the decision reads the ledger's three-state outcome ─────────────────
+    # ``all_pass`` alone cannot express "gates passed on too little evidence",
+    # so a run that squeaked past the gates at n=10 used to be reported as
+    # calibrated by the pack gate. The verdict ledger records that case as
+    # ``inconclusive``; this function and ``verdicts.provisional`` must give the
+    # same answer to the same question ("is this judge calibrated?"), so the
+    # outcome decides and the ``all_pass`` path below is the legacy fallback for
+    # rows written before the ledger existed (their outcome is derived from
+    # all_pass, so they reach the same verdict either way).
+    ledger_outcome = row["outcome"]
+    if ledger_outcome == "inconclusive":
+        return False, (
+            f"calibration run {row['id']} did not decide: the gates passed but "
+            f"on too little evidence (n={n if n is not None else 'unknown'}, "
+            f"minimum {CALIBRATION_MIN_SAMPLES} paired gold records)"
+        )
 
     if not bool(row["all_pass"]):
         # Monotonicity is its own gate: report it first when the summary
