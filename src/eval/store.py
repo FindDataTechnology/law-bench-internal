@@ -14,6 +14,8 @@ queried and compared over time. The schema is created idempotently.
 
 from __future__ import annotations
 
+import logging
+import os
 import threading
 import time
 from datetime import datetime, timezone
@@ -297,6 +299,24 @@ _ADDITIVE_COLUMNS = (
     # and every legacy insert path reading exactly as before.
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'text'; "
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS unit_kind TEXT NOT NULL DEFAULT 'clause'; "
+    # eval-verdict-ledger: every run names WHAT was evaluated (subject), WITH
+    # WHICH ruler (ruler + its canonical digest), under which gate, and what
+    # came out (outcome: pass/fail/inconclusive). All nullable: a legacy row
+    # that predates the ledger reads exactly as before, and a caller that
+    # passes none of the new args writes exactly the row it wrote yesterday.
+    # ``baseline_run_id`` is a self-reference; ON DELETE SET NULL because the
+    # FK target is the same table (a deleted run must not strand its children).
+    "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS subject_kind TEXT; "
+    "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS subject_key TEXT; "
+    "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS subject_version TEXT; "
+    "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS ruler_kind TEXT; "
+    "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS ruler_key TEXT; "
+    "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS ruler_digest TEXT; "
+    "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS gate TEXT; "
+    "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS outcome TEXT; "
+    "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS baseline_run_id BIGINT "
+    "  REFERENCES eval_runs(id) ON DELETE SET NULL; "
+    "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS provisional BOOLEAN NOT NULL DEFAULT false; "
     "ALTER TABLE IF EXISTS clauses ADD COLUMN IF NOT EXISTS manual BOOLEAN NOT NULL DEFAULT false; "
     "ALTER TABLE IF EXISTS clauses ADD COLUMN IF NOT EXISTS tags JSONB NOT NULL DEFAULT '{}'::jsonb; "
     "ALTER TABLE IF EXISTS clauses DROP COLUMN IF EXISTS province; "
@@ -417,6 +437,94 @@ ON CONFLICT DO NOTHING
 _ensured_dbs: set[str] = set()
 _ensure_lock = threading.Lock()
 
+_LOG = logging.getLogger(__name__)
+
+#: Tables whose presence defines "this database's schema is really there".
+#:
+#: Readiness is asserted by MEASURING these, never by "no exception was raised"
+#: (fix-ensure-schema-lock-masking). Keep the list in step with the write paths:
+#: a table missing here only makes the probe weaker, never wrong, but a table
+#: listed here that no path creates would make every call fail the probe.
+#:
+#: Only tables that THIS function creates belong here. ``rubrics`` / ``criteria``
+#: / ``prompts`` are deliberately absent: they come from ``harbor_seed.create_schema``
+#: (the seeded fixture's own path), so listing them would make every probe on a
+#: fresh DB fail for a reason that is not this function's business.
+_REQUIRED_TABLES: tuple[str, ...] = (
+    # eval engine
+    "eval_runs",
+    "eval_criteria_results",
+    "compare_runs",
+    "law_info",
+    "clauses",
+    "tag_dims",
+    "pipeline_runs",
+    # artifacts / keys / review
+    "contract_artifacts",
+    "api_keys",
+    "api_eval_runs",
+    "generation_jobs",
+    "review_tasks",
+    # bench kernel
+    "knowledge_units",
+    "domains",
+    "ontology_templates",
+    "authoring_tasks",
+    "domain_agent_runs",
+    "distribution_consumers",
+    "corpus_chunks",
+)
+
+#: Lock wait used for the DDL. Overridable so the concurrency tests do not each
+#: sit out the production 3s (a test proves the SEMANTICS, not the duration).
+_LOCK_TIMEOUT_ENV = "SCHEMA_LOCK_TIMEOUT_MS"
+_DEFAULT_LOCK_TIMEOUT_MS = 3000
+
+
+def _lock_timeout_ms() -> int:
+    raw = os.environ.get(_LOCK_TIMEOUT_ENV)
+    try:
+        value = int(raw) if raw else _DEFAULT_LOCK_TIMEOUT_MS
+    except (TypeError, ValueError):
+        value = _DEFAULT_LOCK_TIMEOUT_MS
+    return max(1, value)
+
+
+def _missing_required_tables(conn) -> list[str]:
+    """Which required tables are absent — one round trip, no writes."""
+    rows = conn.execute(
+        "SELECT t FROM unnest(%s::text[]) AS t "
+        "WHERE to_regclass('public.' || t) IS NULL",
+        (list(_REQUIRED_TABLES),),
+    ).fetchall()
+    return [r["t"] for r in rows]
+
+
+def _mark_ready(conn, key: str) -> None:
+    """Mark ``key`` ready — but only after measuring that the tables are there."""
+    missing = _missing_required_tables(conn)
+    if missing:
+        _LOG.error(
+            "schema bootstrap for %s finished its DDL but %d required table(s) "
+            "are still absent (%s); NOT marking ready",
+            key, len(missing), ", ".join(missing),
+        )
+        return
+    _ensured_dbs.add(key)
+
+
+def _probe_and_mark(conn, key: str) -> None:
+    """After a lock timeout: mark ready only if the tables measurably exist."""
+    missing = _missing_required_tables(conn)
+    if missing:
+        _LOG.warning(
+            "schema bootstrap for %s is incomplete (%d missing: %s); "
+            "not marking ready — the next call will retry",
+            key, len(missing), ", ".join(missing),
+        )
+        return
+    _ensured_dbs.add(key)
+
 
 def ensure_schema(db_path=DEFAULT_DB) -> None:
     """Create the results/compare tables if missing and migrate additive columns.
@@ -432,9 +540,10 @@ def ensure_schema(db_path=DEFAULT_DB) -> None:
             key = getattr(getattr(conn, "info", None), "dbname", None) or str(db_path)
             if key in _ensured_dbs:
                 return
-            # Set a short lock timeout so DDL doesn't deadlock with concurrent
-            # processes; the DDL is idempotent so skipping on lock timeout is safe.
-            conn.execute("SET lock_timeout = '3s'")
+            # A short lock timeout keeps concurrent first-boots from deadlocking
+            # each other. Timing out is NOT success, though: see the handler
+            # below and fix-ensure-schema-lock-masking.
+            conn.execute(f"SET lock_timeout = '{_lock_timeout_ms()}ms'")
             conn.execute(RESULTS_SCHEMA)
             conn.execute(LAW_INFO_SCHEMA)
             conn.execute(CLAUSES_SCHEMA)
@@ -465,12 +574,33 @@ def ensure_schema(db_path=DEFAULT_DB) -> None:
 
             conn.execute(_RAG_CORPORA_LEGAL_SEED, (SEARCH_INDEX_NAME,))
             conn.execute(_ADDITIVE_COLUMNS)
+            _mark_ready(conn, key)
             conn.commit()
-            _ensured_dbs.add(key)
         except psycopg.errors.LockNotAvailable:
-            # Another process holds the lock; schema should already exist from
-            # previous runs, so just mark as ensured and continue.
-            _ensured_dbs.add(key)
+            # Another process holds a lock we need. That is a normal race, not a
+            # failure — but it is ALSO not evidence that the schema exists. The
+            # old code assumed "the other process is building it" and marked the
+            # DB ready anyway; when both sides timed out, nothing was built and
+            # every later write failed with UndefinedTable from far away.
+            #
+            # So: do not raise (a race must not become an availability event),
+            # do not cache (the next call retries), and let the measurement
+            # decide whether we happen to be looking at a finished schema.
+            _LOG.warning(
+                "schema bootstrap for %s hit lock_timeout after %sms; "
+                "will retry on the next call",
+                key, _lock_timeout_ms(),
+            )
+            try:
+                # The timed-out DDL left this session's transaction aborted, so
+                # the probe cannot run until we end it. Rolling back is safe: the
+                # DDL is idempotent and nothing was committed by this attempt.
+                conn.rollback()
+                _probe_and_mark(conn, key)
+            except Exception:  # noqa: BLE001 - the probe is best-effort here
+                # A probe failure must not turn a retryable race into a crash;
+                # the cache stays empty either way, which is the safe outcome.
+                pass
         finally:
             conn.close()
     with _ensure_lock:
@@ -490,6 +620,16 @@ def store_result(
     draft_text: Optional[str] = None,
     channel: str = "text",
     unit_kind: str = "clause",
+    subject_kind: Optional[str] = None,
+    subject_key: Optional[str] = None,
+    subject_version: Optional[str] = None,
+    ruler_kind: Optional[str] = None,
+    ruler_key: Optional[str] = None,
+    ruler_digest: Optional[str] = None,
+    gate: Optional[str] = None,
+    outcome: Optional[str] = None,
+    baseline_run_id: Optional[int] = None,
+    provisional: bool = False,
 ) -> int:
     """Insert an evaluation run + its per-criterion verdicts. Returns the run id.
 
@@ -505,9 +645,22 @@ def store_result(
     ``'clause'``) match the column defaults, so every legacy insert path reads
     exactly as before; the deterministic data-check channel passes
     ``channel='data'`` with its own unit kind (see src/bench/data_checks.py).
+
+    The verdict-ledger args (``subject_*`` / ``ruler_*`` / ``gate`` / ``outcome``
+    / ``baseline_run_id`` / ``provisional``) are all optional and default to
+    None, so a caller that passes none of them writes the same row it always
+    did. When ``outcome`` is omitted it is derived from ``all_pass`` (1 → pass,
+    0 → fail) — never invented as 'inconclusive', which is a NEW semantic that
+    must not be back-filled onto historical rows. Validation of the gate and
+    outcome vocabularies lives in src/bench/verdicts.py and is applied by the
+    callers that actually speak the ledger vocabulary; this low-level writer
+    stays vocabulary-agnostic so every legacy path keeps working.
     """
     ensure_schema(db_path)
     now = datetime.now(timezone.utc).isoformat()
+    effective_outcome = outcome if outcome is not None else (
+        "pass" if result["all_pass"] else "fail"
+    )
 
     def _do_insert():
         conn = connect(db_path)
@@ -517,8 +670,12 @@ def store_result(
                 "(rubric_name, contract_path, task_desc, score, max_score, all_pass, "
                 " n_criteria, n_passed, summary, judge_model, scored_at, created_at, "
                 " compare_run_id, prompt_name, prompt_type, variant_label, draft_text, "
-                " channel, unit_kind) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                " channel, unit_kind, "
+                " subject_kind, subject_key, subject_version, "
+                " ruler_kind, ruler_key, ruler_digest, "
+                " gate, outcome, baseline_run_id, provisional) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
+                " %s,%s,%s, %s,%s,%s, %s,%s,%s,%s) "
                 "RETURNING id",
                 (
                     result["rubric"],
@@ -540,6 +697,16 @@ def store_result(
                     draft_text,
                     channel,
                     unit_kind,
+                    subject_kind,
+                    subject_key,
+                    subject_version,
+                    ruler_kind,
+                    ruler_key,
+                    ruler_digest,
+                    gate,
+                    effective_outcome,
+                    baseline_run_id,
+                    bool(provisional),
                 ),
             )
             run_id = cur.fetchone()["id"]
@@ -578,9 +745,72 @@ def list_runs(limit: int = 20, db_path=DEFAULT_DB) -> list[dict]:
         try:
             rows = conn.execute(
                 "SELECT id, rubric_name, contract_path, score, all_pass, "
-                "       n_passed, n_criteria, judge_model, scored_at "
+                "       n_passed, n_criteria, judge_model, scored_at, "
+                "       channel, unit_kind, "
+                "       subject_kind, subject_key, subject_version, "
+                "       ruler_kind, ruler_key, ruler_digest, "
+                "       gate, outcome, baseline_run_id, provisional "
                 "FROM eval_runs ORDER BY id DESC LIMIT %s",
                 (limit,),
+            ).fetchall()
+        finally:
+            conn.close()
+        return [dict(r) for r in rows]
+    return _retry_db_operation(_do_list)
+
+
+def list_verdicts(
+    subject_kind: Optional[str] = None,
+    subject_key: Optional[str] = None,
+    limit: int = 100,
+    db_path=DEFAULT_DB,
+    domain_paths: Optional[list[str]] = None,
+) -> list[dict]:
+    """Verdict-ledger rows, optionally narrowed to one subject.
+
+    Returns the ledger columns only (subject / ruler / gate / outcome / baseline)
+    plus the identity fields a trend line needs. Deliberately does NOT join
+    ``eval_criteria_results``: a trend query over N runs should not drag N×M
+    per-criterion rows along. Use :func:`get_run` for one run's detail.
+
+    As in :func:`list_runs`, an omitted filter means "no narrowing", never
+    "match the empty string".
+
+    ``domain_paths`` narrows to runs attributed to those domain paths (the
+    machine read face uses it to answer "what was judged in MY domain"). The
+    attribution column is ``rubric_domain_id`` — the same one
+    ``domain_rubrics.runs_for_domain`` reads, so a domain's verdict list and its
+    run list cannot disagree about which runs are its own.
+    """
+    where, args = [], []
+    if subject_kind is not None:
+        where.append("subject_kind = %s")
+        args.append(subject_kind)
+    if subject_key is not None:
+        where.append("subject_key = %s")
+        args.append(subject_key)
+    if domain_paths is not None:
+        if not domain_paths:
+            # An explicitly empty scope answers nothing. Returning everything
+            # would turn a mis-scoped caller into a cross-domain reader.
+            return []
+        where.append(
+            "rubric_domain_id IN (SELECT id FROM domains WHERE path = ANY(%s))"
+        )
+        args.append(list(domain_paths))
+    clause = f"WHERE {' AND '.join(where)} " if where else ""
+
+    def _do_list():
+        conn = connect(db_path)
+        try:
+            rows = conn.execute(
+                "SELECT id, rubric_name, score, all_pass, judge_model, scored_at, "
+                "       channel, unit_kind, "
+                "       subject_kind, subject_key, subject_version, "
+                "       ruler_kind, ruler_key, ruler_digest, "
+                "       gate, outcome, baseline_run_id, provisional "
+                f"FROM eval_runs {clause}ORDER BY id DESC LIMIT %s",
+                (*args, limit),
             ).fetchall()
         finally:
             conn.close()
@@ -601,7 +831,11 @@ def get_run(run_id: int, db_path=DEFAULT_DB) -> dict:
             row = conn.execute(
                 "SELECT id, rubric_name, contract_path, task_desc, score, max_score, "
                 "       all_pass, n_criteria, n_passed, summary, judge_model, "
-                "       scored_at, compare_run_id, prompt_name, prompt_type, variant_label "
+                "       scored_at, compare_run_id, prompt_name, prompt_type, variant_label, "
+                "       channel, unit_kind, "
+                "       subject_kind, subject_key, subject_version, "
+                "       ruler_kind, ruler_key, ruler_digest, "
+                "       gate, outcome, baseline_run_id, provisional "
                 "FROM eval_runs WHERE id = %s",
                 (run_id,),
             ).fetchone()

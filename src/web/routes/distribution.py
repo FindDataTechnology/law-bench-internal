@@ -303,6 +303,24 @@ def read_back_runs(
     }
 
 
+#: Closed vocabularies the verdict read face accepts. Kept next to the routes
+#: rather than imported from ``src.bench.verdicts`` so a bad value is refused
+#: BEFORE any DB work, and so the import stays lazy like the rest of this module.
+VERDICT_GATES = ("no-worse", "regression", "all-pass", "calibrated")
+VERDICT_OUTCOMES = ("pass", "fail", "inconclusive")
+
+
+def _reject_unknown(value, allowed, field: str) -> None:
+    """A wrong enum is a caller bug, not a filter that matches nothing."""
+    if value in (None, ""):
+        return
+    if value not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{field} '{value}' 不在闭集内：{list(allowed)}",
+        )
+
+
 def _fleet_consumer(request: Request, db: Any, domain_key: str) -> dict:
     """Authenticate AND require a ``fleet`` registration, returning it.
 
@@ -857,3 +875,145 @@ async def admin_domain_publish(
 router = APIRouter(tags=["distribution"])
 router.include_router(read_only_router)
 router.include_router(write_router)
+
+
+# --------------------------------------------------- verdict ledger read face #
+# add-eval-verdict-ledger exposed the ledger to in-process callers; a fleet that
+# runs in another process (or another product line entirely) had no way to read
+# it. These two routes are that way, and they are READ-ONLY by construction: no
+# route here creates a verdict, and none triggers an evaluation — evaluations
+# cost a judge lane and sometimes human gold.
+
+
+@read_only_router.get(
+    "/api/v1/distribution/{domain_key}/verdicts",
+    name="distribution_verdict_list",
+)
+def list_domain_verdicts(
+    domain_key: str,
+    request: Request,
+    subject_kind: Optional[str] = None,
+    subject_key: Optional[str] = None,
+    gate: Optional[str] = None,
+    outcome: Optional[str] = None,
+    limit: int = 100,
+    db: DbConn = Depends(get_db),
+):
+    """The evaluation verdicts attributed to this domain, newest first.
+
+    Scope is the same one the domain's run list uses (``rubric_domain_id`` +
+    the ancestor chain), so a consumer that reads both can never see them
+    disagree about what belongs here.
+
+    Closed vocabularies are enforced on the way IN rather than filtered out on
+    the way back: an unknown gate is a caller bug, and answering 200 with an
+    empty list would look exactly like "no such verdicts" — a different and
+    false statement.
+
+    ``inconclusive`` rows are returned alongside the rest, never folded into
+    ``fail``. A reader that collapses them learns the wrong lesson from a
+    broken judge.
+    """
+    from ...bench import inheritance
+
+    from ...eval import store as verdict_store
+
+    _fleet_consumer(request, db, domain_key)
+    _reject_unknown(gate, VERDICT_GATES, "gate")
+    _reject_unknown(outcome, VERDICT_OUTCOMES, "outcome")
+
+    domain = db.execute(
+        "SELECT path FROM domains WHERE key = %s", (domain_key,)
+    ).fetchone()
+    if domain is None:
+        raise HTTPException(status_code=404, detail=f"域不存在：{domain_key}")
+
+    rows = verdict_store.list_verdicts(
+        subject_kind=subject_kind,
+        subject_key=subject_key,
+        limit=max(1, min(int(limit or 100), 500)),
+        db_path=db,
+        domain_paths=inheritance.ancestors(domain["path"]),
+    )
+    if gate:
+        rows = [r for r in rows if r.get("gate") == gate]
+    if outcome:
+        rows = [r for r in rows if r.get("outcome") == outcome]
+    return {"domain": domain_key, "count": len(rows), "verdicts": rows}
+
+
+@read_only_router.get(
+    "/api/v1/distribution/{domain_key}/verdicts/{run_id}",
+    name="distribution_verdict_get",
+)
+def get_domain_verdict(
+    domain_key: str,
+    run_id: int,
+    request: Request,
+    db: DbConn = Depends(get_db),
+):
+    """One verdict with its per-criterion evidence.
+
+    The run is looked up first and its domain checked afterwards, so an id that
+    belongs to another domain answers 404 rather than 403 — the distinction
+    matters: 403 would confirm the id exists somewhere.
+    """
+    from ...bench import inheritance
+    from ...eval import store as verdict_store
+
+    _fleet_consumer(request, db, domain_key)
+    domain = db.execute(
+        "SELECT path FROM domains WHERE key = %s", (domain_key,)
+    ).fetchone()
+    if domain is None:
+        raise HTTPException(status_code=404, detail=f"域不存在：{domain_key}")
+
+    try:
+        run = verdict_store.get_run(run_id, db_path=db)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"结论不存在：{run_id}") from None
+
+    chain = set(inheritance.ancestors(domain["path"]))
+    attributed = db.execute(
+        "SELECT d.path FROM domains d "
+        "JOIN eval_runs e ON e.rubric_domain_id = d.id WHERE e.id = %s",
+        (run_id,),
+    ).fetchone()
+    if attributed is None or attributed["path"] not in chain:
+        raise HTTPException(status_code=404, detail=f"结论不存在：{run_id}")
+    return {"domain": domain_key, "verdict": run}
+
+
+@read_only_router.get(
+    "/api/v1/distribution/{domain_key}/rulers",
+    name="distribution_ruler_list",
+)
+def list_domain_rulers(domain_key: str, request: Request, db: DbConn = Depends(get_db)):
+    """The rulers this domain can be judged by, with their canonical digests.
+
+    A consumer that self-evaluates has to name a digest; handing it the list of
+    legal ones is what keeps it from inventing one. Rubric digests come from the
+    SAME canonical-digest kernel ``verdicts.rubric_ruler`` uses at write time,
+    so a verdict written here and a rule read here cannot disagree about "the
+    same ruler".
+
+    A rubric whose criteria cannot be read contributes nothing rather than
+    failing the whole list: one broken row must not blank the surface.
+    """
+    from ...bench import domain_rubrics, verdicts as bench_verdicts
+
+    _fleet_consumer(request, db, domain_key)
+    domain = db.execute(
+        "SELECT path FROM domains WHERE key = %s", (domain_key,)
+    ).fetchone()
+    if domain is None:
+        raise HTTPException(status_code=404, detail=f"域不存在：{domain_key}")
+
+    rulers: list[dict] = []
+    for rubric in domain_rubrics.effective_rubrics(db, domain_path=domain["path"]):
+        try:
+            ruler = bench_verdicts.rubric_ruler(rubric["name"], db_path=db)
+        except (KeyError, ValueError):
+            continue
+        rulers.append(ruler)
+    return {"domain": domain_key, "count": len(rulers), "rulers": rulers}
