@@ -81,6 +81,8 @@
 
 > 2026-11-06 终态：P0/P1/P2 全部上 spec；P3 主刀（五仓尺子迁入、meta-eval 漂移脚本）早已完成，**唯一未销账=判官 4.1 验收判据**（结构性误读已堵、分层门与采样一致率通道已上 spec，但无候选通过分层门、relay 退化致全量 bake-off 未跑通——4.1 保持不勾，见台账 P3 两行）。
 
+> **2026-11-18 补一阶（原分期表外）：跨线可比性**。P3 把尺子归一到了一个地方，但没有让**结论**可比——六条线各有一套门与落点，一行结论结构上无法与另一行放进同一张图。`add-eval-verdict-ledger` 补的就是这一阶：一条记录带 subject/ruler 地址、四道门闭集、三态结局、baseline 引用；`inconclusive`（判不出来）与 `fail`（判失败）在记录层就分开，从而无法被晋升闸误放行；未过校准门的判官产出 `provisional` 结论，不足以单独构成晋升依据——**判官 4.1 未销账这件事因此从「一句挂账」变成「结构性约束」**，不再依赖每次评审时有人记得。
+
 ## 八、Change 台账
 
 | Change | 内容 | 期 | 状态 |
@@ -99,5 +101,8 @@
 | P1 `add-bench-ops-tools`（paas 仓） | 壹座侧四个 MCP 工具（工单拉取/认领/完成、运行回写）+ pack 接线；凭据按舰队签发 | P1 | 📝 规划完成（strict 绿，+6）；须与上一条同片上产 |
 | P2 `add-typed-publications` | 尺子/金集可发布（种类由 pack 注册、digest 复用既有内核）+ 按种类拉取面；本体发布契约零改动 | P2 | 📝 规划完成（strict 绿，+5）；本体与尺子双表并存 |
 | P3 `add-domain-next-actions` | 区级「下一步」与总览优先清单、三类空态各自指引、入口可达性、纯读 | P3 | 📝 规划完成（strict 绿，+5 ~1）；依赖 P1/P2 的读面 |
+
+| P1 `add-eval-verdict-ledger` | 评测结论统一台账：subject/ruler 地址 + 四道门闭集 + 三态结局（`inconclusive` 不得冒充）+ baseline 可比性（digest 相等才可比）+ provisional 由校准推导 + 晋升后复测排队 + 机器读面三条只读端点 | P1 | ✅ **已归档上 spec（2026-11-18，19+4 项，全量 2256 绿）**：`eval-verdict-ledger` 新能力 9 需求入库；`bench-platform`/`domain-run-ledger`/`judge-channel-selection` 三处增量。三条线真接上（合同 all-pass / 数据 regression / 判官校准 calibrated）。落地时挖出并修掉两个静默失败（见下条） |
+| P1 `fix-ensure-schema-lock-masking` | 建表引导说真话：锁超时不得当成建表成功、就绪只能由实测表存在断言、共享连接跟随 DSN | P1 | ✅ **已归档上 spec（2026-11-18，8 项，全量 2256 绿）**：`schema-bootstrap-liveness` 新能力 3 需求入库。两个缺陷都有「旧代码红/新代码绿」铁证：① `LockNotAvailable` 被吞并标记就绪（并发首启双超时 → 零 DDL 但自称已建表 → 后续写入在远处炸且永不重试）；② `get_shared_conn()` 缓存连接不比对 DSN（运行期切库的进程把 DDL 全打进第一个库）。测试侧连带修掉 CrewAI telemetry 的 `SystemExit(0)` 随机掐断全量会话 |
 
 > 上述四件的顺序、判据与两条岔路的裁决见 `openspec/program.md`（2026-11-13 立）。
