@@ -134,12 +134,19 @@ The `resource` parameter (the registered API Resource indicator) MUST also be se
 - **THEN** the requirement above holds
 
 ### Requirement: exchange the `code` for tokens, validate … (#9)
-
-`GET /auth/callback` MUST exchange the `code` for tokens, validate the ID token against JWKS for identity, validate the access token against JWKS (with `aud` equal to `LOGTO_API_RESOURCE`), read the access token's `scope` claim as the identity's granted permissions, evaluate the scope-admission gate (per the web-rbac capability), and — only for an identity holding an admitted scope — set an httpOnly, Secure, SameSite=Lax session cookie containing the resolved user identity (including its scopes) before redirecting to the application root.
+`GET /auth/callback` MUST exchange the `code` for tokens, validate the ID token against JWKS for identity, validate the access token against JWKS (with `aud` equal to `LOGTO_API_RESOURCE`), read the access token's `scope` claim as the identity's granted permissions, evaluate the scope-admission gate (per the web-rbac capability),.
 
 #### Scenario: split-out behaviour 3
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
+### Requirement: Session cookie set only for admitted scopes
+
+The system MUST — and only for an identity holding an admitted scope — set an httpOnly, Secure, SameSite=Lax session cookie containing the resolved user identity (including its scopes) before redirecting to the application root.
+
+#### Scenario: unauthenticated identity leaves no cookie
+- **WHEN** the identity holds no admitted scope
+- **THEN** no session cookie is set
 
 ### Requirement: receive a `403` login-denied response and … (#10)
 

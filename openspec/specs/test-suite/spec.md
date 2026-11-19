@@ -80,7 +80,11 @@ The seeded database fixture SHALL confirm that the schema actually landed before
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds A fixture that proceeds to `TRUNCATE` a table that was never created reports `UndefinedTable` against whatever the test happened to touch — the failure then points at the test instead of at the bootstrap, which is why this assertion belongs here.
 ### Requirement: Evaluation Engine Coverage
-The suite SHALL cover `src/eval/` end to end: `rubric.py` (list/load, `KeyError` on unknown rubric, `ValueError` on rubric with no criteria); `store.py` (`ensure_schema` idempotency, `store_result` round-trip, `list_runs` ordering); `scoring.py` (all-pass aggregation, per-criterion result shape, a failing criterion producing `FAIL`, a judge-call error captured per criterion rather than sinking the run, `judge_model` fallback to `EVAL_MODEL`); `judge.py` (`_strip_litellm_prefix`, `RuntimeError` on missing env vars); and `manage.py` CRUD plus harbor-read-only guards (already present, retained and extended for the module split).
+The suite SHALL cover `src/eval/` end to end:
+
+#### Scenario: enumerated items
+- **WHEN** this requirement is applied
+- **THEN** the following items apply: `rubric.py` (list/load, `KeyError` on unknown rubric, `ValueError` on rubric with no criteria); `store.py` (`ensure_schema` idempotency, `store_result` round-trip, `list_runs` ordering); `scoring.py` (all-pass aggregation, per-criterion result shape, a failing criterion producing `FAIL`, a judge-call error captured per criterion rather than sinking the run, `judge_model` fallback to `EVAL_MODEL`); `judge.py` (`_strip_litellm_prefix`, `RuntimeError` on missing env vars); and `manage.py` CRUD plus harbor-read-only guards (already present, retained and extended for the module split).
 
 #### Scenario: All-pass scoring with an injected fake judge
 - **WHEN** `evaluate_contract` is called with a fake judge that returns success for every criterion
@@ -97,7 +101,6 @@ The suite SHALL cover `src/eval/` end to end: `rubric.py` (list/load, `KeyError`
 #### Scenario: Store round-trips a run and its verdicts
 - **WHEN** `store_result` persists a result dict and `list_runs` is then called
 - **THEN** the run appears with matching `score`, `all_pass`, `n_passed`, and `n_criteria`, ordered newest first
-
 ### Requirement: Drafting Pipeline Coverage
 The suite SHALL cover `src/llm.py` (env-driven config, defaults for temperature/max_tokens, a clear error when a role model env var is missing) and `src/crew.py` (`_templates_reference` loading seed templates, crew assembly producing agents and tasks) without performing an LLM kickoff.
 

@@ -32,16 +32,15 @@ The system SHALL execute the contract drafting pipeline in a fixed sequential or
 ### Requirement: Role Specialization
 Each agent SHALL have a distinct, well-defined role aligned with Chinese legal contract drafting:
 
-1. **Intake Clarifier**: Interprets the user's natural language request, extracts the contract type, parties, key terms, and any special requirements.
-2. **Drafter**: Writes a complete, formally worded Chinese legal contract draft based on the structured request.
-3. **Auditor**: Reviews the draft independently, flags legal risks, ensures 法条 citations are correct, and identifies missing mandatory clauses.
+#### Scenario: enumerated items
+- **WHEN** this requirement is applied
+- **THEN** the following items apply: 1. **Intake Clarifier**: Interprets the user's natural language request, extracts the contract type, parties, key terms, and any special requirements. 2. **Drafter**: Writes a complete, formally worded Chinese legal contract draft based on the structured request. 3. **Auditor**: Reviews the draft independently, flags legal risks, ensures 法条 citations are correct, and identifies missing mandatory clauses.
 
 #### Scenario: Specialized roles produce appropriate outputs
 - **WHEN** pipeline runs for "create a service agreement between A and B"
 - **THEN** Intake Clarifier outputs structured metadata: type = service agreement, party A = [name], party B = [name]
 - **THEN** Drafter outputs a complete draft agreement with properly numbered sections in formal Chinese legal language
 - **THEN** Auditor outputs a list of specific issues (e.g., "missing limitation of liability clause", "民法典 citation incorrect")
-
 ### Requirement: Volcengine Ark Endpoint
 The system SHALL connect to Volcengine Ark at the configured `OPENAI_API_BASE` endpoint using the configured `OPENAI_API_KEY`.
 
