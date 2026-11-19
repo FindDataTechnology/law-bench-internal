@@ -139,3 +139,25 @@ label 值只允许 alphanumerics/-/_/.，所以 apply 直接被拒。
 
 **这条要记**：公开化消毒会连 k8s 清单里的**取值**一起改，而注释与取值在
 同一个文件里长得一样。消毒后必须渲染一遍 YAML 再应用，不能只看 diff。
+
+## 7. 前端上产（2026-11-19）
+
+只出 api 不出 web 等于没做完——读面在 web bundle 里：
+
+| 步 | 结果 |
+|---|---|
+| 镜像 | `fd-wire/web:sha-e859390`，digest `sha256:face7dc7…`，smoke 通过 |
+| 滚 tag | `6609629` → ArgoCD `Synced/Healthy/Succeeded` |
+| pod | `fd-wire-web-67dcd7c8bc-7kfng` 1/1 Running |
+| 公网 bundle | `assets/index-CGY6gOOZ.js` 含「标准本体」与 `console/bench-ontology` |
+
+## 8. 跨仓 digest 对照（任务 5.4）
+
+两侧各取一次读数，**逐字相等**：
+
+```
+bench  ontology_publications  : legal v2 5897354d82a83f525de00d9581dd759386aa9e686ac9acb9f0340c9794e4a726
+wire   bench_ontology_snapshots: legal v2 5897354d82a83f525de00d9581dd759386aa9e686ac9acb9f0340c9794e4a726
+```
+
+这是「同一域、两侧各自查一次、逐字段一致」判据的成立形态——不是单侧自证。
