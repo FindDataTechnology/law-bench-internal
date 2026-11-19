@@ -137,3 +137,31 @@ def test_confirmation_rule_matches_the_seam():
         mine = sf._is_confirmed(row)
         theirs = cw.is_confirmed(row, threshold=0.8)
         assert mine == theirs, f"drifted on {row}"
+
+
+def test_source_catalog_peer_maps_by_id_not_system():
+    """The scouting import writes `peer.system = "source_catalog"` (fixed) and the
+    real source name in `peer.id`.
+
+    Reading `system` compared the literal string "source_catalog" against
+    crawl_sources rows, so a confirmed crosswalk never counted as mapped.
+    Found on a real chain 2026-11-19: confirmation succeeded, `mapped` stayed 0.
+    (The confidence here is above the review floor on purpose — the id-vs-system
+    bug is what this pins; the machine-declaration floor is pinned separately.)
+    """
+    row = {
+        "external_key": "organization:guangdong",
+        "relation": "maps_to",
+        "confidence": 0.9,
+        "peer": {"kind": "external_id", "system": "source_catalog", "id": "广东统计局"},
+    }
+    out = sf.classify(landed_sources=["广东统计局"], crosswalks=[row])
+    assert out["mapped"] == 1
+    assert out["landed_not_mapped"] == []
+
+
+def test_explicit_source_attribute_wins():
+    row = {"source": "real-src", "confidence": 0.9,
+           "peer": {"system": "source_catalog", "id": "other"}}
+    out = sf.classify(landed_sources=["real-src"], crosswalks=[row])
+    assert out["mapped"] == 1

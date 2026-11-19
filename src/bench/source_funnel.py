@@ -64,15 +64,26 @@ def classify(
     """
     landed = set(landed_sources)
 
-    # peer.system carries the source identity for crosswalks written by the
-    # source-scouting import. Rows that name no source are not attributable and
-    # therefore map nothing.
+    # A crosswalk written by the source-scouting import names the source in
+    # `peer.id`, while `peer.system` is the fixed catalog name
+    # ("source_catalog"). Reading `system` alone would compare "source_catalog"
+    # against crawl_sources rows and always find nothing — measured 2026-11-19
+    # on a real chain: confirmation succeeded and `mapped` stayed 0.
+    #
+    # `source` on the row wins when present; otherwise take `peer.id`, falling
+    # back to `peer.system` for mappings whose peer names a provider directly.
     mapped_systems: set[str] = set()
     evaluable_systems: set[str] = set()
 
     for row in crosswalks:
         peer = (row or {}).get("peer") or {}
-        system = peer.get("system") if isinstance(peer, dict) else None
+        if not isinstance(peer, dict):
+            continue
+        system = (
+            (row or {}).get("source")
+            or peer.get("id")
+            or (peer.get("system") if peer.get("system") != "source_catalog" else None)
+        )
         if not system:
             continue
         if confirmed_only and not _is_confirmed(row):

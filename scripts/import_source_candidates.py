@@ -117,6 +117,11 @@ def plans(candidates: dict, *, anchor: str) -> list[dict]:
                             "system": "source_catalog",
                             "id": str(row.get("id") or row.get("name")),
                         },
+                        # Deliberately below the review floor (0.8): this is a
+                        # machine declaration, and the platform only counts a
+                        # mapping once a human confirms it. Writing a high
+                        # confidence here would make AI declarations count as
+                        # reviewed — the one thing the seam forbids.
                         "confidence": 0.5,
                     },
                     "concept_family": concept,
