@@ -110,6 +110,22 @@ def _operator_of(user: User) -> str:
     return user.email or user.name or user.sub
 
 
+def _admin_confirming_own(user: User, db: DbConn, domain_key: str,
+                          proposal_id: int) -> bool:
+    """Whether this click is an admin waiving the rule for their OWN proposal.
+
+    Only then does `admin_override` mean anything. Passing it for every admin
+    made the confirm button dead for any fleet-submitted proposal: the kernel
+    refuses the waiver for machine authors, so the click reported a permission
+    error and nothing landed.
+    """
+    if not is_platform_admin(user):
+        return False
+    proposal = bench_proposals.get(db, domain_key=domain_key,
+                                   proposal_id=proposal_id)
+    return bool(proposal) and proposal.get("submitted_by") == _operator_of(user)
+
+
 def _anchored_schema(conn: DbConn, domain: dict) -> dict:
     """The exact template-version schema the domain is anchored to."""
     tmpl = bench_templates.get_template_by_id(conn, template_id=domain["template_id"])
@@ -1116,7 +1132,17 @@ def console_inbox_confirm(
             domain_key=domain_key,
             proposal_id=proposal_id,
             actor=_operator_of(user),
-            admin_override=is_platform_admin(user),
+            # `admin_override` means "waive the separation-of-duties rule", not
+            # "the clicker happens to be an admin". Passing it unconditionally
+            # made every admin unable to confirm anything a fleet submitted —
+            # the kernel refuses the waiver for machine-authored proposals, so
+            # the click produced "管理员豁免不适用于机器身份提交的提案" and nothing
+            # landed (found 2026-11-19 clicking 确认落库 in a real browser).
+            #
+            # The rule is about self-confirmation: waive only when the admin is
+            # confirming their OWN submission.
+            admin_override=_admin_confirming_own(user, db, domain_key,
+                                                proposal_id),
         )
     except PermissionError as exc:
         return _flash(back, "console.flash.proposal_failed", err=True, detail=str(exc))

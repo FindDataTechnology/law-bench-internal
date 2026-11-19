@@ -55,3 +55,21 @@ def test_unmapped_manage_error_returns_500(app_client: TestClient, monkeypatch):
     r = app_client.get("/api/rubrics")
     assert r.status_code == 500
     assert r.json()["error"] == "unexpected"
+
+
+def test_admin_override_only_when_confirming_own_proposal():
+    """`admin_override` means "waive separation of duties", not "I am an admin".
+
+    Passing it for every admin made the confirm button dead for any
+    fleet-submitted proposal: the kernel refuses the waiver for machine authors,
+    so clicking 确认落库 reported a permission error and nothing landed.
+    Found 2026-11-19 in a real browser.
+    """
+    from src.web.routes.console import _admin_confirming_own
+    from src.web.auth.deps import User
+
+    admin = User(sub="a", name="a", email="admin@x", scopes=["*"], channel="t")
+    plain = User(sub="b", name="b", email="b@x", scopes=["content:write"], channel="t")
+
+    # Non-admin never waives, regardless of authorship.
+    assert _admin_confirming_own(plain, None, "d", 1) is False
