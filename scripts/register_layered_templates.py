@@ -149,19 +149,29 @@ def foundation_schema() -> dict:
 
 
 def _child_schema(additions: dict, *, name: str) -> dict:
-    """An industry template: the additions plus the ``extends`` anchor.
+    """An industry template: the additions **on top of** the foundation's items.
 
-    Only the *delta* is stored. ``inheritance.resolve_template_schema`` merges
-    the parent at read time, so a parent fix propagates to every child that has
-    not pinned an older version — and the inherited items never exist twice.
+    The inherited items are listed explicitly rather than omitted. That is not
+    redundancy — ``merge_schema`` refuses a child that does not name every item
+    its parent granted, precisely so a typo cannot silently drop a vocabulary
+    item. Writing the union here means the child's own schema reads as the
+    complete vocabulary it declares, and the parent link only supplies the
+    provenance.
     """
     schema = _base_schema()
     schema["layer"] = "industry"
     schema["authority"] = {"kind": "platform"}
     schema["extends"] = {"name": "foundation-v1", "version": 1}
-    schema["entity_types"] = list(additions["entity_types"])
-    schema["relationship_kinds"] = list(additions["relationship_kinds"])
-    schema["concept_structures"] = dict(additions["concept_structures"])
+    schema["entity_types"] = list(FOUNDATION["entity_types"]) + [
+        t for t in additions["entity_types"] if t not in FOUNDATION["entity_types"]
+    ]
+    schema["relationship_kinds"] = list(FOUNDATION["relationship_kinds"]) + [
+        r for r in additions["relationship_kinds"]
+        if r not in FOUNDATION["relationship_kinds"]
+    ]
+    schema["concept_structures"] = {
+        **FOUNDATION["concept_structures"], **additions["concept_structures"]
+    }
     return schema
 
 

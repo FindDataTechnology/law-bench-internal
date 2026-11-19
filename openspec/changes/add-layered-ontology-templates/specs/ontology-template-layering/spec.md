@@ -24,17 +24,25 @@
 
 ### Requirement: 层内可继承，跨层不可继承
 
-模板 SHALL 允许 `extends` 指向**同层**的另一模板的具体版本，继承其词表并按既有的「只增不删」规则合并。`extends` 指向不同层的模板时 SHALL 被拒绝，错误 SHALL 指明两端各自的层。
+模板 SHALL 允许 `extends` 指向另一模板的具体版本，继承其词表并按既有的「只增不删」规则合并。
 
-跨层的语义关联 SHALL 以 `aligned_with` 声明表达，而不是继承。`aligned_with` SHALL 只声明「同层某类型与另一层某类型是同一概念」，MUST NOT 合并两层的词表，也 MUST NOT 使任一侧获得对方的类型。
+**继承的判据是权威，不是层号。** `extends` 两端 SHALL 同属一种 `authority.kind`（`platform` / `external` / 未声明层的 `legacy` 伪权威）才允许合并；权威不同时 SHALL 拒绝，错误 SHALL 指明两端各自的层与权威，并指出正确做法。
 
-#### Scenario: 同层继承通过
-- **WHEN** 一份 `industry` 模板 `extends` 另一份 `industry` 模板
-- **THEN** 保存成功，有效词表为父模板全部类型加子模板新增类型
+这条按权威而非层号判定，是因为两者回答不同的问题：**层**排的是「多具体」（foundation → industry → domain），**权威**答的是「谁能发版」。foundation 层喂给 industry 层正是它存在的意义；真正不能合并的是「平台自有词表」与「外部包自有词表」——两者有各自的发布节奏，合并会强迫一侧接受另一侧的生命周期。
 
-#### Scenario: 跨层继承被拒
-- **WHEN** 一份 `industry` 模板 `extends` 一份 `foundation` 模板
-- **THEN** 保存被拒绝，错误同时报出父层 `foundation` 与子层 `industry`
+跨权威的语义关联 SHALL 以 `aligned_with` 声明表达，而不是继承。`aligned_with` SHALL 只声明「某类型与另一权威的某类型是同一概念」，MUST NOT 合并两侧词表，也 MUST NOT 使任一侧获得对方的类型。
+
+#### Scenario: foundation 喂给 industry 是正常关系
+- **WHEN** 一份 `platform` 权威的 `industry` 模板 `extends` 同样 `platform` 权威的 `foundation` 模板
+- **THEN** 合并成功，有效词表为父层全部类型加子模板新增类型
+
+#### Scenario: 外部权威不可被合并进平台词表
+- **WHEN** 一份 `platform` 模板 `extends` 一份 `authority.kind=external` 的模板
+- **THEN** 合并被拒绝，错误同时报出两端的权威并指出应改用 `aligned_with`
+
+#### Scenario: 子模板必须列全继承项
+- **WHEN** 子模板 `extends` 父模板但 `entity_types` 里没有列出父模板的某个类型
+- **THEN** 合并被拒绝并点名该类型（防的是打错字把整个词表项悄悄丢掉）
 
 #### Scenario: 跨层对齐不合并词表
 - **WHEN** 观测层模板声明 `aligned_with: {target: foundation-v1, type_map: {company: organization}}`
