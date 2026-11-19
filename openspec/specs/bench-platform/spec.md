@@ -87,16 +87,7 @@
 
 ### Requirement: 柏讯实体升格契约
 
-平台 SHALL 从 fd-wire entity-layer 读取实体/关系声明作为 **seed 升格原料**，按 raw→bronze→silver→gold 审核流升格。seed 导入 SHALL 是**一次性**操作：重复导入幂等（零新增行、不 bump 更新时间），但平台 MUST NOT 以定时任务或常驻通道持续镜像 wire 的变化——平台的工作 MUST NOT 因为 wire 停止变化而停止。
-
-**wire 是 seed 原料源，已发布本体的权威源是平台**（蓝图 §六）。平台发布面是全部消费者的唯一权威分发路径；wire 侧本地存储与平台发布版本的分歧按消费者侧本地版本化处理，MUST NOT 形成第二权威。
-
-升格流水线 SHALL 保证：
-
-- seed 阶段 wire 为原料身份的参照键（平台 KU 以 wire 源引用与 `external_key` 回指 seed）；
-- 两层之间的语义同一性 SHALL 只经 crosswalk 表达（见 `bench-wire-seam`），MUST NOT 靠复制词表或以 wire 键作为平台主键来「实现对齐」；
-- gold 回写 wire 时 SHALL 附带 `sensitivity`/`tier` 标记（面向 seed 源的档位回写，供其 ACL 与舰队消费）；回写方向 SHALL 单向——只承载平台已确认的标注，MUST NOT 承载 wire 实体的结构性变更，且机器草稿 MUST NOT 触发回写；
-- 升格与回写全程 SHALL 可追溯（每条 gold 可回指 wire 源声明与审核人）；发布契约见 `knowledge-distribution`。
+平台 SHALL 从 fd-wire entity-layer 读取实体/关系声明作为 **seed 升格原料**，按 raw→bronze→silver→gold 审核流升格。
 
 #### Scenario: 实体升格入库
 - **WHEN** 一次性导入 wire 实体声明并经机器预标注（bronze）与人工核验（gold）
@@ -118,6 +109,61 @@
 - **WHEN** 消费者（含 wire）经分发面拉取平台已发布本体
 - **THEN** 快照以平台发布版本为权威（digest 锚定），消费者本地处理不构成第二权威源；wire 本地存储与平台发布版本的分歧按消费者侧本地版本化处理（对账依 pull 面）
 
+### Requirement: 是**一次性**操作：重复导入幂等（零新增行、不 bump 更新时间），但平台 MUST NOT 以定时任务或常驻通道持续镜像 … (#1)
+
+seed 导入 SHALL 是**一次性**操作：重复导入幂等（零新增行、不 bump 更新时间），但平台 MUST NOT 以定时任务或常驻通道持续镜像 wire 的变化——平台的工作 MUST NOT 因为 wire 停止变化而停止。 **wire 是 seed 原料源，已发布本体的权威源是平台**（蓝图 §六）。 平台发布面是全部消费者的唯一权威分发路径；
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 形成第二权威 (#2)
+
+wire 侧本地存储与平台发布版本的分歧按消费者侧本地版本化处理，MUST NOT 形成第二权威。
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 保证： - seed 阶段 wire 为原料身份的参照键（平台 … (#3)
+
+升格流水线 SHALL 保证： - seed 阶段 wire 为原料身份的参照键（平台 KU 以 wire 源引用与 `external_key` 回指 seed）；
+
+#### Scenario: split-out behaviour 5
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 只经 crosswalk 表达（见 `bench-wire-seam`），MUST NOT 靠复制词表或以 … (#4)
+
+- 两层之间的语义同一性 SHALL 只经 crosswalk 表达（见 `bench-wire-seam`），MUST NOT 靠复制词表或以 wire 键作为平台主键来「实现对齐」；
+
+#### Scenario: split-out behaviour 6
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 附带 `sensitivity`/`tier` 标记（面向 seed 源的档位回写，供其 ACL … (#5)
+
+- gold 回写 wire 时 SHALL 附带 `sensitivity`/`tier` 标记（面向 seed 源的档位回写，供其 ACL 与舰队消费）；
+
+#### Scenario: split-out behaviour 7
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 单向——只承载平台已确认的标注，MUST NOT 承载 wire 实体的结构性变更，且机器草稿 MUST … (#6)
+
+回写方向 SHALL 单向——只承载平台已确认的标注，MUST NOT 承载 wire 实体的结构性变更，且机器草稿 MUST NOT 触发回写；
+
+#### Scenario: split-out behaviour 8
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 可追溯（每条 gold 可回指 wire 源声明与审核人） (#7)
+
+- 升格与回写全程 SHALL 可追溯（每条 gold 可回指 wire 源声明与审核人）； 发布契约见 `knowledge-distribution`。
+
+#### Scenario: split-out behaviour 9
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: 开源切分边界
 
 公共仓 SHALL 仅含内核、域包接口与法律域包；内部域包（柏讯连接器、内部语料、gold 数据集、客户数据）SHALL 存于内部仓（law-bench-internal）。公共仓 CI SHALL 增加泄露扫描：内部仓路径引用、凭据形态、客户数据样本 SHALL 令构建失败；公共仓文档中的能力宣称 SHALL 与公共仓实际可运行面一致。
