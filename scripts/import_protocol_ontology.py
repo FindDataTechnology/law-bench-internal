@@ -82,6 +82,37 @@ def _load_registry(source_dir: Path | None):
     return load_vocabulary()
 
 
+def _aligned_with(registry) -> list:
+    """Cross-layer alignment, read from the protocol's own declaration.
+
+    Hardcoding the map here was a second copy of a fact the protocol already
+    publishes (`vocabulary/alignment/foundation.yaml`), and the two drifted
+    immediately: this file listed 7 entries while the declaration had 8 (it was
+    missing `venue`). Reading the declaration means there is exactly one place
+    to add an alignment.
+
+    An empty/missing declaration is not an error — an older protocol release
+    simply has no alignment file, and the template then declares none.
+    """
+    from fd_open_data_protocol.vocabulary import load_alignment
+
+    try:
+        declared = load_alignment()
+    except Exception:  # noqa: BLE001 - alignment is optional; never block an import
+        return []
+    alignments = declared.get("alignments") or {}
+    if not alignments:
+        return []
+    target = declared.get("target") or {}
+    return [
+        {
+            "target_template": target.get("template", "foundation-v1"),
+            "target_layer": target.get("layer", "foundation"),
+            "type_map": {src: entry["to"] for src, entry in alignments.items()},
+        }
+    ]
+
+
 def build_schema(registry) -> dict:
     """The six required keys, with vocabularies taken verbatim from the release."""
     entity_types = list(registry.entity_type_ids())
@@ -104,21 +135,7 @@ def build_schema(registry) -> dict:
         # the observation layer's `company` is an object being observed (it has
         # tickers and identifiers), the foundation's `organization` is a party
         # to transactions. Same referent, different lifecycles.
-        "aligned_with": [
-            {
-                "target_template": "foundation-v1",
-                "target_layer": "foundation",
-                "type_map": {
-                    "company": "organization",
-                    "organization": "organization",
-                    "institution": "organization",
-                    "city": "place",
-                    "port": "place",
-                    "person": "person",
-                    "author": "person",
-                },
-            }
-        ],
+        "aligned_with": _aligned_with(registry),
         "entity_types": entity_types,
         "concept_structures": {concept: ["code", "unit", "frequency"] for concept in concept_ids},
         "relationship_kinds": relation_ids,

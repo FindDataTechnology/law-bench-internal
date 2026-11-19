@@ -67,3 +67,40 @@ def test_importer_builds_a_valid_template_from_the_installed_package():
         "the importer fell back to a checkout — in the image there is none"
     )
     assert "30 entity types" in out.stdout
+
+
+def test_alignment_declaration_ships_in_the_wheel():
+    """`vocabulary/alignment/*.yaml` is one level deeper than the six pinned files.
+
+    package-data's `vocabulary/*.yaml` does not match it. When that line was
+    missing the wheel simply had no alignment file, and `load_alignment()`
+    returns empty for a missing file (deliberately — an older checkout is
+    valid), so the failure was completely silent: declaration written, logic
+    working, tests green on the working tree, alignment empty in the image.
+    """
+    from fd_open_data_protocol.vocabulary import load_alignment
+
+    declared = load_alignment()
+    assert declared["alignments"], "alignment declaration is missing from the wheel"
+    assert declared["target"]["layer"] == "foundation"
+    assert declared["alignments"]["company"]["to"] == "organization"
+
+
+def test_importer_reads_alignment_from_the_declaration_not_a_local_copy():
+    """One place to add an alignment: the protocol's own file.
+
+    Hardcoding the map in the importer was a second copy, and the two drifted
+    immediately — the copy listed 7 entries while the declaration had 8.
+    """
+    import subprocess
+    import sys
+
+    out = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "import_protocol_ontology.py"),
+         "--dry-run"],
+        capture_output=True, text=True, cwd=REPO_ROOT, timeout=120,
+    )
+    assert out.returncode == 0, out.stderr
+    assert "8 alignments" in out.stdout, (
+        "the importer must report the number the declaration holds"
+    )

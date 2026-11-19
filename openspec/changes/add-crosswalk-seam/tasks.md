@@ -30,8 +30,8 @@
 
 ## 6. 协议侧对齐声明
 
-- [ ] 6.1 `fd-open-data-protocol` 新增 `vocabulary/alignment/foundation.yaml`（`company → organization`、`city → place` 等映射），不改六个既有词表文件；验证：`git diff --stat` 只显示新增文件；既有 golden digest 测试全绿
-- [ ] 6.2 读取该声明的入口函数（只读，无副作用）；验证：单元测试断言声明可解析、未声明时返回空集而不是抛错
+- [x] 6.1 `fd-open-data-protocol` 新增 `vocabulary/alignment/foundation.yaml`（`company → organization`、`city → place` 等映射），不改六个既有词表文件；验证：`git diff --stat` 只显示新增文件；既有 golden digest 测试全绿
+- [x] 6.2 读取该声明的入口函数（只读，无副作用）；验证：单元测试断言声明可解析、未声明时返回空集而不是抛错
 
 ## 7. ERP 侧切换（跨仓）
 
