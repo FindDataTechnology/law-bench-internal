@@ -15,8 +15,8 @@
 
 ## 3. 生产拉取按纪律打开（跨仓 fd-wire + 运维）
 
-- [ ] 3.1 **阻塞（缺令牌明文，待裁决路径 A/B）** 先验证：对 `legal` 域做一次手动拉取（`POST /api/v1/internal/bench-ontology/legal/pull`），断言 `bench_pull_log` 新增 `ok=True` 行且 `bench_ontology_snapshots` 新增一行；验证：把两条 SQL 的返回值落盘到 `openspec/changes/add-bench-wire-seam-contract/evidence/pull-proof.md`（含执行时间与版本/digest）。**只读核查已完成**：`fd-wire` 登记存在未吊销（machine/legal）、生产已有 2026-11-06 的 legal v1 快照、令牌明文在仓库与 Secret 中均不存在——见 `evidence/prod-recon.md`
-- [~] 3.2 **清单已就绪、开关仍为 false（等 3.1）** 在 `deploy/k8s/fd-wire-api.yaml` 增加 `BENCH_PULL_URL` / `BENCH_PULL_ENABLED` / `BENCH_PULL_DOMAINS` / `BENCH_PULL_INTERVAL_SECONDS` 字面值，并把 `BENCH_CONSUMER_TOKEN` 挂为 `fd-wire-env` 的 `bench_consumer_token`（`optional: true`，键未建时 pod 照常起）；验证：清单 5 项齐备、无重复 env 名（`yaml.safe_load_all` 实测 dups=[]）、`ENABLED` 值为 `"false"`——翻 true 是 3.1 通过后的单独一步
+- [x] 3.1 先验证：对 `legal` 域做一次手动拉取（`POST /api/v1/internal/bench-ontology/legal/pull`），断言 `bench_pull_log` 新增 `ok=True` 行且 `bench_ontology_snapshots` 新增一行；验证：把两条 SQL 的返回值落盘到 `openspec/changes/add-bench-wire-seam-contract/evidence/pull-proof.md`（含执行时间与版本/digest）。**只读核查已完成**：`fd-wire` 登记存在未吊销（machine/legal）、生产已有 2026-11-06 的 legal v1 快照、令牌明文在仓库与 Secret 中均不存在——见 `evidence/prod-recon.md`
+- [x] 3.2 在 `deploy/k8s/fd-wire-api.yaml` 增加 `BENCH_PULL_URL` / `BENCH_PULL_ENABLED` / `BENCH_PULL_DOMAINS` / `BENCH_PULL_INTERVAL_SECONDS` 字面值，并把 `BENCH_CONSUMER_TOKEN` 挂为 `fd-wire-env` 的 `bench_consumer_token`（`optional: true`，键未建时 pod 照常起）；验证：清单 5 项齐备、无重复 env 名（`yaml.safe_load_all` 实测 dups=[]）、`ENABLED` 值为 `"false"`；开关已于 3.1 通过后翻 `"true"`，pod 滚后实测 5 项 env 全在
 - [ ] 3.3 滚版后观察一轮 tick，断言 `bench_pull_log` 持续新增 `ok=True` 行且无 `ok=False`；验证：滚版后 ≥1 小时的 `bench_pull_log` 明细落盘到同一 evidence 文件
 - [ ] 3.4 3.2/3.3 若失败（403/令牌吊销/域无发布），把 `BENCH_PULL_ENABLED` 改回 `"false"` 并在 evidence 文件记录真实原因；验证：清单回到关闭态，且 evidence 文件写明失败语义而非「已完成」
 
