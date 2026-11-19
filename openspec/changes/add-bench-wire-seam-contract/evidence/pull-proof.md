@@ -286,14 +286,32 @@ tick 2   13:02:56Z   ok=True  v2   （+60m07s）
 
 非人工触发，无失败行。任务 3.3 的「持续新增 ok=True」成立。
 
-### 未完成的验证
+### CI 验证（`FindDataTechnology/fd-wire`，仓已转 public）
 
-本修复的两条新回归用例（`test_console_overview_pulled_at_tracks_last_ok_pull`
-与 `test_console_overview_failed_pull_does_not_move_pulled_at`）**尚未跑过
-CI**：承载 fd-wire 测试的公开镜像仓 `scs001/fd-wire-images` 已在此期间被
-归档（`isArchived: true`，推送被拒），而 `scs001/platform-image-verify` 装的是
-另一套代码树，不能用来跑本仓测试。这属于外部变化，非本 change 引入。
+此前我误以为 fd-wire 仍是私有仓（Actions 额度耗尽跑不起来），实际它已转
+public，`build.yml` 一直在跑。这一轮 CI 的价值立刻兑现：**抓到一条我自己
+写错的用例**。
 
-当前证据边界应如实读作：本修复经**生产实测**证明有效（两个字段值正确），
-其单元测试在本机 `py_compile` 与 `tsc --noEmit` 层面无语法/类型错误，
-但未在 CI 上执行过。
+```
+FAILED test_console_overview_pulled_at_tracks_last_ok_pull
+assert '2026-11-19T14:01:14.541125'.startswith('2026-11-19T12:20')
+```
+
+真因不是产品缺陷：`log_pull` 的 `pulled_at` 由 `default=_utcnow` 落**当前
+时刻**，比用例钉的 `first`/`later` 都新；我只把最后一行 UPDATE 到 `later`，
+前一行仍是「现在」，于是它赢了 `ORDER BY pulled_at DESC`。修法（`11b9a13`）
+是把该域**所有**日志行钉到 `later`。
+
+复跑结果（run 44541439133）：
+
+| 作业 | 结果 |
+|---|---|
+| `api-gate`（阻塞闸） | **success** |
+| `api-full-advisory` | **1 failed / 1993 passed / 14 skipped** |
+| 其余 10 个（build-push ×3、connector ×5、connector-test、connector-promote） | 全部 success |
+
+唯一失败 `test_sensitivity_closure_render_recheck_after_ancestor_change` 是
+`build.yml` 注释里早就注明的 CI 专属闪现场景（"同一棵树同一版本在 CI 红、
+本地 15/15 绿"），与 `bench_pull` 无关。
+
+本修复的两条新用例**在 CI 上转绿**；此前「只有 py_compile」的说法作废。
