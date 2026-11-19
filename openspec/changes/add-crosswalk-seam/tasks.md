@@ -1,14 +1,14 @@
 ## 1. crosswalk 单元与校验
 
-- [ ] 1.1 新建 `src/bench/crosswalk.py`：三种关系种类闭集、端点两形态校验、`validate_crosswalk(attrs) -> list[str]` 纯函数；验证：新增 `tests/test_bench_crosswalk.py`，`relation="equivalent"` 被拒且列出三值、`external_id` 缺 `system` 被拒、`ontology` 形态合法通过
-- [ ] 1.2 方向派生：给定对端查询反向映射，不写反向行；验证：用例断言反向查询返回本端且 `knowledge_units` 行数在查询前后不变
-- [ ] 1.3 `role_of` 方向语义固定（角色实体 → 目标实体）；验证：用例断言 `customer:acme --role_of--> organization:acme-corp` 校验通过，反向提交被拒
+- [x] 1.1 新建 `src/bench/crosswalk.py`：三种关系种类闭集、端点两形态校验、`validate_crosswalk(attrs) -> list[str]` 纯函数；验证：新增 `tests/test_bench_crosswalk.py`，`relation="equivalent"` 被拒且列出三值、`external_id` 缺 `system` 被拒、`ontology` 形态合法通过
+- [x] 1.2 方向派生：给定对端查询反向映射，不写反向行；验证：用例断言反向查询返回本端且 `knowledge_units` 行数在查询前后不变
+- [x] 1.3 `role_of` 方向语义固定（角色实体 → 目标实体）；验证：用例断言 `customer:acme --role_of--> organization:acme-corp` 校验通过，反向提交被拒
 
 ## 2. 提案路径与低置信挂起
 
-- [ ] 2.1 `src/bench/proposals.py` 接受 `kind='crosswalk'`，端点闭合校验（对端为 `ontology` 形态时端点须存在，否则按 `endpoint_open` 拒）；验证：用例提交缺端点候选被拒并计入 `endpoint_open`，不进入复核队列
-- [ ] 2.2 缺 `confidence` 按低置信处理（fail closed）；验证：用例提交无 confidence 的提案并确认后状态为「待复核」，不计入映射覆盖率
-- [ ] 2.3 自提自确认拒绝；验证：用例同一身份提交并确认被拒
+- [x] 2.1 `src/bench/proposals.py` 接受 `kind='crosswalk'`，端点闭合校验（对端为 `ontology` 形态时端点须存在，否则按 `endpoint_open` 拒）；验证：用例提交缺端点候选被拒并计入 `endpoint_open`，不进入复核队列
+- [x] 2.2 缺 `confidence` 按低置信处理（fail closed）；验证：用例提交无 confidence 的提案并确认后状态为「待复核」，不计入映射覆盖率
+- [x] 2.3 自提自确认拒绝；验证：用例同一身份提交并确认被拒
 
 ## 3. 三态证据与兼容读面
 
@@ -24,9 +24,9 @@
 
 ## 5. 质量比与缺口
 
-- [ ] 5.1 `estate.py` 增加「映射覆盖率」：按实体计数、只计已复核且未过期；验证：`tests/test_bench_estate.py` 两用例——10 实体 4 有映射显示 4/10、唯一映射待复核的实体不计入分子
-- [ ] 5.2 两类缺口独立报出：`quality:crosswalk_stale` 与 `quality:crosswalk_unconfirmed`；验证：用例构造同时含 3 条过期与 5 条未复核，断言报两项独立计数不合并
-- [ ] 5.3 两类缺口路由到 `fleet`，聚合键「域 + 外部系统」，重复派单报「已指派」；验证：用例断言路由结果与重复派单行为
+- [x] 5.1 `estate.py` 增加「映射覆盖率」：按实体计数、只计已复核且未过期；验证：`tests/test_bench_estate.py` 两用例——10 实体 4 有映射显示 4/10、唯一映射待复核的实体不计入分子
+- [x] 5.2 两类缺口独立报出：`quality:crosswalk_stale` 与 `quality:crosswalk_unconfirmed`；验证：用例构造同时含 3 条过期与 5 条未复核，断言报两项独立计数不合并
+- [x] 5.3 两类缺口路由到 `fleet`，聚合键「域 + 外部系统」，重复派单报「已指派」；验证：用例断言路由结果与重复派单行为
 
 ## 6. 协议侧对齐声明
 
