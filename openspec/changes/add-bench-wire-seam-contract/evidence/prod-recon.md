@@ -49,7 +49,7 @@ PUBS:      [(domain_id=1, v1, '3586552a'), (domain_id=1, v2, '5897354d')]
 `fd-wire` 登记只存 `sha256(token)` 摘要，明文**只在签发时展示一次**。本机与仓库内均无明文：
 
 - `secrets/` 目录 16 个文件，无 BENCH_CONSUMER_TOKEN；
-- `fd-wire/.env`、`law-bench-internal/.env` 均无该键；
+- `fd-wire/.env`、bench 私有仓的 `.env` 均无该键；
 - paas 生产用同名 env 指向 `platform-secrets`，那是**另一枚**令牌（舰队提案面），不是 `fd-wire` 这条登记。
 
 所以任务 3.1 有两条路径，需用户裁决（**这是唯一需要外部输入的一步**）：
