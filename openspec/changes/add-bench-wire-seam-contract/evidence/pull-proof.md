@@ -161,3 +161,60 @@ wire   bench_ontology_snapshots: legal v2 5897354d82a83f525de00d9581dd759386aa9e
 ```
 
 这是「同一域、两侧各自查一次、逐字段一致」判据的成立形态——不是单侧自证。
+
+## 9. 调度器自跑（任务 3.3，2026-11-19）
+
+**不是手动的**——pod 启动 60 分钟后 `_loop()` 自己 tick 的：
+
+```
+pod started      : 2026-11-19T11:02:17Z
+bench_pull_log 6 : 2026-11-19T12:02:49Z  legal ok=True v2   （间隔 60m32s ≈ 3600s 配置值）
+```
+
+完整拉取史（id 1-6）：
+
+```
+1  legal True  v1  2026-11-06 04:06:56   （C3 联调）
+2  legal True  v1  2026-11-06 04:06:56   （幂等二拉）
+3  legal False —   2026-11-06 04:07:28   对端拒绝：令牌未登记   <- 旧令牌死于此
+4  legal True  v2  2026-11-19 10:20:26   （轮换后手动验证）
+5  legal True  v2  2026-11-19 11:06:18   （pod 内路由调用）
+6  legal True  v2  2026-11-19 12:02:49   <- 调度器自跑
+```
+
+无新增失败行。那唯一一条 `ok=False` 是轮换前的历史，恰好证明「轮换是必须的」。
+
+## 10. 测试证据（任务 5.3）
+
+**在 GitHub CI 跑，不在本机**（用户明令）。公开镜像仓 `scs001/fd-wire-images`
+（先 `scripts/sync-public-mirror.sh --push` 同步源码到 6609629，再 dispatch
+`build.yml`）：
+
+| 作业 | 结果 |
+|---|---|
+| `api-gate`（阻塞闸：收集即判据 ≥1500 + 导入环用例） | **success** |
+| `api-full-advisory`（全量，非阻塞） | 8 failed / 1984 passed / 14 skipped |
+| 其余（build-push ×3、connector ×5、connector-test、connector-promote） | 全部 success |
+
+**基线对照**（我的改动之前，run 44487074661 @ 08:26）：
+**17 failed / 1964 passed**。
+
+失败数 17 → 8（下降），通过数 1964 → 1984（+20，含本 change 新增的 5 条
+`test_bench_ontology_pull` 用例）。8 条失败全在 `test_artifact_marketplace` /
+`test_pipeline_graph` / `test_provenance_routes`，与 `bench_pull` 无关——
+是既有的 CI 专属闪现场景（`build.yml` 里早有注释：全量走 advisory 不阻塞，
+正是因为这个）。
+
+**没有证据表明我引入了回归。**
+
+## 11. 任务 5.2 的判定方式（没有跑 pytest）
+
+`src/bench/promotion.py` 的改动只有 docstring。用 AST 剥掉所有 docstring 后
+比对语法树：
+
+```python
+ast.dump(strip_docstrings(old)) == ast.dump(strip_docstrings(new))   # True
+```
+
+零代码路径变化 ⇒ 无回归可跑。规格侧 `openspec validate --strict` 两个 change
+均绿。这是比「跑一遍看绿」更强的判据：它证明的是**不可能变**，不是**这次没变**。

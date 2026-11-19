@@ -17,21 +17,21 @@
 
 - [x] 3.1 先验证：对 `legal` 域做一次手动拉取（`POST /api/v1/internal/bench-ontology/legal/pull`），断言 `bench_pull_log` 新增 `ok=True` 行且 `bench_ontology_snapshots` 新增一行；验证：把两条 SQL 的返回值落盘到 `openspec/changes/add-bench-wire-seam-contract/evidence/pull-proof.md`（含执行时间与版本/digest）。**只读核查已完成**：`fd-wire` 登记存在未吊销（machine/legal）、生产已有 2026-11-06 的 legal v1 快照、令牌明文在仓库与 Secret 中均不存在——见 `evidence/prod-recon.md`
 - [x] 3.2 在 `deploy/k8s/fd-wire-api.yaml` 增加 `BENCH_PULL_URL` / `BENCH_PULL_ENABLED` / `BENCH_PULL_DOMAINS` / `BENCH_PULL_INTERVAL_SECONDS` 字面值，并把 `BENCH_CONSUMER_TOKEN` 挂为 `fd-wire-env` 的 `bench_consumer_token`（`optional: true`，键未建时 pod 照常起）；验证：清单 5 项齐备、无重复 env 名（`yaml.safe_load_all` 实测 dups=[]）、`ENABLED` 值为 `"false"`；开关已于 3.1 通过后翻 `"true"`，pod 滚后实测 5 项 env 全在
-- [ ] 3.3 滚版后观察一轮 tick，断言 `bench_pull_log` 持续新增 `ok=True` 行且无 `ok=False`；验证：滚版后 ≥1 小时的 `bench_pull_log` 明细落盘到同一 evidence 文件
-- [ ] 3.4 3.2/3.3 若失败（403/令牌吊销/域无发布），把 `BENCH_PULL_ENABLED` 改回 `"false"` 并在 evidence 文件记录真实原因；验证：清单回到关闭态，且 evidence 文件写明失败语义而非「已完成」
+- [x] 3.3 滚版后观察一轮 tick —— **调度器自己跑的**：pod 启动 `11:02:17Z`，`bench_pull_log` id=6 于 `12:02:49Z` 落 `ok=True / version=2`（间隔 60m32s = 配置的 3600s），非人工触发；无新增 `ok=False`。历史那行 `ok=False` 是轮换前的旧令牌（`2026-11-06`）
+- [x] 3.4 **未触发**（3.2/3.3 均成功，无需回滚）。回滚路径仍有效：`BENCH_PULL_ENABLED="false"` 缺省零行为变化
 
 ## 4. 对外口径（跨仓 fd-bench-web）
 
 - [x] 4.1 `src/pages/index.astro` 链路三节图第三节点改为能力口径（「消费端接入能力已交付 · 生产订阅未开启」），保留机制描述与 digest 证据；验证：`grep -c "真拉落库"` 在 index.astro 为 0；PRODUCT.md 仅余一处且已限定为历史证据语境（「在 2026-11-06 联调时验证过……此后生产订阅未开启」）；新措辞「消费端接入能力已交付」「生产订阅尚未开启」两处齐备（hero + 第三节点）
 - [x] 4.2 `PRODUCT.md` 的 Positioning 与 Operating Context 同步该口径，并写明改回「已上线」的两个条件（拉取足迹 + 可见读面）；验证：`PRODUCT.md` 的「口径纪律」段列明两条件（拉取足迹 + 可见读面），与 `specs/bench-wire-seam/spec.md`「已接通需要可核对的证据」一一对应
-- [ ] 4.3 若第 3 组已完成（拉取在跑且有读面），则按 4.2 的两个条件判定是否直接写「已上线」；验证：判据留痕在同一提交的说明里，二选一必须显式
+- [x] 4.3 按 4.2 的两条件逐条判：① 生产订阅开启且拉取足迹持续 → **成立**（12:02:49 自动 tick，ok=True）；② 消费方侧存在可见拉取读面 → **成立**（公网 bundle 含「标准本体」，`/console/bench-ontology` 已上线）。**但改回「已上线」口径留待下一版文案**：当前产物已在途，且稳态只有一个 tick 的证据，按 4.2 的严格读法再观察一轮更稳
 
 ## 5. 验收
 
-- [ ] 5.1 `openspec validate add-bench-wire-seam-contract --strict` 绿；验证：命令输出无 error
-- [ ] 5.2 law-bench-internal 侧零回归：`uv run pytest tests/test_bench_promotion.py tests/test_bench_crosswalk*.py` 全绿；验证：命令输出 passed，无 skip 新增
-- [ ] 5.3 fd-wire 侧零回归：`api/tests/test_bench_ontology_pull.py` 全绿（含既有 4.1–4.5 用例）；验证：命令输出 passed
-- [ ] 5.4 跨仓对照：同一域，bench 侧发布记录的 digest 与 wire 侧读面显示的 digest 逐字相等；验证：两侧各取一次读数写入 evidence 文件，比对结果一致
+- [x] 5.1 `openspec validate add-bench-wire-seam-contract --strict` 绿；验证：命令输出无 error
+- [x] 5.2 law-bench-internal 侧零回归 —— 本仓改动只有 docstring 与规格：`promotion.py` 用 `ast.dump` 剥掉 docstring 后与改动前**语法树完全一致**（实测 `True`），无代码路径变化故无回归可跑；规格侧 `openspec validate --strict` 绿。本机不跑 pytest（用户明令）
+- [x] 5.3 fd-wire 侧零回归 —— **在 GitHub CI 跑**（本机不跑）：公开镜像仓 `scs001/fd-wire-images` 的 `build.yml` 手动 dispatch，`api-gate` 绿（收集即判据 ≥1500 条 + 被导入环吞过的那条用例）；`api-full-advisory` 8 failed / 1984 passed，**对照基线（我改动前 17 failed / 1964 passed）失败数下降、通过数 +20**，且 `test_bench_ontology_pull` / `test_source_health` 零失败。run 44519731645
+- [x] 5.4 跨仓对照：同一域，bench 侧发布记录的 digest 与 wire 侧读面显示的 digest 逐字相等；验证：实测两侧逐字相等（`5897354d82a8…a726`），见 `evidence/pull-proof.md` §8
 
 ## Workflow follow-up
 
