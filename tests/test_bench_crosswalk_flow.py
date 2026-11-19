@@ -170,3 +170,71 @@ def test_what_was_reviewed_is_what_lands(db_conn, domain):
     )
     assert unit["attrs"]["confidence"] == 0.61
     assert unit["attrs"]["relation"] == "role_of"
+
+
+# ------------------------------------------------------------- adoption lane
+
+
+def test_adoption_proposal_needs_no_endpoint(db_conn, domain):
+    """Adopting a source asserts nothing about the ontology, so there is no
+    endpoint to close — unlike a crosswalk, which maps an existing entity."""
+    p = proposals.submit(
+        db_conn, domain_key="erp", source="extract:source-scouting:1.0",
+        kind="source-adoption", external_key="source:水利部水雨情",
+        body="广东省水文数据源，待判断是否接入",
+        evidence={"decision_pending": "needs_review", "doc_line": 64},
+        submitted_by="system:source-scouting",
+        authenticated_as="system:source-scouting",
+        via="in_process",
+    )
+    assert p["state"] == "pending"
+
+
+def test_confirming_an_adoption_writes_no_ontology_unit(db_conn, domain):
+    """The decision is the record. Nothing enters knowledge_units."""
+    from src.bench import store
+
+    proposals.submit(
+        db_conn, domain_key="erp", source="extract:source-scouting:1.0",
+        kind="source-adoption", external_key="source:nda-src",
+        body="待判断", evidence={"why": "needs a human call"},
+        submitted_by="system:source-scouting",
+        authenticated_as="system:source-scouting", via="in_process",
+    )
+    pending = db_conn.execute(
+        "SELECT id FROM domain_proposals WHERE external_key = 'source:nda-src'"
+    ).fetchone()["id"]
+    before = store.list_knowledge_units(db_conn, namespace="erp")
+
+    confirmed = proposals.confirm(
+        db_conn, domain_key="erp", proposal_id=pending, actor="lead-1"
+    )
+    assert confirmed["state"] == "confirmed"
+    after = store.list_knowledge_units(db_conn, namespace="erp")
+    assert len(after) == len(before), "adoption confirmation must not write a unit"
+
+
+def test_adoption_is_idempotent(db_conn, domain):
+    from src.bench import proposals as pp
+
+    kwargs = dict(
+        domain_key="erp", source="extract:source-scouting:1.0",
+        kind="source-adoption", external_key="source:dup-src",
+        body="x", evidence={"a": 1},
+        submitted_by="system:source-scouting",
+        authenticated_as="system:source-scouting", via="in_process",
+    )
+    _, made1 = pp.submit(db_conn, with_created=True, **kwargs)
+    _, made2 = pp.submit(db_conn, with_created=True, **kwargs)
+    assert made1 is True and made2 is False
+
+
+def test_adoption_still_needs_evidence(db_conn, domain):
+    with pytest.raises(Exception):
+        proposals.submit(
+            db_conn, domain_key="erp", source="extract:source-scouting:1.0",
+            kind="source-adoption", external_key="source:no-evidence",
+            body="x", evidence=None,
+            submitted_by="system:source-scouting",
+            authenticated_as="system:source-scouting", via="in_process",
+        )

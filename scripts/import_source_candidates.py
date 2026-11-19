@@ -51,6 +51,39 @@ SOURCE = "extract:source-scouting:1.0"
 RELATION = "maps_to"
 
 
+def adoption_plans(candidates: dict) -> list[dict]:
+    """Proposals for candidates awaiting an adopt/don't-adopt decision.
+
+    A `needs_review` candidate asks a different question from an aligned one:
+    **"do we take this source?"**, not "which concept does it fill". Both are
+    judgements only a person can make, so both belong in the inbox — but they
+    must not be conflated. An adoption proposal carries no `mapping` and its
+    confirmation writes no ontology unit; the decision itself is the record.
+
+    Keyed `source:<id>` so one source's two questions (adopt it? what does it
+    fill?) remain visibly about one source.
+    """
+    out = []
+    for row in candidates.get("candidates", []):
+        if not row.get("needs_review"):
+            continue
+        key = str(row.get("id") or row.get("name"))
+        out.append({
+            "name": row.get("name"),
+            "external_key": f"source:{key}",
+            "body": f"是否接入数据源「{row.get('name')}」（文档第 {row.get('doc_line')} 行）",
+            "evidence": {
+                "decision_pending": "needs_review",
+                "source_status": row.get("status"),
+                "doc_line": row.get("doc_line"),
+                "section": row.get("section"),
+                "vertical": row.get("vertical"),
+                "endpoint": row.get("endpoint"),
+            },
+        })
+    return out
+
+
 def plans(candidates: dict, *, anchor: str) -> list[dict]:
     """One proposal per (candidate, concept family) it declares.
 
@@ -102,29 +135,48 @@ def main(argv: list[str] | None = None) -> int:
                     help="target domain key (sources are business-ontology inputs)")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--limit", type=int, default=None)
-    ap.add_argument("--anchor", required=True,
-                    help="本域实体的键（如 region:guangdong）；crosswalk 的本端必须是已存在实体")
+    ap.add_argument("--mode", choices=("alignment", "adoption"), default="alignment",
+                    help="alignment=已声明对齐的候选写成 crosswalk 提案；"
+                         "adoption=needs_review 的候选写成采纳提案")
+    ap.add_argument("--anchor", default=None,
+                    help="本域实体的键（如 organization:guangdong）；alignment 模式必填")
     args = ap.parse_args(argv)
+
+    if args.mode == "alignment" and not args.anchor:
+        print("alignment 模式必须给 --anchor：crosswalk 的本端是本域已存在的实体",
+              file=sys.stderr)
+        return 2
 
     path = Path(args.candidates)
     if not path.is_file():
         print(f"candidates file not found: {path}", file=sys.stderr)
         return 2
     candidates = json.loads(path.read_text(encoding="utf-8"))
-    rows = plans(candidates, anchor=args.anchor)
+    if args.mode == "adoption":
+        rows = adoption_plans(candidates)
+        kind = "source-adoption"
+    else:
+        rows = plans(candidates, anchor=args.anchor)
+        kind = "crosswalk"
     if args.limit:
         rows = rows[: args.limit]
 
     total = len(candidates.get("candidates", []))
-    aligned = len({r["name"] for r in rows})
+    involved = len({r["name"] for r in rows})
     if not rows:
-        print(
-            f"{total} 条候选，其中 0 条声明了本体对齐 —— 没有要导入的。\n"
-            "这不是错误：对齐需要人逐条判断（change design D5）。"
-        )
+        if args.mode == "adoption":
+            print(f"{total} 条候选中没有 needs_review=true 的 —— 没有要导入的。")
+        else:
+            print(
+                f"{total} 条候选，其中 0 条声明了本体对齐 —— 没有要导入的。\n"
+                "这不是错误：对齐需要人逐条判断（change design D5）。"
+            )
         return 0
 
-    print(f"{total} 条候选中 {aligned} 条声明了对齐，共 {len(rows)} 条断言")
+    if args.mode == "adoption":
+        print(f"{total} 条候选中 {involved} 条待决策（needs_review），共 {len(rows)} 条采纳提案")
+    else:
+        print(f"{total} 条候选中 {involved} 条声明了对齐，共 {len(rows)} 条断言")
 
     if args.dry_run:
         for r in rows:
@@ -148,9 +200,9 @@ def main(argv: list[str] | None = None) -> int:
                     conn,
                     domain_key=args.domain,
                     source=SOURCE,
-                    kind="crosswalk",
+                    kind=kind,
                     external_key=r["external_key"],
-                    body=f"{r['name']} 提供 {r['concept']} 的观测数据",
+                    body=r.get("body") or f"{r['name']} 提供 {r['concept']} 的观测数据",
                     evidence=r["evidence"],
                     submitted_by="system:source-scouting",
                     with_created=True,

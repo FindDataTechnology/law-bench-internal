@@ -55,6 +55,16 @@ from . import agent_ids, authoring, crosswalk, distribution, keys, submitters, t
 #: external record" must not require every domain to declare a crosswalk type.
 CROSSWALK_KIND = "crosswalk"
 
+#: The kind for "should we adopt this data source at all?".
+#:
+#: This is the one lane whose confirmation writes **nothing** to the ontology: an
+#: adoption decision has no unit, no edge, no mapping. It exists because that
+#: question was otherwise unrepresentable — it spent its life as a boolean in a
+#: JSON file, which cannot carry evidence, a rejection reason, or a queryable
+#: state. Squeezing it into `crosswalk` would have made reviewers answer "which
+#: concept does it fill?" when the real question is "do we take it?".
+ADOPTION_KIND = "source-adoption"
+
 # Mirror of the CHECK constraint on domain_proposals.state (see
 # src/bench/workspace_store.py).
 PROPOSAL_STATES = ("pending", "confirmed", "rejected")
@@ -401,6 +411,8 @@ def _lane_for_kind(conn: Any, *, domain: dict, kind: str) -> str:
     # map its own entities, which defeats the point of a seam.
     if kind == CROSSWALK_KIND:
         return "crosswalk"
+    if kind == ADOPTION_KIND:
+        return "adoption"
     if kind in entity_types:
         return "entity"
     if kind in relationship_kinds:
@@ -537,6 +549,12 @@ def preflight_targets(
     }
     known = set(live) | pending
 
+    if lane == "adoption":
+        # An adoption proposal asserts nothing about the ontology, so it has no
+        # endpoint to close and no unit to collide with. The evidence a reviewer
+        # needs is enforced by the inbox's generic evidence requirement.
+        return
+
     if lane == "crosswalk":
         _check_crosswalk_proposal(
             conn, domain=domain, kind=kind, external_key=external_key,
@@ -600,6 +618,16 @@ def _write_through_kernel(
     """
     kind = proposal["kind"]
     lane = _lane_for_kind(conn, domain=domain, kind=kind)
+    if lane == "adoption":
+        # Confirming an adoption decision writes **nothing** to the ontology.
+        # That is the whole point of the lane: "we take this source" is a
+        # decision about the outside world, not a unit inside the knowledge
+        # base. The proposal row's state is the record; the caller has already
+        # appended the decision event.
+        #
+        # Returning a marker instead of a unit keeps the caller's shape uniform
+        # while making it impossible to mistake this for a written row.
+        return {"kind": ADOPTION_KIND, "written": None, "lane": "adoption"}
     if lane == "crosswalk":
         # The assertion itself lives in evidence.mapping (that is what the
         # reviewer read); it becomes the unit's attrs verbatim, so what was
