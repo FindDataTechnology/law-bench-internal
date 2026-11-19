@@ -218,3 +218,82 @@ ast.dump(strip_docstrings(old)) == ast.dump(strip_docstrings(new))   # True
 
 零代码路径变化 ⇒ 无回归可跑。规格侧 `openspec validate --strict` 两个 change
 均绿。这是比「跑一遍看绿」更强的判据：它证明的是**不可能变**，不是**这次没变**。
+
+## 12. 「拉取于」缺陷与修复上产（2026-11-19 晚）
+
+### 缺陷
+
+上一片的读面把快照行的 `pulled_at` 直接当「什么时候拉的」显示。但快照表按
+`(domain, digest)` 幂等——**同一版本每小时重拉都命中既有行、不写新行**，于是
+这个时间永久停在「该版本首次落库」。
+
+实撞：调度器 `12:02:49Z` 刚拉过，读面仍显示 `10:20:22Z`。而这个页面存在的
+唯一理由就是确认「同步还活着吗」——它给出的答案恰好是错的。
+
+### 修法（`13a47c9`）
+
+两个问题分开答，因为合并过一次就出错过：
+
+| 字段 | 含义 | 来源 |
+|---|---|---|
+| `pulled_at` | 最近一次**成功**拉取（含幂等命中） | `bench_pull_log`（失败行不参与） |
+| `version_pulled_at` | 这一版首次落库 | 快照行（不可变，此值不动） |
+
+前端两者不同时都显示：主时间答「同步活着吗」，括注答「这版哪天进来」。
+
+### 上产过程的一次事故（如实记录）
+
+第一次滚 tag **滚早了**：镜像还在 hkccr、relay 尚未回灌到 ccr 就改了 tag。
+ArgoCD 立刻同步 → `ErrImagePull`；该 Deployment 是 `maxSurge: 0 /
+maxUnavailable: 1`（零余量）→ 零副本 → `https://wire.finddatatech.cloud/health`
+**503 约 2 分钟**。回滚 `sha-74468b9` 后恢复。
+
+重来时先证 ccr 可拉（cheap9 `crictl pull` → `sha256:88098bcd…`），再滚
+`3eb415d`。本次滚动 `/health` 全程 200。
+
+**教训**（已入长期记忆）：出片链 hkccr → cheap9 relay（5 分钟一轮）→ ccr，
+`build-push` 的「已铸 tag」指 hkccr，不是 ccr；零余量 Deployment 下任何镜像
+风险都是全断，且 ArgoCD 对 ErrImagePull 仍报 `Synced`。
+
+### 修复上产后的实测
+
+```
+pod: fd-wire-api-d5db779d7-pswq7   1/1 Running   image sha-9ac53d6
+pulled_at         = 2026-11-19T13:02:56.602085+00:00   <- 最近成功拉取
+version_pulled_at = 2026-11-19T10:20:22.987904+00:00   <- 这一版何时落库
+bench_pull_log    = [7 ok 13:02:56, 6 ok 12:02:49, ...]
+```
+
+两个时间不同且都正确——缺陷已修。
+
+### 服务面复验
+
+```
+/health                                    200
+/console                                   200
+/api/v1/console/bench-ontology   (未登录)  401
+/api/v1/internal/bench-ontology/domains    401
+ArgoCD: Synced / Healthy / rev=3eb415d
+```
+
+### 调度器稳态（两个自动 tick）
+
+```
+pod 启动 11:02:17Z
+tick 1   12:02:49Z   ok=True  v2   （+60m32s）
+tick 2   13:02:56Z   ok=True  v2   （+60m07s）
+```
+
+非人工触发，无失败行。任务 3.3 的「持续新增 ok=True」成立。
+
+### 未完成的验证
+
+本修复的两条新回归用例（`test_console_overview_pulled_at_tracks_last_ok_pull`
+与 `test_console_overview_failed_pull_does_not_move_pulled_at`）**尚未跑过
+CI**：承载 fd-wire 测试的公开镜像仓 `scs001/fd-wire-images` 已在此期间被
+归档（`isArchived: true`，推送被拒），而 `scs001/platform-image-verify` 装的是
+另一套代码树，不能用来跑本仓测试。这属于外部变化，非本 change 引入。
+
+当前证据边界应如实读作：本修复经**生产实测**证明有效（两个字段值正确），
+其单元测试在本机 `py_compile` 与 `tsc --noEmit` 层面无语法/类型错误，
+但未在 CI 上执行过。
