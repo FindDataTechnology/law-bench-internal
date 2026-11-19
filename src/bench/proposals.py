@@ -130,6 +130,14 @@ _PROPOSAL_KEYS = (
     "id",
     "domain_id",
     "source",
+    # `sources` sits between `source` and `kind` in _PROPOSAL_COLS. Omitting it
+    # here shifted every later column by one on tuple-row cursors: `values[6]`
+    # read `body` instead of `evidence`, and `json.loads` on a plain string blew
+    # up. Dict-row cursors hid the bug (they look up by name); production's
+    # get_db dependency hands back tuple rows, so the inbox returned 422
+    # ("Extra data: line 1 column 2") for every domain. Found 2026-11-19 by
+    # opening /d/legal/inbox in a real browser.
+    "sources",
     "kind",
     "external_key",
     "body",
@@ -195,18 +203,19 @@ def _proposal_to_dict(row: Any) -> dict:
         "id": values[0],
         "domain_id": values[1],
         "source": values[2],
-        "kind": values[3],
-        "external_key": values[4],
-        "body": values[5],
-        "evidence": _decode_jsonb(values[6]),
-        "evidence_digest": values[7],
-        "impact": values[8],
-        "state": values[9],
-        "submitted_by": values[10],
-        "submitted_at": _iso(values[11]),
-        "decided_by": values[12],
-        "decided_at": _iso(values[13]),
-        "decision_note": values[14],
+        "sources": _decode_jsonb(values[3]),
+        "kind": values[4],
+        "external_key": values[5],
+        "body": values[6],
+        "evidence": _decode_jsonb(values[7]),
+        "evidence_digest": values[8],
+        "impact": values[9],
+        "state": values[10],
+        "submitted_by": values[11],
+        "submitted_at": _iso(values[12]),
+        "decided_by": values[13],
+        "decided_at": _iso(values[14]),
+        "decision_note": values[15],
     }
 
 

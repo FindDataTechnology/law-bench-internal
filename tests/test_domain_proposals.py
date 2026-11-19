@@ -754,3 +754,57 @@ def test_kind_inside_vocabulary_still_enters_the_inbox(db_conn):
     assert proposal["state"] == "pending"
 
 
+
+
+def test_proposal_cols_and_keys_are_aligned():
+    """`_PROPOSAL_COLS` and `_PROPOSAL_KEYS` must stay the same length.
+
+    A missing key shifts every later column on tuple-row cursors: `values[6]`
+    read `body` instead of `evidence` and `json.loads` blew up, so the inbox
+    returned 422 for every domain. Dict-row cursors hid it because they look up
+    by name — and production's `get_db` hands back tuple rows.
+
+    Found 2026-11-19 by opening /d/legal/inbox in a real browser.
+    """
+    from src.bench import proposals as pp
+
+    cols = [c.strip() for c in pp._PROPOSAL_COLS.split(",")]
+    assert len(cols) == len(pp._PROPOSAL_KEYS), (
+        f"{len(cols)} columns vs {len(pp._PROPOSAL_KEYS)} keys — a missing key "
+        "shifts every later column on tuple cursors"
+    )
+    assert cols == list(pp._PROPOSAL_KEYS), (
+        "order must match too: the decoder indexes positionally"
+    )
+
+
+def test_proposal_to_dict_decodes_a_tuple_row():
+    """The decoder must work on tuple rows, which is what production gets.
+
+    Built from a synthetic row rather than the database: the point is the
+    positional decoding, and a real row would depend on whatever a fixture
+    happened to seed.
+    """
+    import json as _json
+    from src.bench import proposals as pp
+
+    row = (
+        1,                                  # id
+        1,                                  # domain_id
+        "fleet:x/1",                        # source
+        _json.dumps([{"source": "fleet:x/1"}]),  # sources (jsonb)
+        "clause",                           # kind
+        "clause:a",                         # external_key
+        "body text",                        # body
+        _json.dumps({"quote": "q"}),        # evidence (jsonb)
+        "digest",                           # evidence_digest
+        "",                                 # impact
+        "pending",                          # state
+        "u1",                               # submitted_by
+        "2026-11-19T00:00:00Z",             # submitted_at
+        None, None, None,                   # decided_*
+    )
+    out = pp._proposal_to_dict(row)
+    assert out["evidence"] == {"quote": "q"}
+    assert out["sources"] == [{"source": "fleet:x/1"}]
+    assert out["body"] == "body text"
