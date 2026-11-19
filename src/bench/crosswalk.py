@@ -195,3 +195,46 @@ def is_confirmed(attrs: dict, *, threshold: Optional[float]) -> bool:
     if threshold is None:
         return True
     return float(confidence) >= float(threshold)
+
+
+def expired_states(
+    connectivity: Optional[dict], *, max_age_days: Optional[float]
+) -> list[str]:
+    """States whose evidence is older than the domain's declared max age.
+
+    An expired state counts as missing — "we checked it once, in March" is not a
+    live connection. ``max_age_days is None`` means the domain declared no
+    expiry, in which case nothing expires and the read face must say so rather
+    than silently treating old evidence as fresh.
+    """
+    if max_age_days is None or not isinstance(connectivity, dict):
+        return []
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+    out: list[str] = []
+    for state in CONNECTIVITY_STATES:
+        value = connectivity.get(state)
+        if not isinstance(value, dict) or value.get("ok") is not True:
+            continue
+        at = value.get("at")
+        if not isinstance(at, str) or not at.strip():
+            continue
+        try:
+            when = datetime.fromisoformat(at.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        if (now - when).days > max_age_days:
+            out.append(state)
+    return out
+
+
+def effective_missing_states(
+    connectivity: Optional[dict], *, max_age_days: Optional[float] = None
+) -> list[str]:
+    """States that are missing *or* expired — the honest "what must be redone"."""
+    missing = missing_connectivity_states(connectivity)
+    expired = expired_states(connectivity, max_age_days=max_age_days)
+    return [s for s in CONNECTIVITY_STATES if s in missing or s in expired]

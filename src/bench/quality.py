@@ -70,7 +70,9 @@ def crosswalk_coverage(
     )
 
 
-def crosswalk_gaps(conn: Any, *, namespace: str) -> dict:
+def crosswalk_gaps(
+    conn: Any, *, namespace: str, max_age_days: Optional[float] = None
+) -> dict:
     """两类映射缺口，分开计数。
 
     - `stale`：三态证据没齐（或 ok 却没证据）。问的是"这个外部系统还通不通"。
@@ -87,7 +89,12 @@ def crosswalk_gaps(conn: Any, *, namespace: str) -> dict:
         (namespace,),
     ).fetchall():
         attrs = row["attrs"] or {}
-        missing = crosswalk_mod.missing_connectivity_states(attrs.get("connectivity"))
+        # Missing *or expired*: "checked once, in March" is not a live connection.
+        # ``max_age_days=None`` means the domain declared no expiry — nothing is
+        # then treated as stale, which is honest rather than silently assuming.
+        missing = crosswalk_mod.effective_missing_states(
+            attrs.get("connectivity"), max_age_days=max_age_days
+        )
         # Only rows that *claim* connectivity can be stale; a crosswalk with no
         # connectivity block at all is simply unverified, not overdue.
         if attrs.get("connectivity") is not None and missing:

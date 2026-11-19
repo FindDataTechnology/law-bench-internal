@@ -163,3 +163,53 @@ def test_crosswalk_key_is_type_colon_key():
 def test_crosswalk_key_requires_both_parts():
     with pytest.raises(crosswalk.CrosswalkError):
         crosswalk.crosswalk_key("customer", "  ")
+
+
+# ------------------------------------------------------------------ expiry
+
+
+def test_expired_evidence_counts_as_missing():
+    """'We checked it once, in March' is not a live connection."""
+    old = {
+        state: {"ok": True, "evidence": f"p-{state}", "at": "2020-01-01T00:00:00Z"}
+        for state in crosswalk.CONNECTIVITY_STATES
+    }
+    assert crosswalk.expired_states(old, max_age_days=30) == list(
+        crosswalk.CONNECTIVITY_STATES
+    )
+    assert crosswalk.effective_missing_states(old, max_age_days=30) == list(
+        crosswalk.CONNECTIVITY_STATES
+    )
+
+
+def test_fresh_evidence_does_not_expire():
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).isoformat()
+    fresh = {
+        state: {"ok": True, "evidence": f"p-{state}", "at": now}
+        for state in crosswalk.CONNECTIVITY_STATES
+    }
+    assert crosswalk.expired_states(fresh, max_age_days=30) == []
+    assert crosswalk.effective_missing_states(fresh, max_age_days=30) == []
+
+
+def test_no_declared_max_age_means_nothing_expires():
+    """A domain that declared no expiry must not have one invented for it."""
+    old = {s: {"ok": True, "evidence": "p", "at": "2020-01-01T00:00:00Z"}
+           for s in crosswalk.CONNECTIVITY_STATES}
+    assert crosswalk.expired_states(old, max_age_days=None) == []
+
+
+def test_missing_and_expired_are_unioned_in_order():
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).isoformat()
+    mixed = {
+        "catalog": {"ok": True, "evidence": "p", "at": "2020-01-01T00:00:00Z"},
+        "executor_tests": {"ok": True, "evidence": "p", "at": now},
+        # live absent entirely
+    }
+    assert crosswalk.effective_missing_states(mixed, max_age_days=30) == [
+        "catalog", "live",
+    ]
