@@ -80,7 +80,7 @@ BENCH_DATABASE_URL（或 database_url） 知验台 Postgres DSN
 ## 命令面：跑一次真实同步
 
 ```bash
-cd /Users/chengsishi/finddata/law-bench-internal
+cd <workspace>/law-bench-internal
 export WIRE_API_BASE=https://wire.finddatatech.cloud
 export WIRE_ID_TOKEN='<console 登录后从会话取的 Logto ID token>'
 export BENCH_DATABASE_URL='postgresql://…(知验台库)'

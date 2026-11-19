@@ -76,7 +76,7 @@
 **重跑配方（relay 恢复后一键执行，不造数据）**：
 
 ```bash
-cd /Users/chengsishi/finddata/law-bench-internal
+cd <workspace>/law-bench-internal
 export database_url="postgresql://app:change-me-please@localhost:5432/law_bench"  # 本地 dev PG；生产库另议
 export DEEPEVAL_PER_ATTEMPT_TIMEOUT_SECONDS=25 DEEPEVAL_RETRY_MAX_ATTEMPTS=1
 # 候选①：现行判官 + 采样通道

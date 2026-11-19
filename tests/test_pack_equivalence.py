@@ -30,7 +30,7 @@ _checks = importlib.import_module("packs.finance-data.checks")
 BAND_TO_DIRECTION = _adapters.BAND_TO_DIRECTION
 check_band_direction_consistency = _checks.check_band_direction_consistency
 
-SENTIMENT_REPO = Path(os.environ.get("FD_SENTIMENT_REPO", "/Users/chengsishi/finddata/fd-sentiment"))
+SENTIMENT_REPO = Path(os.environ.get("FD_SENTIMENT_REPO", "<workspace>/fd-sentiment"))
 BANDS = ("strong_bullish", "bullish", "neutral", "bearish", "strong_bearish")
 
 
