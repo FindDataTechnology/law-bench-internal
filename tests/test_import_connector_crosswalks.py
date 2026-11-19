@@ -7,8 +7,12 @@ verified, not how sure anyone is that the mapping is right. Synthesising a
 confidence would count as reviewed something nobody reviewed, and the coverage
 ratio would then be inflated by exactly the rows still awaiting review.
 
-Two units per integration, because a crosswalk must point at a real endpoint and
-the proposal inbox refuses to manufacture one.
+**One unit per integration** — the crosswalk. An earlier version also created an
+`external_system:<provider>` entity, on the theory that "a crosswalk must point
+at a real endpoint". That rule is about the **near** end (`organization:<provider>`),
+not the peer: a peer is an opaque `external_id` triple, and manufacturing units
+for it forced every template to declare an `external_system` type for the sake of
+one write path (found 2026-11-19 — `enterprise-base` does not declare it).
 """
 
 from __future__ import annotations
@@ -133,3 +137,69 @@ def test_plans_validate_against_the_real_crosswalk_rules():
             "connectivity": row["connectivity"],
         }
         assert cw.validate_crosswalk(attrs) == [], row["provider"]
+
+
+def test_write_path_creates_only_the_crosswalk_no_provider_entity(monkeypatch):
+    """The import must not manufacture a unit for the peer.
+
+    Pinned because the removed step was invisible from the output: the summary
+    line said "entities: +N", and a template without an `external_system` type
+    failed the whole import with `ValueError: domain ... not found` — a message
+    that points at the domain, not at the offending step.
+    """
+    import types
+
+    created: list[tuple[str, str]] = []
+
+    class FakeAuthoring:
+        @staticmethod
+        def authoring_create_unit(conn, **kw):
+            created.append(("unit", kw["kind"]))
+            return {}
+
+        @staticmethod
+        def authoring_create_crosswalk(conn, **kw):
+            created.append(("crosswalk", kw["external_key"]))
+            return {}
+
+    class FakeStore:
+        @staticmethod
+        def get_knowledge_unit(conn, **kw):
+            return None          # nothing exists yet → created, not updated
+
+    fake_conn = types.SimpleNamespace(commit=lambda: None, close=lambda: None)
+    monkeypatch.setitem(sys.modules, "psycopg", types.SimpleNamespace(
+        connect=lambda *a, **k: fake_conn,
+        rows=types.SimpleNamespace(dict_row=None),
+    ))
+    monkeypatch.setattr(importer, "load_status", lambda p: status(
+        integration("wechatpay", "supply-chain", catalog=True, executor_tests=True),
+    ))
+
+    # The function imports these inside main(); patch them on the source modules.
+    import src.bench.authoring as real_authoring
+    import src.bench.store as real_store
+    import src.eval.store as real_eval_store
+    import src.eval.db as real_edb
+    monkeypatch.setattr(real_authoring, "authoring_create_unit",
+                        FakeAuthoring.authoring_create_unit)
+    monkeypatch.setattr(real_authoring, "authoring_create_crosswalk",
+                        FakeAuthoring.authoring_create_crosswalk)
+    monkeypatch.setattr(real_store, "get_knowledge_unit", FakeStore.get_knowledge_unit)
+    monkeypatch.setattr(real_eval_store, "ensure_schema", lambda **kw: None)
+    monkeypatch.setattr(real_edb, "_dsn", lambda: "postgresql://fake/db")
+    # `main` reads back the landed count, so the fake must answer that too.
+    committed = {"n": 0}
+    monkeypatch.setattr(fake_conn, "commit", lambda: committed.update(n=1), raising=False)
+    import src.bench.crosswalk as real_cw
+    monkeypatch.setattr(real_cw, "list_rows", lambda conn, namespace: [1])
+
+    importer.main(["--domain", "erp", "--force"])
+
+    kinds = [k for k, _ in created]
+    assert kinds == ["crosswalk"], f"only the crosswalk may be written, got {created}"
+    assert created[0][1] == "organization:wechatpay"
+    # Without an explicit commit psycopg3 rolls back on close: the run would
+    # report "+1 new" and write nothing (that is exactly what happened on
+    # production 2026-11-19).
+    assert committed["n"] == 1, "the import must commit before closing"

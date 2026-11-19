@@ -44,10 +44,10 @@ DEFAULT_STATUS = (
     REPO_ROOT.parent / "fd-erp-vertical-templates" / "connector-status.json"
 )
 
-#: The provider entity's kind. Deliberately a *type* the template declares for
-#: this import (see --ensure-type), not a crosswalk: an external system is a
-#: thing, and the assertion about it goes in the crosswalk.
-PROVIDER_KIND = "external_system"
+#: Kept only as the ``external_key`` prefix of the **crosswalk** row
+#: (``organization:<provider>`` is the near end; the provider is the peer). No
+#: unit of this kind is created — see the loop below.)
+PROVIDER_PREFIX = "external_system"
 
 #: The internal endpoint a provider is mapped onto. Every connector in this file
 #: is an outside system the business ontology relates to; `organization` is the
@@ -100,7 +100,7 @@ def plans(status: dict, *, target: str) -> list[dict]:
         out.append({
             "template": template,
             "provider": provider,
-            "provider_key": f"{PROVIDER_KIND}:{provider}",
+            "provider_key": f"{PROVIDER_PREFIX}:{provider}",
             "crosswalk_key": f"{target}:{provider}",
             "connectivity": connectivity,
             "missing": missing,
@@ -155,28 +155,27 @@ def main(argv: list[str] | None = None) -> int:
     try:
         eval_store.ensure_schema(db_path=conn)
 
-        created_entities = updated_entities = 0
         created_crosswalks = updated_crosswalks = 0
 
         for row in rows:
-            # 1. the provider entity — a crosswalk needs a real endpoint, and the
-            #    proposal inbox deliberately refuses to manufacture one.
-            if store.get_knowledge_unit(
-                conn, kind=PROVIDER_KIND, external_key=row["provider_key"],
-                namespace=args.domain,
-            ) is None:
-                authoring.authoring_create_unit(
-                    conn, domain_key=args.domain, kind=PROVIDER_KIND,
-                    external_key=row["provider_key"],
-                    body=f"{row['external_system']}（外部系统）", operator="system:import",
-                )
-                created_entities += 1
-            else:
-                updated_entities += 1
+            # No provider entity is manufactured. An external system is the
+            # crosswalk's **peer** (`peer.kind == "external_id"`), which is an
+            # opaque identifier triple — not a unit in our ontology. Creating
+            # `external_system:<provider>` units used to be the first step here,
+            # and it forced every domain template to declare an `external_system`
+            # entity type purely so the import could run (found 2026-11-19: the
+            # template does not declare it, and adding it would be a permanent
+            # ontology-contract change bought for a one-off write path).
+            #
+            # The endpoint rule that sounds like it covers this is about the
+            # **near** end, not the peer: `_check_crosswalk_proposal` validates
+            # that `<target>:<provider>` (an `organization` here) is a live unit
+            # or a pending proposal. The peer has no such requirement — that is
+            # the whole point of `external_id`.
 
-            # 2. the assertion itself. `confidence` is omitted on purpose: the
-            #    ERP file says nothing about how sure anyone is, and inventing a
-            #    number would count as reviewed something nobody reviewed.
+            # The assertion itself. `confidence` is omitted on purpose: the
+            # ERP file says nothing about how sure anyone is, and inventing a
+            # number would count as reviewed something nobody reviewed.
             attrs = {
                 "relation": "same_as",
                 "peer": {
@@ -205,9 +204,20 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 created_crosswalks += 1
 
+        # Commit before closing. psycopg3's ``conn.transaction()`` opens a
+        # nested block and does NOT commit the outer transaction the connection
+        # started with; ``conn.close()`` then rolls it back. Without this line
+        # the run prints "crosswalks: +8 new" and exits 0 while writing nothing —
+        # the worst shape of failure (2026-11-19, found on production: the
+        # summary line was the only evidence, and it was false).
+        conn.commit()
+
+        # Read it back rather than trusting the counters: a write that silently
+        # rolled back would otherwise still report success (that happened).
+        landed = len(cw.list_rows(conn, namespace=args.domain))
         print(
-            f"entities: +{created_entities} new / {updated_entities} existing; "
             f"crosswalks: +{created_crosswalks} new / {updated_crosswalks} existing"
+            f" | landed in {args.domain}: {landed}"
         )
         print(
             "note: 未复核的映射不会计入覆盖率——这份文件没说置信度，"
