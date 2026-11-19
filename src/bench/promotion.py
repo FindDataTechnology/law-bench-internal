@@ -1,21 +1,26 @@
 """Client-agnostic promotion machine for external-registry entities.
 
 An *external registry* (an upstream semantic layer, e.g. a wire entity graph)
-is the identity master: every entity/relation it declares already owns a
-stable primary key. The bench platform keeps **no second identity store** —
-it mirrors registry declarations into knowledge units whose upsert identity is
-``(kind, namespace, external_key)`` with ``external_key`` being the registry's
-own stable id, and runs them through a human review ladder:
+is the **seed source**: every entity/relation it declares already owns a
+stable primary key, and those keys are the reference by which the imported
+material can be traced back. It is *not* the authority over published
+ontology — that is the platform (``bench-wire-seam``). The bench platform
+keeps **no second identity store** — it imports registry declarations, once,
+into knowledge units whose upsert identity is ``(kind, namespace,
+external_key)`` with ``external_key`` being the registry's own stable id, and
+runs them through a human review ladder:
 
-    bronze (machine pre-annotation, the landing tier of a graph sync)
+    bronze (machine pre-annotation, the landing tier of a graph seed import)
       -> silver (annotations/tags completed by an operator)
       -> gold   (human verification passed; requires a reviewer identity)
 
 Rules enforced here (contract 柏讯实体升格契约, bench-platform spec):
 
-- Sync is idempotent: re-fetching an unchanged registry mutates no rows (no
+- Import is idempotent: re-fetching an unchanged registry mutates no rows (no
   ``updated_at`` bump, no tier/provenance churn). Content changes update the
   mirrored body/attrs only — they never demote a promoted unit.
+- The import is one-shot, not a sync loop: nothing here schedules it, and the
+  platform must not stall when the external registry stops changing.
 - Tier moves one way, one adjacent step at a time: bronze→silver,
   silver→gold. Gold never demotes on its own; a demotion is only possible as
   an explicit admin action (``force=True`` + a reviewer stamp) and otherwise
@@ -217,12 +222,20 @@ def sync_graph(
     fetch_fn: Callable[[], dict],
     namespace: str,
 ) -> dict:
-    """Mirror an external-registry entity graph into bronze knowledge units.
+    """Import an external-registry entity graph into bronze knowledge units.
+
+    **One-shot seed import, not a mirror.** This is the seed step of the
+    promotion ladder (``bench-wire-seam``): run it to bring an external
+    registry's declarations in as raw material, then let the platform's own
+    authoring and review carry the work. It is deliberately *not* wired to a
+    schedule, and it must not become one — the judge is dependency, not
+    timers: the platform must not stall when the external registry stops
+    changing.
 
     ``fetch_fn()`` must return ``{"nodes": [...], "edges": [...]}`` in the
     registry's graph shape (entity nodes with id/name/dataset summary/
     pk_columns; relation edges with the four-tuple + kind). Idempotent: an
-    unchanged second sync touches no rows.
+    unchanged second import touches no rows.
     """
     if not namespace:
         raise ValueError("namespace is required")

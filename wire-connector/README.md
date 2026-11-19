@@ -77,7 +77,14 @@ BENCH_DATABASE_URL（或 database_url） 知验台 Postgres DSN
    重复 `run_writeback` 默认跳过已回写单元，不产生第二次推送）。wire 侧若有
    `If-Match`/版本头可进一步升级为服务端幂等（当前无）。
 
-## 命令面：跑一次真实同步
+## 命令面：跑一次 seed 导入（**一次性，不是定时同步**）
+
+> 语义由 `bench-wire-seam` 钉住：wire 是**本地层**（权威在客户），知验台发布的域本体是
+> **共享层**（权威在平台），两层之间只经 crosswalk 连接。本连接器的读方向是
+> **一次性 seed 导入**——把 wire 已有的实体/关系导成 bronze 原料，随后由平台的创作与
+> 评审接手。**不要给它加 cron。** 判据不是「有没有定时器」，而是：知验台的工作会不会
+> 因为 wire 停止变化而停滞——会停滞，就说明它已经被当成常驻同步通道，违约。
+> 重复导入仍幂等（零新增行、unchanged 不 bump），但幂等不等于「可以常驻跑」。
 
 ```bash
 cd <workspace>/law-bench-internal
