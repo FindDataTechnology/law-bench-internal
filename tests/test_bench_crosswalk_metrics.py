@@ -141,3 +141,16 @@ def test_crosswalk_metric_appears_in_all_metrics(db_conn):
     metrics = quality.all_metrics(db_conn, domain_key=NS, namespace=NS)
     assert "crosswalk" in metrics
     assert metrics["crosswalk"]["denominator"] == 1
+
+
+def test_crosswalk_is_not_counted_as_a_relationship(db_conn):
+    """A crosswalk is an assertion about an entity, never an edge in the graph.
+
+    Its key normally has no "->", so the relationship query skips it by luck.
+    This pins the explicit exclusion: a key that *did* contain an arrow must
+    still not pollute referential integrity.
+    """
+    _entity(db_conn, "organization:a")
+    _crosswalk(db_conn, "a->b:crosswalk-looking-key")
+    metric = quality.referential_integrity(db_conn, namespace=NS)
+    assert metric["denominator"] == 0, "crosswalks are not relationships"

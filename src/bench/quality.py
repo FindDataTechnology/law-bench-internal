@@ -188,6 +188,12 @@ def referential_integrity(conn: Any, *, namespace: str) -> dict:
         for r in conn.execute(
             "SELECT external_key FROM knowledge_units "
             "WHERE namespace = %s AND (tags->>'deleted') IS NULL "
+            # A crosswalk is NOT an edge: it asserts a mapping *about* an
+            # entity and must never be counted as a relationship. Its keys
+            # usually lack "->" so the LIKE below skips them by luck — but
+            # "by luck" is not a rule, and a key that happened to contain an
+            # arrow would silently pollute this ratio.
+            "  AND kind <> 'crosswalk' "
             "AND external_key LIKE '%%->%%'",
             (namespace,),
         ).fetchall()
