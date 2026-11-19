@@ -14,7 +14,7 @@
 
 - [x] 3.1 `connectivity` 三态校验 + 过期判定（域级阈值，未配置则不过期并注明）；验证：`tests/test_bench_crosswalk.py` 三用例——缺 live 报未接通、证据过期退回缺失、三态齐备可声明接通
 - [x] 3.2 兼容读面 `GET /api/d/{domain}/crosswalks/connectivity/{system}` 返回与 `connector-status.json` 同形结构；验证：用既有 8 个 provider 的本地文件造一份 fixture，断言读面输出与文件逐字段一致
-- [ ] 3.3 存量导入脚本（幂等）：把 8 个 provider 的三态证据写成 crosswalk 行的 `connectivity`；验证：连跑两次 KU 行数不变，字段逐字段与源文件一致
+- [x] 3.3 存量导入脚本（幂等）：把 8 个 provider 的三态证据写成 crosswalk 行的 `connectivity`；验证：连跑两次 KU 行数不变，字段逐字段与源文件一致
 
 ## 4. 边界：crosswalk 不是关系
 
