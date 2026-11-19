@@ -58,7 +58,19 @@ def crosswalk_coverage(
         attrs = row["attrs"] or {}
         if not crosswalk_mod.is_confirmed(attrs, threshold=threshold):
             continue
-        mapped.add(row["external_key"])
+        # A crosswalk's key may carry its type (`clause:合同法#第70条`) while the
+        # entity set holds bare keys — the type lives in the `kind` column. Which
+        # form a given row used depends on the producer, so accept both: the key
+        # as-is, and the part after the first colon.
+        #
+        # Measured on production 2026-11-19: one confirmed crosswalk, 5143
+        # entities, coverage `0/5143` — the two sets never intersected. But
+        # stripping unconditionally is also wrong: some producers key the entity
+        # itself as `organization:acme`, and dropping the prefix would miss it.
+        key = row["external_key"] or ""
+        mapped.add(key)
+        if ":" in key:
+            mapped.add(key.partition(":")[2])
 
     covered = entities & mapped
     return _metric(

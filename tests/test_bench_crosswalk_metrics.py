@@ -154,3 +154,17 @@ def test_crosswalk_is_not_counted_as_a_relationship(db_conn):
     _crosswalk(db_conn, "a->b:crosswalk-looking-key")
     metric = quality.referential_integrity(db_conn, namespace=NS)
     assert metric["denominator"] == 0, "crosswalks are not relationships"
+
+
+def test_coverage_matches_across_the_type_prefix(db_conn):
+    """A crosswalk key carries its type; entities hold bare keys.
+
+    Measured on production 2026-11-19: one confirmed crosswalk
+    (`clause:合同法#第70条`), 5143 entities, coverage `0/5143` — the two sets
+    never intersected because the entity set holds `合同法#第70条`.
+    """
+    _entity(db_conn, "合同法#第70条")
+    _crosswalk(db_conn, "clause:合同法#第70条", confidence=0.95)
+    metric = quality.crosswalk_coverage(db_conn, namespace=NS)
+    assert metric["numerator"] == 1, "type prefix must not hide the match"
+    assert metric["denominator"] == 1
