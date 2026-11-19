@@ -13,14 +13,14 @@
 ## 3. 三态证据与兼容读面
 
 - [x] 3.1 `connectivity` 三态校验 + 过期判定（域级阈值，未配置则不过期并注明）；验证：`tests/test_bench_crosswalk.py` 三用例——缺 live 报未接通、证据过期退回缺失、三态齐备可声明接通
-- [ ] 3.2 兼容读面 `GET /api/d/{domain}/crosswalks/connectivity/{system}` 返回与 `connector-status.json` 同形结构；验证：用既有 8 个 provider 的本地文件造一份 fixture，断言读面输出与文件逐字段一致
+- [x] 3.2 兼容读面 `GET /api/d/{domain}/crosswalks/connectivity/{system}` 返回与 `connector-status.json` 同形结构；验证：用既有 8 个 provider 的本地文件造一份 fixture，断言读面输出与文件逐字段一致
 - [ ] 3.3 存量导入脚本（幂等）：把 8 个 provider 的三态证据写成 crosswalk 行的 `connectivity`；验证：连跑两次 KU 行数不变，字段逐字段与源文件一致
 
 ## 4. 边界：crosswalk 不是关系
 
 - [x] 4.1 关系图谱遍历、端点闭合校验、参照完整率三处排除 `kind='crosswalk'`；验证：用例建 10 关系 + 20 crosswalk，断言参照完整率分母为 10、从实体出发的遍历结果不含 crosswalk 对端
 - [x] 4.2 关系的端点校验不放宽；验证：用例建一条端点在本域不存在但有 crosswalk 指向的关系，断言仍被拒且错误说明端点不存在
-- [ ] 4.3 读面两个查询分开（关系 vs 映射），返回结构不同且映射查询带关系种类/对端形态/复核状态；验证：路由测试断言两个响应的键集合不同
+- [x] 4.3 读面两个查询分开（关系 vs 映射），返回结构不同且映射查询带关系种类/对端形态/复核状态；验证：路由测试断言两个响应的键集合不同
 
 ## 5. 质量比与缺口
 
