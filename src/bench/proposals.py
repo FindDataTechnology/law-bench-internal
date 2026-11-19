@@ -180,9 +180,32 @@ def _iso(val: Any) -> Any:
 
 
 def _decode_jsonb(val: Any) -> Any:
+    """Decode a JSONB-ish value that may arrive as an object, text, or nonsense.
+
+    The column is `jsonb`, so psycopg normally hands back a dict/list. **Not every
+    historical row went in that way**: production carries rows whose `evidence` is
+    a bare string, some of it not even valid JSON (a numbered list of column
+    names, a prose fragment). One such row made `list_proposals` raise
+    `JSONDecodeError` for the *whole inbox* — every domain returned 422
+    ("Extra data: line 1 column 2"). Found 2026-11-19 in a real browser.
+
+    A row that cannot be decoded is returned as-is. That keeps the row visible
+    (a reviewer can still read and reject it) instead of hiding the entire inbox
+    behind one bad record — and it does not invent structure that was not there.
+    """
     if isinstance(val, (dict, list)) or val is None:
         return val
-    return json.loads(val)
+    if isinstance(val, (bytes, bytearray)):
+        try:
+            val = val.decode("utf-8")
+        except UnicodeDecodeError:
+            return val
+    if isinstance(val, str):
+        try:
+            return json.loads(val)
+        except (json.JSONDecodeError, ValueError):
+            return val
+    return val
 
 
 def _scalar(row: Any) -> Any:
