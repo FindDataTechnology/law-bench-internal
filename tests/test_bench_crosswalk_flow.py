@@ -238,3 +238,50 @@ def test_adoption_still_needs_evidence(db_conn, domain):
             submitted_by="system:source-scouting",
             authenticated_as="system:source-scouting", via="in_process",
         )
+
+
+# ------------------------------------------- task 3.3 / 3.4: read-back + gate
+
+
+def test_machine_cannot_confirm_its_own_proposal(db_conn, domain):
+    """Task 3.4: `extract:` is in-process trusted, but still only nominates."""
+    proposals.submit(
+        db_conn, domain_key="erp", source="extract:source-scouting:1.0",
+        kind="source-adoption", external_key="source:machine-confirm",
+        body="x", evidence={"a": 1},
+        submitted_by="system:source-scouting",
+        authenticated_as="system:source-scouting", via="in_process",
+    )
+    pid = db_conn.execute(
+        "SELECT id FROM domain_proposals WHERE external_key='source:machine-confirm'"
+    ).fetchone()["id"]
+    with pytest.raises(PermissionError):
+        proposals.confirm(
+            db_conn, domain_key="erp", proposal_id=pid,
+            actor="extract:source-scouting:1.0",
+        )
+
+
+def test_rejection_reason_is_readable_by_source(db_conn, domain):
+    """Task 3.3: a rejected proposal keeps the reviewer's words, not a rewrite."""
+    from src.bench import proposals as pp
+
+    pp.submit(
+        db_conn, domain_key="erp", source="extract:source-scouting:1.0",
+        kind="source-adoption", external_key="source:reject-me",
+        body="x", evidence={"a": 1},
+        submitted_by="system:source-scouting",
+        authenticated_as="system:source-scouting", via="in_process",
+    )
+    pid = db_conn.execute(
+        "SELECT id FROM domain_proposals WHERE external_key='source:reject-me'"
+    ).fetchone()["id"]
+    pp.reject(
+        db_conn, domain_key="erp", proposal_id=pid, actor="lead-1",
+        note="接口需付费，暂不接入",
+    )
+    rows = db_conn.execute(
+        "SELECT state, decision_note FROM domain_proposals WHERE id = %s", (pid,)
+    ).fetchone()
+    assert rows["state"] == "rejected"
+    assert rows["decision_note"] == "接口需付费，暂不接入"
