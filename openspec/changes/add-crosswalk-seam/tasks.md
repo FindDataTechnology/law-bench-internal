@@ -35,8 +35,8 @@
 
 ## 7. ERP 侧切换（跨仓）
 
-- [ ] 7.1 `fd-erp-vertical-templates` 的 `connector-status.json` 生成器改为「先读知验台兼容读面，不可达时回退本地」，回退时输出标注 `source: local-fallback`；验证：本地单测两种路径（可达/不可达）各一例，不可达时输出含 `local-fallback`
-- [ ] 7.2 回退时不得静默使用过期数据：本地文件超过域级有效期时输出 `stale: true`；验证：单测构造过期本地文件，断言输出含 `stale: true` 且不报「已接通」
+- [x] 7.1 `fd-erp-vertical-templates` 的 `connector-status.json` 生成器改为「先读知验台兼容读面，不可达时回退本地」，回退时输出标注 `source: local-fallback`；验证：本地单测两种路径（可达/不可达）各一例，不可达时输出含 `local-fallback`
+- [x] 7.2 回退时不得静默使用过期数据：本地文件超过域级有效期时输出 `stale: true`；验证：单测构造过期本地文件，断言输出含 `stale: true` 且不报「已接通」
 
 ## 8. 验收
 
