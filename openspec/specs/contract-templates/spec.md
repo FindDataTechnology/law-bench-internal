@@ -45,7 +45,8 @@ The system SHALL extract the 法律法规 for a contract class from the Doubao+D
 - **THEN** `NotFoundError` is raised
 
 ### Requirement: Contract DOCX and PDF Generation
-The system SHALL generate a `.docx` and/or `.pdf` for a contract class from its template via the `document-generation` module (`create_docx`, `docx_to_pdf`), with every slot rendered as a highlighted, fillable placeholder (no slot pre-filled). `generate_contract(contract_type, *, format="pdf", out_dir=None)` SHALL write the requested format(s) under `out_dir` (default `output/contracts`) and return `{docx_path, pdf_path, slots, instructions, laws}` where formats not requested map to `None`. It SHALL raise `NotFoundError` for an unknown contract type.
+
+The system SHALL generate a `.docx` and/or `.pdf` for a contract class from its template via the `document-generation` module (`create_docx`, `docx_to_pdf`), with every slot rendered as a highlighted, fillable placeholder (no slot pre-filled).
 
 #### Scenario: Generate a PDF for a contract class
 - **WHEN** `generate_contract("sale", format="pdf")` is called and a PDF backend is available
@@ -60,6 +61,21 @@ The system SHALL generate a `.docx` and/or `.pdf` for a contract class from its 
 - **WHEN** `generate_contract("sale", format="docx")` is called and the resulting document is inspected
 - **THEN** the document contains the template's `{{slot}}` tokens rendered as highlighted placeholders with no slot pre-filled
 
+### Requirement: write the requested format(s) under `out_dir` … (#1)
+
+`generate_contract(contract_type, *, format="pdf", out_dir=None)` SHALL write the requested format(s) under `out_dir` (default `output/contracts`) and return `{docx_path, pdf_path, slots, instructions, laws}` where formats not requested map to `None`.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: raise `NotFoundError` for an unknown contract … (#2)
+
+It SHALL raise `NotFoundError` for an unknown contract type.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Command-Line Tool
 The system SHALL expose a CLI `python -m src.contracts` that extracts the laws, builds the template and slot instructions, and generates the requested format(s) for one contract class or all classes. `python -m src.contracts <contract_type> [--format pdf|docx|both] [--out DIR]` SHALL generate for a single type; `--all` SHALL iterate every contract class. On success it SHALL print the generated file path(s).
 

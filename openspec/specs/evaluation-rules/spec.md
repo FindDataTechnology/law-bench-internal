@@ -7,9 +7,7 @@ Store rubrics and criteria with Harbor provenance, support local rubric extensio
 
 ### Requirement: Rubric and Criterion Storage
 
-The system SHALL store evaluation rubrics and their criteria in a PostgreSQL database addressed by the `database_url` environment variable. Each rubric SHALL have a name, context, source, source_path, and description. Each criterion SHALL belong to exactly one rubric and SHALL have a name, description, guidance, and ordinal. The combination of rubric and criterion name SHALL be unique.
-
-**This change adds domain ownership**: each rubric SHALL belong to exactly one domain (`domain_id`); a rubric with no domain SHALL NOT be creatable. Rubrics SHALL be inheritable: a child domain SHALL see its parent domain's rubrics as effective (read-only) standards, and MAY fork one, in which case the fork SHALL record the parent rubric it derives from plus a human-readable difference summary. Scoring and run statistics SHALL be attributed to the domain that owns the rubric used.
+The system SHALL store evaluation rubrics and their criteria in a PostgreSQL database addressed by the `database_url` environment variable.
 
 #### Scenario: Store a harbor rubric with its criteria
 - **WHEN** the extraction script runs against harbor's `default-rubric.toml` for the legal domain
@@ -28,8 +26,64 @@ The system SHALL store evaluation rubrics and their criteria in a PostgreSQL dat
 - **WHEN** 子域对某父域 rubric 发起 fork 并修改了其中 2 条判据
 - **THEN** 新 rubric 记录 `derived_from` 指向父域 rubric，并保存本次差异摘要（哪几条判据被改、改成什么）
 
+### Requirement: have a name, context, source, source_path, … (#1)
+
+Each rubric SHALL have a name, context, source, source_path, and description.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: belong to exactly one rubric and … (#2)
+
+Each criterion SHALL belong to exactly one rubric and SHALL have a name, description, guidance, and ordinal.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be unique (#3)
+
+The combination of rubric and criterion name SHALL be unique.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: belong to exactly one domain (`domain_id`) (#4)
+
+**This change adds domain ownership**: each rubric SHALL belong to exactly one domain (`domain_id`);
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be creatable (#5)
+
+a rubric with no domain SHALL NOT be creatable.
+
+#### Scenario: split-out behaviour 5
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be inheritable: a child domain SHALL … (#6)
+
+Rubrics SHALL be inheritable: a child domain SHALL see its parent domain's rubrics as effective (read-only) standards, and MAY fork one, in which case the fork SHALL record the parent rubric it derives from plus a human-readable difference summary.
+
+#### Scenario: split-out behaviour 6
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be attributed to the domain that … (#7)
+
+Scoring and run statistics SHALL be attributed to the domain that owns the rubric used.
+
+#### Scenario: split-out behaviour 7
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Harbor Provenance and Idempotent Extraction
-The system SHALL extract harbor's rubrics from the installed harbor package's TOML rubric files when harbor is installed, recording their provenance (`source`, `source_path`, `context`) and the installed harbor version. When the harbor package cannot be located on disk, the system SHALL fall back to a bundled seed copy of harbor's rubric TOMLs shipped in the repository, recording `source = harbor:v0.20.0`. Re-running the extraction SHALL be idempotent: it SHALL NOT create duplicate rubrics or criteria, and SHALL NOT modify or delete rows whose `source` is not `harbor`.
+
+The system SHALL extract harbor's rubrics from the installed harbor package's TOML rubric files when harbor is installed, recording their provenance (`source`, `source_path`, `context`) and the installed harbor version.
 
 #### Scenario: Re-run extraction does not duplicate
 - **WHEN** the extraction script is run a second time
@@ -46,6 +100,21 @@ The system SHALL extract harbor's rubrics from the installed harbor package's TO
 - **AND** exits 0, recording `source = harbor:v0.20.0`
 - **AND** does not raise an error requiring harbor to be installed
 
+### Requirement: fall back to a bundled seed … (#8)
+
+When the harbor package cannot be located on disk, the system SHALL fall back to a bundled seed copy of harbor's rubric TOMLs shipped in the repository, recording `source = harbor:v0.20.0`.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be idempotent: it SHALL NOT create … (#9)
+
+Re-running the extraction SHALL be idempotent: it SHALL NOT create duplicate rubrics or criteria, and SHALL NOT modify or delete rows whose `source` is not `harbor`.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Extensibility for Local Rubrics
 The schema SHALL support locally-authored rubrics distinct from harbor reference rubrics, identified by `source = local`. Local rubrics SHALL coexist with harbor rubrics in the same tables without conflict.
 
@@ -55,7 +124,8 @@ The schema SHALL support locally-authored rubrics distinct from harbor reference
 - **AND** it is not affected by subsequent harbor extractions
 
 ### Requirement: Per-Class Chinese Contract Rubrics
-The system SHALL support an idempotently-seeded set of per-class Chinese contract rubrics - one per 民法典 typical named contract type (买卖合同, 供用电水气热力, 赠与合同, 借款合同, 保证合同, 租赁合同, 融资租赁, 保理合同, 承揽合同, 建设工程, 运输合同, 技术合同, 保管合同, 仓储合同, 委托合同, 物业服务, 行纪合同, 中介合同, 合伙合同). Each SHALL be stored with `source = local` and `context = contract`, named `contract_<type>_v1`, and SHALL consist of the shared base criteria (party identification, governing law, clause completeness, legal citation accuracy) plus 4-6 type-specific Chinese criteria drawn from that type's 民法典 mandatory-clause set. The seeding script (`scripts/seed_contract_rubrics.py`) SHALL be idempotent and SHALL NOT modify or delete any row whose `source` is not `local`.
+
+The system SHALL support an idempotently-seeded set of per-class Chinese contract rubrics - one per 民法典 typical named contract type (买卖合同, 供用电水气热力, 赠与合同, 借款合同, 保证合同, 租赁合同, 融资租赁, 保理合同, 承揽合同, 建设工程, 运输合同, 技术合同, 保管合同, 仓储合同, 委托合同, 物业服务, 行纪合同, 中介合同, 合伙合同).
 
 #### Scenario: Seed the 19 per-class rubrics
 - **WHEN** `seed_contract_rubrics.py` runs against a database with only the harbor rubrics and `contract_drafting_v1`
@@ -72,6 +142,21 @@ The system SHALL support an idempotently-seeded set of per-class Chinese contrac
 - **THEN** both are stored in the same `rubrics`/`criteria` tables without conflict
 - **AND** subsequent harbor re-extraction leaves the per-class local rubrics unchanged
 
+### Requirement: be stored with `source = local` … (#10)
+
+Each SHALL be stored with `source = local` and `context = contract`, named `contract_<type>_v1`, and SHALL consist of the shared base criteria (party identification, governing law, clause completeness, legal citation accuracy) plus 4-6 type-specific Chinese criteria drawn from that type's 民法典 mandatory-clause set.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be idempotent and SHALL NOT modify … (#11)
+
+The seeding script (`scripts/seed_contract_rubrics.py`) SHALL be idempotent and SHALL NOT modify or delete any row whose `source` is not `local`.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Compare Runs Grouping Table
 The system SHALL add a `compare_runs` table to the PostgreSQL database addressed by `database_url`, created idempotently by `src/eval/store.py::ensure_schema` (alongside `eval_runs` and `eval_criteria_results`). Columns: `id` primary key, `label`, `contract_type`, `rubric_name`, `task_desc`, `gen_mode`, `n_drafts`, `created_at`. One `compare_runs` row groups the `eval_runs` rows that belong to a single compare via the `eval_runs.compare_run_id` snapshot column.
 
@@ -107,7 +192,8 @@ The system SHALL migrate existing databases to the new schema via a guarded `ALT
 - **AND** no error is raised
 
 ### Requirement: Bundled Harbor Rubric Seed and Startup Self-Heal
-The system SHALL ship a bundled copy of harbor's rubric TOMLs (`task_quality` with 11 criteria, `trial_behavior` with 2 criteria) in the repository, pinned to harbor v0.20.0. The system SHALL provide an importable seeding entrypoint that idempotently ensures harbor rubrics are present in a target database: it SHALL create the schema if absent and upsert every harbor rubric from the installed harbor package when available, otherwise from the bundled seed. The heal SHALL be scoped to rows whose `source` is `harbor` (`source LIKE 'harbor:%'`); it SHALL NOT modify or delete local rubrics, prompts, or evaluation-run data. The container SHALL run this heal on every startup before serving requests, so a stale or partially-seeded database self-heals without a volume reset or rebuild.
+
+The system SHALL ship a bundled copy of harbor's rubric TOMLs (`task_quality` with 11 criteria, `trial_behavior` with 2 criteria) in the repository, pinned to harbor v0.20.0.
 
 #### Scenario: Empty database is healed
 - **WHEN** the seeding entrypoint runs against a database with no `rubrics` table
@@ -134,8 +220,40 @@ The system SHALL ship a bundled copy of harbor's rubric TOMLs (`task_quality` wi
 - **THEN** the request succeeds (exit 0) by loading from the bundled seed
 - **AND** the refreshed rubric list is returned
 
+### Requirement: provide an importable seeding entrypoint that … (#12)
+
+The system SHALL provide an importable seeding entrypoint that idempotently ensures harbor rubrics are present in a target database: it SHALL create the schema if absent and upsert every harbor rubric from the installed harbor package when available, otherwise from the bundled seed.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be scoped to rows whose `source` … (#13)
+
+The heal SHALL be scoped to rows whose `source` is `harbor` (`source LIKE 'harbor:%'`);
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: modify or delete local rubrics, prompts, … (#14)
+
+it SHALL NOT modify or delete local rubrics, prompts, or evaluation-run data.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: run this heal on every startup … (#15)
+
+The container SHALL run this heal on every startup before serving requests, so a stale or partially-seeded database self-heals without a volume reset or rebuild.
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Practical Contract Type Rubrics
-The system SHALL support a second idempotently-seeded set of per-class Chinese contract rubrics covering practical (中国合同分类法 Part 2) contract types that are not already covered by the 民法典 typical named contract types. The seeded set SHALL comprise these 22 non-overlapping practical types: `company_formation`, `equity_transfer`, `capital_increase`, `merger_acquisition`, `equity_incentive`, `vam_agreement`, `equity_holding_in_trust` (门类 A - 公司股权); `real_estate_sale`, `real_estate_lease`, `employment`, `labor_dispatch`, `ip_license`, `franchise` (门类 B - 常见法律关系); `real_estate_development`, `insurance`, `trust`, `private_equity_fund`, `software_development`, `film_production`, `talent_agency`, `ppp_project`, `tourism_service` (门类 C - 特定行业). Each SHALL be stored with `source = local` and `context = contract`, named `contract_<type>_v1`, and SHALL consist of the same 4 shared base criteria (party identification, governing law, clause completeness, legal citation accuracy) plus 4-6 type-specific Chinese criteria drawn from that type's governing statute beyond 民法典 (e.g. 公司法, 劳动法/劳动合同法, 保险法, 信托法, 城市房地产管理法, 商业特许经营管理条例, 旅游法). The seeding script (`scripts/seed_contract_rubrics.py`) SHALL seed both the 民法典 set and this practical set in one idempotent pass, SHALL NOT modify or delete any row whose `source` is not `local`, and SHALL NOT seed a practical type that 1:1 duplicates a 民法典 type.
+
+The system SHALL support a second idempotently-seeded set of per-class Chinese contract rubrics covering practical (中国合同分类法 Part 2) contract types that are not already covered by the 民法典 typical named contract types.
 
 #### Scenario: Seed the 22 practical-type rubrics
 - **WHEN** `seed_contract_rubrics.py` runs against a database that already has the harbor rubrics, the 19 民法典 per-class rubrics, and `contract_drafting_v1`
@@ -158,8 +276,32 @@ The system SHALL support a second idempotently-seeded set of per-class Chinese c
 - **THEN** all are stored in the same `rubrics`/`criteria` tables without conflict
 - **AND** subsequent harbor re-extraction leaves every local rubric (民法典 + practical + sample) unchanged
 
+### Requirement: comprise these 22 non-overlapping practical types: … (#16)
+
+The seeded set SHALL comprise these 22 non-overlapping practical types: `company_formation`, `equity_transfer`, `capital_increase`, `merger_acquisition`, `equity_incentive`, `vam_agreement`, `equity_holding_in_trust` (门类 A - 公司股权);
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds `real_estate_sale`, `real_estate_lease`, `employment`, `labor_dispatch`, `ip_license`, `franchise` (门类 B - 常见法律关系); `real_estate_development`, `insurance`, `trust`, `private_equity_fund`, `software_development`, `film_production`, `talent_agency`, `ppp_project`, `tourism_service` (门类 C - 特定行业).
+
+### Requirement: be stored with `source = local` … (#17)
+
+Each SHALL be stored with `source = local` and `context = contract`, named `contract_<type>_v1`, and SHALL consist of the same 4 shared base criteria (party identification, governing law, clause completeness, legal citation accuracy) plus 4-6 type-specific Chinese criteria drawn from that type's governing statute beyond 民法典 (e.g. 公司法, 劳动法/劳动合同法, 保险法, 信托法, 城市房地产管理法, 商业特许经营管理条例, 旅游法).
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: seed both the 民法典 set and … (#18)
+
+The seeding script (`scripts/seed_contract_rubrics.py`) SHALL seed both the 民法典 set and this practical set in one idempotent pass, SHALL NOT modify or delete any row whose `source` is not `local`, and SHALL NOT seed a practical type that 1:1 duplicates a 民法典 type.
+
+#### Scenario: split-out behaviour 5
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Postgres Connection and Schema Management
-The system SHALL obtain a PostgreSQL connection from the `database_url` environment variable (a libpq DSN, e.g. `postgresql://user:pass@host:5432/db`). The web layer SHALL resolve the active connection via the `get_db()` dependency seam, which SHALL no longer return a filesystem `Path`. Schema creation for `rubrics`, `criteria`, `prompts`, `eval_runs`, `eval_criteria_results`, and `compare_runs` SHALL be idempotent (`CREATE TABLE IF NOT EXISTS`), SHALL enforce foreign keys with `ON DELETE CASCADE` where the prior SQLite schema did, and SHALL use `BIGINT GENERATED ALWAYS AS IDENTITY` for auto-increment primary keys. Insert paths SHALL obtain generated primary keys via `RETURNING id`.
+
+The system SHALL obtain a PostgreSQL connection from the `database_url` environment variable (a libpq DSN, e.g. `postgresql://user:pass@host:5432/db`).
 
 #### Scenario: get_db returns a connection from database_url
 - **WHEN** a request handler depends on `get_db()`
@@ -176,8 +318,32 @@ The system SHALL obtain a PostgreSQL connection from the `database_url` environm
 - **THEN** the new row's generated `id` is returned from the same statement via `RETURNING id`
 - **AND** no separate `lastrowid` lookup is used
 
+### Requirement: resolve the active connection via the … (#19)
+
+The web layer SHALL resolve the active connection via the `get_db()` dependency seam, which SHALL no longer return a filesystem `Path`.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be idempotent (`CREATE TABLE IF NOT … (#20)
+
+Schema creation for `rubrics`, `criteria`, `prompts`, `eval_runs`, `eval_criteria_results`, and `compare_runs` SHALL be idempotent (`CREATE TABLE IF NOT EXISTS`), SHALL enforce foreign keys with `ON DELETE CASCADE` where the prior SQLite schema did, and SHALL use `BIGINT GENERATED ALWAYS AS IDENTITY` for auto-increment primary keys.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: obtain generated primary keys via `RETURNING … (#21)
+
+Insert paths SHALL obtain generated primary keys via `RETURNING id`.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Law-Refined Variant Contract Rubrics
-The system SHALL seed a second set of per-class Chinese contract rubrics - the **law-refined** variants - one per contract type key (the same 41 keys covered by the v1 rubrics: 19 民法典 types + 22 practical types). Each SHALL be named `contract_<type>_v2`, stored with `source = local` and `context = contract`, and SHALL consist of the 4 shared base criteria (party identification, governing law, clause completeness, legal citation accuracy) plus 4-6 type-specific Chinese criteria whose `guidance` references the correct governing statutes and judicial interpretations for that type as surfaced by the law_info survey (e.g. for `sale`: citing 《最高人民法院关于审理买卖合同纠纷案件适用法律问题的解释》法释〔2020〕17号 and the 民法典 595–647条 range; for `employment`: citing 《劳动合同法》; for `insurance`: citing 《保险法》). The seeding script (`scripts/seed_contract_rubrics.py`) SHALL seed the v1 rubrics AND these `contract_<type>_v2` rubrics in one idempotent pass, SHALL NOT modify any v1 `contract_<type>_v1` row (upsert matches by name; the names differ), and SHALL NOT modify or delete any row whose `source` is not `local`.
+
+The system SHALL seed a second set of per-class Chinese contract rubrics - the **law-refined** variants - one per contract type key (the same 41 keys covered by the v1 rubrics: 19 民法典 types + 22 practical types).
 
 #### Scenario: Seed the 41 law-refined variant rubrics
 - **WHEN** `seed_contract_rubrics.py` runs against a database that already has the 41 v1 `contract_<type>_v1` rubrics
@@ -205,6 +371,23 @@ The system SHALL seed a second set of per-class Chinese contract rubrics - the *
 - **THEN** at least one criterion's guidance references the 买卖合同 judicial interpretation (法释〔2020〕17号) or the 民法典 595–647条 range
 - **AND** no criterion cites a fabricated or repealed statute as currently in force
 
+### Requirement: be named `contract_<type>_v2`, stored with `source … (#22)
+Each SHALL be named `contract_<type>_v2`, stored with `source = local` and `context = contract`, and SHALL consist of the 4 shared base criteria (party identification, governing law, clause completeness, legal citation accuracy) plus 4-6 type-specific Chinese criteria whose `guidance` references the correct governing statutes and judicial interpretations for that type as surfaced by the law_info survey (e.g. for `sale`:
+
+#### Scenario: enumerated items
+- **WHEN** this requirement is applied
+- **THEN** the following items apply: citing 《最高人民法院关于审理买卖合同纠纷案件适用法律问题的解释》法释〔2020〕17号 and the 民法典 595–647条 range; for `employment`: citing 《劳动合同法》; for `insurance`: citing 《保险法》).
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+### Requirement: seed the v1 rubrics AND these … (#23)
+
+The seeding script (`scripts/seed_contract_rubrics.py`) SHALL seed the v1 rubrics AND these `contract_<type>_v2` rubrics in one idempotent pass, SHALL NOT modify any v1 `contract_<type>_v1` row (upsert matches by name; the names differ), and SHALL NOT modify or delete any row whose `source` is not `local`.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Layered Judgment Mechanism for Common Criteria
 The system SHALL replace binary judgment (PASS/FAIL) with layered judgment (PASS/HALF_PASS/FAIL) for common criteria. Layered judgment allows the system to distinguish between "fully compliant", "partially compliant", and "non-compliant" states.
 

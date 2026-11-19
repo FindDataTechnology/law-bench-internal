@@ -9,14 +9,7 @@
 
 ### Requirement: 提交方身份按来源类别分别校验
 
-系统 SHALL 按来源标识的前缀判定类别，并对每类施以各自的校验，MUST NOT 用一条统一的「有登记即放行」规则覆盖全部类别：
-
-- `fleet:<fleet_id>/<post_id>`：来源 SHALL 解析到一条**已登记、未吊销、且绑定目标域**的舰队登记；其可信依据是**凭据**。
-- `extract:<model>:<prompt_version>`：SHALL 只允许**进程内调用**（抽取流水线）产生；外部 HTTP 提交端点 MUST 拒绝该类，否则任何人把来源写成 `extract:任意值` 即可冒充流水线。其可信依据是**调用位置**。
-- `agent:<role>@<domain>`：SHALL 是平台已铸、且仍是该域活跃成员的智能体身份；`domain` 段 SHALL 与目标域一致；且 SHALL 等于本次请求的已认证身份——**只能以自己提交**。
-- `user:<identity>`：交互式提交，`identity` SHALL 等于本次请求的已认证身份。其可信依据是**已认证会话**；调用方拿不出可比对的身份时 SHALL 判为不匹配（证不出来就不算数）。
-
-不匹配任何类别的前缀、以及**前缀认得但形状不完整**的来源（例如 `fleet:` 后没有 `/`），SHALL 被拒绝并列出各类别的形状要求，MUST NOT 静默入库。前缀匹配 SHALL 区分大小写。
+系统 SHALL 按来源标识的前缀判定类别，并对每类施以各自的校验，MUST NOT 用一条统一的「有登记即放行」规则覆盖全部类别： - `fleet:<fleet_id>/<post_id>`：来源 SHALL 解析到一条**已登记、未吊销、且绑定目标域**的舰队登记；
 
 #### Scenario: 未登记舰队被拒
 
@@ -51,8 +44,79 @@
 #### Scenario: 未知前缀被拒
 
 - **WHEN** 提交来源不以四类前缀之一开头
-- **THEN** 拒绝并列出可用类别
+- **THEN** 拒绝并列出可用类别 其可信依据是**凭据**。
 
+### Requirement: 只允许**进程内调用**（抽取流水线）产生 (#1)
+
+- `extract:<model>:<prompt_version>`：SHALL 只允许**进程内调用**（抽取流水线）产生；
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 拒绝该类，否则任何人把来源写成 `extract:任意值` 即可冒充流水线 (#2)
+
+外部 HTTP 提交端点 MUST 拒绝该类，否则任何人把来源写成 `extract:任意值` 即可冒充流水线。
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds 其可信依据是**调用位置**。
+
+### Requirement: 是平台已铸、且仍是该域活跃成员的智能体身份 (#3)
+
+- `agent:<role>@<domain>`：SHALL 是平台已铸、且仍是该域活跃成员的智能体身份；
+
+#### Scenario: split-out behaviour 5
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 与目标域一致 (#4)
+
+`domain` 段 SHALL 与目标域一致；
+
+#### Scenario: split-out behaviour 6
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 等于本次请求的已认证身份——**只能以自己提交** (#5)
+
+且 SHALL 等于本次请求的已认证身份——**只能以自己提交**。
+
+#### Scenario: split-out behaviour 7
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 等于本次请求的已认证身份 (#6)
+
+- `user:<identity>`：交互式提交，`identity` SHALL 等于本次请求的已认证身份。
+
+#### Scenario: split-out behaviour 8
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds 其可信依据是**已认证会话**；
+
+### Requirement: 判为不匹配（证不出来就不算数） (#7)
+
+调用方拿不出可比对的身份时 SHALL 判为不匹配（证不出来就不算数）。
+
+#### Scenario: split-out behaviour 10
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 被拒绝并列出各类别的形状要求，MUST NOT 静默入库 (#8)
+
+不匹配任何类别的前缀、以及**前缀认得但形状不完整**的来源（例如 `fleet:` 后没有 `/`），SHALL 被拒绝并列出各类别的形状要求，MUST NOT 静默入库。
+
+#### Scenario: split-out behaviour 11
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 区分大小写 (#9)
+
+前缀匹配 SHALL 区分大小写。
+
+#### Scenario: split-out behaviour 12
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: 迁移期的宽松档只标记不静默
 
 校验 SHALL 有一档**仅用于迁移**的宽松模式：未通过校验的来源被记为 `legacy` 后入库，并写入可按来源读取的迁移计数。宽松档 MUST NOT 成为默认值；每一条 legacy 入库 MUST 留痕。
@@ -126,30 +190,7 @@
 
 ### Requirement: 提交前预检目标状态
 
-系统 SHALL 在写入提案行之前，用**确认时同一把读判据**检查这条提案落不落得下去，并对三类
-**确定性**落不下去的提交当场拒绝（MUST NOT 入库、MUST NOT 占用确认位）：
-
-- **实体类**提案的 `external_key` 在目标域已是活单位（含同键异 `kind`）⇒ 拒绝，理由
-  `key_already_live`，并点名既有单位的标识与 `kind`。
-- **关系类**提案的任一端点既不在该域活单位集合里、**也不在该域提案箱的待确认行里** ⇒
-  拒绝，理由 `endpoints_missing`，并点名缺少的端点。
-  「已在箱里」算端点成立：进程内抽取流水线在**同一批**里提交实体与闭合它的关系，那一刻
-  端点是一行待确认提案、不是单位。评审仍两边都看；先确认关系会在内核里失败，与改造前一致。
-- 提案的 `kind` 在该域**锚定模板**的词表里不存在（`entity_types` 与 `relationship_kinds`
-  两张表都查过）⇒ 拒绝，理由 `kind_not_in_vocabulary`，并点名该 `kind`、模板版本与两张表。
-
-「模板缺失 / schema 损坏」这类**判不出**的形态 MUST NOT 进这条拒绝：那时正解是修服务端数据，
-把服务端的问题算到提交方账上是假红。
-
-被拒时 SHALL 返回**机器可判别的理由词**与一条指明正当路径的 `hint`（改既有单位走更新；
-端点未入库先补端点；`kind` 越界改用词表内的 kind 或由域负责人扩模板词表），HTTP 状态
-SHALL 为 409。拒绝 MUST NOT 改写任何既有单位。
-
-预检 SHALL 排在幂等去重**之后**：同一来源、同一键、同一依据的重放仍 SHALL 返回既有提案与
-`created=false`，不因预检变成错误。
-
-语义类判断（文种名/角色名、内容是否含可复用原理）MUST NOT 进预检——那是人的裁决，
-不是机器能执行的规则。
+系统 SHALL 在写入提案行之前，用**确认时同一把读判据**检查这条提案落不落得下去，并对三类 **确定性**落不下去的提交当场拒绝（MUST NOT 入库、MUST NOT 占用确认位）： - **实体类**提案的 `external_key` 在目标域已是活单位（含同键异 `kind`）⇒ 拒绝，理由   `key_already_live`，并点名既有单位的标识与 `kind`。
 
 #### Scenario: 重复键的提案拒在提交口
 
@@ -184,4 +225,44 @@ SHALL 为 409。拒绝 MUST NOT 改写任何既有单位。
 - **WHEN** 提案的 `kind` 在该域锚定模板的实体词表与关系词表里都不存在（例如 `n:1`）
 - **THEN** 返回 409 与理由 `kind_not_in_vocabulary`，detail 点名该 kind 与模板版本、并列出
   两张词表，hint 给出「改用词表内 kind」与「域负责人扩模板词表」两条路径
-- **AND** 不产生提案行；确认时同样会失败的这条规则由提交口提前执行，而不是让它在确认时炸
+- **AND** 不产生提案行；确认时同样会失败的这条规则由提交口提前执行，而不是让它在确认时炸 - **关系类**提案的任一端点既不在该域活单位集合里、**也不在该域提案箱的待确认行里** ⇒   拒绝，理由 `endpoints_missing`，并点名缺少的端点。 「已在箱里」算端点成立：进程内抽取流水线在**同一批**里提交实体与闭合它的关系，那一刻   端点是一行待确认提案、不是单位。 评审仍两边都看； 先确认关系会在内核里失败，与改造前一致。 - 提案的 `kind` 在该域**锚定模板**的词表里不存在（`entity_types` 与 `relationship_kinds`   两张表都查过）⇒ 拒绝，理由 `kind_not_in_vocabulary`，并点名该 `kind`、模板版本与两张表。
+
+### Requirement: 进这条拒绝：那时正解是修服务端数据， 把服务端的问题算到提交方账上是假红 (#10)
+
+「模板缺失 / schema 损坏」这类**判不出**的形态 MUST NOT 进这条拒绝：那时正解是修服务端数据， 把服务端的问题算到提交方账上是假红。
+
+#### Scenario: split-out behaviour 6
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 返回**机器可判别的理由词**与一条指明正当路径的 `hint`（改既有单位走更新； 端点未入库先补端点；`kind` 越界改用词表内的 kind 或由域负责人扩模板词表），HTTP … (#11)
+
+被拒时 SHALL 返回**机器可判别的理由词**与一条指明正当路径的 `hint`（改既有单位走更新； 端点未入库先补端点；`kind` 越界改用词表内的 kind 或由域负责人扩模板词表），HTTP 状态 SHALL 为 409。
+
+#### Scenario: split-out behaviour 7
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 改写任何既有单位 (#12)
+
+拒绝 MUST NOT 改写任何既有单位。
+
+#### Scenario: split-out behaviour 8
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 排在幂等去重**之后**：同一来源、同一键、同一依据的重放仍 SHALL 返回既有提案与 `created=false`，不因预检变成错误 (#13)
+
+预检 SHALL 排在幂等去重**之后**：同一来源、同一键、同一依据的重放仍 SHALL 返回既有提案与 `created=false`，不因预检变成错误。
+
+#### Scenario: split-out behaviour 9
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 进预检——那是人的裁决， 不是机器能执行的规则 (#14)
+
+语义类判断（文种名/角色名、内容是否含可复用原理）MUST NOT 进预检——那是人的裁决， 不是机器能执行的规则。
+
+#### Scenario: split-out behaviour 10
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds

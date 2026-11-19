@@ -6,7 +6,7 @@ Web-based human review over LLM-judge eval verdicts: blind validity annotation, 
 
 ### Requirement: Review Task Storage
 
-The system SHALL store human-review tasks in a `review_tasks` table. Each row represents one annotation slot: `batch_id` (operator-chosen batch identifier), `batch_type` (`validity` or `gold_curation`), `eval_criteria_result_id` (referencing `eval_criteria_results` with `ON DELETE CASCADE`), `slot` (1-based annotator slot), `status` (`pending` or `decided`), `annotator_verdict` (`pass`/`fail` for validity batches, `approved`/`rejected`/`skipped` for gold curation batches), `annotator` (the authenticated identity that decided), `note`, `reviewed_at`, and `created_at`. Batch creation SHALL be idempotent: re-running with the same `batch_id` SHALL NOT duplicate tasks.
+The system SHALL store human-review tasks in a `review_tasks` table.
 
 #### Scenario: Batch creation is idempotent
 
@@ -17,8 +17,15 @@ The system SHALL store human-review tasks in a `review_tasks` table. Each row re
 #### Scenario: Deleting the source run removes its tasks
 
 - **WHEN** an `eval_runs` row referenced by review tasks is deleted
-- **THEN** the dependent `review_tasks` rows are removed by cascade
+- **THEN** the dependent `review_tasks` rows are removed by cascade Each row represents one annotation slot: `batch_id` (operator-chosen batch identifier), `batch_type` (`validity` or `gold_curation`), `eval_criteria_result_id` (referencing `eval_criteria_results` with `ON DELETE CASCADE`), `slot` (1-based annotator slot), `status` (`pending` or `decided`), `annotator_verdict` (`pass`/`fail` for validity batches, `approved`/`rejected`/`skipped` for gold curation batches), `annotator` (the authenticated identity that decided), `note`, `reviewed_at`, and `created_at`.
 
+### Requirement: be idempotent: re-running with the same … (#1)
+
+Batch creation SHALL be idempotent: re-running with the same `batch_id` SHALL NOT duplicate tasks.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Task Detail Composition
 
 For each task the system SHALL expose, via joins, the material an annotator needs: the draft text (`eval_runs.draft_text`), the criterion display name and its human-authored PASS/FAIL guidance (`criteria.title`-equivalent `name`/`description`/`guidance`), the rubric name, and the contract type derived from the rubric name. For `gold_curation` tasks the model verdict and reasoning SHALL additionally be exposed. A task whose joined data cannot be found SHALL surface a clear not-found state.
@@ -88,7 +95,7 @@ Review pages SHALL require an authenticated session. The task list and detail pa
 
 ### Requirement: Agreement Statistics and Gold Export
 
-The export script SHALL compute and report: per-annotator decision counts; pairwise annotator agreement (and Cohen's kappa where two annotators decided the same `eval_criteria_result_id` within a batch); and human-vs-judge agreement (annotator verdict against the model verdict, per batch and overall). It SHALL flag any annotator whose agreement with the judge is at or above a configurable warning threshold as a possible machine-mediated contamination signal. It SHALL export gold quadruples (`clause_text`, `legal_base`, `verdict`, `reasoning`) composed from the joined data for `gold_curation` tasks decided `approved`, stamped with reviewer provenance.
+The export script SHALL compute and report: per-annotator decision counts;
 
 #### Scenario: Kappa is computed for double-annotated items
 
@@ -109,8 +116,23 @@ The export script SHALL compute and report: per-annotator decision counts; pairw
 
 - **WHEN** an approved gold-curation task's joined data carries no law reference (so `legal_base` and `reasoning.citation` would be empty)
 - **THEN** the export validates the composed record with the downstream `validate_quadruple` gate and writes it to a worklist file beside the gold file, reporting the reason
-- **AND** the gold file is not created empty, so a gold file that exists is always one the downstream flow accepts
+- **AND** the gold file is not created empty, so a gold file that exists is always one the downstream flow accepts pairwise annotator agreement (and Cohen's kappa where two annotators decided the same `eval_criteria_result_id` within a batch); and human-vs-judge agreement (annotator verdict against the model verdict, per batch and overall).
 
+### Requirement: flag any annotator whose agreement with … (#2)
+
+It SHALL flag any annotator whose agreement with the judge is at or above a configurable warning threshold as a possible machine-mediated contamination signal.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: export gold quadruples (`clause_text`, `legal_base`, `verdict`, … (#3)
+
+It SHALL export gold quadruples (`clause_text`, `legal_base`, `verdict`, `reasoning`) composed from the joined data for `gold_curation` tasks decided `approved`, stamped with reviewer provenance.
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Decision Flow Continuation
 
 After a successful decision POST, the system SHALL redirect the annotator to their next pending task in the same batch (slot-ordered), rather than the batch list. When no pending task remains for that annotator in the batch, the system SHALL redirect to the batch list with a flash message reporting the batch's completion state. Conflict (task already decided by someone else) behavior is unchanged: redirect back to the same task with the existing conflict flash.

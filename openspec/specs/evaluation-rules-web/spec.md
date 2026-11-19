@@ -5,7 +5,8 @@ Give operators a web surface to browse, create, edit, and delete local evaluatio
 
 ## Requirements
 ### Requirement: Browse Evaluation Rubrics
-The system SHALL present a list of all rubrics, each showing its name (rendered as a localized display title per `data-label-i18n`, with the machine `name` retained as the link target), its `context` rendered as a localized label in the active locale (falling back to the raw key when unmapped), its `source` rendered as a localized source label (per the web-i18n Localized Rubric Source Display requirement) rather than the raw source string, and its criterion count. Harbor rubrics (`source` starting with `harbor:`) and local rubrics (`source = local`) SHALL be shown together.
+
+The system SHALL present a list of all rubrics, each showing its name (rendered as a localized display title per `data-label-i18n`, with the machine `name` retained as the link target), its `context` rendered as a localized label in the active locale (falling back to the raw key when unmapped), its `source` rendered as a localized source label (per the web-i18n Localized Rubric Source Display requirement) rather than the raw source string, and its criterion count.
 
 #### Scenario: List all rubrics
 - **WHEN** a user opens the rubrics listing
@@ -25,8 +26,16 @@ The system SHALL present a list of all rubrics, each showing its name (rendered 
 - **WHEN** a user opens the rubrics listing with locale `zh`
 - **THEN** the source column renders localized labels (e.g. `本地` for local, `Harbor v0.4.2` for harbor) rather than the raw `local` / `harbor:v0.4.2`
 
+### Requirement: be shown together (#1)
+
+Harbor rubrics (`source` starting with `harbor:`) and local rubrics (`source = local`) SHALL be shown together.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Rubric Detail View
-The system SHALL show a single rubric's name (as a localized display title per `data-label-i18n`), its `context` rendered as a localized label in the active locale (raw-key fallback), its `source` rendered as a localized source label, `source_path`, and `description`, followed by its criteria ordered by `ordinal`, each showing its name, description, and guidance. The machine `name` SHALL remain the URL path. Each criterion's name, description, and guidance SHALL render in the active locale where a translation exists, falling back to the stored text otherwise (per the web-i18n Localized Data-Value Labels requirement).
+
+The system SHALL show a single rubric's name (as a localized display title per `data-label-i18n`), its `context` rendered as a localized label in the active locale (raw-key fallback), its `source` rendered as a localized source label, `source_path`, and `description`, followed by its criteria ordered by `ordinal`, each showing its name, description, and guidance.
 
 #### Scenario: View a rubric and its criteria
 - **WHEN** a user opens a rubric
@@ -46,6 +55,21 @@ The system SHALL show a single rubric's name (as a localized display title per `
 - **WHEN** a user opens a rubric detail page with locale `zh`
 - **THEN** the source row renders a localized label (e.g. `本地` / `Harbor v0.4.2`) rather than the raw source string
 
+### Requirement: remain the URL path (#2)
+
+The machine `name` SHALL remain the URL path.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: render in the active locale where … (#3)
+
+Each criterion's name, description, and guidance SHALL render in the active locale where a translation exists, falling back to the stored text otherwise (per the web-i18n Localized Data-Value Labels requirement).
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Create Local Rubric
 The system SHALL allow creating a new locally-authored rubric with `source = local`, a name, a context, a description, and zero or more initial criteria.
 

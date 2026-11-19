@@ -97,7 +97,8 @@ The system SHALL set the `<html lang>` attribute to the active locale code on ev
 - **THEN** the document is `<html lang="zh">`
 
 ### Requirement: Localized Data-Value Labels
-The system SHALL localize data values rendered in templates - the machine keys stored in the database (contract type, purpose, prompt type, context, mode, and seeded criterion content) - via a per-locale data-label catalog that is separate from the UI-chrome catalog. For each value the system SHALL resolve a localized display label; when no translation exists for a value (including user-authored free text, future unmapped keys, and the `en` locale for seeded criterion content), the system SHALL fall back to the raw stored value unchanged. The system SHALL never raise, never blank, and never alter the underlying machine key, which remains the canonical database / URL / join identifier.
+
+The system SHALL localize data values rendered in templates - the machine keys stored in the database (contract type, purpose, prompt type, context, mode, and seeded criterion content) - via a per-locale data-label catalog that is separate from the UI-chrome catalog.
 
 #### Scenario: Seeded contract type localized
 - **WHEN** a rubric or prompt carries `contract_type = sale` and the active locale is `zh`
@@ -121,6 +122,29 @@ The system SHALL localize data values rendered in templates - the machine keys s
 - **WHEN** a local user-authored criterion not present in the catalog is rendered, or any criterion is rendered with locale `en`
 - **THEN** its title, description, and guidance render the raw stored text unchanged
 
+### Requirement: resolve a localized display label (#1)
+
+For each value the system SHALL resolve a localized display label;
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: fall back to the raw stored … (#2)
+
+when no translation exists for a value (including user-authored free text, future unmapped keys, and the `en` locale for seeded criterion content), the system SHALL fall back to the raw stored value unchanged.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: never raise, never blank, and never … (#3)
+
+The system SHALL never raise, never blank, and never alter the underlying machine key, which remains the canonical database / URL / join identifier.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Localized Guidance Tokens
 For `zh` guidance with no catalog entry, the system SHALL localize the English `PASS if` / `FAIL if` tokens in the stored guidance text to `通过条件：` / `不通过条件：` (matching the form-label convention), so seeded criteria whose guidance is authored as `PASS if … / FAIL if …` render fully in Chinese. The `en` locale and catalogued `zh` guidance SHALL be left untouched.
 
@@ -162,7 +186,7 @@ The system SHALL render navigation links to the `/law-info` and `/law-references
 
 ### Requirement: Full Template Locale Parity
 
-Every page template under `src/web/templates/` SHALL source its user-facing chrome strings (headings, table headers, labels, hints, buttons, flashes, placeholders, empty states) from the i18n catalog in both locales. After this change, no template SHALL carry hard-coded zh-only or en-only chrome strings, and the topbar language switch SHALL visibly change the chrome language on every destination it can reach, including dashboard, human review, clauses, contracts, contract detail, samples, search, law-catalog audit/review, login-denied, and law-info detail.
+Every page template under `src/web/templates/` SHALL source its user-facing chrome strings (headings, table headers, labels, hints, buttons, flashes, placeholders, empty states) from the i18n catalog in both locales.
 
 #### Scenario: Switching to English on a previously zh-only page
 
@@ -179,6 +203,13 @@ Every page template under `src/web/templates/` SHALL source its user-facing chro
 - **WHEN** the operator opens `/law-catalog/audit?lang=en` and `/law-catalog/review?lang=en`
 - **THEN** headings, summary line labels, and action buttons render in English
 
+### Requirement: carry hard-coded zh-only or en-only chrome … (#4)
+
+After this change, no template SHALL carry hard-coded zh-only or en-only chrome strings, and the topbar language switch SHALL visibly change the chrome language on every destination it can reach, including dashboard, human review, clauses, contracts, contract detail, samples, search, law-catalog audit/review, login-denied, and law-info detail.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Catalog Key Parity Guarantee
 
 The system SHALL include an automated check that the zh and en locale trees expose the same key set, and that no locale file defines a key the other lacks. The check SHALL run as part of the test suite and SHALL fail on divergence.

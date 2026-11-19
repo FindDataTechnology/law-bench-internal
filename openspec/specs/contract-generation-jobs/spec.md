@@ -52,7 +52,8 @@ The system SHALL expose `GET /api/generation-jobs/{job_id}` returning the full j
 - **THEN** the response status is 404
 
 ### Requirement: Sync Batch Generation
-The system SHALL expose `POST /api/contracts/{contract_type}/generate-batch` (mode D) that generates the contract across the requested (or enumerated) tag combinations in parallel with throttling and returns a sync JSON body `{results, success_count, failure_count}` plus per-item file URLs. The request's `max_concurrent` field (default 5, clamped to [1, 16]) SHALL bound the assembly parallelism; results SHALL be returned in the same order as the requested/enumerated combinations, and per-combo failures SHALL be reported in that item's `error` so one bad combo does not sink the batch. It SHALL return 404 for an unknown contract type.
+
+The system SHALL expose `POST /api/contracts/{contract_type}/generate-batch` (mode D) that generates the contract across the requested (or enumerated) tag combinations in parallel with throttling and returns a sync JSON body `{results, success_count, failure_count}` plus per-item file URLs.
 
 #### Scenario: Batch generate explicit combos
 - **WHEN** a client `POST /api/contracts/sale/generate-batch` with `tag_combinations=[{"stance":"balanced"}]`
@@ -74,3 +75,27 @@ The system SHALL expose `POST /api/contracts/{contract_type}/generate-batch` (mo
 #### Scenario: Unknown type returns 404
 - **WHEN** a client `POST /api/contracts/does_not_exist/generate-batch`
 - **THEN** the response status is 404
+
+### Requirement: bound the assembly parallelism (#1)
+
+The request's `max_concurrent` field (default 5, clamped to [1, 16]) SHALL bound the assembly parallelism;
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be returned in the same order … (#2)
+
+results SHALL be returned in the same order as the requested/enumerated combinations, and per-combo failures SHALL be reported in that item's `error` so one bad combo does not sink the batch.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: return 404 for an unknown contract … (#3)
+
+It SHALL return 404 for an unknown contract type.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds

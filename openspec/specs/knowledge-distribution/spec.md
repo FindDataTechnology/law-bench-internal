@@ -8,9 +8,7 @@
 
 ### Requirement: 版本化发布
 
-领域负责人（或平台管理员）SHALL 可将其成员域的本体内容发布为不可变版本快照：单调发布版本号、digest（规范 JSON 的 sha256，键序归一、排除生成时间戳）、全量 manifest（模板版本锚定、实体与关系全量、排除软删项）；同 digest 重复发布 SHALL 幂等（静默返回既有版本，不产生新行）；快照发布后 SHALL 不可改写不可删除；变更事件流与发布流水 SHALL 可对账（发布的每条内容可回指其事件史）。
-
-规范形态（条目键集、排序键、类型归一）与 digest 配方 SHALL 由共享内核持有，本面 MUST NOT 再有一份自己的实现——两面各写一遍，一旦对「同一内容」判定不一致，跨面比对即失去意义。发布的 manifest SHALL 为**键寻址形状**（条目以 `kind` + `external_key` 寻址、关系以两端键寻址），形状版本与所遵循的内核契约版本 SHALL 随发布物一并声明；声明不受支持时系统 SHALL 拒绝而不是猜测。形状版本 SHALL 位于载荷之外，MUST NOT 进入 digest——否则每次引入形状都会作废已发布的所有 digest。
+领域负责人（或平台管理员）SHALL 可将其成员域的本体内容发布为不可变版本快照：单调发布版本号、digest（规范 JSON 的 sha256，键序归一、排除生成时间戳）、全量 manifest（模板版本锚定、实体与关系全量、排除软删项）；
 
 #### Scenario: 发布产生可拉取版本
 
@@ -37,6 +35,61 @@
 - **WHEN** 适配方声明的 manifest 形状不在内核支持的集合内（当前支持 1=id 寻址、2=键寻址）
 - **THEN** 内核在构造时即拒绝并报明「声明不受支持」，而不是按默认形状猜着跑
 
+### Requirement: 幂等（静默返回既有版本，不产生新行） (#1)
+
+同 digest 重复发布 SHALL 幂等（静默返回既有版本，不产生新行）；
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 不可改写不可删除 (#2)
+
+快照发布后 SHALL 不可改写不可删除；
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 可对账（发布的每条内容可回指其事件史） (#3)
+
+变更事件流与发布流水 SHALL 可对账（发布的每条内容可回指其事件史）。
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 由共享内核持有，本面 MUST NOT 再有一份自己的实现——两面各写一遍，一旦对「同一内容」判定不一致，跨面比对即失去意义 (#4)
+
+规范形态（条目键集、排序键、类型归一）与 digest 配方 SHALL 由共享内核持有，本面 MUST NOT 再有一份自己的实现——两面各写一遍，一旦对「同一内容」判定不一致，跨面比对即失去意义。
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 为**键寻址形状**（条目以 `kind` + `external_key` 寻址、关系以两端键寻址），形状版本与所遵循的内核契约版本 SHALL … (#5)
+
+发布的 manifest SHALL 为**键寻址形状**（条目以 `kind` + `external_key` 寻址、关系以两端键寻址），形状版本与所遵循的内核契约版本 SHALL 随发布物一并声明；
+
+#### Scenario: split-out behaviour 5
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 拒绝而不是猜测 (#6)
+
+声明不受支持时系统 SHALL 拒绝而不是猜测。
+
+#### Scenario: split-out behaviour 6
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 位于载荷之外，MUST NOT 进入 digest——否则每次引入形状都会作废已发布的所有 digest (#7)
+
+形状版本 SHALL 位于载荷之外，MUST NOT 进入 digest——否则每次引入形状都会作废已发布的所有 digest。
+
+#### Scenario: split-out behaviour 7
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: 变更日志
 
 每次新发布 SHALL 相对上一发布版本产生 changelog（新增/删除/变更三类条目，实体与关系逐条，变更条目含字段级差异摘要）；首版 changelog SHALL 记为初始清单；消费者可经拉取面获取任一版本的 changelog。

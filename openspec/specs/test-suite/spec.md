@@ -6,7 +6,8 @@ Keep the test suite hermetic: no external network or LLM calls, no shared develo
 ## Requirements
 
 ### Requirement: Hermetic Test Execution
-The test suite SHALL execute without any external network or LLM calls and SHALL NOT read or mutate the development/shared PostgreSQL database addressed by `database_url`. Every test that needs a database SHALL operate against a throwaway per-test PostgreSQL database (or per-test schema) isolated from every other test. Every test that exercises LLM-judging behavior SHALL inject a deterministic in-process fake judge rather than calling the real model endpoint. The suite SHALL require a reachable local PostgreSQL instance to run database-backed tests, but SHALL NOT require Elasticsearch, MinIO, or OpenRouter (those are faked in tests).
+
+The test suite SHALL execute without any external network or LLM calls and SHALL NOT read or mutate the development/shared PostgreSQL database addressed by `database_url`.
 
 #### Scenario: No external network required to run the suite
 - **WHEN** the full test suite is run in an environment with no external network access but a local PostgreSQL is reachable
@@ -20,10 +21,32 @@ The test suite SHALL execute without any external network or LLM calls and SHALL
 - **WHEN** a scoring test evaluates a contract against a rubric
 - **THEN** the judge is a deterministic fake object passed into `evaluate_contract` and no `GPTModel` is constructed
 
-### Requirement: Shared Test Fixtures
-The suite SHALL provide shared fixtures in `tests/conftest.py`: a seeded throwaway PostgreSQL database built from the real schema (loaded from `scripts/extract_harbor_rules.py`) with one harbor and one local rubric; a FastAPI `TestClient` whose `get_db` dependency is overridden to return a connection to that throwaway database; and a deterministic fake LLM judge whose per-criterion verdicts are configurable per test. The `get_db` override SHALL yield a PostgreSQL connection (not a filesystem `Path`).
+### Requirement: operate against a throwaway per-test PostgreSQL … (#1)
 
-The seeded database fixture SHALL confirm that the schema actually landed before seeding, and SHALL fail at **setup** with an explicit "schema bootstrap did not complete" error when it did not. A fixture that proceeds to `TRUNCATE` a table that was never created reports `UndefinedTable` against whatever the test happened to touch — the failure then points at the test instead of at the bootstrap, which is why this assertion belongs here.
+Every test that needs a database SHALL operate against a throwaway per-test PostgreSQL database (or per-test schema) isolated from every other test.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: inject a deterministic in-process fake judge … (#2)
+
+Every test that exercises LLM-judging behavior SHALL inject a deterministic in-process fake judge rather than calling the real model endpoint.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: require a reachable local PostgreSQL instance … (#3)
+
+The suite SHALL require a reachable local PostgreSQL instance to run database-backed tests, but SHALL NOT require Elasticsearch, MinIO, or OpenRouter (those are faked in tests).
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+### Requirement: Shared Test Fixtures
+
+The suite SHALL provide shared fixtures in `tests/conftest.py`: a seeded throwaway PostgreSQL database built from the real schema (loaded from `scripts/extract_harbor_rules.py`) with one harbor and one local rubric;
 
 #### Scenario: A test requests the seeded database fixture
 - **WHEN** a test depends on the seeded-database fixture
@@ -39,8 +62,23 @@ The seeded database fixture SHALL confirm that the schema actually landed before
 
 #### Scenario: Schema bootstrap failure is reported as itself
 - **WHEN** the session database is created but its schema did not complete (e.g. a lock wait timed out during table creation)
-- **THEN** the fixture fails at setup naming the schema bootstrap, MUST NOT proceed to seed and surface `undefined table` from a later statement
+- **THEN** the fixture fails at setup naming the schema bootstrap, MUST NOT proceed to seed and surface `undefined table` from a later statement a FastAPI `TestClient` whose `get_db` dependency is overridden to return a connection to that throwaway database; and a deterministic fake LLM judge whose per-criterion verdicts are configurable per test.
 
+### Requirement: yield a PostgreSQL connection (not a … (#4)
+
+The `get_db` override SHALL yield a PostgreSQL connection (not a filesystem `Path`).
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: confirm that the schema actually landed … (#5)
+
+The seeded database fixture SHALL confirm that the schema actually landed before seeding, and SHALL fail at **setup** with an explicit "schema bootstrap did not complete" error when it did not.
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds A fixture that proceeds to `TRUNCATE` a table that was never created reports `UndefinedTable` against whatever the test happened to touch — the failure then points at the test instead of at the bootstrap, which is why this assertion belongs here.
 ### Requirement: Evaluation Engine Coverage
 The suite SHALL cover `src/eval/` end to end: `rubric.py` (list/load, `KeyError` on unknown rubric, `ValueError` on rubric with no criteria); `store.py` (`ensure_schema` idempotency, `store_result` round-trip, `list_runs` ordering); `scoring.py` (all-pass aggregation, per-criterion result shape, a failing criterion producing `FAIL`, a judge-call error captured per criterion rather than sinking the run, `judge_model` fallback to `EVAL_MODEL`); `judge.py` (`_strip_litellm_prefix`, `RuntimeError` on missing env vars); and `manage.py` CRUD plus harbor-read-only guards (already present, retained and extended for the module split).
 
@@ -76,7 +114,8 @@ The suite SHALL cover `src/llm.py` (env-driven config, defaults for temperature/
 - **THEN** it returns a non-empty string containing one block per `templates/*.md` file
 
 ### Requirement: Web Layer Coverage
-The suite SHALL cover the JSON API (`src/web/routes/api.py`) for rubrics and criteria (create, read, update, delete, reorder; harbor read-only -> 403, duplicate name -> 409, invalid input -> 400, unknown name/id -> 404), the HTML page flows (`src/web/routes/pages.py` form submissions and flash redirects), and `src/web/app.py` (`create_app` wiring, static/template mounts, and the `ManageError`-to-HTTP-status handler mapping including the 500 fallback). All web tests SHALL run against the throwaway database via the dependency override.
+
+The suite SHALL cover the JSON API (`src/web/routes/api.py`) for rubrics and criteria (create, read, update, delete, reorder; harbor read-only -> 403, duplicate name -> 409, invalid input -> 400, unknown name/id -> 404), the HTML page flows (`src/web/routes/pages.py` form submissions and flash redirects), and `src/web/app.py` (`create_app` wiring, static/template mounts, and the `ManageError`-to-HTTP-status handler mapping including the 500 fallback).
 
 #### Scenario: Creating a harbor rubric via the API is forbidden
 - **WHEN** a `PATCH` or `DELETE` is sent to a harbor rubric's API route
@@ -94,6 +133,13 @@ The suite SHALL cover the JSON API (`src/web/routes/api.py`) for rubrics and cri
 - **WHEN** each `ManageError` subclass is raised during a request
 - **THEN** the response status matches the registered mapping (`NotFoundError` 404, `HarborReadOnlyError` 403, `ConflictError` 409, `ValidationError` 400, and any other `ManageError` 500)
 
+### Requirement: run against the throwaway database via … (#6)
+
+All web tests SHALL run against the throwaway database via the dependency override.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: CLI Coverage
 The suite SHALL cover the `main.py` drafting CLI and the `src/eval/run.py` evaluation CLI: argument parsing, the `--list-rubrics` / `--list-runs` listings, missing-required-argument errors, and output-file writing - all without performing real LLM calls (services monkeypatched where needed).
 
@@ -110,7 +156,8 @@ The suite SHALL cover the `main.py` drafting CLI and the `src/eval/run.py` evalu
 - **THEN** it prints a usage message and exits non-zero
 
 ### Requirement: Backward-Compatible Refactor
-The behavior-preserving refactor SHALL preserve every existing public surface: `from src.eval import manage as M` SHALL continue to expose the same names (`M.create_rubric`, `M.list_prompts`, the error classes, etc.); every HTTP route path and method SHALL be unchanged; and the `python main.py "<request>" [output.md]` and `python -m src.eval.run` command interfaces SHALL be unchanged. The existing `tests/test_manage.py` and `tests/test_web_prompts.py` SHALL continue to pass (the latter moved onto the hermetic fixture).
+
+The behavior-preserving refactor SHALL preserve every existing public surface: `from src.eval import manage as M` SHALL continue to expose the same names (`M.create_rubric`, `M.list_prompts`, the error classes, etc.);
 
 #### Scenario: The manage facade re-exports the split modules
 - **WHEN** a caller does `from src.eval.manage import create_rubric, list_prompts, ConflictError`
@@ -123,3 +170,27 @@ The behavior-preserving refactor SHALL preserve every existing public surface: `
 #### Scenario: The drafting CLI interface is unchanged
 - **WHEN** `python main.py "起草一份服务协议" out.md` is run (with kickoff monkeypatched)
 - **THEN** it accepts the request and output path in the same positional form as before the argparse rewrite
+
+### Requirement: be unchanged (#7)
+
+every HTTP route path and method SHALL be unchanged;
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be unchanged (#8)
+
+and the `python main.py "<request>" [output.md]` and `python -m src.eval.run` command interfaces SHALL be unchanged.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: continue to pass (the latter moved … (#9)
+
+The existing `tests/test_manage.py` and `tests/test_web_prompts.py` SHALL continue to pass (the latter moved onto the hermetic fixture).
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds

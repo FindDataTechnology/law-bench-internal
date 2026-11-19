@@ -5,13 +5,16 @@ Capture per-run agent execution metrics — node timings, model calls, reviewer 
 
 ## Requirements
 ### Requirement: agent_runs table schema
-The system SHALL create a new PostgreSQL table `agent_runs` with the following columns: `id` (BIGSERIAL PK), `thread_id` (TEXT, LangGraph thread), `contract_type` (TEXT), `tags` (JSONB), `node_timings` (JSONB, per-node duration in seconds), `model_calls` (JSONB, array of {model, tokens, cost, latency}), `review_suggestions` (JSONB, all suggestions from reviewers), `suggestions_applied` (JSONB, which were applied in v2), `total_slots` (INT), `human_filled_slots` (INT), `eval_run_id` (BIGINT FK to eval_runs), `deepeval_scores` (JSONB), `total_duration` (FLOAT, seconds), `created_at` (TIMESTAMPTZ).
+The system SHALL create a new PostgreSQL table `agent_runs` with the following columns:
+
+#### Scenario: enumerated items
+- **WHEN** this requirement is applied
+- **THEN** the following items apply: `id` (BIGSERIAL PK), `thread_id` (TEXT, LangGraph thread), `contract_type` (TEXT), `tags` (JSONB), `node_timings` (JSONB, per-node duration in seconds), `model_calls` (JSONB, array of {model, tokens, cost, latency}), `review_suggestions` (JSONB, all suggestions from reviewers), `suggestions_applied` (JSONB, which were applied in v2), `total_slots` (INT), `human_filled_slots` (INT), `eval_run_id` (BIGINT FK to eval_runs), `deepeval_scores` (JSONB), `total_duration` (FLOAT, seconds), `created_at` (TIMESTAMPTZ).
 
 #### Scenario: Table creation
 - **WHEN** the database migration runs
 - **THEN** the `agent_runs` table SHALL be created with all specified columns
 - **THEN** the table SHALL have a foreign key constraint on `eval_run_id` referencing `eval_runs(id)`
-
 ### Requirement: Per-node timing tracking
 Each node in the LangGraph SHALL measure its execution duration using `time.perf_counter()`. The timing SHALL be stored in the `node_timings` JSONB column as a dict mapping node name to duration in seconds.
 

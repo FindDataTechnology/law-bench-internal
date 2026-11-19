@@ -5,7 +5,8 @@ A deterministic evaluator that audits contract 母版 (`src/contracts/data/contr
 
 ## Requirements
 ### Requirement: Contract Template Slot Audit
-The system SHALL provide a deterministic slot-coverage evaluator over contract 母版 that takes no LLM and no database. `audit_template(contract_type)` SHALL load the template via `src.contracts.templates.get_template` and, for every slot in `src.contracts.slots.REQUIRED_SLOTS`, classify it as `present` (the `{{slot}}` token appears in the body **before** the `## 签署信息` heading), `tail_only` (the token appears **only** at or after the `## 签署信息` heading), or `missing` (the token does not appear in the body at all). It SHALL additionally report `extra_slots` (slot names found in the body that have no entry in the template's `slot_instructions`) and `orphan_instructions` (`slot_instructions` entries whose `name` is absent from the body). It SHALL return a per-template result with `status` (`pass` or `fail`), a `coverage` ratio of present body-proper required slots over total body-proper required slots, and the five classification lists. Slot tokens SHALL be matched with `src.docs.SLOT_PATTERN`; `REQUIRED_SLOTS` and `default_slot_instructions` SHALL be imported, not redefined. `audit_body(body, slot_instructions)` SHALL expose the same classification for an arbitrary body string so the evaluator can be reused outside the registry.
+
+The system SHALL provide a deterministic slot-coverage evaluator over contract 母版 that takes no LLM and no database.
 
 #### Scenario: All required slots present in the body proper
 - **WHEN** `audit_template("sale")` is called for a template whose body contains every `REQUIRED_SLOTS` token before the `## 签署信息` heading
@@ -27,8 +28,56 @@ The system SHALL provide a deterministic slot-coverage evaluator over contract �
 - **WHEN** a template's `slot_instructions` contains an entry named `penalty` but the body has no `{{penalty}}` token
 - **THEN** `penalty` is listed in `orphan_instructions`
 
+### Requirement: load the template via `src.contracts.templates.get_template` and, … (#1)
+
+`audit_template(contract_type)` SHALL load the template via `src.contracts.templates.get_template` and, for every slot in `src.contracts.slots.REQUIRED_SLOTS`, classify it as `present` (the `{{slot}}` token appears in the body **before** the `## 签署信息` heading), `tail_only` (the token appears **only** at or after the `## 签署信息` heading), or `missing` (the token does not appear in the body at all).
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: additionally report `extra_slots` (slot names found … (#2)
+
+It SHALL additionally report `extra_slots` (slot names found in the body that have no entry in the template's `slot_instructions`) and `orphan_instructions` (`slot_instructions` entries whose `name` is absent from the body).
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: return a per-template result with `status` … (#3)
+
+It SHALL return a per-template result with `status` (`pass` or `fail`), a `coverage` ratio of present body-proper required slots over total body-proper required slots, and the five classification lists.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be matched with `src.docs.SLOT_PATTERN` (#4)
+
+Slot tokens SHALL be matched with `src.docs.SLOT_PATTERN`;
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be imported, not redefined (#5)
+
+`REQUIRED_SLOTS` and `default_slot_instructions` SHALL be imported, not redefined.
+
+#### Scenario: split-out behaviour 5
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: expose the same classification for an … (#6)
+
+`audit_body(body, slot_instructions)` SHALL expose the same classification for an arbitrary body string so the evaluator can be reused outside the registry.
+
+#### Scenario: split-out behaviour 6
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Canonical Slot Placement Expectation
-The system SHALL treat `sign_date` and `sign_location` as tail-allowed slots: for these two slots, a `tail_only` classification SHALL count as `present` for pass/fail purposes and SHALL NOT cause the template to fail. For all other `REQUIRED_SLOTS` entries (`party_a`, `party_b`, `subject`, `amount`, `term_start`, `term_end`, `party_a_duty`, `party_b_duty`, `penalty`, `jurisdiction`), a `tail_only` classification SHALL cause the template to fail. The body-proper set SHALL be derived from `REQUIRED_SLOTS` minus the tail-allowed pair, never authored as an independent list.
+
+The system SHALL treat `sign_date` and `sign_location` as tail-allowed slots: for these two slots, a `tail_only` classification SHALL count as `present` for pass/fail purposes and SHALL NOT cause the template to fail.
 
 #### Scenario: sign_date in the tail does not fail the template
 - **WHEN** a template body contains `{{sign_date}}` only at or after the `## 签署信息` heading and every body-proper required slot is present before it
@@ -38,8 +87,24 @@ The system SHALL treat `sign_date` and `sign_location` as tail-allowed slots: fo
 - **WHEN** a template body contains `{{party_b}}` only at or after the `## 签署信息` heading
 - **THEN** the result `status` is `fail` and `party_b` is in `tail_only`
 
+### Requirement: cause the template to fail (#7)
+
+For all other `REQUIRED_SLOTS` entries (`party_a`, `party_b`, `subject`, `amount`, `term_start`, `term_end`, `party_a_duty`, `party_b_duty`, `penalty`, `jurisdiction`), a `tail_only` classification SHALL cause the template to fail.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be derived from `REQUIRED_SLOTS` minus the … (#8)
+
+The body-proper set SHALL be derived from `REQUIRED_SLOTS` minus the tail-allowed pair, never authored as an independent list.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Slot Audit CLI
-The system SHALL expose the audit as `python -m src.contracts audit` with options `--type <key>` (audit a single contract class), `--json` (emit the structured report to stdout), `--strict` (exit non-zero iff any audited template is failing), and `--out <path>` (write the JSON report to a file, defaulting to `output/contract_slot_audit.json`). Without `--type`, the CLI SHALL audit every contract class in `list_contract_types()`. The default (non-`--json`) output SHALL be a human-readable table - one row per template with its status and any missing/tail-only slots - followed by an aggregate summary. `--strict` SHALL consider only missing or body-proper-misplaced required slots as failures; `extra_slots` and `orphan_instructions` SHALL be warnings that do not trigger a non-zero exit.
+
+The system SHALL expose the audit as `python -m src.contracts audit` with options `--type <key>` (audit a single contract class), `--json` (emit the structured report to stdout), `--strict` (exit non-zero iff any audited template is failing), and `--out <path>` (write the JSON report to a file, defaulting to `output/contract_slot_audit.json`).
 
 #### Scenario: Audit all templates prints a summary
 - **WHEN** `python -m src.contracts audit` is run without `--type`
@@ -57,8 +122,40 @@ The system SHALL expose the audit as `python -m src.contracts audit` with option
 - **WHEN** `python -m src.contracts audit --type sale` is run
 - **THEN** only the `sale` template is audited and reported
 
+### Requirement: audit every contract class in `list_contract_types()` (#9)
+
+Without `--type`, the CLI SHALL audit every contract class in `list_contract_types()`.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be a human-readable table - one … (#10)
+
+The default (non-`--json`) output SHALL be a human-readable table - one row per template with its status and any missing/tail-only slots - followed by an aggregate summary.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: consider only missing or body-proper-misplaced required … (#11)
+
+`--strict` SHALL consider only missing or body-proper-misplaced required slots as failures;
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be warnings that do not trigger … (#12)
+
+`extra_slots` and `orphan_instructions` SHALL be warnings that do not trigger a non-zero exit.
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Template Regeneration Pre-Normalization Audit
-`scripts/generate_contract_templates_llm.py` SHALL run `audit_body` on the LLM's raw draft output **before** calling `normalize_body`, and when the raw draft has any body-proper required slot that is missing or tail-only it SHALL print a warning naming the contract key and the omitted slots. The warning SHALL be non-blocking: the script SHALL NOT raise, SHALL still call `normalize_body`, and SHALL still write the normalized registry exactly as it does today. When the raw draft contains every body-proper required slot in the body proper, the script SHALL print no such warning.
+
+`scripts/generate_contract_templates_llm.py` SHALL run `audit_body` on the LLM's raw draft output **before** calling `normalize_body`, and when the raw draft has any body-proper required slot that is missing or tail-only it SHALL print a warning naming the contract key and the omitted slots.
 
 #### Scenario: Raw draft missing a party slot warns but still normalizes
 - **WHEN** the LLM returns a draft for `employment` that omits `{{party_b}}` from the body proper
@@ -68,6 +165,21 @@ The system SHALL expose the audit as `python -m src.contracts audit` with option
 - **WHEN** the LLM returns a draft for `sale` containing every body-proper required slot before the `## 签署信息` heading
 - **THEN** the script prints no pre-normalization audit warning for `sale`
 
+### Requirement: be non-blocking: the script SHALL NOT … (#13)
+
+The warning SHALL be non-blocking: the script SHALL NOT raise, SHALL still call `normalize_body`, and SHALL still write the normalized registry exactly as it does today.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: print no such warning (#14)
+
+When the raw draft contains every body-proper required slot in the body proper, the script SHALL print no such warning.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Audit Report Artifact
 The CLI SHALL write a JSON report artifact when `--out` is given or by default to `output/contract_slot_audit.json`. The report SHALL contain an `aggregate` object with `total`, `passed`, `failed`, `failing_templates` (list of failing contract keys), and `by_slot` (a map from each `REQUIRED_SLOTS` name to the number of templates missing it), plus a `templates` array of the per-template result objects. Re-running the CLI SHALL overwrite the file.
 

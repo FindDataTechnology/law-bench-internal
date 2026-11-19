@@ -28,7 +28,7 @@ The system SHALL import the law catalog export (columns: id, title, category, pu
 
 ### Requirement: Name resolution to catalog entries
 
-The system SHALL resolve law name strings (as they appear in clause `law_refs`, e.g. `中华人民共和国民法典`, `合同法`, `九民纪要`) to replica catalog entries, using a fixed resolution ladder: normalization (strip the `中华人民共和国` prefix, consistent with the existing `_dedup_key` convention) → curated alias table (简称/旧称 → 全称) → trigram similarity match above a configured threshold. Every resolution result SHALL record how it matched (`resolved_via`: exact / alias / trigram / unresolved). Resolution SHALL be deterministic: identical inputs produce identical results across runs.
+The system SHALL resolve law name strings (as they appear in clause `law_refs`, e.g. `中华人民共和国民法典`, `合同法`, `九民纪要`) to replica catalog entries, using a fixed resolution ladder: normalization (strip the `中华人民共和国` prefix, consistent with the existing `_dedup_key` convention) → curated alias table (简称/旧称 → 全称) → trigram similarity match above a configured threshold.
 
 #### Scenario: Normalized exact match
 
@@ -51,9 +51,24 @@ The system SHALL resolve law name strings (as they appear in clause `law_refs`, 
 - **THEN** the resolution records `resolved_via = unresolved`
 - **AND** the name appears in the human review queue so an operator can add an alias or record a deliberate non-match
 
+### Requirement: record how it matched (`resolved_via`: exact … (#1)
+
+Every resolution result SHALL record how it matched (`resolved_via`: exact / alias / trigram / unresolved).
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be deterministic: identical inputs produce identical … (#2)
+
+Resolution SHALL be deterministic: identical inputs produce identical results across runs.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Clause-to-law resolution results stored separately from derived law_refs
 
-The system SHALL store resolution results in a dedicated table keyed by clause and law (clause_id, law_id, status snapshot, resolved_via), populated by an independently re-runnable resolution pass. The pass SHALL NOT modify the `clauses.law_refs` derived column, clause bodies, or the body→law_refs derivation pipeline: editing a clause and re-deriving law_refs SHALL never destroy or require rebuilding resolution results by side effect, and re-running the pass after such an edit SHALL recompute results from the current law_refs.
+The system SHALL store resolution results in a dedicated table keyed by clause and law (clause_id, law_id, status snapshot, resolved_via), populated by an independently re-runnable resolution pass.
 
 #### Scenario: Re-run after a clause is edited
 
@@ -66,6 +81,13 @@ The system SHALL store resolution results in a dedicated table keyed by clause a
 - **WHEN** the resolution pass runs
 - **THEN** every clause's `law_refs` value is byte-identical to before the pass
 
+### Requirement: modify the `clauses.law_refs` derived column, clause … (#3)
+
+The pass SHALL NOT modify the `clauses.law_refs` derived column, clause bodies, or the body→law_refs derivation pipeline: editing a clause and re-deriving law_refs SHALL never destroy or require rebuilding resolution results by side effect, and re-running the pass after such an edit SHALL recompute results from the current law_refs.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Expiry column excluded from validity judgments
 
 The system SHALL NOT use the catalog's `expiry` column in any validity, liveness, or staleness judgment. Its real-world semantics is 施行日期 (effective date), not an expiry date: laws with `expiry` in the past and `status = 有效` are common and current. Validity classification SHALL come from the `status` column only.

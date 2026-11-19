@@ -5,7 +5,8 @@ Bundle, seed idempotently, and browse law-info survey content with Markdown rend
 
 ## Requirements
 ### Requirement: Law-Info Storage
-The system SHALL store per-contract-type 法律法规 survey answers in a `law_info` table within the PostgreSQL database addressed by the `database_url` environment variable. Each row SHALL represent one (contract_type, source) pair with columns: `id` (BIGINT identity primary key), `contract_type` (TEXT, the type key e.g. `sale`), `source` (TEXT, `doubao` or `deepseek`), `zh_name` (TEXT, the Chinese contract-type name), `content` (TEXT, the markdown survey body), and `created_at` (TIMESTAMPTZ). The combination of (`contract_type`, `source`) SHALL be unique. The `law_info` table SHALL be created idempotently (`CREATE TABLE IF NOT EXISTS`) by the same schema source of truth that creates `rubrics`/`criteria`/`prompts` (`scripts/extract_harbor_rules.py`'s `SCHEMA`) and by `src/eval/store.py::ensure_schema`, so both the seeder path and the runtime/self-heal path establish it. `contract_type` SHALL be loosely coupled (no foreign key to `rubrics` or `prompts`), matching the existing contract-type discipline.
+
+The system SHALL store per-contract-type 法律法规 survey answers in a `law_info` table within the PostgreSQL database addressed by the `database_url` environment variable.
 
 #### Scenario: The law_info table is created idempotently
 - **WHEN** `create_schema` runs on a fresh database
@@ -22,6 +23,37 @@ The system SHALL store per-contract-type 法律法规 survey answers in a `law_i
 - **THEN** no foreign key binds it to a `rubrics` or `prompts` row
 - **AND** deleting the `contract_sale_v1` rubric does not invalidate the `law_info` row
 
+### Requirement: represent one (contract_type, source) pair with … (#1)
+
+Each row SHALL represent one (contract_type, source) pair with columns: `id` (BIGINT identity primary key), `contract_type` (TEXT, the type key e.g. `sale`), `source` (TEXT, `doubao` or `deepseek`), `zh_name` (TEXT, the Chinese contract-type name), `content` (TEXT, the markdown survey body), and `created_at` (TIMESTAMPTZ).
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be unique (#2)
+
+The combination of (`contract_type`, `source`) SHALL be unique.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be created idempotently (`CREATE TABLE IF … (#3)
+
+The `law_info` table SHALL be created idempotently (`CREATE TABLE IF NOT EXISTS`) by the same schema source of truth that creates `rubrics`/`criteria`/`prompts` (`scripts/extract_harbor_rules.py`'s `SCHEMA`) and by `src/eval/store.py::ensure_schema`, so both the seeder path and the runtime/self-heal path establish it.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be loosely coupled (no foreign key … (#4)
+
+`contract_type` SHALL be loosely coupled (no foreign key to `rubrics` or `prompts`), matching the existing contract-type discipline.
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Bundled Law-Info Markdown Seed Source
 The system SHALL ship a bundled copy of the 82 law_info markdown files (41 contract types × {doubao, deepseek}) plus `contract_types.json` under `src/eval/seed/law_info/` (committed to the repository, because `output/` is gitignored and absent from the container). The bundled markdown SHALL be the canonical source of the survey content; the seeder SHALL read from it.
 
@@ -49,7 +81,8 @@ The system SHALL provide `scripts/seed_law_info.py` that idempotently upserts th
 - **THEN** no prompt, rubric, criterion, or eval-run row is modified or deleted
 
 ### Requirement: Browse Law-Info Surveys
-The system SHALL present a `GET /law-info` HTML page listing all 41 contract types (by Chinese name) with a link to a per-type detail page, and a `GET /law-info/{type}` HTML page showing that type's Doubao and DeepSeek survey answers side-by-side. Both pages SHALL be server-rendered with Jinja2 and SHALL read from the `law_info` table via `get_db()`. A missing or unknown `type` SHALL render a clear not-found state rather than raising. The type keys SHALL be the 41 keys from `contract_types.json`.
+
+The system SHALL present a `GET /law-info` HTML page listing all 41 contract types (by Chinese name) with a link to a per-type detail page, and a `GET /law-info/{type}` HTML page showing that type's Doubao and DeepSeek survey answers side-by-side.
 
 #### Scenario: List all contract types
 - **WHEN** a user opens `/law-info`
@@ -65,6 +98,29 @@ The system SHALL present a `GET /law-info` HTML page listing all 41 contract typ
 - **THEN** the page renders a clear not-found state
 - **AND** no unhandled exception is raised
 
+### Requirement: be server-rendered with Jinja2 and SHALL … (#5)
+
+Both pages SHALL be server-rendered with Jinja2 and SHALL read from the `law_info` table via `get_db()`.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: render a clear not-found state rather … (#6)
+
+A missing or unknown `type` SHALL render a clear not-found state rather than raising.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be the 41 keys from `contract_types.json` (#7)
+
+The type keys SHALL be the 41 keys from `contract_types.json`.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Markdown Rendering of Law-Info Content
 The system SHALL render `law_info.content` (markdown) to HTML server-side using `markdown-it-py` (promoted to a direct dependency in `pyproject.toml`). The rendered HTML SHALL be injected into the detail template. If rendering a given content body raises, the system SHALL fall back to presenting the raw markdown text escaped, so the page still renders. The content is first-party bundled (not user input at runtime), so default renderer options are acceptable.
 
@@ -78,7 +134,8 @@ The system SHALL render `law_info.content` (markdown) to HTML server-side using 
 - **AND** the rest of the page still renders
 
 ### Requirement: Legal References Index Page
-The system SHALL present a `GET /law-references` HTML page aggregating every unique 法律法规 mentioned across all 82 law_info answers, deduplicated by canonical name and categorized (`core_law` 核心法律, `judicial_interpretation` 司法解释, `special_statute` 专项法规, `procedural` 程序法, plus an `other` bucket for unmatched). Each entry SHALL list the `(contract_type, source)` pairs it appeared in. The page SHALL support filtering by source (doubao/deepseek) and by contract type. The aggregation SHALL be computed from the `law_info.content` rows in the database by a pure extractor function (`src/eval/legal_refs.py::extract_references`) so the index is always consistent with the seeded content.
+
+The system SHALL present a `GET /law-references` HTML page aggregating every unique 法律法规 mentioned across all 82 law_info answers, deduplicated by canonical name and categorized (`core_law` 核心法律, `judicial_interpretation` 司法解释, `special_statute` 专项法规, `procedural` 程序法, plus an `other` bucket for unmatched).
 
 #### Scenario: All referenced laws are listed
 - **WHEN** a user opens `/law-references`
@@ -93,6 +150,29 @@ The system SHALL present a `GET /law-references` HTML page aggregating every uni
 - **WHEN** a law name in the content does not match a known categorization pattern
 - **THEN** it is listed under the `other` bucket rather than omitted
 
+### Requirement: list the `(contract_type, source)` pairs it … (#8)
+
+Each entry SHALL list the `(contract_type, source)` pairs it appeared in.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: support filtering by source (doubao/deepseek) and … (#9)
+
+The page SHALL support filtering by source (doubao/deepseek) and by contract type.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be computed from the `law_info.content` rows … (#10)
+
+The aggregation SHALL be computed from the `law_info.content` rows in the database by a pure extractor function (`src/eval/legal_refs.py::extract_references`) so the index is always consistent with the seeded content.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Legal References Reference Document
 The system SHALL provide `scripts/extract_legal_references.py` (a CLI) that reads the bundled law_info markdown (the canonical source) via the same `extract_references` function and writes a committed `docs/legal_references.md` containing the consolidated, deduplicated, categorized 法律法规 list. The document SHALL be regenerable so it stays in sync with the bundled markdown.
 

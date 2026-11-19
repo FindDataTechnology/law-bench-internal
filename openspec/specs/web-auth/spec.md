@@ -22,9 +22,7 @@ The system SHALL enforce authentication on every HTTP route except the explicit 
 
 ### Requirement: Unified identity resolution via get_current_user
 
-The system SHALL resolve the caller's identity through exactly one FastAPI dependency, `get_current_user`, which MUST attempt, in order: (1) a valid signed session cookie, (2) an `Authorization: Bearer <jwt>` header validated against Logto's JWKS, (3) an `X-API-Key` header validated against the `api_keys` table. The first method that succeeds SHALL establish the identity; the dependency MUST short-circuit and not fall through to a weaker method after a present-but-invalid credential. The resolved identity MUST be attached to `request.state.user` for downstream handlers and to FastAPI's `Request.user` for route logic.
-
-When the `X-API-Key` channel succeeds, the verify path SHALL touch the key's `last_used_at` column. This touch SHALL be best-effort: if the write cannot persist (because the service is running against a read-only Postgres read-replica, as the public pod does), the touch SHALL be skipped and the request SHALL still succeed — a non-persisting `last_used_at` write MUST NOT cause `401` or `500`. On the origin (writable primary) the touch SHALL persist as before. The present-but-invalid-credential binding and the cookie→Bearer→API-Key order are unchanged on both the origin and the public pod.
+The system SHALL resolve the caller's identity through exactly one FastAPI dependency, `get_current_user`, which MUST attempt, in order: (1) a valid signed session cookie, (2) an `Authorization: Bearer <jwt>` header validated against Logto's JWKS, (3) an `X-API-Key` header validated against the `api_keys` table.
 
 #### Scenario: Valid session cookie authenticates the request
 - **WHEN** a request carries a valid, non-expired signed session cookie and no other credential
@@ -52,9 +50,56 @@ When the `X-API-Key` channel succeeds, the verify path SHALL touch the key's `la
 - **WHEN** a request carries a valid `X-API-Key` and the service is running against the writable origin Postgres primary
 - **THEN** the `last_used_at` column is updated for that key, as before this change
 
+### Requirement: establish the identity (#1)
+
+The first method that succeeds SHALL establish the identity;
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: short-circuit and not fall through to … (#2)
+
+the dependency MUST short-circuit and not fall through to a weaker method after a present-but-invalid credential.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be attached to `request.state.user` for downstream … (#3)
+
+The resolved identity MUST be attached to `request.state.user` for downstream handlers and to FastAPI's `Request.user` for route logic.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: touch the key's `last_used_at` column (#4)
+
+When the `X-API-Key` channel succeeds, the verify path SHALL touch the key's `last_used_at` column.
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be best-effort: if the write cannot … (#5)
+
+This touch SHALL be best-effort: if the write cannot persist (because the service is running against a read-only Postgres read-replica, as the public pod does), the touch SHALL be skipped and the request SHALL still succeed — a non-persisting `last_used_at` write MUST NOT cause `401` or `500`.
+
+#### Scenario: split-out behaviour 5
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: persist as before (#6)
+
+On the origin (writable primary) the touch SHALL persist as before.
+
+#### Scenario: split-out behaviour 6
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds The present-but-invalid-credential binding and the cookie→Bearer→API-Key order are unchanged on both the origin and the public pod.
 ### Requirement: Browser login via Logto OIDC authorization code flow
 
-The system SHALL implement an OIDC authorization code flow for browser users. `GET /auth/login` MUST redirect to Logto's authorization endpoint with `client_id`, `redirect_uri`, `response_type=code`, `scope=<requested scopes>`, `resource=<LOGTO_API_RESOURCE>`, and a PKCE `code_challenge`/`code_verifier` pair. The `resource` parameter (the registered API Resource indicator) MUST also be sent when exchanging the code at the token endpoint, so the returned **access token** is minted for that resource. `GET /auth/callback` MUST exchange the `code` for tokens, validate the ID token against JWKS for identity, validate the access token against JWKS (with `aud` equal to `LOGTO_API_RESOURCE`), read the access token's `scope` claim as the identity's granted permissions, evaluate the scope-admission gate (per the web-rbac capability), and — only for an identity holding an admitted scope — set an httpOnly, Secure, SameSite=Lax session cookie containing the resolved user identity (including its scopes) before redirecting to the application root. An identity that authenticates successfully but holds no admitted scope MUST receive a `403` login-denied response and MUST NOT receive a session cookie.
+The system SHALL implement an OIDC authorization code flow for browser users.
 
 #### Scenario: Login redirect to Logto
 - **WHEN** an unauthenticated browser user hits `GET /auth/login`
@@ -72,6 +117,37 @@ The system SHALL implement an OIDC authorization code flow for browser users. `G
 - **WHEN** `GET /auth/callback` is called with no `code`, an unknown `state`, or a code Logto refuses to exchange
 - **THEN** the system responds `400` with `{"error": "invalid callback"}` and sets no cookie
 
+### Requirement: redirect to Logto's authorization endpoint with … (#7)
+
+`GET /auth/login` MUST redirect to Logto's authorization endpoint with `client_id`, `redirect_uri`, `response_type=code`, `scope=<requested scopes>`, `resource=<LOGTO_API_RESOURCE>`, and a PKCE `code_challenge`/`code_verifier` pair.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: also be sent when exchanging the … (#8)
+
+The `resource` parameter (the registered API Resource indicator) MUST also be sent when exchanging the code at the token endpoint, so the returned **access token** is minted for that resource.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: exchange the `code` for tokens, validate … (#9)
+
+`GET /auth/callback` MUST exchange the `code` for tokens, validate the ID token against JWKS for identity, validate the access token against JWKS (with `aud` equal to `LOGTO_API_RESOURCE`), read the access token's `scope` claim as the identity's granted permissions, evaluate the scope-admission gate (per the web-rbac capability), and — only for an identity holding an admitted scope — set an httpOnly, Secure, SameSite=Lax session cookie containing the resolved user identity (including its scopes) before redirecting to the application root.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: receive a `403` login-denied response and … (#10)
+
+An identity that authenticates successfully but holds no admitted scope MUST receive a `403` login-denied response and MUST NOT receive a session cookie.
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Session cookie signing and validation
 
 The system SHALL sign the session cookie with a server-side secret (`AUTH_SESSION_SECRET`) using a tamper-evident mechanism (e.g. `itsdangerous` or `starlette` Session middleware). A cookie whose signature does not validate, or whose payload indicates expiry past a configurable `AUTH_SESSION_TTL`, MUST be treated as absent (not as a `401` error by itself — the caller may still present another credential).

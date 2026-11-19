@@ -8,7 +8,7 @@ Web UI for browsing the full corpus of stored contract artifacts (724 content-ad
 
 ### Requirement: Samples Library Page
 
-The system SHALL expose `GET /samples` returning server-rendered HTML (Jinja2, `include_in_schema=False`, route name `page_samples`) that displays all stored `contract_artifacts` rows in a paginated metadata table, newest first. The page SHALL accept query parameters `contract_type` (optional), `scenario` (optional), `stance` (optional), `limit` (1–100, default 50), and `offset` (≥0, default 0), and SHALL render a filter form, the data table, and pagination controls. The page SHALL function with zero client-side JavaScript for core navigation (filters and pagination are plain GET form submissions / anchor links).
+The system SHALL expose `GET /samples` returning server-rendered HTML (Jinja2, `include_in_schema=False`, route name `page_samples`) that displays all stored `contract_artifacts` rows in a paginated metadata table, newest first.
 
 #### Scenario: Page renders with no filters
 
@@ -25,9 +25,24 @@ The system SHALL expose `GET /samples` returning server-rendered HTML (Jinja2, `
 - **WHEN** `GET /openapi.json` is fetched
 - **THEN** the path `/samples` is absent (the route is declared `include_in_schema=False`)
 
+### Requirement: accept query parameters `contract_type` (optional), `scenario` … (#1)
+
+The page SHALL accept query parameters `contract_type` (optional), `scenario` (optional), `stance` (optional), `limit` (1–100, default 50), and `offset` (≥0, default 0), and SHALL render a filter form, the data table, and pagination controls.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: function with zero client-side JavaScript for … (#2)
+
+The page SHALL function with zero client-side JavaScript for core navigation (filters and pagination are plain GET form submissions / anchor links).
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Cascading Filter Dropdowns
 
-The page SHALL present three `<select>` filters in cascade: contract type (always populated), scenario (populated only after a contract type is selected), and stance (populated only after a contract type is selected). All three SHALL auto-submit the form on change (`onchange="this.form.submit()"`) and SHALL include a `<noscript>` submit button for non-JS clients. The "全部" (no-filter) option SHALL be the first option in each select. The scenario and stance options SHALL be the distinct non-null values present in `contract_artifacts` rows for the selected contract type.
+The page SHALL present three `<select>` filters in cascade: contract type (always populated), scenario (populated only after a contract type is selected), and stance (populated only after a contract type is selected).
 
 #### Scenario: Selecting a type populates scenario and stance options
 
@@ -44,9 +59,32 @@ The page SHALL present three `<select>` filters in cascade: contract type (alway
 - **WHEN** the user selects type `sale` and scenario `农产品买卖`, then changes the stance dropdown
 - **THEN** the re-rendered page preserves the selected type and scenario in their respective dropdowns (selected attributes set)
 
+### Requirement: auto-submit the form on change (`onchange="this.form.submit()"`) … (#3)
+
+All three SHALL auto-submit the form on change (`onchange="this.form.submit()"`) and SHALL include a `<noscript>` submit button for non-JS clients.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be the first option in each … (#4)
+
+The "全部" (no-filter) option SHALL be the first option in each select.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be the distinct non-null values present … (#5)
+
+The scenario and stance options SHALL be the distinct non-null values present in `contract_artifacts` rows for the selected contract type.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Scenario and Stance Filter Semantics
 
-The `scenario` query parameter, when present and non-empty, SHALL filter rows to `contract_artifacts` whose `scenario` column equals that value (excluding base rows with NULL scenario). When absent or empty ("全部"), it SHALL apply no scenario filter (including base rows with NULL scenario). The `stance` parameter SHALL follow the same two-state semantics against the `stance` column. Both filters SHALL compose with each other and with the `contract_type` filter via AND logic. A `contract_type` that has no artifacts SHALL render an empty table (no 500 error).
+The `scenario` query parameter, when present and non-empty, SHALL filter rows to `contract_artifacts` whose `scenario` column equals that value (excluding base rows with NULL scenario).
 
 #### Scenario: Specific scenario excludes base rows
 
@@ -63,6 +101,37 @@ The `scenario` query parameter, when present and non-empty, SHALL filter rows to
 - **WHEN** `GET /samples?contract_type=does_not_exist` is requested
 - **THEN** the response is 200 with an empty `<tbody>` and the scenario/stance selects containing only "全部" (no crash, no 500)
 
+### Requirement: apply no scenario filter (including base … (#6)
+
+When absent or empty ("全部"), it SHALL apply no scenario filter (including base rows with NULL scenario).
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: follow the same two-state semantics against … (#7)
+
+The `stance` parameter SHALL follow the same two-state semantics against the `stance` column.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: compose with each other and with … (#8)
+
+Both filters SHALL compose with each other and with the `contract_type` filter via AND logic.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: render an empty table (no 500 … (#9)
+
+A `contract_type` that has no artifacts SHALL render an empty table (no 500 error).
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Server-Side Pagination
 
 The page SHALL paginate artifact rows server-side via `LIMIT`/`OFFSET`. The total count returned alongside the rows SHALL reflect the *filtered* set (i.e., with all active filters applied), not the unfiltered table. The page-info span SHALL display current page / total pages and the filtered total count. `offset` values beyond the filtered total SHALL yield an empty row list with the unchanged filtered total.
@@ -93,7 +162,7 @@ Each artifact row in the samples table SHALL present two download anchors: one l
 
 ### Requirement: Samples Service Layer
 
-The system SHALL add three read-only query functions to `src/contracts/artifacts.py` that do not modify any existing function: `distinct_scenarios(contract_type, db=None) -> list[str]` returning distinct non-null `scenario` values for a type (ordered); `distinct_stances(contract_type, db=None) -> list[str]` returning distinct non-null `stance` values; and `list_samples(contract_type=None, scenario=None, stance=None, limit=50, offset=0, db=None) -> tuple[list[dict], int]` returning metadata rows (excluding `body_text`) plus the filtered total count. All three SHALL use parameterized queries (no string interpolation of user input). The existing `list_artifacts`, `get_artifact`, and `download` functions SHALL remain unchanged (backward compatible).
+The system SHALL add three read-only query functions to `src/contracts/artifacts.py` that do not modify any existing function: `distinct_scenarios(contract_type, db=None) -> list[str]` returning distinct non-null `scenario` values for a type (ordered);
 
 #### Scenario: distinct_scenarios returns non-null set
 
@@ -113,8 +182,23 @@ The system SHALL add three read-only query functions to `src/contracts/artifacts
 #### Scenario: Existing list_artifacts is unchanged
 
 - **WHEN** `list_artifacts(contract_type='sale')` is called after the change
-- **THEN** its signature, return shape, and behavior are identical to before (no regression)
+- **THEN** its signature, return shape, and behavior are identical to before (no regression) `distinct_stances(contract_type, db=None) -> list[str]` returning distinct non-null `stance` values; and `list_samples(contract_type=None, scenario=None, stance=None, limit=50, offset=0, db=None) -> tuple[list[dict], int]` returning metadata rows (excluding `body_text`) plus the filtered total count.
 
+### Requirement: use parameterized queries (no string interpolation … (#10)
+
+All three SHALL use parameterized queries (no string interpolation of user input).
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: remain unchanged (backward compatible) (#11)
+
+The existing `list_artifacts`, `get_artifact`, and `download` functions SHALL remain unchanged (backward compatible).
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Nav and App Wiring
 
 The system SHALL register the `samples` router in `src/web/app.py` (`app.include_router(samples.router)`) and SHALL add a "合同样本" navigation link to `src/web/templates/base.html` pointing at `url_for('page_samples')`. The samples page SHALL inherit `base.html` so the locale context processor and shared nav apply.

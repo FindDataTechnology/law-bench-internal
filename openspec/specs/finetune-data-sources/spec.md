@@ -65,7 +65,7 @@
 
 ### Requirement: 合成槽位实例化配对构建
 
-系统 SHALL 提供一个合成槽位实例化构建器，把 `contract_artifacts` 中非 superseded（`superseded_at` 为空）且 `body_text` 非空的母版行转换为 Drafter-A 银牌配对：正文中的 `{{槽位名}}` 占位符（含中文与 ASCII 标识符）MUST 全部被替换为确定性抽取的槽位值，替换后的正文 MUST 不残留任何占位符。占位符名字 MUST 与该行 `slots` 清单一致；出现 `slots` 清单之外的占位符时，该行 MUST 被整行丢弃并计入审计，MUST NOT 部分填充。无法归类到任何值类别的长尾槽位名 SHALL 采用通用法律兜底值填充（如「双方另行协商确定」），MUST NOT 因长尾槽位丢弃整行；使用兜底值的槽位名数与行数 MUST 计入导出审计。槽位值 MUST 由以正文内容为种子的确定性抽取产生：相同输入重复运行 SHALL 产出逐字节相同的配对。产出的配对 MUST 携带：非空 `task_desc`（由合同类型中文名、业务场景、立场确定性合成）、`slots`（名称与填入正文的值一一对应）、`tier: silver`、`provenance: contract_artifacts:<id>`、`annotated_by: machine_generated`、以及 `synthetic_slots: true` 合成标记。合成配对为机器产出，MUST NOT 自动晋升为 gold。
+系统 SHALL 提供一个合成槽位实例化构建器，把 `contract_artifacts` 中非 superseded（`superseded_at` 为空）且 `body_text` 非空的母版行转换为 Drafter-A 银牌配对：正文中的 `{{槽位名}}` 占位符（含中文与 ASCII 标识符）MUST 全部被替换为确定性抽取的槽位值，替换后的正文 MUST 不残留任何占位符。
 
 #### Scenario: 模板被完整实例化
 
@@ -109,6 +109,61 @@
 - **THEN** 该配对 `tier` 为 `silver`、`annotated_by` 为 `machine_generated`
 - **AND** 既有 bronze/silver 守卫阻止该配对进入 reward 正样本集
 
+### Requirement: 与该行 `slots` 清单一致 (#1)
+
+占位符名字 MUST 与该行 `slots` 清单一致；
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 被整行丢弃并计入审计，MUST NOT 部分填充 (#2)
+
+出现 `slots` 清单之外的占位符时，该行 MUST 被整行丢弃并计入审计，MUST NOT 部分填充。
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 采用通用法律兜底值填充（如「双方另行协商确定」），MUST NOT 因长尾槽位丢弃整行 (#3)
+
+无法归类到任何值类别的长尾槽位名 SHALL 采用通用法律兜底值填充（如「双方另行协商确定」），MUST NOT 因长尾槽位丢弃整行；
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 计入导出审计 (#4)
+
+使用兜底值的槽位名数与行数 MUST 计入导出审计。
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 由以正文内容为种子的确定性抽取产生：相同输入重复运行 SHALL 产出逐字节相同的配对 (#5)
+
+槽位值 MUST 由以正文内容为种子的确定性抽取产生：相同输入重复运行 SHALL 产出逐字节相同的配对。
+
+#### Scenario: split-out behaviour 5
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 携带：非空 `task_desc`（由合同类型中文名、业务场景、立场确定性合成）、`slots`（名称与填入正文的值一一对应）、`tier: silver`、`provenance: contract_artifacts:<id>`、`annotated_by: machine_generated`、以及 `synthetic_slots: … (#6)
+
+产出的配对 MUST 携带：非空 `task_desc`（由合同类型中文名、业务场景、立场确定性合成）、`slots`（名称与填入正文的值一一对应）、`tier: silver`、`provenance: contract_artifacts:<id>`、`annotated_by: machine_generated`、以及 `synthetic_slots: true` 合成标记。
+
+#### Scenario: split-out behaviour 6
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 自动晋升为 gold (#7)
+
+合成配对为机器产出，MUST NOT 自动晋升为 gold。
+
+#### Scenario: split-out behaviour 7
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Judge-C 候选四元组脚手架构建
 
 系统 SHALL 提供一个候选四元组脚手架构建器，按合同类型把 `type_validations` 的合规规则（含 `law_ref` 与 `message`）与 `clauses` 的条款正文、`law_info` 的法条摘要交叉配对，产出候选判官四元组：`legal_base` 取规则的 `law_ref` 与 `law_info` 检索文本、`clause_text` 取条款正文、`verdict` 默认 `fail`（待人工核验）、`reasoning` 取规则的 `message` 与引用。脚手架候选 MUST 标记 `tier: silver`、`provenance: scaffold:machine:<type_validations:id>`、`annotated_by: machine_self_eval`。脚手架候选 SHALL 通过既有四元组 JSON Schema 校验；不通过的候选 MUST 被丢弃并记入缺口。脚手架候选 MUST NOT 自动晋升为 `gold`。

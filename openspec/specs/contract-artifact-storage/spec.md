@@ -5,19 +5,23 @@ Store generated contract artifacts with content-addressed deduplication and expo
 
 ## Requirements
 ### Requirement: Contract Artifacts Table
-The system SHALL maintain a `contract_artifacts` table created by `ensure_schema()` with columns: `id` (serial PK), `contract_type` (text, not null), `scenario` (text, nullable), `stance` (text, nullable), `custom_clause_ids` (jsonb, nullable), `body_hash` (text, not null), `body_text` (text, not null), `slots` (jsonb, not null), `docx_key` (text, nullable), `pdf_key` (text, nullable), `minio_bucket` (text, not null), `created_at` (timestamptz, not null), `updated_at` (timestamptz, not null). There SHALL be a unique constraint on `body_hash`.
+
+The system SHALL maintain a `contract_artifacts` table created by `ensure_schema()` with columns: `id` (serial PK), `contract_type` (text, not null), `scenario` (text, nullable), `stance` (text, nullable), `custom_clause_ids` (jsonb, nullable), `body_hash` (text, not null), `body_text` (text, not null), `slots` (jsonb, not null), `docx_key` (text, nullable), `pdf_key` (text, nullable), `minio_bucket` (text, not null), `created_at` (timestamptz, not null), `updated_at` (timestamptz, not null).
 
 #### Scenario: Table is created by ensure_schema
 - **WHEN** `ensure_schema()` runs against a fresh database
 - **THEN** the `contract_artifacts` table exists with all listed columns and a unique index on `body_hash`
 
+### Requirement: be a unique constraint on `body_hash` (#1)
+
+There SHALL be a unique constraint on `body_hash`.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Generate-and-Store Endpoint
-The system SHALL expose `POST /api/contracts/{contract_type}/generate-stored` accepting a JSON body `{scenario?, stance?, custom_clause_ids?, format}` where `format` is `"docx"` (default), `"pdf"`, `"both"`, or `"markdown"`. The endpoint SHALL bifurcate on whether tags are supplied:
 
-- **By tag** (`scenario` and/or `stance` and/or `custom_clause_ids` given): assemble a single contract variant via `generate_contract_assembled`, upload the rendered docx/pdf to MinIO under `MINIO_ARTIFACTS_PREFIX` with key `{prefix}{contract_type}/{artifact_id}.{ext}`, record a `contract_artifacts` row, and return `{artifact_id, docx_url, pdf_url, body_text, slots, reused}`. A coherence-gate failure SHALL produce 422.
-- **By contract type** (no tags): generate **every** scenario x stance x base combination for the type (enumerating distinct `scenario` values from tagged clauses and `stance` values from custom clauses), store each via the by-tag path, and return a summary `{contract_type, format, artifacts: [{artifact_id, scenario, stance, docx_url, pdf_url, reused}], count, new, reused, failed, failures}`. Per-combo coherence failures are reported in `failures` (not 422).
-
-In both paths `docx_url`/`pdf_url` are the download endpoints (`/api/contracts/artifacts/{id}/download?format=...`) or `null` when that format was not produced. For `format: "markdown"` no file is uploaded and `docx_key`/`pdf_key` stay null (the row still records `body_text`/`body_hash`). An unknown contract type SHALL produce 404. It SHALL be documented in `/api/docs`.
+The system SHALL expose `POST /api/contracts/{contract_type}/generate-stored` accepting a JSON body `{scenario?, stance?, custom_clause_ids?, format}` where `format` is `"docx"` (default), `"pdf"`, `"both"`, or `"markdown"`.
 
 #### Scenario: By type generates all combinations
 - **WHEN** `POST /api/contracts/sale/generate-stored` is called with `{}`
@@ -43,8 +47,40 @@ In both paths `docx_url`/`pdf_url` are the download endpoints (`/api/contracts/a
 - **WHEN** `POST /api/contracts/sale/generate-stored` is called with `{"scenario": "..."}` and the clause selection drops a canonical base section
 - **THEN** it returns 422 with a diagnostic `{"detail": ...}` naming the failing check
 
+### Requirement: bifurcate on whether tags are supplied: … (#2)
+
+The endpoint SHALL bifurcate on whether tags are supplied: - **By tag** (`scenario` and/or `stance` and/or `custom_clause_ids` given): assemble a single contract variant via `generate_contract_assembled`, upload the rendered docx/pdf to MinIO under `MINIO_ARTIFACTS_PREFIX` with key `{prefix}{contract_type}/{artifact_id}.{ext}`, record a `contract_artifacts` row, and return `{artifact_id, docx_url, pdf_url, body_text, slots, reused}`.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: produce 422 (#3)
+
+A coherence-gate failure SHALL produce 422.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds - **By contract type** (no tags): generate **every** scenario x stance x base combination for the type (enumerating distinct `scenario` values from tagged clauses and `stance` values from custom clauses), store each via the by-tag path, and return a summary `{contract_type, format, artifacts: [{artifact_id, scenario, stance, docx_url, pdf_url, reused}], count, new, reused, failed, failures}`. Per-combo coherence failures are reported in `failures` (not 422). In both paths `docx_url`/`pdf_url` are the download endpoints (`/api/contracts/artifacts/{id}/download?format=...`) or `null` when that format was not produced. For `format: "markdown"` no file is uploaded and `docx_key`/`pdf_key` stay null (the row still records `body_text`/`body_hash`).
+
+### Requirement: produce 404 (#4)
+
+An unknown contract type SHALL produce 404.
+
+#### Scenario: split-out behaviour 7
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be documented in `/api/docs` (#5)
+
+It SHALL be documented in `/api/docs`.
+
+#### Scenario: split-out behaviour 8
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Content-Addressed Dedup
-The system SHALL compute `body_hash = md5(body_text)` for every generated contract. Before inserting, it SHALL `SELECT` by `body_hash`. If a row exists: it is reused (`reused: true` in the response), and for each requested format whose key is null on the existing row, the system SHALL generate+upload that format and update the row; already-stored formats are not regenerated or re-uploaded. If no row exists, it inserts a new one (`reused: false`). In the by-type (all-combinations) path, dedup applies per combination, so combinations that produce the same body collapse to one artifact.
+
+The system SHALL compute `body_hash = md5(body_text)` for every generated contract.
 
 #### Scenario: Same inputs return the same artifact id
 - **WHEN** `POST /api/contracts/sale/generate-stored` is called twice with `{"scenario": "生鲜乳购销", "format": "docx"}`
@@ -54,6 +90,21 @@ The system SHALL compute `body_hash = md5(body_text)` for every generated contra
 - **WHEN** `POST /api/contracts/sale/generate-stored` is called with `{"scenario": "生鲜乳购销", "format": "docx"}`, then again with `{"scenario": "生鲜乳购销", "format": "pdf"}`
 - **THEN** both responses return the same `artifact_id`; the second returns `pdf_url` non-null and the row now has both `docx_key` and `pdf_key` non-null
 
+### Requirement: `SELECT` by `body_hash` (#6)
+
+Before inserting, it SHALL `SELECT` by `body_hash`.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: generate+upload that format and update the … (#7)
+
+If a row exists: it is reused (`reused: true` in the response), and for each requested format whose key is null on the existing row, the system SHALL generate+upload that format and update the row;
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds already-stored formats are not regenerated or re-uploaded. If no row exists, it inserts a new one (`reused: false`). In the by-type (all-combinations) path, dedup applies per combination, so combinations that produce the same body collapse to one artifact.
 ### Requirement: List Artifacts Endpoint
 The system SHALL expose `GET /api/contracts/artifacts` returning a JSON list of artifact metadata rows (excluding `body_text`), newest first, optionally filtered by `?contract_type=`. Each row SHALL include `id, contract_type, scenario, stance, custom_clause_ids, body_hash, slots, docx_key, pdf_key, created_at, updated_at`. It SHALL be documented in `/api/docs`.
 
@@ -95,7 +146,8 @@ The system SHALL upload generated docx/pdf files to the configured MinIO bucket 
 - **THEN** the returned artifact's `docx_key` is `artifacts/sale/{artifact_id}.docx` and the object exists in `MINIO_BUCKET`
 
 ### Requirement: MCP Generate-Stored and Download Tools
-The system SHALL expose MCP tools: `contract_generate_stored(contract_type, format="docx", tags=None, stance=None, custom_clause_ids=None)` and `contract_download(artifact_id, format=None)`. `contract_generate_stored` SHALL mirror the HTTP endpoint's bifurcation: with `tags`/`stance`/`custom_clause_ids` it returns the single-variant `{artifact_id, docx_url, pdf_url, body_text, slots, reused}`; with no tags it returns the all-combinations summary `{contract_type, format, artifacts: [...], count, new, reused, failed, failures}`. `contract_download` returns the artifact metadata + the HTTP download URL(s). Both SHALL be registered with the `contracts` tag.
+
+The system SHALL expose MCP tools: `contract_generate_stored(contract_type, format="docx", tags=None, stance=None, custom_clause_ids=None)` and `contract_download(artifact_id, format=None)`.
 
 #### Scenario: contract_generate_stored by type returns the all-combos summary
 - **WHEN** `contract_generate_stored("sale", format="docx")` is called (no tags)
@@ -109,6 +161,21 @@ The system SHALL expose MCP tools: `contract_generate_stored(contract_type, form
 - **WHEN** `contract_download(artifact_id)` is called for an existing artifact
 - **THEN** it returns the artifact metadata and a `download_url` pointing at the HTTP download endpoint
 
+### Requirement: mirror the HTTP endpoint's bifurcation: with … (#8)
+
+`contract_generate_stored` SHALL mirror the HTTP endpoint's bifurcation: with `tags`/`stance`/`custom_clause_ids` it returns the single-variant `{artifact_id, docx_url, pdf_url, body_text, slots, reused}`;
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds with no tags it returns the all-combinations summary `{contract_type, format, artifacts: [...], count, new, reused, failed, failures}`. `contract_download` returns the artifact metadata + the HTTP download URL(s).
+
+### Requirement: be registered with the `contracts` tag (#9)
+
+Both SHALL be registered with the `contracts` tag.
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Settings and Schema Wiring
 The system SHALL add `MINIO_ARTIFACTS_PREFIX` (default `artifacts/`) to `src/settings.py` and the `contract_artifacts` DDL to `src/eval/store.py` so `ensure_schema()` creates it. The new HTTP endpoints SHALL be included in the `contract_context` router (or a new router wired in `src/web/app.py`) and appear in `/api/docs`.
 
@@ -122,7 +189,7 @@ The system SHALL add `MINIO_ARTIFACTS_PREFIX` (default `artifacts/`) to `src/set
 
 ### Requirement: Fail-fast MinIO endpoint configuration
 
-The system SHALL validate at startup (settings import / app boot) that the MinIO endpoint configuration is a full URL with an explicit `http://` or `https://` scheme: the `minio_host` environment variable, and the `MINIO_PUBLIC_HOST` override when it is set. A value that is empty, or that lacks a URL scheme (e.g. `file.token118.com` instead of `https://file.token118.com`), SHALL be rejected with a configuration error that names the offending environment variable and its value. The system SHALL NOT start with such a value (fail-closed), and artifact upload/download SHALL never fail later at request time solely because the endpoint string was unparseable. An unset `MINIO_PUBLIC_HOST` SHALL remain valid (it falls back to the origin `minio_host`), and a valid `MINIO_PUBLIC_HOST` SHALL NOT require `minio_host`-style fallback semantics beyond scheme presence.
+The system SHALL validate at startup (settings import / app boot) that the MinIO endpoint configuration is a full URL with an explicit `http://` or `https://` scheme: the `minio_host` environment variable, and the `MINIO_PUBLIC_HOST` override when it is set.
 
 #### Scenario: Scheme-less minio_host is rejected at startup
 
@@ -144,3 +211,26 @@ The system SHALL validate at startup (settings import / app boot) that the MinIO
 - **WHEN** the app starts with `MINIO_PUBLIC_HOST` unset and `minio_host` a full URL
 - **THEN** no configuration error is raised and the public-endpoint settings fall back to the origin `MINIO_*` values
 
+### Requirement: be rejected with a configuration error … (#10)
+
+A value that is empty, or that lacks a URL scheme (e.g. `file.token118.com` instead of `https://file.token118.com`), SHALL be rejected with a configuration error that names the offending environment variable and its value.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: start with such a value (fail-closed), … (#11)
+
+The system SHALL NOT start with such a value (fail-closed), and artifact upload/download SHALL never fail later at request time solely because the endpoint string was unparseable.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: remain valid (it falls back to … (#12)
+
+An unset `MINIO_PUBLIC_HOST` SHALL remain valid (it falls back to the origin `minio_host`), and a valid `MINIO_PUBLIC_HOST` SHALL NOT require `minio_host`-style fallback semantics beyond scheme presence.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds

@@ -21,7 +21,7 @@ cheap 集群 `law-bench` namespace SHALL 运行 `law-bench-public` deployment：
 
 ### Requirement: 数据链（replica，双轨机制）
 
-公共 pod 的 Postgres SHALL 为 China-local read-replica，覆盖 `clauses`/`contract_artifacts`/`rubrics`/`criteria`/`prompts`/`tag_dims`/`api_keys`（`api_keys` 为验钥承重表）。数据链机制 SHALL 为双轨之一：**(a) logical replication**（origin publication + replica subscription——origin Postgres 的 `wal_level` SHALL 已为 `logical`）或 **(b) 周期快照**（cron `pg_dump`→restore，同步周期 SHALL ≤30 分钟；origin Postgres 为共享实例且改 `wal_level` 需重启时，(b) 为默认轨）。两轨同责：`api_keys` 行数 SHALL 可对账；同步 SHALL 不可用时公共 pod 按如实降级要求处理（概览端点 503 报因），SHALL NOT 回退陈旧数据冒充新鲜。China-local MinIO 镜像（语料 artifacts 下载面）SHALL 在概览门之外单独补齐，SHALL NOT 阻塞概览上线。
+公共 pod 的 Postgres SHALL 为 China-local read-replica，覆盖 `clauses`/`contract_artifacts`/`rubrics`/`criteria`/`prompts`/`tag_dims`/`api_keys`（`api_keys` 为验钥承重表）。
 
 #### Scenario: 承重表对账
 
@@ -33,6 +33,37 @@ cheap 集群 `law-bench` namespace SHALL 运行 `law-bench-public` deployment：
 - **WHEN** 快照同步任务连续失败超过两个周期
 - **THEN** 同步任务状态可观测（Job 失败留痕），公共概览端点按如实降级要求返回 503 报因，不输出旧数据
 
+### Requirement: 为双轨之一：**(a) logical replication**（origin publication + replica … (#1)
+
+数据链机制 SHALL 为双轨之一：**(a) logical replication**（origin publication + replica subscription——origin Postgres 的 `wal_level` SHALL 已为 `logical`）或 **(b) 周期快照**（cron `pg_dump`→restore，同步周期 SHALL ≤30 分钟；origin Postgres 为共享实例且改 `wal_level` 需重启时，(b) 为默认轨）。
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 可对账 (#2)
+
+两轨同责：`api_keys` 行数 SHALL 可对账；
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 不可用时公共 pod 按如实降级要求处理（概览端点 503 报因），SHALL NOT … (#3)
+
+同步 SHALL 不可用时公共 pod 按如实降级要求处理（概览端点 503 报因），SHALL NOT 回退陈旧数据冒充新鲜。
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 在概览门之外单独补齐，SHALL NOT 阻塞概览上线 (#4)
+
+China-local MinIO 镜像（语料 artifacts 下载面）SHALL 在概览门之外单独补齐，SHALL NOT 阻塞概览上线。
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: 端口纪律与上线门
 
 公共 pod 的 Service SHALL 使用**新** NodePort（SHALL NOT 复用 origin 的 30820，两 pod 保持独立寻址）；Caddy 反代 SHALL 以独立域名或显式路径指向该端口。上线门 SHALL 全过才算部署完成：`/healthz` 200、匿名 `GET /api/public/overview` 200 且载荷与发布状态对账（digest 与分发面一致）、匿名 sibling 401、超限 429。部署 SHALL 记录 evidence（端点响应样本 + 限流负例）。

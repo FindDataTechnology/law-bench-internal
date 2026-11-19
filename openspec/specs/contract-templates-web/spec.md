@@ -14,7 +14,8 @@ The system SHALL expose `GET /contracts` returning HTML that lists every contrac
 - **THEN** the response is HTML listing all 41 contract classes, each linking to `/contracts/{key}`
 
 ### Requirement: Contract Detail Page
-The system SHALL expose `GET /contracts/{contract_type}` returning HTML that shows, for the contract class: the rendered template content, each slot with its instruction (`label`, `description`, `example`, `required`), the per-type 法律法规 grouped by category, download links for the DOCX and PDF, **and a 「生成合同模板」 panel**. The panel SHALL present a mode selector (A 母版骨架 / B 标签组装 / C 存储 MinIO / D 批量组装 / E 自愈流水线 / F 自动拒绝 / G LLM 重生成), shared `stance` / `scenario` / `format` / `custom_clause_ids` inputs, a 「生成」 button, and a result area. The page SHALL return 404 for an unknown contract type.
+
+The system SHALL expose `GET /contracts/{contract_type}` returning HTML that shows, for the contract class: the rendered template content, each slot with its instruction (`label`, `description`, `example`, `required`), the per-type 法律法规 grouped by category, download links for the DOCX and PDF, **and a 「生成合同模板」 panel**.
 
 #### Scenario: View a contract detail page
 - **WHEN** a client requests `GET /contracts/sale`
@@ -24,6 +25,21 @@ The system SHALL expose `GET /contracts/{contract_type}` returning HTML that sho
 - **WHEN** a client requests `GET /contracts/does_not_exist`
 - **THEN** the response status is 404
 
+### Requirement: present a mode selector (A 母版骨架 … (#1)
+
+The panel SHALL present a mode selector (A 母版骨架 / B 标签组装 / C 存储 MinIO / D 批量组装 / E 自愈流水线 / F 自动拒绝 / G LLM 重生成), shared `stance` / `scenario` / `format` / `custom_clause_ids` inputs, a 「生成」 button, and a result area.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: return 404 for an unknown contract … (#2)
+
+The page SHALL return 404 for an unknown contract type.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Download Generated Document
 The system SHALL expose `GET /contracts/{contract_type}/download/{format}` that generates (if not already cached) and streams the contract's `.docx` (`format=docx`) or `.pdf` (`format=pdf`) using the same `src.contracts` generation API as the CLI. It SHALL return 404 for an unknown contract type and 400 for an unsupported format.
 
@@ -44,7 +60,8 @@ The system SHALL expose `GET /contracts/{contract_type}/download/{format}` that 
 - **THEN** the response status is 404
 
 ### Requirement: Generation-Mode Panel Behavior
-The detail page's 「生成合同模板」 panel SHALL, on submit, POST the shared form to the route matching the selected mode (existing `/api/contracts/{type}/generate` for B, `/generate-stored` for C, new `/generate-batch` for D, `/pipeline` for E, `/auto-reject` for F, `/regenerate-template` for G; A links to the existing download buttons). For sync responses (B/C/D) it SHALL render the returned download/file URLs inline. For async responses (E/F/G, `202 + job_id`) it SHALL poll `GET /api/generation-jobs/{job_id}` until a terminal status and render the result or error. It SHALL require a confirm dialog before triggering write modes E, F, and G.
+
+The detail page's 「生成合同模板」 panel SHALL, on submit, POST the shared form to the route matching the selected mode (existing `/api/contracts/{type}/generate` for B, `/generate-stored` for C, new `/generate-batch` for D, `/pipeline` for E, `/auto-reject` for F, `/regenerate-template` for G; A links to the existing download buttons).
 
 #### Scenario: Sync mode renders download links
 - **WHEN** the user selects mode B and submits the panel
@@ -57,3 +74,27 @@ The detail page's 「生成合同模板」 panel SHALL, on submit, POST the shar
 #### Scenario: Write mode requires confirmation
 - **WHEN** the user selects mode G and clicks 「生成」
 - **THEN** a confirm dialog naming the global `contracts.json` rewrite is shown, and the request is sent only on confirmation
+
+### Requirement: render the returned download/file URLs inline (#3)
+
+For sync responses (B/C/D) it SHALL render the returned download/file URLs inline.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: poll `GET /api/generation-jobs/{job_id}` until a terminal … (#4)
+
+For async responses (E/F/G, `202 + job_id`) it SHALL poll `GET /api/generation-jobs/{job_id}` until a terminal status and render the result or error.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: require a confirm dialog before triggering … (#5)
+
+It SHALL require a confirm dialog before triggering write modes E, F, and G.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds

@@ -4,7 +4,8 @@
 Web management UI (HTML + JSON API) for generation prompts.
 ## Requirements
 ### Requirement: Browse Generation Prompts
-The system SHALL present a list of all generation prompts, each showing its name (rendered as a localized display title per `data-label-i18n`, with the machine `name` retained as the link target), its `contract_type` and `purpose` rendered as localized labels in the active locale (falling back to the raw key when unmapped), its `prompt_type` (rendered as a localized label with raw-key fallback), and its `source`. A top-level navigation link SHALL join the prompt management area with the existing rubric management area in the same web app.
+
+The system SHALL present a list of all generation prompts, each showing its name (rendered as a localized display title per `data-label-i18n`, with the machine `name` retained as the link target), its `contract_type` and `purpose` rendered as localized labels in the active locale (falling back to the raw key when unmapped), its `prompt_type` (rendered as a localized label with raw-key fallback), and its `source`.
 
 #### Scenario: List all prompts
 - **WHEN** a user opens the prompts listing
@@ -19,6 +20,13 @@ The system SHALL present a list of all generation prompts, each showing its name
 - **WHEN** a prompt has an unmapped `contract_type` value `custom_type` and a user-authored `name` `my_prompt`
 - **THEN** the listing shows `custom_type` and `my_prompt` unchanged
 
+### Requirement: join the prompt management area with … (#1)
+
+A top-level navigation link SHALL join the prompt management area with the existing rubric management area in the same web app.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Prompt Detail View
 The system SHALL show a single prompt's name (as a localized display title per `data-label-i18n`), its `contract_type` and `purpose` rendered as localized labels in the active locale (raw-key fallback), its `prompt_type` (localized label with raw-key fallback), `source`, `description`, and its full `content` body. The machine `name` SHALL remain the URL path.
 
@@ -75,7 +83,8 @@ The system SHALL expose the list of prompts, a single prompt, and prompt create/
 - **THEN** the response uses the same HTTP status mapping as the rubric API (400, 409, 404 respectively)
 
 ### Requirement: Prompt Type in the Management UI
-The prompt management UI (list, form, detail) SHALL surface `prompt_type` as an editable field. The list and detail view SHALL display each prompt's `prompt_type` as a localized label in the active locale (raw-key fallback). The form SHALL accept a `prompt_type` input on create and edit; the form input value SHALL be the raw machine `prompt_type` value (so storage is unaffected), with a localized placeholder. The JSON API models (`PromptCreate`, `PromptUpdate`) and endpoints SHALL carry `prompt_type` through create/update/read as the raw machine value.
+
+The prompt management UI (list, form, detail) SHALL surface `prompt_type` as an editable field.
 
 #### Scenario: Create a prompt with a type from the UI
 - **WHEN** the user creates a prompt via the form, filling `prompt_type = experimental`
@@ -93,3 +102,35 @@ The prompt management UI (list, form, detail) SHALL surface `prompt_type` as an 
 #### Scenario: The API carries prompt_type as the raw machine value
 - **WHEN** `POST /api/prompts` or `PATCH /api/prompts/{name}` is called with a `prompt_type`
 - **THEN** the raw field is persisted and returned by `GET /api/prompts/{name}` (the API is unaffected by localization)
+
+### Requirement: display each prompt's `prompt_type` as a … (#2)
+
+The list and detail view SHALL display each prompt's `prompt_type` as a localized label in the active locale (raw-key fallback).
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: accept a `prompt_type` input on create … (#3)
+
+The form SHALL accept a `prompt_type` input on create and edit;
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be the raw machine `prompt_type` value … (#4)
+
+the form input value SHALL be the raw machine `prompt_type` value (so storage is unaffected), with a localized placeholder.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: carry `prompt_type` through create/update/read as the … (#5)
+
+The JSON API models (`PromptCreate`, `PromptUpdate`) and endpoints SHALL carry `prompt_type` through create/update/read as the raw machine value.
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds

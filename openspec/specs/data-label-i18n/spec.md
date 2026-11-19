@@ -6,7 +6,7 @@ Localized display of data values (machine-readable English keys) rendered in the
 ## Requirements
 ### Requirement: Data Label Catalog
 
-The system SHALL maintain a per-locale data-label catalog (`LABELS`) covering five kinds: `contract_type`, `purpose`, `prompt_type`, `context`, and `mode`. The `zh` and `en` catalogs SHALL expose identical key sets for each kind. The `contract_type` catalog SHALL cover all 19 《民法典》 typical contract type keys used by the seed scripts (`sale`, `utilities_supply`, `gift`, `loan`, `guarantee`, `lease`, `financing_lease`, `factoring`, `work`, `construction`, `transport`, `technology`, `bailment`, `warehousing`, `entrustment`, `property_service`, `brokerage`, `intermediation`, `partnership`). The catalog SHALL live in `src/web/i18n.py` alongside the existing chrome `LOCALES` catalog, as a single source of truth for presentation strings.
+The system SHALL maintain a per-locale data-label catalog (`LABELS`) covering five kinds: `contract_type`, `purpose`, `prompt_type`, `context`, and `mode`.
 
 #### Scenario: Chinese label for a known contract type
 
@@ -24,6 +24,29 @@ The system SHALL maintain a per-locale data-label catalog (`LABELS`) covering fi
 - **WHEN** the `contract_type` kind is enumerated
 - **THEN** all 19 民法典 type keys are present with a non-empty label in both `zh` and `en`
 
+### Requirement: expose identical key sets for each … (#1)
+
+The `zh` and `en` catalogs SHALL expose identical key sets for each kind.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: cover all 19 《民法典》 typical contract … (#2)
+
+The `contract_type` catalog SHALL cover all 19 《民法典》 typical contract type keys used by the seed scripts (`sale`, `utilities_supply`, `gift`, `loan`, `guarantee`, `lease`, `financing_lease`, `factoring`, `work`, `construction`, `transport`, `technology`, `bailment`, `warehousing`, `entrustment`, `property_service`, `brokerage`, `intermediation`, `partnership`).
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: live in `src/web/i18n.py` alongside the existing … (#3)
+
+The catalog SHALL live in `src/web/i18n.py` alongside the existing chrome `LOCALES` catalog, as a single source of truth for presentation strings.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Label Resolution with Fallback
 
 The system SHALL provide a `label_for(kind, value, lang)` resolver that returns the localized label for a known `(kind, value)` in the active locale. For any unmapped `value` (including user-authored free text and future keys not yet in the catalog), the resolver SHALL return the raw `value` unchanged rather than blank or raising.
@@ -44,7 +67,8 @@ The system SHALL provide a `label_for(kind, value, lang)` resolver that returns 
 - **THEN** `我的自定义合同` is returned unchanged
 
 ### Requirement: Localized Display Titles for Seeded Names
-The system SHALL render a localized display title for seeded prompt and rubric names, derived from the seed naming conventions, while keeping the machine `name` as the URL path and join key. A prompt named `draft_<type_key>` SHALL display as the localized contract-type label concatenated with `起草` (e.g. `draft_sale` -> `买卖合同起草` in `zh`). A prompt named `draft_<type_key>_v<N>` SHALL display as the localized contract-type label concatenated with `起草` and the variant suffix ` v<N>` (e.g. `draft_sale_v2` -> `买卖合同起草 v2` in `zh`). A rubric named `contract_<type_key>_v<N>` SHALL display as the localized contract-type label concatenated with `评价规则` and the variant suffix ` v<N>` (e.g. `contract_sale_v1` -> `买卖合同评价规则 v1` in `zh`; `contract_sale_v2` -> `买卖合同评价规则 v2` in `zh`). Any name not matching these conventions SHALL display as the raw `name` unchanged.
+
+The system SHALL render a localized display title for seeded prompt and rubric names, derived from the seed naming conventions, while keeping the machine `name` as the URL path and join key.
 
 #### Scenario: Seeded baseline prompt name shows a Chinese title
 - **WHEN** the prompts list is rendered in `zh` for a prompt whose `name` is `draft_loan`
@@ -70,6 +94,37 @@ The system SHALL render a localized display title for seeded prompt and rubric n
 - **WHEN** a user-authored prompt named `my_custom_prompt` is rendered
 - **THEN** the display title is `my_custom_prompt`
 
+### Requirement: display as the localized contract-type label … (#4)
+
+A prompt named `draft_<type_key>` SHALL display as the localized contract-type label concatenated with `起草` (e.g. `draft_sale` -> `买卖合同起草` in `zh`).
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: display as the localized contract-type label … (#5)
+
+A prompt named `draft_<type_key>_v<N>` SHALL display as the localized contract-type label concatenated with `起草` and the variant suffix ` v<N>` (e.g. `draft_sale_v2` -> `买卖合同起草 v2` in `zh`).
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: display as the localized contract-type label … (#6)
+
+A rubric named `contract_<type_key>_v<N>` SHALL display as the localized contract-type label concatenated with `评价规则` and the variant suffix ` v<N>` (e.g. `contract_sale_v1` -> `买卖合同评价规则 v1` in `zh`; `contract_sale_v2` -> `买卖合同评价规则 v2` in `zh`).
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: display as the raw `name` unchanged (#7)
+
+Any name not matching these conventions SHALL display as the raw `name` unchanged.
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Localized Form Placeholders
 
 The system SHALL render form input placeholder in the active locale. In `zh`, placeholders SHALL be Chinese examples (e.g. `如：买卖合同` for contract type, `如：起草` for purpose, `如：基线` for prompt type, `如：合同` for context). In `en`, placeholders SHALL be English examples. Placeholders are static example text rendered in-template, not data values.

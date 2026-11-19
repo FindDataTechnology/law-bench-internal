@@ -8,7 +8,7 @@ Audits every law citation in the clause corpus against the law catalog replica, 
 
 ### Requirement: Corpus-wide citation audit with status classification
 
-The system SHALL audit all clauses' law citations (via the law-catalog resolution layer) and classify each resolved citation by the cited law's catalog `status`: citations of laws with status `已废止` or `失效` SHALL be classified as "引用已废法律" (repealed); status `已修改` SHALL be classified separately as "已修改（多数仍有效，仅被修正）"; citations whose resolution is `unresolved` (including laws whose catalog status is NULL or a dirty value) SHALL be classified into a fallback list for title-normalization or manual disposition. Classification SHALL depend only on the `status` column, never on `expiry` (施行日期).
+The system SHALL audit all clauses' law citations (via the law-catalog resolution layer) and classify each resolved citation by the cited law's catalog `status`: citations of laws with status `已废止` or `失效` SHALL be classified as "引用已废法律" (repealed);
 
 #### Scenario: Clause citing a repealed law is flagged
 
@@ -25,6 +25,29 @@ The system SHALL audit all clauses' law citations (via the law-catalog resolutio
 - **WHEN** a clause cites a name with `resolved_via = unresolved`, or resolves to a catalog row whose status is NULL or a dirty value (e.g. `sxx:3`)
 - **THEN** the audit places that citation in the fallback list for manual disposition
 
+### Requirement: be classified separately as "已修改（多数仍有效，仅被修正）" (#1)
+
+status `已修改` SHALL be classified separately as "已修改（多数仍有效，仅被修正）";
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be classified into a fallback list … (#2)
+
+citations whose resolution is `unresolved` (including laws whose catalog status is NULL or a dirty value) SHALL be classified into a fallback list for title-normalization or manual disposition.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: depend only on the `status` column, … (#3)
+
+Classification SHALL depend only on the `status` column, never on `expiry` (施行日期).
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Audit report output
 
 The system SHALL produce an audit report (markdown, committed to the repo) summarizing total citations, resolution coverage, and the three classification categories, with per-clause detail (contract type, clause id/section, cited name, resolved law title, status, resolved_via). The report generation SHALL be repeatable and deterministic for a fixed corpus and catalog snapshot.

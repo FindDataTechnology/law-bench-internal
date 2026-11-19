@@ -36,7 +36,8 @@ The system SHALL embed document chunks and queries using the `nvidia/nemotron-3-
 - **AND** a clear error is surfaced for manual retry
 
 ### Requirement: Elasticsearch Vector Store
-The system SHALL store document chunk embeddings in an Elasticsearch index configured via `elastic_search_host`, `elastic_search_user`, and `elastic_search_pass`. The index mapping SHALL declare a `dense_vector` field with `dims: 2048` and `similarity: cosine` (the model output is L2-normalized, so cosine and dot-product agree). Each indexed document SHALL carry the chunk text and metadata (source document path, contract type where derivable, and section/heading where available). The system SHALL detect a dimension mismatch between the configured model and an existing index and refuse to silently corrupt the index.
+
+The system SHALL store document chunk embeddings in an Elasticsearch index configured via `elastic_search_host`, `elastic_search_user`, and `elastic_search_pass`.
 
 #### Scenario: The index is created with the correct mapping
 - **WHEN** the vector store is initialized against an Elasticsearch cluster with no prior index
@@ -53,6 +54,29 @@ The system SHALL store document chunk embeddings in an Elasticsearch index confi
 - **THEN** the system requires an explicit reindex (drop and re-ingest) before search
 - **AND** search is not served against stale vectors of the wrong dimension
 
+### Requirement: declare a `dense_vector` field with `dims: … (#1)
+
+The index mapping SHALL declare a `dense_vector` field with `dims: 2048` and `similarity: cosine` (the model output is L2-normalized, so cosine and dot-product agree).
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: carry the chunk text and metadata … (#2)
+
+Each indexed document SHALL carry the chunk text and metadata (source document path, contract type where derivable, and section/heading where available).
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: detect a dimension mismatch between the … (#3)
+
+The system SHALL detect a dimension mismatch between the configured model and an existing index and refuse to silently corrupt the index.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Document Ingestion Pipeline
 The system SHALL provide a re-runnable pipeline that reads documents from MinIO, splits each into chunks, embeds the chunks via OpenRouter, and upserts them into the Elasticsearch vector store. The pipeline SHALL be idempotent: re-running it over unchanged documents SHALL NOT create duplicate chunks. The pipeline SHALL be invokable from a CLI entry point and SHALL report progress and any per-chunk failures.
 

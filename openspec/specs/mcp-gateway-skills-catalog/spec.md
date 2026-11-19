@@ -12,16 +12,7 @@ automated, and how operators run the catalog day to day.
 
 ### Requirement: Legal Skills Catalog Registration
 
-The gateway skills catalog at the AI Gateway & Registry on `mcp.finddatatech.cloud`
-(the cheap-box gateway; the america host mcp.token118.com is retired) SHALL contain
-the curated legal-practice skills from `legalskill/legalskill` (律锥),
-`pa1nrui1/legal-skills`, `cat-xierluo/legal-skills`, and
-`THUYRan/Legal-Skills-Chinese`, each registered as a URL reference to the upstream
-`SKILL.md` raw file with metadata (license, author, source repo, topic tags). Only
-legal-practice skills SHALL be registered; non-legal skills in those repos (e.g. 律锥's
-高考志愿 advisor and repo-publish manager) SHALL be excluded. A skill whose upstream
-`SKILL.md` is unreachable or lacks agentskills.io frontmatter (name/description) SHALL
-NOT be registered.
+The gateway skills catalog at the AI Gateway & Registry on `mcp.finddatatech.cloud` (the cheap-box gateway; the america host mcp.token118.com is retired) SHALL contain the curated legal-practice skills from `legalskill/legalskill` (律锥), `pa1nrui1/legal-skills`, `cat-xierluo/legal-skills`, and `THUYRan/Legal-Skills-Chinese`, each registered as a URL reference to the upstream `SKILL.md` raw file with metadata (license, author, source repo, topic tags).
 
 #### Scenario: Permissive-license skill registered
 
@@ -52,15 +43,32 @@ NOT be registered.
 - **THEN** the automation reports the failure, registers nothing for that skill, and
   exits non-zero so the omission is visible
 
+### Requirement: be registered (#1)
+
+Only legal-practice skills SHALL be registered;
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be excluded (#2)
+
+non-legal skills in those repos (e.g. 律锥's 高考志愿 advisor and repo-publish manager) SHALL be excluded.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be registered (#3)
+
+A skill whose upstream `SKILL.md` is unreachable or lacks agentskills.io frontmatter (name/description) SHALL NOT be registered.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: License-Driven Visibility
 
-Skill visibility SHALL follow the upstream license: skills under permissive licenses
-(Apache-2.0 + CC-BY-SA-4.0, MIT) SHALL be registered public; skills whose files declare
-CC-BY-NC (the cat-xierluo repo) or CC BY-NC-ND (the THUYRan repo) SHALL be registered
-group-restricted to `registry-admins` and SHALL NOT be publicly promoted until the
-author's written authorization is recorded in the runbook. NC-ND skills SHALL be
-served verbatim — the gateway distributes the upstream content unmodified (URL
-reference with attribution), and no derived/adapted variant SHALL be published.
+Skill visibility SHALL follow the upstream license: skills under permissive licenses (Apache-2.0 + CC-BY-SA-4.0, MIT) SHALL be registered public;
 
 #### Scenario: CC-BY-NC skill hidden from non-admin principals
 
@@ -83,17 +91,24 @@ reference with attribution), and no derived/adapted variant SHALL be published.
 - **THEN** the affected skills' visibility is switched to public via the modification
   API and they become visible to all gateway consumers
 
+### Requirement: be registered group-restricted to `registry-admins` and … (#4)
+
+skills whose files declare CC-BY-NC (the cat-xierluo repo) or CC BY-NC-ND (the THUYRan repo) SHALL be registered group-restricted to `registry-admins` and SHALL NOT be publicly promoted until the author's written authorization is recorded in the runbook.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be served verbatim — the gateway … (#5)
+
+NC-ND skills SHALL be served verbatim — the gateway distributes the upstream content unmodified (URL reference with attribution), and no derived/adapted variant SHALL be published.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Registration Automation and Lifecycle
 
-A repository automation script SHALL manage the catalog skills on
-`https://mcp.finddatatech.cloud` using the gateway M2M channel (Logto
-client_credentials → registry-admins scopes), with actions to register all curated
-skills (with metadata), show the current catalog state, and remove skills by name.
-Re-running registration against an already-registered skill SHALL update its metadata
-in place rather than duplicate it. Registration SHALL fail closed on name collisions:
-when a catalog entry's gateway name would collide with a different upstream skill's
-name, the automation SHALL abort that entry with a visible error instead of
-registering over it.
+A repository automation script SHALL manage the catalog skills on `https://mcp.finddatatech.cloud` using the gateway M2M channel (Logto client_credentials → registry-admins scopes), with actions to register all curated skills (with metadata), show the current catalog state, and remove skills by name.
 
 #### Scenario: Register, show, remove lifecycle
 
@@ -116,15 +131,24 @@ registering over it.
 - **THEN** the automation reports the collision, registers nothing for that entry,
   leaves the existing entry untouched, and exits non-zero
 
+### Requirement: update its metadata in place rather … (#6)
+
+Re-running registration against an already-registered skill SHALL update its metadata in place rather than duplicate it.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: fail closed on name collisions: when … (#7)
+
+Registration SHALL fail closed on name collisions: when a catalog entry's gateway name would collide with a different upstream skill's name, the automation SHALL abort that entry with a visible error instead of registering over it.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Skills Catalog Operations Runbook
 
-A runbook in `deploy/cheap-box/` SHALL document the skills catalog as operated on the
-cheap-box gateway: the registration mechanics (URL-reference model, drift detection),
-the exact register/show/remove commands including the credential source on cheap1, the
-license-driven visibility policy covering both CC-BY-NC and CC BY-NC-ND (with the
-serve-verbatim constraint and authorization path), and verification steps through
-`https://mcp.finddatatech.cloud`. The cheap-box README SHALL cross-link to it. The
-retired america-box runbook SHALL remain untouched as a historical record.
+A runbook in `deploy/cheap-box/` SHALL document the skills catalog as operated on the cheap-box gateway: the registration mechanics (URL-reference model, drift detection), the exact register/show/remove commands including the credential source on cheap1, the license-driven visibility policy covering both CC-BY-NC and CC BY-NC-ND (with the serve-verbatim constraint and authorization path), and verification steps through `https://mcp.finddatatech.cloud`.
 
 #### Scenario: Operator can verify the catalog end to end
 
@@ -139,3 +163,19 @@ retired america-box runbook SHALL remain untouched as a historical record.
 - **WHEN** an upstream repo changes a registered skill's files
 - **THEN** the runbook states the expected gateway behavior (content-hash drift
   detection auto-disables the skill) and the re-sync command to restore it
+
+### Requirement: cross-link to it (#8)
+
+The cheap-box README SHALL cross-link to it.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: remain untouched as a historical record (#9)
+
+The retired america-box runbook SHALL remain untouched as a historical record.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds

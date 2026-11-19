@@ -48,7 +48,8 @@ The system SHALL represent a slot as a `{{slot_name}}` token where `slot_name` m
 - **THEN** the generated document still contains the highlighted `{{party_a}}` placeholder
 
 ### Requirement: Slot Filling
-The system SHALL provide `fill_slots(doc, values, *, strict=False)` that replaces `{{slot_name}}` tokens in an existing DOCX with values from `values: dict[str, str]`, accepting a path or an open `Document`. It SHALL return the number of tokens replaced. By default, tokens without a provided value SHALL be left untouched; when `strict=True`, any slot present in the document but missing from `values` SHALL raise `SlotValueError` listing the missing slot names. Multi-line string values SHALL insert line breaks.
+
+The system SHALL provide `fill_slots(doc, values, *, strict=False)` that replaces `{{slot_name}}` tokens in an existing DOCX with values from `values: dict[str, str]`, accepting a path or an open `Document`.
 
 #### Scenario: Fill slots in an existing document
 - **WHEN** a DOCX containing "甲方：{{party_a}}" is generated and `fill_slots(doc_path, {"party_a": "北京甲公司"})` is called
@@ -63,6 +64,37 @@ The system SHALL provide `fill_slots(doc, values, *, strict=False)` that replace
 - **WHEN** a DOCX containing `{{party_a}}` and `{{party_b}}` is generated and `fill_slots(doc_path, {"party_a": "甲"}, strict=True)` is called
 - **THEN** `SlotValueError` is raised and its message names `party_b` as missing
 
+### Requirement: return the number of tokens replaced (#1)
+
+It SHALL return the number of tokens replaced.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be left untouched (#2)
+
+By default, tokens without a provided value SHALL be left untouched;
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: raise `SlotValueError` listing the missing slot … (#3)
+
+when `strict=True`, any slot present in the document but missing from `values` SHALL raise `SlotValueError` listing the missing slot names.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: insert line breaks (#4)
+
+Multi-line string values SHALL insert line breaks.
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Adding a Slot to an Existing Document
 The system SHALL provide `add_slot(doc, slot_name, *, label=None, value=None)` that inserts a slot into an existing DOCX (accepting a path or an open `Document`). When `label` is provided, the inserted paragraph SHALL read `label: {{slot_name}}`; otherwise it SHALL read `{{slot_name}}`. The slot token SHALL be rendered as a highlighted placeholder. When `value` is provided, the slot SHALL be immediately filled with that value instead of left as a placeholder.
 
@@ -101,7 +133,8 @@ The system SHALL provide `create_pdf(content, output_path, *, slots=None, title=
 - **THEN** the returned path equals `output/contract.pdf`
 
 ### Requirement: Converter Backend Selection
-The system SHALL resolve the PDF conversion backend from the `backend` argument, falling back to the `DOCS_PDF_BACKEND` environment variable, falling back to `libreoffice` when unset. The system SHALL expose `get_converter(backend=None)` returning a converter implementing the `PdfConverter` protocol (`convert(docx_path, out_path=None) -> Path`). A `docx2pdf` backend SHALL be selectable and its dependency imported lazily so it is optional. An `http` backend SHALL be selectable that delegates conversion to a render service: its endpoint SHALL be read from the `RENDER_SERVICE_URL` environment variable, no network call SHALL happen at converter construction, and `convert` SHALL return a local PDF path after downloading the service's response to the requested output path. When the `http` backend is selected and `RENDER_SERVICE_URL` is unset, or the render service is unreachable or returns a non-success response, `convert` SHALL raise `ConverterNotAvailableError` with guidance naming the missing configuration or the failing endpoint.
+
+The system SHALL resolve the PDF conversion backend from the `backend` argument, falling back to the `DOCS_PDF_BACKEND` environment variable, falling back to `libreoffice` when unset.
 
 #### Scenario: Default backend is LibreOffice
 - **WHEN** `get_converter()` is called with no argument and `DOCS_PDF_BACKEND` is unset
@@ -127,7 +160,37 @@ The system SHALL resolve the PDF conversion backend from the `backend` argument,
 - **WHEN** the HTTP backend converts a DOCX and the render service at `RENDER_SERVICE_URL` is unreachable or responds with a non-success status
 - **THEN** `ConverterNotAvailableError` is raised with a message naming the failing endpoint
 
+### Requirement: expose `get_converter(backend=None)` returning a converter implementing … (#5)
 
+The system SHALL expose `get_converter(backend=None)` returning a converter implementing the `PdfConverter` protocol (`convert(docx_path, out_path=None) -> Path`).
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be selectable and its dependency imported … (#6)
+
+A `docx2pdf` backend SHALL be selectable and its dependency imported lazily so it is optional.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be selectable that delegates conversion to … (#7)
+
+An `http` backend SHALL be selectable that delegates conversion to a render service: its endpoint SHALL be read from the `RENDER_SERVICE_URL` environment variable, no network call SHALL happen at converter construction, and `convert` SHALL return a local PDF path after downloading the service's response to the requested output path.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: raise `ConverterNotAvailableError` with guidance naming the … (#8)
+
+When the `http` backend is selected and `RENDER_SERVICE_URL` is unset, or the render service is unreachable or returns a non-success response, `convert` SHALL raise `ConverterNotAvailableError` with guidance naming the missing configuration or the failing endpoint.
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Chinese Contract Document Style
 `create_docx` SHALL apply a Chinese-contract document style to the document it produces: an A4 page with non-default margins, a body (`Normal`) style using a serif CJK font whose `w:eastAsia` attribute is set (not merely the Latin face), a 2-character first-line indent expressed as `w:firstLineChars="200"`, and line spacing greater than the default. The `Heading 1`/`Heading 2`/`Heading 3` styles SHALL be restyled to a black sans-serif CJK font with hierarchical sizes, `Heading 1` centered.
 

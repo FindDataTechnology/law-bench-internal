@@ -6,16 +6,7 @@ Scope-based authorization for the law-bench workbench: every managed route is ga
 
 ### Requirement: Permission-scoped authorization model
 
-The system SHALL obtain each authenticated identity's authorization scopes from the `scope`
-claim of the Logto **access token** minted for the configured API Resource
-(`LOGTO_API_RESOURCE`), and SHALL express every authorization decision as a check against
-those scopes. The scope vocabulary is the Logto permission set for the API Resource:
-`content:read`, `content:write`, and `admin`. The `admin` permission SHALL be treated as the
-wildcard scope; `content:write` SHALL permit creating and modifying backend content but not
-the administrative scope; `content:read` SHALL permit reading only. The system SHALL NOT
-maintain its own role-to-scope table: roles are permission bundles that exist only in
-Logto, and changing a role's powers is a Logto-console operation that requires no code
-redeploy.
+The system SHALL obtain each authenticated identity's authorization scopes from the `scope` claim of the Logto **access token** minted for the configured API Resource (`LOGTO_API_RESOURCE`), and SHALL express every authorization decision as a check against those scopes.
 
 #### Scenario: Scopes are read from the access token
 
@@ -28,8 +19,39 @@ redeploy.
 - **WHEN** an identity's roles grant the `admin` permission
 - **THEN** it is treated as holding the wildcard scope
 - **AND** when an identity's roles grant only `content:read`, it holds the read scope and
-  neither the mutation nor the administrative scope
+  neither the mutation nor the administrative scope The scope vocabulary is the Logto permission set for the API Resource: `content:read`, `content:write`, and `admin`.
 
+### Requirement: be treated as the wildcard scope (#1)
+
+The `admin` permission SHALL be treated as the wildcard scope;
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: permit creating and modifying backend content … (#2)
+
+`content:write` SHALL permit creating and modifying backend content but not the administrative scope;
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: permit reading only (#3)
+
+`content:read` SHALL permit reading only.
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: maintain its own role-to-scope table: roles … (#4)
+
+The system SHALL NOT maintain its own role-to-scope table: roles are permission bundles that exist only in Logto, and changing a role's powers is a Logto-console operation that requires no code redeploy.
+
+#### Scenario: split-out behaviour 5
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Login admission gate
 
 Only identities whose access token carries at least one admitted permission scope SHALL be
@@ -113,13 +135,7 @@ implicit grant.
 
 ### Requirement: Domain-scoped permission composition
 
-Managed domain routes SHALL enforce a domain-role check in addition to the existing
-`require_scope` platform check: platform scope first, then the domain role; both MUST pass.
-The sole source of truth for domain roles SHALL be the workspace membership record
-(`domain_members`); the source of truth for platform-level scopes SHALL remain, and only
-remain, Logto — the existing contract that platform-level roles exist only in Logto is
-NOT changed by this requirement. An authenticated identity without membership in the
-target domain SHALL be denied (fail-closed).
+Managed domain routes SHALL enforce a domain-role check in addition to the existing `require_scope` platform check: platform scope first, then the domain role;
 
 #### Scenario: Dual-gate enforcement
 
@@ -133,6 +149,37 @@ target domain SHALL be denied (fail-closed).
   target domain
 - **THEN** the request is denied at the domain check
 
+### Requirement: pass (#5)
+
+both MUST pass.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be the workspace membership record (`domain_members`) (#6)
+
+The sole source of truth for domain roles SHALL be the workspace membership record (`domain_members`);
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: remain, and only remain, Logto — … (#7)
+
+the source of truth for platform-level scopes SHALL remain, and only remain, Logto — the existing contract that platform-level roles exist only in Logto is NOT changed by this requirement.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be denied (fail-closed) (#8)
+
+An authenticated identity without membership in the target domain SHALL be denied (fail-closed).
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Permission-aware navigation covers the domain surface
 
 The workbench navigation SHALL render domain entries by effective permission: an identity

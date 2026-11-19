@@ -5,7 +5,8 @@ Compare prompt versions by orchestrating a compare run, persisting and querying 
 
 ## Requirements
 ### Requirement: Compare Run Orchestration
-The system SHALL provide `src/eval/compare.py::run_compare(...)` that, for a fixed area (contract_type, rubric_name, task_desc) and a set of two or more prompts, generates one or more drafts per prompt and evaluates each draft against the named rubric using the existing `evaluate_contract` judge unchanged. Each compare run SHALL be persisted as one `compare_runs` row owning its `eval_runs` rows. Generation SHALL use the drafter-only mode: one direct LLM call per draft via the DRAFTER model, the prompt's `content` as the drafting instruction, the task as input, and the existing templates reference block - `src/crew.py` SHALL NOT be invoked. `run_compare` SHALL accept a `concurrency` parameter (default 1) bounding how many drafts are generated simultaneously across the prompt × draft matrix, clamped to [1, 8]; regardless of the value used, the `eval_runs` rows SHALL be persisted in the same deterministic order as the sequential path (prompt-major, draft-minor), each carrying its own `prompt_name`, `prompt_type`, `variant_label`, and `draft_text`.
+
+The system SHALL provide `src/eval/compare.py::run_compare(...)` that, for a fixed area (contract_type, rubric_name, task_desc) and a set of two or more prompts, generates one or more drafts per prompt and evaluates each draft against the named rubric using the existing `evaluate_contract` judge unchanged.
 
 #### Scenario: Compare two prompts end-to-end
 - **WHEN** `run_compare` is called with contract_type `sale`, rubric `contract_sale_v1`, task `起草一份买卖合同…`, prompts `[draft_sale, draft_sale_v2]`, mode `drafter-only`, n_drafts `1`
@@ -33,8 +34,41 @@ The system SHALL provide `src/eval/compare.py::run_compare(...)` that, for a fix
 - **WHEN** a compare runs
 - **THEN** `src/crew.py::ContractDraftingCrew` is never instantiated
 - **AND** generation uses `src/llm.py::get_llm("DRAFTER")` directly
+
+### Requirement: be persisted as one `compare_runs` row … (#1)
+
+Each compare run SHALL be persisted as one `compare_runs` row owning its `eval_runs` rows.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: use the drafter-only mode: one direct … (#2)
+
+Generation SHALL use the drafter-only mode: one direct LLM call per draft via the DRAFTER model, the prompt's `content` as the drafting instruction, the task as input, and the existing templates reference block - `src/crew.py` SHALL NOT be invoked.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: accept a `concurrency` parameter (default 1) … (#3)
+
+`run_compare` SHALL accept a `concurrency` parameter (default 1) bounding how many drafts are generated simultaneously across the prompt × draft matrix, clamped to [1, 8];
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be persisted in the same deterministic … (#4)
+
+regardless of the value used, the `eval_runs` rows SHALL be persisted in the same deterministic order as the sequential path (prompt-major, draft-minor), each carrying its own `prompt_name`, `prompt_type`, `variant_label`, and `draft_text`.
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Compare Run Persistence and Query
-The system SHALL persist a compare as one `compare_runs` row (label, contract_type, rubric_name, task_desc, gen_mode, n_drafts, created_at) owning its `eval_runs` rows via a snapshotted `compare_run_id`. It SHALL provide `list_compares()` (recent compares, run-level only) and `get_compare(compare_id)` (full grouped result: the `compare_runs` row, its `eval_runs` with `prompt_name`/`prompt_type`/`variant_label`/`draft_text`, and each run's `eval_criteria_results`). All prompt/rubric references SHALL be snapshotted as text so a compare survives later prompt or rubric edits/deletion.
+
+The system SHALL persist a compare as one `compare_runs` row (label, contract_type, rubric_name, task_desc, gen_mode, n_drafts, created_at) owning its `eval_runs` rows via a snapshotted `compare_run_id`.
 
 #### Scenario: List recent compares
 - **WHEN** a caller lists compares
@@ -49,6 +83,21 @@ The system SHALL persist a compare as one `compare_runs` row (label, contract_ty
 - **WHEN** a prompt named in a stored compare is deleted after the compare ran
 - **THEN** `get_compare` still returns the run with its `prompt_name`, `prompt_type`, and `draft_text` intact (snapshotted, no FK)
 
+### Requirement: provide `list_compares()` (recent compares, run-level only) … (#5)
+
+It SHALL provide `list_compares()` (recent compares, run-level only) and `get_compare(compare_id)` (full grouped result: the `compare_runs` row, its `eval_runs` with `prompt_name`/`prompt_type`/`variant_label`/`draft_text`, and each run's `eval_criteria_results`).
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be snapshotted as text so a … (#6)
+
+All prompt/rubric references SHALL be snapshotted as text so a compare survives later prompt or rubric edits/deletion.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Compare CLI
 The system SHALL provide `python -m src.eval.compare` mirroring `src/eval/run.py`, accepting `--contract-type`, `--rubric`, `--task`, `--prompts` (comma-separated names), `--mode drafter-only`, `--n` (drafts per prompt), and `--list-compares`. It SHALL print the per-criterion matrix and the run-level pass counts, and persist the compare to the DB.
 

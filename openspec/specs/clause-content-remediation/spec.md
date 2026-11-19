@@ -5,7 +5,8 @@ Deterministic, reversible remediation of clause-library content defects on the p
 ## Requirements
 
 ### Requirement: Deterministic Defect Detection over the Clause Library
-The remediation tooling SHALL run zero-LLM, rule-based checks over an offline dump of the clauses store and produce a machine-readable report enumerating, per defect class, the affected clause ids. Defect classes SHALL include region leakage (place name + local regulation citation), signature-shell residue (签订地点/签订日期/盖章 signature blocks inside clause bodies), underscore fill-in blanks, table fragments, exact-body duplicates, hardcoded commercial values (money amounts / dates / company names outside statutory defaults), and non-review metadata keys inside review states.
+
+The remediation tooling SHALL run zero-LLM, rule-based checks over an offline dump of the clauses store and produce a machine-readable report enumerating, per defect class, the affected clause ids.
 
 #### Scenario: Full-library scan produces an id-level report
 - **WHEN** the detector runs over a dump of all clauses in the store
@@ -15,6 +16,13 @@ The remediation tooling SHALL run zero-LLM, rule-based checks over an offline du
 - **WHEN** a clause body contains a statutory time limit or statutory ratio (e.g. "15日内", "不超过20%")
 - **THEN** the detector does not flag it as a hardcoded commercial value
 
+### Requirement: include region leakage (place name + … (#1)
+
+Defect classes SHALL include region leakage (place name + local regulation citation), signature-shell residue (签订地点/签订日期/盖章 signature blocks inside clause bodies), underscore fill-in blanks, table fragments, exact-body duplicates, hardcoded commercial values (money amounts / dates / company names outside statutory defaults), and non-review metadata keys inside review states.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Reversible Mutations with Before-Snapshots
 The remediation driver SHALL, before writing any clause body or review state, persist a before-snapshot of the affected clauses to disk (full pre-mutation row content), and SHALL write a per-clause result file recording the change applied. All duplicate handling SHALL use review-state rejection (recoverable by re-approval), never deletion. A rollback path SHALL exist that restores clause bodies from the before-snapshots and re-approves rejected duplicates.
 
@@ -31,7 +39,8 @@ The remediation driver SHALL, before writing any clause body or review state, pe
 - **THEN** the affected clause bodies equal their pre-batch content
 
 ### Requirement: Region-Leak Generalization for Scenario-Bearing Clauses
-For clauses that enter assembly via a scenario tag and whose bodies hardcode a specific province/city regulation or a specific local arbitration body, the remediation SHALL replace the local binding with a national-law formulation and SHALL express the dispute-resolution venue as a fill-in placeholder. The rewritten clause SHALL preserve the original legal obligations and SHALL produce zero residual region-lint matches. Deliberately scenario-intrinsic region mentions (e.g. 赴台游 scenario's 台湾地区 references) SHALL be exempted.
+
+For clauses that enter assembly via a scenario tag and whose bodies hardcode a specific province/city regulation or a specific local arbitration body, the remediation SHALL replace the local binding with a national-law formulation and SHALL express the dispute-resolution venue as a fill-in placeholder.
 
 #### Scenario: Local regulation citation is generalized
 - **WHEN** a scenario-bearing clause cites 《深圳市保障性住房条例》 in its preamble
@@ -45,6 +54,21 @@ For clauses that enter assembly via a scenario tag and whose bodies hardcode a s
 - **WHEN** a clause belongs to the 大陆居民赴台湾地区旅游 scenario and references 台湾地区 as part of the trip subject
 - **THEN** the clause is not rewritten for region leakage
 
+### Requirement: preserve the original legal obligations and … (#2)
+
+The rewritten clause SHALL preserve the original legal obligations and SHALL produce zero residual region-lint matches.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be exempted (#3)
+
+Deliberately scenario-intrinsic region mentions (e.g. 赴台游 scenario's 台湾地区 references) SHALL be exempted.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Extraction-Artifact Stripping
 The remediation SHALL strip signature-shell lines (signature/seal/date/place fields), convert underscore fill-in blanks into slot placeholders where they represent commercial blanks, and remove table fragments from clause bodies, while preserving the clause's substantive legal content. A remediated body SHALL NOT begin with a section heading (section headings are added at assembly time).
 

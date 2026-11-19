@@ -8,7 +8,7 @@ A standalone, China-deployed, read-only FastAPI service that mounts a *subset* o
 
 ### Requirement: Standalone public app factory
 
-The system SHALL provide a `create_public_app()` factory (e.g. `src/web/public_app.py`) that constructs a FastAPI instance mounting *only* the read-heavy router subset: `contract_context`, `contracts`, `samples`, `search`, `law_info`, and the read paths of `clauses`. The factory SHALL NOT mount the `api` (CRUD), `generation` (modes D/E/F/G), `dashboard`, `pages` (HTML chrome), or `auth` (OIDC + `/api/keys`) routers. The factory SHALL apply the same constructor-level `dependencies=[Depends(get_current_user)]` as the origin app so every mounted route inherits auth. The factory SHALL disable the auto-generated docs surface by passing `docs_url=None`, `redoc_url=None`, and `openapi_url=None` to the `FastAPI(...)` constructor. A `/healthz` route identical to the origin's SHALL be included.
+The system SHALL provide a `create_public_app()` factory (e.g. `src/web/public_app.py`) that constructs a FastAPI instance mounting *only* the read-heavy router subset: `contract_context`, `contracts`, `samples`, `search`, `law_info`, and the read paths of `clauses`.
 
 #### Scenario: Only the read-heavy router subset is mounted
 
@@ -30,9 +30,40 @@ The system SHALL provide a `create_public_app()` factory (e.g. `src/web/public_a
 - **WHEN** `GET /healthz` is requested with no credentials
 - **THEN** the system responds `200` with `{"status": "ok"}`
 
+### Requirement: mount the `api` (CRUD), `generation` (modes … (#1)
+
+The factory SHALL NOT mount the `api` (CRUD), `generation` (modes D/E/F/G), `dashboard`, `pages` (HTML chrome), or `auth` (OIDC + `/api/keys`) routers.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: apply the same constructor-level `dependencies=[Depends(get_current_user)]` as … (#2)
+
+The factory SHALL apply the same constructor-level `dependencies=[Depends(get_current_user)]` as the origin app so every mounted route inherits auth.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: disable the auto-generated docs surface by … (#3)
+
+The factory SHALL disable the auto-generated docs surface by passing `docs_url=None`, `redoc_url=None`, and `openapi_url=None` to the `FastAPI(...)` constructor.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be included (#4)
+
+A `/healthz` route identical to the origin's SHALL be included.
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Key-only auth posture on the public pod
 
-The public app SHALL resolve caller identity via the `X-API-Key` channel. The session-cookie and Logto-JWKS Bearer resolution paths SHALL remain registered (so the shared `get_current_user` dependency is reused unchanged) but SHALL be effectively dormant on the public pod because no browser login is mounted and the pod is not configured to reach Logto's JWKS across the border. A valid `X-API-Key` SHALL authenticate the request; an absent key (with no other credential) SHALL yield `401`, **with exactly one exemption: the overview route(s) mounted by `bench-public-overview` (精确路径 `/api/public/overview`) MAY be registered in the app's exempt-path mechanism and reached anonymously; the exemption SHALL NOT cover sibling paths, prefixes, or wildcards, and absent/broken exemption registration SHALL fail closed to 401**. Key *issuance* (`POST /api/keys`) SHALL NOT be available on the public pod — keys are issued on the origin and handed to China callers out-of-band; the public pod only *verifies* them.
+The public app SHALL resolve caller identity via the `X-API-Key` channel.
 
 #### Scenario: Valid API key authenticates a public request
 
@@ -54,9 +85,48 @@ The public app SHALL resolve caller identity via the `X-API-Key` channel. The se
 - **WHEN** a request without any credential hits `GET /api/public/overview` versus any sibling path (e.g. `/api/public/overview/x`, `/api/contracts`)
 - **THEN** the overview route returns `200` (anonymous, rate-limited per `bench-public-overview`) while every sibling path responds `401`
 
+### Requirement: remain registered (so the shared `get_current_user` … (#5)
+
+The session-cookie and Logto-JWKS Bearer resolution paths SHALL remain registered (so the shared `get_current_user` dependency is reused unchanged) but SHALL be effectively dormant on the public pod because no browser login is mounted and the pod is not configured to reach Logto's JWKS across the border.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: authenticate the request (#6)
+
+A valid `X-API-Key` SHALL authenticate the request;
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: yield `401`, **with exactly one exemption: … (#7)
+
+an absent key (with no other credential) SHALL yield `401`, **with exactly one exemption: the overview route(s) mounted by `bench-public-overview` (精确路径 `/api/public/overview`) MAY be registered in the app's exempt-path mechanism and reached anonymously;
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: cover sibling paths, prefixes, or wildcards, … (#8)
+
+the exemption SHALL NOT cover sibling paths, prefixes, or wildcards, and absent/broken exemption registration SHALL fail closed to 401**.
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be available on the public pod … (#9)
+
+Key *issuance* (`POST /api/keys`) SHALL NOT be available on the public pod — keys are issued on the origin and handed to China callers out-of-band;
+
+#### Scenario: split-out behaviour 5
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds the public pod only *verifies* them.
 ### Requirement: Gateway rate limiting layered on key auth
 
-The system SHALL enforce per-key rate limiting on the public endpoint in addition to API-key authentication, because a key authenticates but does not throttle. The limit MAY be enforced at the gateway (e.g. Caddy `rate_limit`) or via an in-process middleware; in either case the limit SHALL be keyed on the resolved caller identity (the API-key prefix or user id), not on the source IP alone, so one abusive caller does not starve others sharing a NAT. When the limit is exceeded the system SHALL respond `429 Too Many Requests` with a `Retry-After` header. Authenticated but rate-limited requests SHALL NOT execute the route handler.
+The system SHALL enforce per-key rate limiting on the public endpoint in addition to API-key authentication, because a key authenticates but does not throttle.
 
 #### Scenario: Burst over the limit is throttled
 
@@ -66,11 +136,34 @@ The system SHALL enforce per-key rate limiting on the public endpoint in additio
 #### Scenario: Limit is per-key, not per-IP
 
 - **WHEN** two callers with distinct valid keys share the same source IP and both issue requests within the limit
-- **THEN** neither is throttled by the other's traffic (the limit bucket is keyed on the caller identity, not the IP)
+- **THEN** neither is throttled by the other's traffic (the limit bucket is keyed on the caller identity, not the IP) The limit MAY be enforced at the gateway (e.g. Caddy `rate_limit`) or via an in-process middleware;
 
+### Requirement: be keyed on the resolved caller … (#10)
+
+in either case the limit SHALL be keyed on the resolved caller identity (the API-key prefix or user id), not on the source IP alone, so one abusive caller does not starve others sharing a NAT.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: respond `429 Too Many Requests` with … (#11)
+
+When the limit is exceeded the system SHALL respond `429 Too Many Requests` with a `Retry-After` header.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: execute the route handler (#12)
+
+Authenticated but rate-limited requests SHALL NOT execute the route handler.
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Read-replica data source
 
-The public pod SHALL read contract/clause/rubric/artifact metadata from a Postgres read-replica that is local to the China box, not from the origin's Postgres across the border. The replica SHALL be fed by PostgreSQL logical replication (`CREATE PUBLICATION` on the origin / `CREATE SUBSCRIPTION` on the China replica) covering at least the tables the public routes read: `clauses`, `contract_artifacts`, `rubrics`, `criteria`, `prompts`, `tag_dims`, and `api_keys`. The `api_keys` table is replicated so the public pod can *verify* keys locally; key *issuance* (writes to `api_keys`) happens only on the origin and propagates via replication. The public pod SHALL treat its Postgres as read-only for application traffic — it SHALL NOT issue writes except the best-effort `last_used_at` touch (see the modified `web-auth` requirement), and that touch SHALL NOT be required for the request to succeed.
+The public pod SHALL read contract/clause/rubric/artifact metadata from a Postgres read-replica that is local to the China box, not from the origin's Postgres across the border.
 
 #### Scenario: Per-request reads hit the local replica
 
@@ -82,9 +175,24 @@ The public pod SHALL read contract/clause/rubric/artifact metadata from a Postgr
 - **WHEN** a key is issued on the origin (`POST /api/keys`) and the replication lag has elapsed
 - **THEN** a request carrying that key to the public pod authenticates successfully by verifying against the replicated `api_keys` row
 
+### Requirement: be fed by PostgreSQL logical replication … (#13)
+
+The replica SHALL be fed by PostgreSQL logical replication (`CREATE PUBLICATION` on the origin / `CREATE SUBSCRIPTION` on the China replica) covering at least the tables the public routes read: `clauses`, `contract_artifacts`, `rubrics`, `criteria`, `prompts`, `tag_dims`, and `api_keys`.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds The `api_keys` table is replicated so the public pod can *verify* keys locally; key *issuance* (writes to `api_keys`) happens only on the origin and propagates via replication.
+
+### Requirement: treat its Postgres as read-only for … (#14)
+
+The public pod SHALL treat its Postgres as read-only for application traffic — it SHALL NOT issue writes except the best-effort `last_used_at` touch (see the modified `web-auth` requirement), and that touch SHALL NOT be required for the request to succeed.
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: MinIO corpus sync for download paths
 
-The public pod's `samples` and `contracts` download paths (`GET /api/contracts/artifacts/{id}/download`) SHALL serve DOCX/PDF artifacts from a China-local MinIO (or a mirrored bucket), not from the origin MinIO at `23.144.68.246:30900` per-request. A sync job (cron or sidecar) SHALL copy new and changed artifacts from the origin bucket to the local bucket on a schedule. A download request for an artifact not yet synced SHALL respond `404` (never proxy back to the origin MinIO from the public pod).
+The public pod's `samples` and `contracts` download paths (`GET /api/contracts/artifacts/{id}/download`) SHALL serve DOCX/PDF artifacts from a China-local MinIO (or a mirrored bucket), not from the origin MinIO at `23.144.68.246:30900` per-request.
 
 #### Scenario: Download serves from local MinIO
 
@@ -96,9 +204,24 @@ The public pod's `samples` and `contracts` download paths (`GET /api/contracts/a
 - **WHEN** a download request arrives for an artifact whose object key is absent in the local MinIO (replication lag or sync gap)
 - **THEN** the public pod responds `404` and does NOT attempt to fetch the object from the origin MinIO
 
+### Requirement: copy new and changed artifacts from … (#15)
+
+A sync job (cron or sidecar) SHALL copy new and changed artifacts from the origin bucket to the local bucket on a schedule.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: respond `404` (never proxy back to … (#16)
+
+A download request for an artifact not yet synced SHALL respond `404` (never proxy back to the origin MinIO from the public pod).
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Public pod deployment manifest with DNS hardening
 
-The system SHALL ship a deployment manifest under `deploy/public/` for the China pod. When the China box is itself a k3s node whose host `resolv.conf` carries a wildcard search domain that resolves `.svc.cluster.local` names to a black-hole IP, the manifest SHALL replicate verbatim the DNS hardening from `deploy/deployment.yaml`: `dnsPolicy: None`, a `dnsConfig` block naming only the cluster kube-dns IP with the clean 3-domain search list and `ndots: 5`, and `hostAliases` pinning any external hostnames the pod must reach to their IPs. When the China box is a plain host with clean DNS, this block is omitted. The manifest SHALL load auth/DB/MinIO secrets from Kubernetes secrets (not inline env), SHALL expose a `/healthz` liveness/readiness probe, and SHALL NOT mount the initContainer that seeds `evaluation_rules.db` from the image (the public pod reads Postgres, not the SQLite file).
+The system SHALL ship a deployment manifest under `deploy/public/` for the China pod.
 
 #### Scenario: Polluted-node DNS block is replicated
 
@@ -115,9 +238,24 @@ The system SHALL ship a deployment manifest under `deploy/public/` for the China
 - **WHEN** the public pod manifest is applied
 - **THEN** there is no `seed-db` initContainer copying `evaluation_rules.db` into a PVC, because the public pod does not read SQLite
 
+### Requirement: replicate verbatim the DNS hardening from … (#17)
+
+When the China box is itself a k3s node whose host `resolv.conf` carries a wildcard search domain that resolves `.svc.cluster.local` names to a black-hole IP, the manifest SHALL replicate verbatim the DNS hardening from `deploy/deployment.yaml`: `dnsPolicy: None`, a `dnsConfig` block naming only the cluster kube-dns IP with the clean 3-domain search list and `ndots: 5`, and `hostAliases` pinning any external hostnames the pod must reach to their IPs.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds When the China box is a plain host with clean DNS, this block is omitted.
+
+### Requirement: load auth/DB/MinIO secrets from Kubernetes secrets … (#18)
+
+The manifest SHALL load auth/DB/MinIO secrets from Kubernetes secrets (not inline env), SHALL expose a `/healthz` liveness/readiness probe, and SHALL NOT mount the initContainer that seeds `evaluation_rules.db` from the image (the public pod reads Postgres, not the SQLite file).
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Fail-closed auth startup on the public pod
 
-The public app SHALL refuse to serve if its auth configuration is unset. On startup it SHALL invoke `check_auth_config()` (or an equivalent readiness check) and SHALL NOT bind if the required auth environment (`AUTH_SESSION_SECRET` at minimum, so the shared cookie-signing path does not fail open) is missing. The pod's liveness/readiness probe SHALL report not-ready until the app is bound and auth-verified. This preserves the origin's fail-closed posture: the public pod never runs as an open server even if its env is misconfigured.
+The public app SHALL refuse to serve if its auth configuration is unset.
 
 #### Scenario: Missing auth env prevents startup
 
@@ -128,3 +266,19 @@ The public app SHALL refuse to serve if its auth configuration is unset. On star
 
 - **WHEN** the public pod starts with the required auth environment set
 - **THEN** the process binds, `/healthz` returns `200`, and protected routes enforce `401` without credentials
+
+### Requirement: invoke `check_auth_config()` (or an equivalent readiness … (#19)
+
+On startup it SHALL invoke `check_auth_config()` (or an equivalent readiness check) and SHALL NOT bind if the required auth environment (`AUTH_SESSION_SECRET` at minimum, so the shared cookie-signing path does not fail open) is missing.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: report not-ready until the app is … (#20)
+
+The pod's liveness/readiness probe SHALL report not-ready until the app is bound and auth-verified.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds This preserves the origin's fail-closed posture: the public pod never runs as an open server even if its env is misconfigured.

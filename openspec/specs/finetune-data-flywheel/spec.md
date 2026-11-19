@@ -80,19 +80,7 @@
 
 ### Requirement: Judge-C 四元组数据集
 
-系统 SHALL 产出判官训练用四元组数据集，每条四元组结构为 `(法律条文/合同条款, 评审规则, pass/fail 判定, 推理理由)`。四元组 MUST 通过 schema 校验：法律条文须含来源与正文、合同条款须含正文与分节、判定须为 `pass` 或 `fail` 之一、推理理由须同时包含法律依据与结论。每个四元组的 verdict MUST 引用至少一条法律条文或评审规则。四元组数据集 MUST 记录标注者来源（`human`、`ai_reviewer`、`machine_self_eval` 三者之一）。
-
-标注者层级与判定权限：
-
-- `machine_self_eval`（来自 `eval_criteria_results` 的机器自评）一律按 `fail` 处理或丢弃，永不产生 `pass`，`tier` 标记为 `bronze`，永不作 ground truth。
-- `ai_reviewer`（对真实 `(已填合同, 规则)` 配对由 LLM 重新判定）MAY 产出 `pass` 或 `fail`，`tier` 标记为 `gold`，可作为 ground truth。
-- `human`（人工复核）MAY 产出 `pass` 或 `fail`，`tier` 标记为 `gold`，可作为 ground truth。
-
-规范化金牌文件（canonical gold file）MUST 仅由已验证零泄漏的源数据集合并而成。泄漏定义：某四元组的 `clause_text.body` 等于或派生自其自身的 `reasoning.justification`（判官自己的推理被复制进输入正文，构成反向监督）。合并后的金牌超集 MUST 满足 0% 泄漏（不存在任何 `clause_text.body` 等于 `reasoning.justification` 的四元组）。
-
-判官就绪闸门（flywheel gate）MUST 基于零泄漏的金牌超集判定是否释放 Drafter-A reward modeling：当金牌超集为空或未通过零泄漏校验时，reward modeling 阶段 SHALL 被阻断并报错；闸门 SHALL NOT 基于可能携带预重定基准泄漏的陈旧物化文件通过。
-
-覆盖缺口闭合：对于尚无金牌四元组的合同类型（即已抽取到 base 条款与规则、但未生成 `ai_reviewer` 判定的配对），系统 SHALL 通过对真实 `(已填合同, 规则)` 配对重新运行 `ai_reviewer` 判定来闭合缺口。生成 MUST 可断点续跑：重新运行 SHALL 按 provenance id 跳过已完成的配对，仅判定未完成配对，既不重复判定也不遗漏已完成行，使中断的运行可在上游恢复后继续而不破坏已有金牌。
+系统 SHALL 产出判官训练用四元组数据集，每条四元组结构为 `(法律条文/合同条款, 评审规则, pass/fail 判定, 推理理由)`。
 
 #### Scenario: 四元组 schema 校验
 
@@ -143,13 +131,81 @@
 - **AND** 仅判定未完成的配对
 - **AND** 既不重复判定已完成配对，也不遗漏任何已完成行
 - **AND** 已有金牌文件不被破坏，新判定的四元组被追加
+
+### Requirement: 通过 schema 校验：法律条文须含来源与正文、合同条款须含正文与分节、判定须为 `pass` 或 `fail` … (#1)
+
+四元组 MUST 通过 schema 校验：法律条文须含来源与正文、合同条款须含正文与分节、判定须为 `pass` 或 `fail` 之一、推理理由须同时包含法律依据与结论。
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 引用至少一条法律条文或评审规则 (#2)
+
+每个四元组的 verdict MUST 引用至少一条法律条文或评审规则。
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 记录标注者来源（`human`、`ai_reviewer`、`machine_self_eval` 三者之一） (#3)
+
+四元组数据集 MUST 记录标注者来源（`human`、`ai_reviewer`、`machine_self_eval` 三者之一）。
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds 标注者层级与判定权限： - `machine_self_eval`（来自 `eval_criteria_results` 的机器自评）一律按 `fail` 处理或丢弃，永不产生 `pass`，`tier` 标记为 `bronze`，永不作 ground truth。 - `ai_reviewer`（对真实 `(已填合同, 规则)` 配对由 LLM 重新判定）MAY 产出 `pass` 或 `fail`，`tier` 标记为 `gold`，可作为 ground truth。 - `human`（人工复核）MAY 产出 `pass` 或 `fail`，`tier` 标记为 `gold`，可作为 ground truth。
+
+### Requirement: 仅由已验证零泄漏的源数据集合并而成 (#4)
+
+规范化金牌文件（canonical gold file）MUST 仅由已验证零泄漏的源数据集合并而成。
+
+#### Scenario: split-out behaviour 7
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds 泄漏定义：某四元组的 `clause_text.body` 等于或派生自其自身的 `reasoning.justification`（判官自己的推理被复制进输入正文，构成反向监督）。
+
+### Requirement: 满足 0% 泄漏（不存在任何 `clause_text.body` 等于 `reasoning.justification` … (#5)
+
+合并后的金牌超集 MUST 满足 0% 泄漏（不存在任何 `clause_text.body` 等于 `reasoning.justification` 的四元组）。
+
+#### Scenario: split-out behaviour 9
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 基于零泄漏的金牌超集判定是否释放 Drafter-A reward modeling：当金牌超集为空或未通过零泄漏校验时，reward modeling 阶段 … (#6)
+
+判官就绪闸门（flywheel gate）MUST 基于零泄漏的金牌超集判定是否释放 Drafter-A reward modeling：当金牌超集为空或未通过零泄漏校验时，reward modeling 阶段 SHALL 被阻断并报错；
+
+#### Scenario: split-out behaviour 10
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 基于可能携带预重定基准泄漏的陈旧物化文件通过 (#7)
+
+闸门 SHALL NOT 基于可能携带预重定基准泄漏的陈旧物化文件通过。
+
+#### Scenario: split-out behaviour 11
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 通过对真实 `(已填合同, 规则)` 配对重新运行 `ai_reviewer` 判定来闭合缺口 (#8)
+
+覆盖缺口闭合：对于尚无金牌四元组的合同类型（即已抽取到 base 条款与规则、但未生成 `ai_reviewer` 判定的配对），系统 SHALL 通过对真实 `(已填合同, 规则)` 配对重新运行 `ai_reviewer` 判定来闭合缺口。
+
+#### Scenario: split-out behaviour 12
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 可断点续跑：重新运行 SHALL 按 provenance id 跳过已完成的配对，仅判定未完成配对，既不重复判定也不遗漏已完成行，使中断的运行可在上游恢复后继续而不破坏已有金牌 (#9)
+
+生成 MUST 可断点续跑：重新运行 SHALL 按 provenance id 跳过已完成的配对，仅判定未完成配对，既不重复判定也不遗漏已完成行，使中断的运行可在上游恢复后继续而不破坏已有金牌。
+
+#### Scenario: split-out behaviour 13
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Drafter-A 配对数据集
 
-系统 SHALL 产出起草训练用配对数据集，每条配对结构为 `(task_desc/slots, 合同正文)`。银牌配对来自两个机器源：`pipeline_runs.filled_text`（LLM 草稿）与 `contract_artifacts` 母版的合成槽位实例化正文（确定性填充）；金牌配对 = 人工核验的合规正文（开源模板经人工抽检 + 后期人工核验）。配对的 `task_desc/slots` 须与正文中的槽位一致。金牌配对的正文 MUST 经过人工核验其合规性。银牌配对（含合成实例化配对）MUST 仅用于 SFT 暖启，不得用于 reward modeling 的正样本。
-
-来自 `pipeline_runs` 的配对 MUST 携带质量元数据：当同一正文存在多条 run 时，保留评分比（`score/max_score`）最高的 run，且被保留配对的 provenance SHALL 记录该 run 的评分比与是否全过（`all_pass`），供训练端按质量降权。来自 `contract_artifacts` 的配对 MUST 携带 `synthetic_slots: true` 合成标记。
-
-SFT 导出（ChatML 化 + 训练/验证切分）时，验证集切分 SHALL 按立场（stance）分层：每个出现于池中的立场按比例进入验证集，单一立场 MUST NOT 全部落入训练侧或验证侧。导出清单（manifest）SHALL 按源（`pipeline_runs` / `contract_artifacts`）分别记录配对计数、立场分布与合成标记计数。
+系统 SHALL 产出起草训练用配对数据集，每条配对结构为 `(task_desc/slots, 合同正文)`。
 
 #### Scenario: 银牌配对来自仓内草稿
 
@@ -192,8 +248,55 @@ SFT 导出（ChatML 化 + 训练/验证切分）时，验证集切分 SHALL 按�
 #### Scenario: 清单按源分计
 
 - **WHEN** SFT 导出完成并写导出清单
-- **THEN** 清单分别记录来自 `pipeline_runs` 与 `contract_artifacts` 的配对数、各立场分布与合成标记计数
+- **THEN** 清单分别记录来自 `pipeline_runs` 与 `contract_artifacts` 的配对数、各立场分布与合成标记计数 银牌配对来自两个机器源：`pipeline_runs.filled_text`（LLM 草稿）与 `contract_artifacts` 母版的合成槽位实例化正文（确定性填充）； 金牌配对 = 人工核验的合规正文（开源模板经人工抽检 + 后期人工核验）。 配对的 `task_desc/slots` 须与正文中的槽位一致。
 
+### Requirement: 经过人工核验其合规性 (#10)
+
+金牌配对的正文 MUST 经过人工核验其合规性。
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 仅用于 SFT 暖启，不得用于 reward modeling 的正样本 (#11)
+
+银牌配对（含合成实例化配对）MUST 仅用于 SFT 暖启，不得用于 reward modeling 的正样本。
+
+#### Scenario: split-out behaviour 5
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 携带质量元数据：当同一正文存在多条 run 时，保留评分比（`score/max_score`）最高的 run，且被保留配对的 provenance SHALL … (#12)
+
+来自 `pipeline_runs` 的配对 MUST 携带质量元数据：当同一正文存在多条 run 时，保留评分比（`score/max_score`）最高的 run，且被保留配对的 provenance SHALL 记录该 run 的评分比与是否全过（`all_pass`），供训练端按质量降权。
+
+#### Scenario: split-out behaviour 6
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 携带 `synthetic_slots: true` 合成标记 (#13)
+
+来自 `contract_artifacts` 的配对 MUST 携带 `synthetic_slots: true` 合成标记。
+
+#### Scenario: split-out behaviour 7
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 按立场（stance）分层：每个出现于池中的立场按比例进入验证集，单一立场 MUST NOT 全部落入训练侧或验证侧 (#14)
+
+SFT 导出（ChatML 化 + 训练/验证切分）时，验证集切分 SHALL 按立场（stance）分层：每个出现于池中的立场按比例进入验证集，单一立场 MUST NOT 全部落入训练侧或验证侧。
+
+#### Scenario: split-out behaviour 8
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 按源（`pipeline_runs` / `contract_artifacts`）分别记录配对计数、立场分布与合成标记计数 (#15)
+
+导出清单（manifest）SHALL 按源（`pipeline_runs` / `contract_artifacts`）分别记录配对计数、立场分布与合成标记计数。
+
+#### Scenario: split-out behaviour 9
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: 飞轮顺序约束
 
 系统 SHALL 强制判官数据集先于起草 reward modeling 存在的飞轮顺序：Judge-C 四元组数据集（至少 gold 子集）必须在其被用作 Drafter-A reward 信号之前完成构建并通过校验。当 Judge-C 数据集为空或未通过 schema 校验时，Drafter-A 的 reward modeling 阶段 SHALL 被阻断并报错，而非静默使用银牌草稿当正样本。

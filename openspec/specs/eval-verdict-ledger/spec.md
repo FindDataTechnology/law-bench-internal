@@ -131,19 +131,7 @@
 
 ### Requirement: 结论台账的机器读面
 
-结论台账 SHALL 提供机器通道的只读端点，使不在本进程内的消费者（另一产品线的舰队、运维脚本）能读到结论：
-
-- `GET /api/v1/distribution/{domain_key}/verdicts` —— 该域（含祖先链）的结论列表，可按 `subject_kind` / `subject_key` / `gate` / `outcome` 筛选与限量；
-- `GET /api/v1/distribution/{domain_key}/verdicts/{run_id}` —— 单条结论与其逐条判据；
-- `GET /api/v1/distribution/{domain_key}/rulers` —— 该域可用尺子及其规范 digest。
-
-鉴权 SHALL 沿用发布面既有的机器凭据与三态判定（未带凭据 401、未登记/已吊销 403、越域 403），且 SHALL 仅允许 `fleet` 种类的登记读取。域归属 SHALL 与运行列表用同一口径（`rubric_domain_id` + 祖先链），使两者对「哪些属于本域」不可能给出不同答案。
-
-`gate` 与 `outcome` SHALL 是按闭集校验的筛选参数：未知值 SHALL 以 400 拒绝并列出闭集，MUST NOT 返回 200 空列表——后者与「确实没有这类结论」是两句不同的话。
-
-单条结论的域归属不成立时 SHALL 返回 404 而非 403：403 会确认该 id 在别处存在。
-
-本面 SHALL 只读：任何端点 MUST NOT 创建结论、MUST NOT 触发评测。
+结论台账 SHALL 提供机器通道的只读端点，使不在本进程内的消费者（另一产品线的舰队、运维脚本）能读到结论： - `GET /api/v1/distribution/{domain_key}/verdicts` —— 该域（含祖先链）的结论列表，可按 `subject_kind` / `subject_key` / `gate` / `outcome` 筛选与限量；
 
 #### Scenario: 消费者读本域结论
 - **WHEN** 绑定域 A 的舰队以其机器凭据请求 A 的结论列表
@@ -163,4 +151,44 @@
 
 #### Scenario: 尺子 digest 与写入时一致
 - **WHEN** 消费者读本域尺子列表，并与某条记录该尺子的结论比对 digest
-- **THEN** 两者逐字节相等
+- **THEN** 两者逐字节相等 - `GET /api/v1/distribution/{domain_key}/verdicts/{run_id}` —— 单条结论与其逐条判据； - `GET /api/v1/distribution/{domain_key}/rulers` —— 该域可用尺子及其规范 digest。
+
+### Requirement: 沿用发布面既有的机器凭据与三态判定（未带凭据 401、未登记/已吊销 403、越域 403），且 SHALL 仅允许 … (#1)
+
+鉴权 SHALL 沿用发布面既有的机器凭据与三态判定（未带凭据 401、未登记/已吊销 403、越域 403），且 SHALL 仅允许 `fleet` 种类的登记读取。
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 与运行列表用同一口径（`rubric_domain_id` + 祖先链），使两者对「哪些属于本域」不可能给出不同答案 (#2)
+
+域归属 SHALL 与运行列表用同一口径（`rubric_domain_id` + 祖先链），使两者对「哪些属于本域」不可能给出不同答案。
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 是按闭集校验的筛选参数：未知值 SHALL 以 400 拒绝并列出闭集，MUST NOT … (#3)
+
+`gate` 与 `outcome` SHALL 是按闭集校验的筛选参数：未知值 SHALL 以 400 拒绝并列出闭集，MUST NOT 返回 200 空列表——后者与「确实没有这类结论」是两句不同的话。
+
+#### Scenario: split-out behaviour 5
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 返回 404 而非 403：403 会确认该 id … (#4)
+
+单条结论的域归属不成立时 SHALL 返回 404 而非 403：403 会确认该 id 在别处存在。
+
+#### Scenario: split-out behaviour 6
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 只读：任何端点 MUST NOT 创建结论、MUST NOT 触发评测 (#5)
+
+本面 SHALL 只读：任何端点 MUST NOT 创建结论、MUST NOT 触发评测。
+
+#### Scenario: split-out behaviour 7
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds

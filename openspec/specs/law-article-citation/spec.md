@@ -27,7 +27,7 @@ The system SHALL parse citation strings of the form 法名 + 条号 out of contr
 
 ### Requirement: Article resolution to provision text
 
-For a parsed citation, the system SHALL resolve the law (via the law-catalog name resolution ladder: the law name hint from the citation) to a law_id, fetch the law's full text (via law-api full-text retrieval), and locate the article by matching the article ordinal against article boundaries in the text (第X条 anchoring). The output SHALL be (law_id, article ordinal, article text, law_status at fetch time). Resolution failures at each stage (unresolved name, fetch failure, article number out of range) SHALL be reported distinctly rather than conflated.
+For a parsed citation, the system SHALL resolve the law (via the law-catalog name resolution ladder: the law name hint from the citation) to a law_id, fetch the law's full text (via law-api full-text retrieval), and locate the article by matching the article ordinal against article boundaries in the text (第X条 anchoring).
 
 #### Scenario: End-to-end article resolution
 
@@ -44,6 +44,21 @@ For a parsed citation, the system SHALL resolve the law (via the law-catalog nam
 - **WHEN** the law name resolves but law-api is unreachable
 - **THEN** the outcome is a fetch-failure, distinguishable from unresolved-name and out-of-range outcomes
 
+### Requirement: be (law_id, article ordinal, article text, … (#1)
+
+The output SHALL be (law_id, article ordinal, article text, law_status at fetch time).
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be reported distinctly rather than conflated (#2)
+
+Resolution failures at each stage (unresolved name, fetch failure, article number out of range) SHALL be reported distinctly rather than conflated.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Article-level results extend the citation link layer
 
 Article-level resolution results SHALL be stored as an extension of the law-catalog linking layer (keyed by clause and law, with article ordinals), re-runnable like the name-level pass, and SHALL NOT modify clause bodies or derived `law_refs`. Law identifiers throughout SHALL remain opaque strings where they originate from law-api.

@@ -46,7 +46,7 @@ All clause modifications SHALL go through the existing `update_clause` store fun
 
 ### Requirement: Revision records as queryable evidence chains
 
-Every applied (or reviewed-no-action) disposition SHALL be recorded in a law_catalog revision table with: clause_id, batch name, citation before/after strings, dead law_id, successor law_id, authority law_id, rule version, git sha of the driving code, applied_at, and disposition (applied / skipped-review / reviewed-no-action). The table SHALL be idempotent per (clause_id, batch) and joinable with the catalog and clause tables. Simultaneously, each batch SHALL write file snapshots under `output/remediation/<batch>/` (manifest with git sha, before/ full-row, applied/ records) for rollback. No clause row is ever deleted.
+Every applied (or reviewed-no-action) disposition SHALL be recorded in a law_catalog revision table with: clause_id, batch name, citation before/after strings, dead law_id, successor law_id, authority law_id, rule version, git sha of the driving code, applied_at, and disposition (applied / skipped-review / reviewed-no-action).
 
 #### Scenario: Record is replayable evidence
 
@@ -58,6 +58,21 @@ Every applied (or reviewed-no-action) disposition SHALL be recorded in a law_cat
 - **WHEN** the 17 已修改 citations are processed
 - **THEN** each is recorded with disposition reviewed-no-action and no clause body changes
 
+### Requirement: be idempotent per (clause_id, batch) and … (#1)
+
+The table SHALL be idempotent per (clause_id, batch) and joinable with the catalog and clause tables.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: write file snapshots under `output/remediation/<batch>/` (manifest … (#2)
+
+Simultaneously, each batch SHALL write file snapshots under `output/remediation/<batch>/` (manifest with git sha, before/ full-row, applied/ records) for rollback.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds No clause row is ever deleted.
 ### Requirement: Closed-loop verification and rollback
 
 After application, re-running the name-level resolution and audit SHALL be the acceptance check: the repealed category SHALL drop to the count of unmapped local cases (≈7). A rollback operation SHALL restore any batch's (or single clause's) bodies from the before snapshots through the canonical update path and mark the revision records rolled-back. Consecutive re-application of the same batch SHALL be a no-op.

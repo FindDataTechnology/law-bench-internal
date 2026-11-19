@@ -42,7 +42,8 @@ When a single source (`base`, `tagged`, or `custom`) has multiple clauses target
 - **THEN** the `manual=true` clause body is used and the assembly diagnostic marks the section as heuristic-sourced
 
 ### Requirement: Slot Ontology and Normalization
-The system SHALL maintain a slot ontology: a canonical core vocabulary (``REQUIRED_SLOTS``) shared across all types, plus a registry of high-frequency concepts (address, phone, agent, legal_rep, bank, account, delivery_date, etc.) each with a canonical name, a set of variant aliases (including role-prefix synonyms such as ``seller_address`` -> ``party_a_address``), and a slot instruction. Clause bodies and ``slot_instructions`` SHALL be normalized to canonical slot names at write/upsert time (``store._row``); ``body_hash`` SHALL be re-derived from the normalized body so dedup stays consistent. Clause-declared slots beyond the registry are permitted; every ``{{slot}}`` in the assembled body SHALL have a matching instruction (clause-declared, core default, or ontology fallback) - enforced by the coherence gate. The long tail of single-occurrence slots is intentionally not covered; an uninstructed singleton SHALL fail the gate as surfaced data debt.
+
+The system SHALL maintain a slot ontology: a canonical core vocabulary (``REQUIRED_SLOTS``) shared across all types, plus a registry of high-frequency concepts (address, phone, agent, legal_rep, bank, account, delivery_date, etc.) each with a canonical name, a set of variant aliases (including role-prefix synonyms such as ``seller_address`` -> ``party_a_address``), and a slot instruction.
 
 #### Scenario: Non-canonical slot is normalized on write
 - **WHEN** a clause body containing ``{{seller_name}}`` is upserted for a type whose canonical party slot is ``party_a``
@@ -60,6 +61,37 @@ The system SHALL maintain a slot ontology: a canonical core vocabulary (``REQUIR
 - **WHEN** the assembled body contains ``{{obscure_xyz}}`` for which no clause-declared, core, or ontology instruction exists
 - **THEN** the coherence gate fails with an ``un-instructed slots`` diagnostic naming ``obscure_xyz``
 
+### Requirement: be normalized to canonical slot names … (#1)
+
+Clause bodies and ``slot_instructions`` SHALL be normalized to canonical slot names at write/upsert time (``store._row``);
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be re-derived from the normalized body … (#2)
+
+``body_hash`` SHALL be re-derived from the normalized body so dedup stays consistent.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds Clause-declared slots beyond the registry are permitted;
+
+### Requirement: have a matching instruction (clause-declared, core … (#3)
+
+every ``{{slot}}`` in the assembled body SHALL have a matching instruction (clause-declared, core default, or ontology fallback) - enforced by the coherence gate.
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds The long tail of single-occurrence slots is intentionally not covered;
+
+### Requirement: fail the gate as surfaced data … (#4)
+
+an uninstructed singleton SHALL fail the gate as surfaced data debt.
+
+#### Scenario: split-out behaviour 6
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Coherence Gate
 Before rendering, the engine SHALL validate the resolved contract: (a) every canonical section of the 母版 is present or explicitly extended; (b) no duplicate section exists; (c) every `{{slot}}` in the assembled body has a matching slot instruction. A validation failure SHALL abort rendering and surface a diagnostic identifying the failing check.
 

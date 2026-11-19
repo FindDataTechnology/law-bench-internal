@@ -12,7 +12,11 @@ The system SHALL expose `GET /api/contracts` returning the supported contract cl
 - **THEN** it returns a 200 with a JSON array of 43 entries, each `{key, zh}` (e.g. `{"key": "sale", "zh": "买卖合同"}`)
 
 ### Requirement: Comprehensive Context Bundle Endpoint
-The system SHALL expose `GET /api/contracts/{contract_type}` returning a JSON bundle for one contract class containing: `type`, `zh_name`, `template` (`{body, slots}`), `slot_instructions` (the manifest, each entry `{name, label, description, example, required, source}`), `laws` (`{refs: [{name, category, category_zh, sources}]}` - structured refs only, no survey markdown), `tags` (the merged vocabulary `{dim: [values]}` for the type), `sections` (the canonical `SECTION_ORDER` list), `clauses` (a summary `{base: N, tagged: N, custom: N}`), `rubric` (`{name}` of the latest-version rubric for the type, or `null`), and `prompts` (`[{name, purpose}]` for the type). It SHALL return 404 for an unknown contract type. It SHALL be documented in `/api/docs`.
+The system SHALL expose `GET /api/contracts/{contract_type}` returning a JSON bundle for one contract class containing:
+
+#### Scenario: enumerated items
+- **WHEN** this requirement is applied
+- **THEN** the following items apply: `type`, `zh_name`, `template` (`{body, slots}`), `slot_instructions` (the manifest, each entry `{name, label, description, example, required, source}`), `laws` (`{refs: [{name, category, category_zh, sources}]}` - structured refs only, no survey markdown), `tags` (the merged vocabulary `{dim: [values]}` for the type), `sections` (the canonical `SECTION_ORDER` list), `clauses` (a summary `{base: N, tagged: N, custom: N}`), `rubric` (`{name}` of the latest-version rubric for the type, or `null`), and `prompts` (`[{name, purpose}]` for the type).
 
 #### Scenario: Fetch the comprehensive bundle for a type
 - **WHEN** `GET /api/contracts/sale` is called
@@ -21,9 +25,24 @@ The system SHALL expose `GET /api/contracts/{contract_type}` returning a JSON bu
 #### Scenario: Unknown contract type returns 404
 - **WHEN** `GET /api/contracts/does_not_exist` is called
 - **THEN** it returns 404 with an `{"error": ...}` body
+### Requirement: return 404 for an unknown contract … (#1)
 
+It SHALL return 404 for an unknown contract type.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be documented in `/api/docs` (#2)
+
+It SHALL be documented in `/api/docs`.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Slot API Endpoint with Ontology Coverage
-The system SHALL expose `GET /api/contracts/{contract_type}/slots` returning the slot-instruction manifest for the type as a JSON list of `{name, label, description, example, required, source}`. The list SHALL cover every `{{slot}}` in the template body. For slots not in the type's manifest, the instruction SHALL be resolved from `slot_ontology.instruction_for_slot(name)` with `source: "ontology"`; slots present in the manifest SHALL have `source: "registry"`; template slots with no instruction anywhere SHALL appear with `source: "uncovered"` and empty guidance fields. It SHALL return 404 for an unknown contract type. It SHALL be documented in `/api/docs`.
+
+The system SHALL expose `GET /api/contracts/{contract_type}/slots` returning the slot-instruction manifest for the type as a JSON list of `{name, label, description, example, required, source}`.
 
 #### Scenario: Slot manifest covers template slots
 - **WHEN** `GET /api/contracts/sale/slots` is called
@@ -37,6 +56,53 @@ The system SHALL expose `GET /api/contracts/{contract_type}/slots` returning the
 - **WHEN** `GET /api/contracts/does_not_exist/slots` is called
 - **THEN** it returns 404
 
+### Requirement: cover every `{{slot}}` in the template … (#3)
+
+The list SHALL cover every `{{slot}}` in the template body.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be resolved from `slot_ontology.instruction_for_slot(name)` with `source: … (#4)
+
+For slots not in the type's manifest, the instruction SHALL be resolved from `slot_ontology.instruction_for_slot(name)` with `source: "ontology"`;
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: have `source: "registry"` (#5)
+
+slots present in the manifest SHALL have `source: "registry"`;
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: appear with `source: "uncovered"` and empty … (#6)
+
+template slots with no instruction anywhere SHALL appear with `source: "uncovered"` and empty guidance fields.
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: return 404 for an unknown contract … (#7)
+
+It SHALL return 404 for an unknown contract type.
+
+#### Scenario: split-out behaviour 5
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be documented in `/api/docs` (#8)
+
+It SHALL be documented in `/api/docs`.
+
+#### Scenario: split-out behaviour 6
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Per-Type Laws Endpoint
 The system SHALL expose `GET /api/contracts/{contract_type}/laws` returning `{refs, survey_md}` where `refs` is the structured list `[{name, category, category_zh, sources}]` (reusing `extract_laws_for_type`) and `survey_md` is `{doubao, deepseek}` with each value the full survey markdown string or `null` when absent (reusing `get_law_info`). It SHALL return 404 for an unknown contract type. It SHALL be documented in `/api/docs`.
 
@@ -60,7 +126,8 @@ The system SHALL expose `GET /api/contracts/{contract_type}/tags` returning the 
 - **THEN** it returns 404
 
 ### Requirement: Clause Catalog Endpoint with Filters and Pagination
-The system SHALL expose `GET /api/contracts/{contract_type}/clauses` returning a paginated JSON list of clauses for the type, each clause `{id, section, source, manual, tags, body}` (or the existing `list_clauses` row shape). It SHALL accept query parameters `scenario`, `stance`, `source` (each optional, filtering the corresponding tag/source), and `limit` (default 50, max 200) / `offset` (default 0) for pagination. The response SHALL include a `total` count of matching clauses. It SHALL return 404 for an unknown contract type. It SHALL be documented in `/api/docs`.
+
+The system SHALL expose `GET /api/contracts/{contract_type}/clauses` returning a paginated JSON list of clauses for the type, each clause `{id, section, source, manual, tags, body}` (or the existing `list_clauses` row shape).
 
 #### Scenario: List clauses for a type with defaults
 - **WHEN** `GET /api/contracts/sale/clauses` is called
@@ -78,8 +145,40 @@ The system SHALL expose `GET /api/contracts/{contract_type}/clauses` returning a
 - **WHEN** `GET /api/contracts/does_not_exist/clauses` is called
 - **THEN** it returns 404
 
+### Requirement: accept query parameters `scenario`, `stance`, `source` … (#9)
+
+It SHALL accept query parameters `scenario`, `stance`, `source` (each optional, filtering the corresponding tag/source), and `limit` (default 50, max 200) / `offset` (default 0) for pagination.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: include a `total` count of matching … (#10)
+
+The response SHALL include a `total` count of matching clauses.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: return 404 for an unknown contract … (#11)
+
+It SHALL return 404 for an unknown contract type.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be documented in `/api/docs` (#12)
+
+It SHALL be documented in `/api/docs`.
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Contract Generation Endpoint
-The system SHALL expose `POST /api/contracts/{contract_type}/generate` accepting a JSON body `{scenario?, stance?, custom_clause_ids?, format}` where `format` is `"docx"` (default), `"pdf"`, `"both"`, or `"markdown"`. It SHALL assemble the contract via `generate_contract_assembled` (per-section override `custom > tagged > base` + coherence gate) and return `{body_text, slots, instructions, law_refs, diagnostics, docx_url?, pdf_url?}` where `body_text` is always present. For `format: "markdown"` no file is written and `docx_url`/`pdf_url` are `null`. For `docx`/`pdf`/`both` the file(s) SHALL be written under `output/contracts/` and the corresponding URL(s) returned. A coherence-gate failure (`CoherenceError`) SHALL produce 422 with a diagnostic `{"error": ...}` naming the failing check(s). An unknown contract type SHALL produce 404. It SHALL be documented in `/api/docs`.
+
+The system SHALL expose `POST /api/contracts/{contract_type}/generate` accepting a JSON body `{scenario?, stance?, custom_clause_ids?, format}` where `format` is `"docx"` (default), `"pdf"`, `"both"`, or `"markdown"`.
 
 #### Scenario: Generate docx (default)
 - **WHEN** `POST /api/contracts/sale/generate` is called with no `format` (or `{"format": "docx"}`)
@@ -101,6 +200,45 @@ The system SHALL expose `POST /api/contracts/{contract_type}/generate` accepting
 - **WHEN** `POST /api/contracts/does_not_exist/generate` is called
 - **THEN** it returns 404
 
+### Requirement: assemble the contract via `generate_contract_assembled` (per-section … (#13)
+
+It SHALL assemble the contract via `generate_contract_assembled` (per-section override `custom > tagged > base` + coherence gate) and return `{body_text, slots, instructions, law_refs, diagnostics, docx_url?, pdf_url?}` where `body_text` is always present.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds For `format: "markdown"` no file is written and `docx_url`/`pdf_url` are `null`.
+
+### Requirement: be written under `output/contracts/` and the … (#14)
+
+For `docx`/`pdf`/`both` the file(s) SHALL be written under `output/contracts/` and the corresponding URL(s) returned.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: produce 422 with a diagnostic `{"error": … (#15)
+
+A coherence-gate failure (`CoherenceError`) SHALL produce 422 with a diagnostic `{"error": ...}` naming the failing check(s).
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: produce 404 (#16)
+
+An unknown contract type SHALL produce 404.
+
+#### Scenario: split-out behaviour 5
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be documented in `/api/docs` (#17)
+
+It SHALL be documented in `/api/docs`.
+
+#### Scenario: split-out behaviour 6
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Router Wiring and Schema Inclusion
 The system SHALL include the `contract-context` router in `src/web/app.py` so that all endpoints above appear in the `/api/docs` OpenAPI schema (i.e. none use `include_in_schema=False`). DB-backed endpoints SHALL take `db: Path = Depends(get_db)` reusing the existing dependency. `NotFound` errors from the service layer SHALL map to 404 via the existing exception handlers.
 

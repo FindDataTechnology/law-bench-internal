@@ -12,30 +12,7 @@ Gitee manifest source.
 
 ### Requirement: Build and publish the application images on push
 
-The system SHALL build the law-bench application images (`Dockerfile` and
-`Dockerfile.render` at repo root) via the repo's own GitHub Actions image
-workflow (`.github/workflows/image.yml`) whenever a commit is pushed to the
-default branch, and on manual dispatch. The workflow SHALL push to the HK
-registry hop `hkccr.ccs.tencentyun.com`, from which the cheap-3 tcr-relay
-backfills `ccr.ccs.tencentyun.com` within its ≤5-minute sync cycle; direct
-US-runner→ccr pushes are a dead path (~0.14MB/s) and MUST NOT be used. The
-build MUST NOT depend on the GitHub-hosted runner having access to any
-China-side mirror: the Dockerfile's default base image and package indexes
-apply unchanged, and no single RUN layer exceeds ~300MB (transpacific blob
-uploads wedge).
-
-When the source repo's account has exhausted its GitHub Actions quota, the
-system SHALL instead build from a **source snapshot pushed to a private image
-repository under another account**, and SHALL NOT switch to a public snapshot
-repository to save quota (that publishes the source). The head repository SHALL
-run the law-bench workflow, not a generic platform image workflow: a generic
-gate probes another product's port/endpoint/required env and fails this image
-unconditionally.
-
-The image tag SHALL remain the snapshot repository's short commit sha, and the
-snapshot root SHALL carry `BUILD-INFO.json` recording the true `baseCommit`.
-Image labels are inherited from the base image and MUST NOT be used as the
-provenance judgement.
+The system SHALL build the law-bench application images (`Dockerfile` and `Dockerfile.render` at repo root) via the repo's own GitHub Actions image workflow (`.github/workflows/image.yml`) whenever a commit is pushed to the default branch, and on manual dispatch.
 
 #### Scenario: Code push to main triggers a published image
 
@@ -70,6 +47,61 @@ provenance judgement.
   with a stated reason rather than fail, and cases MUST NOT depend on a
   developer's absolute home paths or on `pgpass`/trust authentication
 
+### Requirement: push to the HK registry hop … (#1)
+
+The workflow SHALL push to the HK registry hop `hkccr.ccs.tencentyun.com`, from which the cheap-3 tcr-relay backfills `ccr.ccs.tencentyun.com` within its ≤5-minute sync cycle;
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be used (#2)
+
+direct US-runner→ccr pushes are a dead path (~0.14MB/s) and MUST NOT be used.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: depend on the GitHub-hosted runner having … (#3)
+
+The build MUST NOT depend on the GitHub-hosted runner having access to any China-side mirror: the Dockerfile's default base image and package indexes apply unchanged, and no single RUN layer exceeds ~300MB (transpacific blob uploads wedge).
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: instead build from a **source snapshot … (#4)
+
+When the source repo's account has exhausted its GitHub Actions quota, the system SHALL instead build from a **source snapshot pushed to a private image repository under another account**, and SHALL NOT switch to a public snapshot repository to save quota (that publishes the source).
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: run the law-bench workflow, not a … (#5)
+
+The head repository SHALL run the law-bench workflow, not a generic platform image workflow: a generic gate probes another product's port/endpoint/required env and fails this image unconditionally.
+
+#### Scenario: split-out behaviour 5
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: remain the snapshot repository's short commit … (#6)
+
+The image tag SHALL remain the snapshot repository's short commit sha, and the snapshot root SHALL carry `BUILD-INFO.json` recording the true `baseCommit`.
+
+#### Scenario: split-out behaviour 6
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be used as the provenance judgement (#7)
+
+Image labels are inherited from the base image and MUST NOT be used as the provenance judgement.
+
+#### Scenario: split-out behaviour 7
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Canonical registry path and tag scheme
 
 The published images SHALL live at
@@ -125,22 +157,7 @@ manifests reference it, to avoid `ImagePullBackOff`.
 
 ### Requirement: Dual-track rollback to Harbor remains available
 
-Rolling back SHALL NOT require rebuilding anything. There are exactly two
-supported rollback paths, both verified to exist:
-
-1. **Flip the manifest to an image tag that already exists** (TCR
-   `ccr.ccs.tencentyun.com/law-bench/...` or Harbor
-   `100.64.0.8:30880/law-bench/...`) and push — the next ArgoCD sync schedules
-   pods from that image.
-2. **Rebuild from the private snapshot repository** (see the build requirement)
-   when no suitable existing tag remains.
-
-The system SHALL NOT rely on a standing Jenkins fallback. As of
-2026-11-11 there is no Jenkins workload in any cluster (the `jenkins` namespace is empty, nothing
-listens on `:31000`, and `jenkins.finddatatech.cloud` resolves to an edge site
-with no Caddy route, which answers an empty `200`). A contract that promises a
-channel nobody can use is worse than no contract, because during an outage it
-replaces a real decision with a dead-end search.
+Rolling back SHALL NOT require rebuilding anything.
 
 #### Scenario: Rollback by manifest flip
 
@@ -153,19 +170,18 @@ replaces a real decision with a dead-end search.
 
 - **WHEN** no existing tag is acceptable and a new image is required
 - **THEN** the build goes through the private snapshot channel, not through a
-  Jenkins job
+  Jenkins job There are exactly two supported rollback paths, both verified to exist: 1. **Flip the manifest to an image tag that already exists** (TCR    `ccr.ccs.tencentyun.com/law-bench/...` or Harbor    `100.64.0.8:30880/law-bench/...`) and push — the next ArgoCD sync schedules    pods from that image. 2. **Rebuild from the private snapshot repository** (see the build requirement)    when no suitable existing tag remains.
 
+### Requirement: rely on a standing Jenkins fallback (#8)
+
+The system SHALL NOT rely on a standing Jenkins fallback.
+
+#### Scenario: split-out behaviour 5
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds As of 2026-11-11 there is no Jenkins workload in any cluster (the `jenkins` namespace is empty, nothing listens on `:31000`, and `jenkins.finddatatech.cloud` resolves to an edge site with no Caddy route, which answers an empty `200`). A contract that promises a channel nobody can use is worse than no contract, because during an outage it replaces a real decision with a dead-end search.
 ### Requirement: Render service image delivery
 
-The render-service image (built from `Dockerfile.render` at repo root) SHALL
-be built and published by the repo's image workflow on the same triggers as
-the main image (push to the default branch, manual dispatch), as a second
-matrix entry, using the same `sha-<short>` plus `main` tag scheme. The
-workflow SHALL push to the HK registry relay hop
-(`hkccr.ccs.tencentyun.com/law-bench/law-render`); the tcr-relay SHALL
-backfill it to `ccr.ccs.tencentyun.com` within its sync cycle, and the
-render-service workload SHALL reference the ccr path. Nodes SHALL pull
-without a per-pod imagePullSecret (cluster-wide registries.yaml auth).
+The render-service image (built from `Dockerfile.render` at repo root) SHALL be built and published by the repo's image workflow on the same triggers as the main image (push to the default branch, manual dispatch), as a second matrix entry, using the same `sha-<short>` plus `main` tag scheme.
 
 #### Scenario: Push publishes both application images
 
@@ -181,3 +197,27 @@ without a per-pod imagePullSecret (cluster-wide registries.yaml auth).
   node that has never held that image
 - **THEN** kubelet pulls it successfully via the node-level registry
   authentication, without manifesting `ImagePullBackOff`
+
+### Requirement: push to the HK registry relay … (#9)
+
+The workflow SHALL push to the HK registry relay hop (`hkccr.ccs.tencentyun.com/law-bench/law-render`);
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: backfill it to `ccr.ccs.tencentyun.com` within its … (#10)
+
+the tcr-relay SHALL backfill it to `ccr.ccs.tencentyun.com` within its sync cycle, and the render-service workload SHALL reference the ccr path.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: pull without a per-pod imagePullSecret (cluster-wide … (#11)
+
+Nodes SHALL pull without a per-pod imagePullSecret (cluster-wide registries.yaml auth).
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds

@@ -5,7 +5,11 @@ Expose prompt comparison over a JSON API and a web UI with form validation, loca
 
 ## Requirements
 ### Requirement: Compare JSON API
-The system SHALL provide a JSON API under `/api/compare` in the existing FastAPI app: `POST /api/compare` to create and run a compare (body: contract_type, rubric_name, task_desc, prompt names, mode, n_drafts, and an optional integer `concurrency` bounding parallel draft generation, clamped to [1, 8] with default 1), `GET /api/compare` to list recent compares, `GET /api/compare/{id}` to fetch the full grouped result, and `GET /api/compare/{id}/run/{run_id}/draft` to lazy-fetch a single run's `draft_text`. Each handler SHALL take the standard `db` dependency so tests can point it at a throwaway DB. The `concurrency` field SHALL be additive: requests without it behave exactly as before.
+The system SHALL provide a JSON API under `/api/compare` in the existing FastAPI app:
+
+#### Scenario: enumerated items
+- **WHEN** this requirement is applied
+- **THEN** the following items apply: `POST /api/compare` to create and run a compare (body: contract_type, rubric_name, task_desc, prompt names, mode, n_drafts, and an optional integer `concurrency` bounding parallel draft generation, clamped to [1, 8] with default 1), `GET /api/compare` to list recent compares, `GET /api/compare/{id}` to fetch the full grouped result, and `GET /api/compare/{id}/run/{run_id}/draft` to lazy-fetch a single run's `draft_text`.
 
 #### Scenario: Create and run a compare via API
 - **WHEN** `POST /api/compare` is called with a valid area, prompt set, mode, and n_drafts
@@ -28,9 +32,24 @@ The system SHALL provide a JSON API under `/api/compare` in the existing FastAPI
 #### Scenario: API delegates to the service layer
 - **WHEN** any compare endpoint runs
 - **THEN** it delegates to `src/eval/compare.py` and maps service errors to HTTP statuses via the existing `app.py` handlers
+### Requirement: take the standard `db` dependency so … (#1)
 
+Each handler SHALL take the standard `db` dependency so tests can point it at a throwaway DB.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be additive: requests without it behave … (#2)
+
+The `concurrency` field SHALL be additive: requests without it behave exactly as before.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Compare Web UI
-The system SHALL provide HTML pages (`/compare` list, `/compare/new` build-and-run, `/compare/{id}` result) mirroring the existing rubric/prompt UI pattern, with a `Compare` nav link in `base.html`. The build form SHALL render its `contract_type` field, `rubric` select option labels, and prompt-pick checkbox labels (prompt name and contract_type) with localized labels and localized placeholders per `data-label-i18n` (raw-key fallback for unmapped or user-authored values). The build form SHALL also render a `concurrency` number input (default 1, min 1, max 8) with a localized label (zh: 并发), submitted with the compare body. The list SHALL render `contract_type`, `rubric_name`, and `mode` as localized labels in the active locale (raw-key fallback). The result page SHALL render a per-criterion matrix: rows = rubric criteria, columns = prompts (header = the localized `prompt_type` label, falling back to the prompt's localized display title per `data-label-i18n`, then the raw prompt `name`), cell = verdict (n_drafts = 1) or `k/N` pass-rate (n_drafts > 1). The result meta line (`{ct} · {rubric} · {mode} · N={n}`) SHALL be localized in the active locale via the client-bootstrapped data-label catalog (`window.__LABELS__`). Each cell SHALL be expandable to show the judge reasoning; each column SHALL offer a "view draft" action that lazy-loads `draft_text`. Run-level `n_passed`/`n_criteria` and mean pass-rate SHALL be shown as secondary headlines.
+
+The system SHALL provide HTML pages (`/compare` list, `/compare/new` build-and-run, `/compare/{id}` result) mirroring the existing rubric/prompt UI pattern, with a `Compare` nav link in `base.html`.
 
 #### Scenario: Build and run a compare in the browser
 - **WHEN** the user selects an area (contract_type, rubric, task), picks ≥2 prompts, sets mode and n_drafts, and submits
@@ -63,8 +82,73 @@ The system SHALL provide HTML pages (`/compare` list, `/compare/new` build-and-r
 - **WHEN** the user opens `/compare/new` with locale `zh`
 - **THEN** the `contract_type` input placeholder is a Chinese example (e.g. `如：买卖合同`)
 - **AND** prompt-pick checkboxes show the prompt's localized display title and contract_type label
+
+### Requirement: render its `contract_type` field, `rubric` select … (#3)
+
+The build form SHALL render its `contract_type` field, `rubric` select option labels, and prompt-pick checkbox labels (prompt name and contract_type) with localized labels and localized placeholders per `data-label-i18n` (raw-key fallback for unmapped or user-authored values).
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: also render a `concurrency` number input … (#4)
+
+The build form SHALL also render a `concurrency` number input (default 1, min 1, max 8) with a localized label (zh: 并发), submitted with the compare body.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: render `contract_type`, `rubric_name`, and `mode` as … (#5)
+
+The list SHALL render `contract_type`, `rubric_name`, and `mode` as localized labels in the active locale (raw-key fallback).
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: render a per-criterion matrix: rows = … (#6)
+
+The result page SHALL render a per-criterion matrix: rows = rubric criteria, columns = prompts (header = the localized `prompt_type` label, falling back to the prompt's localized display title per `data-label-i18n`, then the raw prompt `name`), cell = verdict (n_drafts = 1) or `k/N` pass-rate (n_drafts > 1).
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be localized in the active locale … (#7)
+
+The result meta line (`{ct} · {rubric} · {mode} · N={n}`) SHALL be localized in the active locale via the client-bootstrapped data-label catalog (`window.__LABELS__`).
+
+#### Scenario: split-out behaviour 5
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be expandable to show the judge … (#8)
+
+Each cell SHALL be expandable to show the judge reasoning;
+
+#### Scenario: split-out behaviour 6
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: offer a "view draft" action that … (#9)
+
+each column SHALL offer a "view draft" action that lazy-loads `draft_text`.
+
+#### Scenario: split-out behaviour 7
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be shown as secondary headlines (#10)
+
+Run-level `n_passed`/`n_criteria` and mean pass-rate SHALL be shown as secondary headlines.
+
+#### Scenario: split-out behaviour 8
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: localStorage Mirror of Compare State
-The compare web UI SHALL persist state to browser `localStorage` in two layers: (1) WIP form state - selected prompt names, task, rubric, mode, and n_drafts - saved on every change and restored on page load so a refresh does not lose an in-progress config; (2) a compact results mirror per compare - the matrix (prompt_type headers, criterion titles, verdicts/pass-rates) and judge reasoning - saved under a byte-budget LRU cap (~4 MB, evicting the oldest compares first) and a versioned cache key. `draft_text` SHALL NOT be mirrored. On load, the UI SHALL paint from `localStorage` instantly then reconcile with the server, with the DB as source of truth (DB wins on conflict; a deleted compare is dropped from the cache).
+
+The compare web UI SHALL persist state to browser `localStorage` in two layers: (1) WIP form state - selected prompt names, task, rubric, mode, and n_drafts - saved on every change and restored on page load so a refresh does not lose an in-progress config;
 
 #### Scenario: WIP form state survives refresh
 - **WHEN** the user partially configures a compare (selects prompts, types a task) and refreshes the page
@@ -87,10 +171,26 @@ The compare web UI SHALL persist state to browser `localStorage` in two layers: 
 
 #### Scenario: DB wins on conflict
 - **WHEN** the server's compare row is newer than the cached mirror, or the compare was deleted on the server
-- **THEN** the UI overwrites the cache from the DB (or drops the entry if deleted) and renders the DB state
+- **THEN** the UI overwrites the cache from the DB (or drops the entry if deleted) and renders the DB state (2) a compact results mirror per compare - the matrix (prompt_type headers, criterion titles, verdicts/pass-rates) and judge reasoning - saved under a byte-budget LRU cap (~4 MB, evicting the oldest compares first) and a versioned cache key.
 
+### Requirement: be mirrored (#11)
+
+`draft_text` SHALL NOT be mirrored.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: paint from `localStorage` instantly then reconcile … (#12)
+
+On load, the UI SHALL paint from `localStorage` instantly then reconcile with the server, with the DB as source of truth (DB wins on conflict; a deleted compare is dropped from the cache).
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Compare Form Validation and Guidance
-The build form SHALL guide valid experiment configuration before submit: the `contract_type` field SHALL offer known contract types as suggestions (derived from contract types that exist in the prompts table, labeled via the data-label-i18n catalog) while still accepting a free-text value; the prompt checklist SHALL offer a contract-type filter and SHALL show a live selection count; the submit control SHALL be disabled with an inline visible warning whenever fewer than 2 prompts are selected; `n_drafts` SHALL be bounded [1, 8] in the UI with out-of-range values clamped before submission. The form SHALL prevent rubric/contract-type mismatches before a run: when the selected rubric's name embeds a contract type (the `contract_<type>_v<N>` naming convention) that differs from the entered `contract_type`, submission SHALL be blocked with an inline localized warning naming both values; rubrics whose names embed no type remain freely usable. Every field label on the form SHALL be programmatically associated with its input (`for`/`id` pairing). Warnings SHALL be visible without submitting and SHALL use the active locale.
+
+The build form SHALL guide valid experiment configuration before submit: the `contract_type` field SHALL offer known contract types as suggestions (derived from contract types that exist in the prompts table, labeled via the data-label-i18n catalog) while still accepting a free-text value;
 
 #### Scenario: contract_type offers catalog suggestions
 - **WHEN** the user focuses the `contract_type` field on `/compare/new` and prompts exist for types `sale` and `lease`
@@ -124,8 +224,56 @@ The build form SHALL guide valid experiment configuration before submit: the `co
 - **WHEN** a screen reader or label click targets any field on `/compare/new` (task, contract type, rubric, mode, drafts, concurrency, label)
 - **THEN** the label is programmatically associated with its input (`for`/`id`), so the field announces its name and clicking the label focuses the input
 
+### Requirement: offer a contract-type filter and SHALL … (#13)
+
+the prompt checklist SHALL offer a contract-type filter and SHALL show a live selection count;
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be disabled with an inline visible … (#14)
+
+the submit control SHALL be disabled with an inline visible warning whenever fewer than 2 prompts are selected;
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be bounded [1, 8] in the … (#15)
+
+`n_drafts` SHALL be bounded [1, 8] in the UI with out-of-range values clamped before submission.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: prevent rubric/contract-type mismatches before a run: … (#16)
+
+The form SHALL prevent rubric/contract-type mismatches before a run: when the selected rubric's name embeds a contract type (the `contract_<type>_v<N>` naming convention) that differs from the entered `contract_type`, submission SHALL be blocked with an inline localized warning naming both values;
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds rubrics whose names embed no type remain freely usable.
+
+### Requirement: be programmatically associated with its input … (#17)
+
+Every field label on the form SHALL be programmatically associated with its input (`for`/`id` pairing).
+
+#### Scenario: split-out behaviour 6
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be visible without submitting and SHALL … (#18)
+
+Warnings SHALL be visible without submitting and SHALL use the active locale.
+
+#### Scenario: split-out behaviour 7
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Compare Run Instrumentation
-While a compare run is in flight after submit, the UI SHALL show an elapsed-time indicator that updates without page reload, SHALL keep the active-locale status message visible, SHALL offer a cancel control that aborts the client's wait for the response and returns the form to an editable state, and SHALL confirm that the form configuration was preserved. After a failed or cancelled run, a resubmission of an identical configuration SHALL require explicit confirmation before starting, to prevent accidental duplicate runs. Aborting the client wait SHALL NOT claim to stop server-side work.
+
+While a compare run is in flight after submit, the UI SHALL show an elapsed-time indicator that updates without page reload, SHALL keep the active-locale status message visible, SHALL offer a cancel control that aborts the client's wait for the response and returns the form to an editable state, and SHALL confirm that the form configuration was preserved.
 
 #### Scenario: elapsed time is visible during the run
 - **WHEN** a compare run is in flight
@@ -141,8 +289,24 @@ While a compare run is in flight after submit, the UI SHALL show an elapsed-time
 - **THEN** the UI asks for explicit confirmation before starting the run
 - **AND** a changed configuration submits without the extra confirmation
 
+### Requirement: require explicit confirmation before starting, to … (#19)
+
+After a failed or cancelled run, a resubmission of an identical configuration SHALL require explicit confirmation before starting, to prevent accidental duplicate runs.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: claim to stop server-side work (#20)
+
+Aborting the client wait SHALL NOT claim to stop server-side work.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Compare Matrix Accessibility
-The compare result SHALL be operable by keyboard and readable by assistive technology: each verdict cell SHALL be a keyboard-focusable control that opens the judge reasoning on activation (Enter/Space) and preserves the tint-pair visual grammar; the reasoning and draft panels SHALL close on Escape and SHALL return focus to the control that opened them; run status and result meta changes SHALL be announced via an ARIA live region; the prompt checklist on the build form SHALL be a labeled group (fieldset/legend or equivalent); verdict text SHALL meet WCAG AA contrast (4.5:1) against its tint background.
+
+The compare result SHALL be operable by keyboard and readable by assistive technology: each verdict cell SHALL be a keyboard-focusable control that opens the judge reasoning on activation (Enter/Space) and preserves the tint-pair visual grammar;
 
 #### Scenario: keyboard-only cell inspection
 - **WHEN** a keyboard user tabs to a verdict cell and presses Enter or Space
@@ -161,6 +325,37 @@ The compare result SHALL be operable by keyboard and readable by assistive techn
 - **WHEN** a screen reader encounters the prompt checklist on `/compare/new`
 - **THEN** it is announced as a group with an accessible name (the prompts label)
 
+### Requirement: close on Escape and SHALL return … (#21)
+
+the reasoning and draft panels SHALL close on Escape and SHALL return focus to the control that opened them;
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be announced via an ARIA live … (#22)
+
+run status and result meta changes SHALL be announced via an ARIA live region;
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be a labeled group (fieldset/legend or … (#23)
+
+the prompt checklist on the build form SHALL be a labeled group (fieldset/legend or equivalent);
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: meet WCAG AA contrast (4.5:1) against … (#24)
+
+verdict text SHALL meet WCAG AA contrast (4.5:1) against its tint background.
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Matrix Horizontal Overflow Behavior
 The verdict matrix SHALL remain fully readable when its columns exceed the panel width: the matrix SHALL scroll horizontally within a container inside its panel rather than overflowing or clipping, the table SHALL carry a minimum width so narrow results do not collapse columns illegibly, and the header's raw prompt-name subline SHALL be allowed to wrap while the localized display title and verdict cells keep single-line rendering. No content SHALL be clipped without a scroll path to it.
 
