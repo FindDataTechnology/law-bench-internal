@@ -258,11 +258,15 @@ async def console_proposal_batch(
         try:
             actor = user.email or user.name or user.sub
             if action == "confirm":
-                # The kernel's own signature: `actor` decides attribution and
-                # whether the caller was a platform admin driving an override.
+                # Same rule as the single-proposal route: `admin_override`
+                # waives separation of duties, which only applies when the
+                # admin is confirming their OWN proposal. Passing it for every
+                # admin made a batch over fleet-submitted rows fail on all of
+                # them (the kernel refuses the waiver for machine authors).
                 bench_proposals.confirm(
                     db, domain_key=domain_key, proposal_id=row["id"], actor=actor,
-                    admin_override=is_platform_admin(user),
+                    admin_override=_admin_confirming_own(
+                        user, db, domain_key, row["id"]),
                 )
             else:
                 bench_proposals.reject(

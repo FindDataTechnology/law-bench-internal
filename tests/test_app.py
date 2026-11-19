@@ -73,3 +73,25 @@ def test_admin_override_only_when_confirming_own_proposal():
 
     # Non-admin never waives, regardless of authorship.
     assert _admin_confirming_own(plain, None, "d", 1) is False
+
+
+def test_no_call_site_passes_platform_admin_as_override():
+    """`admin_override` is "waive the rule for MY OWN proposal", never "I am admin".
+
+    Two routes (single confirm + batch confirm) both had
+    `admin_override=is_platform_admin(user)`. Both were dead for fleet-authored
+    proposals, and fixing only the one I happened to click left the other broken
+    — so this checks the whole source tree, not one call site.
+    """
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parent.parent / "src"
+    offenders = []
+    for path in root.rglob("*.py"):
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        if "admin_override=is_platform_admin" in text:
+            offenders.append(str(path.relative_to(root)))
+    assert not offenders, (
+        "these files pass platform-admin as the override flag; use "
+        f"_admin_confirming_own(): {offenders}"
+    )
