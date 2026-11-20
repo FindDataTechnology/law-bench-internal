@@ -350,6 +350,33 @@ def _client(conn, user: User, monkeypatch) -> TestClient:
     return TestClient(app)
 
 
+def test_queue_rows_are_filtered_to_promotable_kinds(db_conn):
+    """分页行与计数必须同口径。
+
+    2026-11-20 实测到的缺陷：``promotion_queue`` 的 ``counts`` 只统计
+    PROMOTABLE_KINDS，而分页 ``units`` 没有任何 kind 过滤——于是一个
+    ``crosswalk`` 单位会出现在「升格队列」里、却永远爬不上阶梯，同时
+    ``total`` 仍是 0，页面显示「本页显示 2 / 0」自相矛盾（控制台真机实测）。
+
+    这条用例在修复前必须红：它插一个不可升格的 kind，断言它不出现在
+    ``units`` 里、也不影响 ``total``。
+    """
+    _sync(db_conn)
+    # 一个永远不可升格的 kind：它属于语料目录，不在 PROMOTABLE_KINDS 里。
+    store.upsert_knowledge_unit(
+        db_conn, kind="crosswalk", external_key="erp:acme->wire:acme",
+        namespace=NAMESPACE, body='{"note": "cross-layer mapping"}',
+        tags={}, attrs={}, tier="raw",
+    )
+    q = promotion.promotion_queue(db_conn, namespace=NAMESPACE)
+    assert all(u["kind"] in promotion.PROMOTABLE_KINDS for u in q["units"]), (
+        "升格队列里混进了不可升格的 kind："
+        f"{[u['kind'] for u in q['units'] if u['kind'] not in promotion.PROMOTABLE_KINDS]}"
+    )
+    # 计数与分页行必须说同一件事
+    assert q["total"] == len(q["units"]) == 3
+
+
 def test_queue_view_200_viewer_cannot_promote_403(db_conn, monkeypatch):
     _sync(db_conn)
     c = _client(db_conn, _user(["content:read"]), monkeypatch)

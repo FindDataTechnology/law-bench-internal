@@ -1295,12 +1295,10 @@ def console_promotion(
 
     domain = resolve_domain(db, domain_key)
     namespace = domain.get("path") or domain["key"]
-    # 只列真正能升格的 kind。内核 promotion_queue 的分页行**不按 kind 过滤**，而
-    # counts 只统计 entity/relation——照搬会让 crosswalk 之类的单位出现在「升格队列」
-    # 里却永远爬不上去（2026-11-20 实测：2 行 crosswalk，total=0）。这里先取回来再筛，
-    # 不改内核（内核行为另有 change 管）。
-    raw_queue = bench_promotion.promotion_queue(db, namespace=namespace, limit=500)
-    units = [u for u in raw_queue["units"] if u["kind"] in bench_promotion.PROMOTABLE_KINDS]
+    # promotion_queue 的分页行与 counts 同口径（都只含 PROMOTABLE_KINDS）——
+    # 那个不一致已在内核修掉（2026-11-20），这里不再二次筛选。
+    queue = bench_promotion.promotion_queue(db, namespace=namespace, limit=500)
+    units = queue["units"]
     by_tier: dict[str, int] = {t: 0 for t in bench_promotion.CHAIN}
     for u in units:
         if u.get("tier") in by_tier:
@@ -1313,7 +1311,7 @@ def console_promotion(
             **ctx,
             "units": units,
             "by_tier": by_tier,
-            "ladder_total": len(units),
+            "ladder_total": queue["total"],
             "chain": bench_promotion.CHAIN,
             "can_promote": bool(ctx["cap"].get("can_write")),
         },

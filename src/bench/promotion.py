@@ -610,6 +610,13 @@ def promotion_queue(
     if kind is not None:
         unit_where.append("kind = %s")
         unit_params.append(kind)
+    else:
+        # 分页行与计数必须同口径：counts 永远只统计 PROMOTABLE_KINDS，而分页行
+        # 此前没有任何 kind 过滤——于是 crosswalk/entity_type 这类永远爬不上升格梯
+        # 的单位会出现在「升格队列」里（2026-11-20 实测：2 行 crosswalk、total=0，
+        # 页面显示「本页显示 2 / 0」自相矛盾）。不传 kind 时按可升格种类过滤。
+        unit_where.append("kind IN (%s, %s)")
+        unit_params.extend([KIND_ENTITY, KIND_RELATION])
     # The aggregate already filters ``kind IN (...)``; operator filters are
     # ANDed on top of it (" AND ...", never a second WHERE).
     counts_clause = (" AND " + " AND ".join(count_where)) if count_where else ""
