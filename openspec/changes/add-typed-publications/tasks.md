@@ -48,8 +48,14 @@
 - [x] 5.3 `openspec validate add-typed-publications --strict` 绿
 - [x] 5.4 `acceptance.md`：逐条判据 + 真库读数
 
-## 6. 挂账
+## 6. 挂账（本 change 不处理；每条写明终态与判据，避免被读成漏做）
 
-- [ ] 6.1 RAG 语料发布（蓝图三类的第三类）——语料有独立生命周期与体积问题，另立
-- [ ] 6.2 跨域合并发布——无业务需求
-- [ ] 6.3 把 `ontology_publications` 统一进 `asset_publications`——明确不做，理由见 proposal 末节
+- [ ] 6.1 RAG 语料发布（蓝图三类的第三类）——**另立**。2026-11-20 实测按块冻结不可行的三条硬边界：
+  Qdrant `law_chunks_v2` **365,938 点 / 32,251 部法规**，块均 402 字符 → 全量 canonical JSON
+  约 **147 MB**（一份 = 一行 JSONB），而平台 pod 限 **512Mi**；且语料不在 PG（`corpus_chunks` 现 0 行），
+  发布面要读跨库源。正确形状是按**文档/法规**冻结 + 流式摘要，不是给现有投影加一条 relation。
+- [ ] 6.2 跨域合并发布——**无业务需求**，不做。技术上约 20 分钟（`build_manifest` 取多域并集），
+  但没有消费者要这个形状；真出现需求再开。
+- [ ] 6.3 把 `ontology_publications` 统一进 `asset_publications`——**明确不做、不会做**。
+  2026-11-20 上产后复核：本体两行 digest（`3586552a…` / `5897354d…`）与 `published_at`
+  逐字节未变，wire 仍在按 `…/ontology` 拉取并持有 `5897354d`。搬表或重算=作废一条在跑的分发链。

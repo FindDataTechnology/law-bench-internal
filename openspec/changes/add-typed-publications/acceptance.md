@@ -96,12 +96,16 @@ pod 内路由注册序实测：`[ontology, runs, work-orders, proposals/outcomes
 - `distribution_consumers` 多一条 **已吊销** 登记 `drill-typed-publication-5-1`（审计行）。
 - `domain_assets` 复原为 0 行（与上产前一致）。
 
-## 6. 挂账（明确不做，理由见 proposal 末节与 design D1）
+## 6. 挂账（明确不做或另立，reason 见 tasks.md §6）
 
-- **6.1** RAG 语料发布（蓝图第三类）——体积与生命周期都不同，另立。
-- **6.2** 跨域合并发布——无业务需求。
-- **6.3** 把 `ontology_publications` 统一进 `asset_publications`——明确不做：wire 在生产按
-  `.../ontology` 拉取且持有 digest `5897354d…`，搬表重算等于作废一条已上产的分发链。
+- **6.1 RAG 语料发布（蓝图第三类）——另立。** 2026-11-20 实测：Qdrant `law_chunks_v2` 365,938 点 /
+  32,251 部法规，块均 402 字符 → 全量 canonical JSON ≈147 MB（一行 JSONB），平台 pod 限 512Mi；
+  且语料不在 PG（`corpus_chunks` 现 0 行），发布面需跨库读取。可行形状是按文档/法规冻结 + 流式摘要，
+  不是给现有投影加一条 relation——属另一套契约，不塞进本 change。
+- **6.2 跨域合并发布——不做。** 技术上 ~20 分钟（`build_manifest` 取多域并集），无业务需求。
+- **6.3 把 `ontology_publications` 统一进 `asset_publications`——不做、不会做。** 上产后复核：
+  本体两行 digest（`3586552a…` / `5897354d…`）与 `published_at` 逐字节未变；wire 仍在拉
+  `…/ontology` 并持有 `5897354d`，搬表重算=作废一条在跑的分发链。
 
 ## 已知风险
 
