@@ -1150,3 +1150,273 @@ def _resolve_kind(kind: str) -> dict:
         return publication_kinds.resolve(kind)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ---------------------------------------------- corpus publication (§4) #
+# add-corpus-publication: a corpus is published per **library**, while a
+# consumer credential is bound to **domains**. The bridge is the existing
+# subscription relation: a consumer may pull a library iff one of its bound
+# domains subscribes to it, and the document scope is that domain's *effective*
+# source set (parent inheritance + narrowing only), resolved by the same
+# ``libraries.effective_sources`` the search path uses — one definition of
+# "what this domain can read".
+#
+# The ``libraries/`` path segment keeps this space disjoint from
+# ``/api/v1/distribution/{domain_key}/{kind}``: without it, ``libraries`` would
+# parse as a domain key and the two route families would collide.
+
+_LIBRARY_OUT_OF_SCOPE_DETAIL = "该库不在绑定范围"
+_DEFAULT_MANIFEST_LIMIT = 200
+_MAX_MANIFEST_LIMIT = 1000
+
+
+def _authenticate_for_library(request: Request, db: Any, library_key: str) -> tuple[dict, set[str]]:
+    """Three-state auth, then resolve the library scope through a bound domain.
+
+    Returns ``(consumer, allowed_source_keys)``. ``allowed`` is the union over
+    the consumer's bound domains that subscribe to this library; an empty union
+    means "no bound domain subscribes", which is a 403 — not an empty page.
+    """
+    from ...bench import libraries
+
+    consumer = _authenticate_consumer(request, db, library_key)
+    allowed: set[str] = set()
+    subscribed = False
+    for domain_key in consumer.get("domains") or []:
+        domain = workspaces.get_domain(db, domain_key=domain_key)
+        if domain is None:
+            continue
+        scope = libraries.effective_sources(db, domain_path=domain.get("path") or domain_key)
+        if library_key in scope:
+            subscribed = True
+            allowed |= set(scope[library_key] or ())
+    if not subscribed:
+        raise HTTPException(status_code=403, detail=_LIBRARY_OUT_OF_SCOPE_DETAIL)
+    # An empty source set is "the whole library" in effective_sources' vocabulary
+    # (see qdrant_filter's note); normalise to None-is-all at the call site.
+    return consumer, allowed
+
+
+def _record_corpus_pull(db: Any, *, consumer_id: Any, library_key: str, kind: str, version: int) -> None:
+    """Append the footprint; a failed write must never 500 a served payload."""
+    try:
+        db.execute(
+            "INSERT INTO corpus_pull_events (consumer_id, library_key, kind, version) "
+            "VALUES (%s, %s, %s, %s)",
+            (consumer_id, library_key, kind, version),
+        )
+        db.commit()
+    except Exception:  # noqa: BLE001 - see docstring
+        pass
+
+
+@read_only_router.get(
+    "/api/v1/distribution/libraries/{library_key}/{kind}",
+    name="distribution_pull_corpus_manifest",
+)
+def pull_corpus_manifest(
+    library_key: str,
+    kind: str,
+    request: Request,
+    version: Optional[int] = None,
+    cursor: Optional[str] = None,
+    limit: int = _DEFAULT_MANIFEST_LIMIT,
+    db: DbConn = Depends(get_db),
+):
+    """Page through one published version's document manifest.
+
+    Paged on purpose: the full body set is ~147 MB and 32k entries, so a single
+    response would just move the problem from publishing to pulling. This
+    endpoint carries identity, title, per-document digest and chunk count —
+    never bodies; those come from the sibling route one document at a time.
+    """
+    from ...bench import corpus_publication
+
+    if kind != "corpus" and kind != "documents":
+        raise HTTPException(
+            status_code=400,
+            detail=f"kind must be one of ['corpus', 'documents']; got {kind!r}",
+        )
+    consumer, _allowed = _authenticate_for_library(request, db, library_key)
+
+    publication = corpus_publication.get_publication(db, library_key=library_key, version=version)
+    if publication is None:
+        detail = (
+            "该库尚无发布" if version is None else f"该库无版本 v{version}"
+        )
+        raise HTTPException(status_code=404, detail=detail)
+
+    entries = list((publication.get("manifest") or {}).get("documents") or [])
+    size = max(1, min(int(limit or _DEFAULT_MANIFEST_LIMIT), _MAX_MANIFEST_LIMIT))
+    start = 0
+    if cursor:
+        keys = [e["doc_key"] for e in entries]
+        # A cursor we cannot resolve must fail loudly: silently restarting at 0
+        # would make a client loop forever over page one.
+        if cursor not in keys:
+            raise HTTPException(status_code=400, detail=f"cursor {cursor!r} 不在该版本内")
+        start = keys.index(cursor) + 1
+    page = entries[start : start + size]
+    next_cursor = page[-1]["doc_key"] if start + size < len(entries) else None
+
+    _record_corpus_pull(db, consumer_id=consumer["id"], library_key=library_key,
+                        kind=kind, version=publication["version"])
+    return {
+        "library": library_key,
+        "kind": kind,
+        "publication_version": publication["version"],
+        "digest": publication["digest"],
+        "shape_version": publication["shape_version"],
+        "total_docs": publication["doc_count"],
+        "total_chunks": publication["chunk_count"],
+        "documents": page,
+        "next_cursor": next_cursor,
+        "changelog": publication.get("changelog"),
+    }
+
+
+@read_only_router.get(
+    "/api/v1/distribution/libraries/{library_key}/{kind}/{doc_key}",
+    name="distribution_pull_corpus_document",
+)
+def pull_corpus_document(
+    library_key: str,
+    kind: str,
+    doc_key: str,
+    request: Request,
+    version: Optional[int] = None,
+    db: DbConn = Depends(get_db),
+):
+    """One document's body and digest, for verbatim verification.
+
+    Answers with the stored ``doc_digest`` so a consumer can check the body it
+    received byte-for-byte without downloading the whole corpus. A document that
+    is not in the pinned version is an explicit 404 — never an empty body, which
+    would read as "this law is blank".
+    """
+    from ...bench import corpus_publication
+
+    if kind != "corpus" and kind != "documents":
+        raise HTTPException(
+            status_code=400,
+            detail=f"kind must be one of ['corpus', 'documents']; got {kind!r}",
+        )
+    consumer, _allowed = _authenticate_for_library(request, db, library_key)
+
+    publication = corpus_publication.get_publication(db, library_key=library_key, version=version)
+    if publication is None:
+        detail = "该库尚无发布" if version is None else f"该库无版本 v{version}"
+        raise HTTPException(status_code=404, detail=detail)
+
+    entry = next(
+        (e for e in (publication.get("manifest") or {}).get("documents") or []
+         if e["doc_key"] == doc_key),
+        None,
+    )
+    if entry is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"版本 v{publication['version']} 不含文档 {doc_key!r}",
+        )
+
+    lib = db.execute(
+        "SELECT id, library_key, backend, location FROM libraries WHERE library_key = %s",
+        (library_key,),
+    ).fetchone()
+    body = ""
+    if lib is not None:
+        from ...bench import libraries
+        from ...search import library_index
+
+        lib_row = libraries.get_library(db, library_key=library_key)
+        # Use the entry's own source mapping. An entry published before the
+        # manifest carried ``source_key`` cannot be read faithfully — say so
+        # rather than reading some sibling source's fields.
+        source = next(
+            (s for s in libraries.list_sources(db, library_id=lib_row["id"])
+             if s["source_key"] == entry.get("source_key")),
+            None,
+        )
+        if entry.get("source_key") and source is None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"该版本引用的源 {entry.get('source_key')!r} 已不在库中，无法按原口径读取正文",
+            )
+        if source is not None:
+            mapping = library_index._document_rule(source)
+            loc = libraries.resolve_location(lib_row)
+            # Bodies are read from the SAME backend the publication was built
+            # from; a version whose corpus moved backend is not re-readable, and
+            # that is a 409 rather than a silently wrong body.
+            body = library_index.fetch_document_body(
+                url=loc["url_env"], collection=loc["collection"],
+                id_key=mapping["id"], text_key=mapping["text"],
+                order_key=mapping["order"], doc_key=doc_key,
+                page_size=4000, timeout=60.0,
+            )
+
+    expected = corpus_publication.doc_digest(entry.get("title", ""), body)
+    _record_corpus_pull(db, consumer_id=consumer["id"], library_key=library_key,
+                        kind=kind, version=publication["version"])
+    return {
+        "library": library_key,
+        "kind": kind,
+        "publication_version": publication["version"],
+        "doc_key": doc_key,
+        "title": entry.get("title"),
+        "chunk_count": entry.get("chunk_count"),
+        "doc_digest": entry.get("doc_digest"),
+        # What the body we just read actually hashes to. ``false`` means the
+        # corpus changed under a pinned version — the version is still the truth,
+        # the backend no longer matches it, and the caller must know.
+        "body_matches": expected == entry.get("doc_digest"),
+        "body": body,
+    }
+
+
+@write_router.post(
+    "/admin/libraries/{library_key}/publish", include_in_schema=False,
+    name="admin_library_publish",
+    dependencies=[Depends(require_scope("admin"))],
+)
+async def admin_library_publish(
+    library_key: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(require_scope("admin")),
+):
+    """Freeze the library's current documents as the next corpus version.
+
+    Platform-admin only: a library exists independently of the domain tree
+    (``shared-corpus-library``), so binding publish rights to any one
+    subscriber's lead would let one domain decide the version every other
+    subscriber reads.
+
+    Publishing is strictly **read-only against the external backend** — no
+    re-ingest, no index write, no ingest-rule change. Idempotent on content.
+    """
+    from ...bench import corpus_publication
+
+    try:
+        known = {
+            p.get("digest")
+            for p in corpus_publication.list_publications(db, library_key=library_key)
+        }
+        publication = corpus_publication.publish_library(
+            db, library_key=library_key, published_by=_operator_of(user)
+        )
+    except ValueError as exc:
+        return _flash(
+            f"/admin/libraries", "flash.corpus_publish_failed", err=True, detail=str(exc)
+        )
+    if publication.get("digest") in known:
+        return _flash(
+            "/admin/libraries", "flash.published_idempotent",
+            detail=f"v{publication['version']}",
+        )
+    return _flash(
+        "/admin/libraries", "flash.corpus_published",
+        detail=(
+            f"v{publication['version']} · {publication['doc_count']} docs · "
+            f"digest {str(publication.get('digest'))[:12]}"
+        ),
+    )

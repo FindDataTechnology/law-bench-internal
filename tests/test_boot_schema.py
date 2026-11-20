@@ -39,6 +39,9 @@ C5_TABLES = (
 # C5_TABLES so the incident's regression list stays exactly what it was.
 TYPED_PUBLICATION_TABLES = ("asset_publications", "asset_pull_events")
 
+# add-corpus-publication §3.3: one version series per library.
+CORPUS_PUBLICATION_TABLES = ("corpus_publications", "corpus_pull_events")
+
 
 def _clean_dsn(conn) -> str:
     """A URI DSN without query params for the fixture's database.
@@ -275,6 +278,35 @@ def test_boot_step_lands_the_typed_publication_tables(empty_db, monkeypatch):
     with psycopg.connect(_clean_dsn(empty_db), row_factory=dict_row) as fresh:
         assert set(TYPED_PUBLICATION_TABLES) <= _tables(fresh)
         for table, expected in TYPED_PUBLICATION_COLUMNS.items():
+            got = _columns(fresh, table)
+            assert expected <= got, f"{table} missing {expected - got}"
+
+
+CORPUS_PUBLICATION_COLUMNS = {
+    "corpus_publications": {
+        "id", "library_id", "version", "digest", "shape_version", "manifest",
+        "changelog", "doc_count", "chunk_count", "published_by", "published_at",
+    },
+    "corpus_pull_events": {
+        "id", "consumer_id", "library_key", "kind", "version", "happened_at",
+    },
+}
+
+
+def test_boot_step_lands_the_corpus_publication_tables(empty_db, monkeypatch):
+    """add-corpus-publication §3.1/3.3: both tables, on an empty database."""
+    from src.eval import bootstrap
+    from src.eval.db import close_shared_conn
+
+    monkeypatch.setenv("database_url", _clean_dsn(empty_db))
+    close_shared_conn()
+    assert bootstrap.main() == 0
+    assert bootstrap.main() == 0  # idempotent on a second replica rolling
+    close_shared_conn()
+
+    with psycopg.connect(_clean_dsn(empty_db), row_factory=dict_row) as fresh:
+        assert set(CORPUS_PUBLICATION_TABLES) <= _tables(fresh)
+        for table, expected in CORPUS_PUBLICATION_COLUMNS.items():
             got = _columns(fresh, table)
             assert expected <= got, f"{table} missing {expected - got}"
 

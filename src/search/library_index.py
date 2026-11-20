@@ -745,3 +745,270 @@ def explain_scope(conn: Any, *, domain_path: str) -> dict:
         "domain_path": domain_path,
         "libraries": libraries_out,
     }
+
+
+# ── document enumeration (corpus publication) ────────────────────────────────
+# add-corpus-publication: publishing freezes "which documents does this library
+# hold" as an immutable version. The unit is a DOCUMENT (one law), not a chunk —
+# chunk boundaries move with the splitter, and a digest that changes when the
+# splitter changes would invalidate every historical version for no content
+# change (design D2).
+#
+# Two passes, deliberately: pass 1 collects identity/metadata only (32k laws ≈ a
+# few MB), pass 2 fetches bodies one law at a time and drops each as soon as its
+# digest is computed. Peak memory is therefore "one law", not "the corpus" — the
+# full body set is ~147 MB and the platform pod is capped at 512 Mi (design D3).
+
+#: Payload keys every enumerable source must declare. The source's own
+#: ``ingest_rule.document`` mapping names the real columns; these are the
+#: canonical roles the publication layer speaks in.
+_DOC_ROLES = ("id", "title", "text", "order")
+
+
+class DocumentEnumerationError(ValueError):
+    """The library's documents cannot be enumerated faithfully (no silent truncation)."""
+
+
+def _document_rule(src: dict) -> dict:
+    """A source's ``ingest_rule.document`` mapping, validated."""
+    rule = src.get("ingest_rule") or {}
+    if isinstance(rule, str):
+        import json as _json
+
+        rule = _json.loads(rule or "{}")
+    doc = rule.get("document") or {}
+    if not isinstance(doc, dict):
+        raise DocumentEnumerationError(
+            f"source {src.get('source_key')!r}: ingest_rule.document must be a mapping"
+        )
+    missing = [role for role in _DOC_ROLES if not doc.get(role)]
+    if missing:
+        raise DocumentEnumerationError(
+            f"source {src.get('source_key')!r}: ingest_rule.document is missing "
+            f"{missing} — a library whose documents cannot be identified cannot be published"
+        )
+    return {role: str(doc[role]) for role in _DOC_ROLES}
+
+
+def _scroll_qdrant(
+    *,
+    url: str,
+    collection: str,
+    payload_keys: list[str],
+    page_size: int,
+    timeout: float,
+    max_seconds: float,
+    max_pages: int,
+) -> Iterable[list[dict]]:
+    """Yield pages of Qdrant points (payload only), never silently truncated.
+
+    Every bound is explicit and enforced here rather than hoped for: exceeding
+    the page or wall-clock budget raises instead of returning the pages read so
+    far. A truncated enumeration would produce a manifest that describes a
+    corpus that does not exist (design D5).
+    """
+    import time as _time
+
+    started = _time.monotonic()
+    offset = None
+    pages = 0
+    while True:
+        body: dict[str, Any] = {
+            "limit": page_size,
+            "with_payload": payload_keys,
+            "with_vector": False,
+        }
+        if offset is not None:
+            body["offset"] = offset
+        data = _qdrant_post(
+            url, f"/collections/{collection}/points/scroll", body, timeout=timeout
+        )
+        result = data.get("result") or {}
+        yield list(result.get("points") or [])
+        pages += 1
+        offset = result.get("next_page_offset")
+        if offset is None:
+            return
+        if pages >= max_pages:
+            raise DocumentEnumerationError(
+                f"corpus enumeration exceeded {max_pages} pages; refusing to publish "
+                "a truncated manifest"
+            )
+        if _time.monotonic() - started > max_seconds:
+            raise DocumentEnumerationError(
+                f"corpus enumeration exceeded {max_seconds:.0f}s; refusing to publish "
+                "a truncated manifest"
+            )
+
+
+def _source_for_payload(payload: dict, rules: dict[str, dict]) -> list[str]:
+    """Which sources' ``match`` rules accept this point (empty = unclaimed).
+
+    A point claimed by no source is corpus the library cannot account for; a
+    point claimed by two is ambiguous. Both are errors at publish time rather
+    than quiet drops — the manifest must describe the whole library.
+    """
+    hits: list[str] = []
+    for source_key, match in rules.items():
+        if not match:
+            hits.append(source_key)
+            continue
+        ok = True
+        for key, wanted in match.items():
+            actual = payload.get(key)
+            values = wanted if isinstance(wanted, (list, tuple, set)) else [wanted]
+            if actual not in list(values):
+                ok = False
+                break
+        if ok:
+            hits.append(source_key)
+    return hits
+
+
+def enumerate_documents(
+    conn: Any,
+    *,
+    lib: dict,
+    allowed: Optional[set[str]] = None,
+    page_size: int = 4000,
+    timeout: float = 60.0,
+    max_seconds: float = 300.0,
+    max_pages: int = 500,
+) -> list[dict]:
+    """Enumerate one library's documents by identity — no bodies, no digests.
+
+    Returns ``[{doc_key, title, source_key, chunk_count}, ...]`` sorted by
+    ``(source_key, doc_key)``.
+
+    **One pass over the collection**, not one pass per source: the measured
+    corpus is 365,938 points and a pass costs ~20s, so seven filtered passes
+    would multiply that by seven for no extra truth. Each point is assigned to
+    the source whose ``match`` rule accepts it, in Python, using the same rule
+    shape :func:`qdrant_filter` compiles.
+
+    Only ``qdrant`` libraries are enumerable in this release; other backends
+    raise naming themselves rather than returning ``[]`` (an empty list would
+    read as "this library is empty", which is a different and false statement).
+    ``allowed`` narrows to a subscriber's granted sources; ``None``/empty means
+    the whole library.
+    """
+    backend = lib.get("backend")
+    if backend != "qdrant":
+        raise DocumentEnumerationError(
+            f"library {lib.get('library_key')!r} uses backend {backend!r}; document "
+            "enumeration is implemented for 'qdrant' only"
+        )
+    sources = [
+        s
+        for s in libraries.list_sources(conn, library_id=lib["id"])
+        if not allowed or s["source_key"] in allowed
+    ]
+    if not sources:
+        raise DocumentEnumerationError(
+            f"library {lib.get('library_key')!r} has no sources in scope; nothing to publish"
+        )
+    mappings = {s["source_key"]: _document_rule(s) for s in sources}
+    rules: dict[str, dict] = {}
+    for s in sources:
+        rule = s.get("ingest_rule") or {}
+        if isinstance(rule, str):
+            import json as _json
+
+            rule = _json.loads(rule or "{}")
+        rules[s["source_key"]] = dict(rule.get("match") or {})
+
+    # The id/title roles differ per source in principle, so read the union and
+    # look each up through its own source's mapping.
+    id_keys = {m["id"] for m in mappings.values()}
+    title_keys = {m["title"] for m in mappings.values()}
+    match_keys = {k for r in rules.values() for k in r}
+    payload_keys = sorted(id_keys | title_keys | match_keys)
+
+    loc = libraries.resolve_location(lib)
+    docs: dict[str, dict] = {}
+    unclaimed = 0
+    for page in _scroll_qdrant(
+        url=loc["url_env"],
+        collection=loc["collection"],
+        payload_keys=payload_keys,
+        page_size=page_size,
+        timeout=timeout,
+        max_seconds=max_seconds,
+        max_pages=max_pages,
+    ):
+        for point in page:
+            payload = point.get("payload") or {}
+            owning = _source_for_payload(payload, rules)
+            if not owning:
+                unclaimed += 1
+                continue
+            if len(owning) > 1:
+                raise DocumentEnumerationError(
+                    f"a chunk is claimed by several sources {sorted(owning)}; "
+                    "source rules must partition the library"
+                )
+            source_key = owning[0]
+            mapping = mappings[source_key]
+            raw_key = payload.get(mapping["id"])
+            if raw_key is None or str(raw_key).strip() == "":
+                raise DocumentEnumerationError(
+                    f"source {source_key!r}: a chunk carries no {mapping['id']!r} — "
+                    "corpus is corrupt, refusing to publish"
+                )
+            doc_key = str(raw_key)
+            current = docs.get(doc_key)
+            if current is None:
+                docs[doc_key] = {
+                    "doc_key": doc_key,
+                    "title": str(payload.get(mapping["title"]) or ""),
+                    "source_key": source_key,
+                    "chunk_count": 1,
+                }
+            elif current["source_key"] != source_key:
+                raise DocumentEnumerationError(
+                    f"document {doc_key!r} appears in sources "
+                    f"{current['source_key']!r} and {source_key!r}; "
+                    "document identity must be unique per library"
+                )
+            else:
+                current["chunk_count"] += 1
+
+    if unclaimed and not docs:
+        raise DocumentEnumerationError(
+            f"library {lib.get('library_key')!r}: no chunk is claimed by any source — "
+            "the collection does not match the registered rules"
+        )
+    return sorted(docs.values(), key=lambda d: (d["source_key"], d["doc_key"]))
+
+
+def fetch_document_body(
+    *,
+    url: str,
+    collection: str,
+    id_key: str,
+    text_key: str,
+    order_key: str,
+    doc_key: str,
+    page_size: int,
+    timeout: float,
+) -> str:
+    """Fetch one document's body by filtering on its identity, in order."""
+    body = {
+        "limit": page_size,
+        "with_payload": [text_key, order_key],
+        "with_vector": False,
+        "filter": {"must": [{"key": id_key, "match": {"value": doc_key}}]},
+    }
+    data = _qdrant_post(
+        url, f"/collections/{collection}/points/scroll", body, timeout=timeout
+    )
+    points = list((data.get("result") or {}).get("points") or [])
+    # A law with more chunks than one page would be silently cut here; a cut
+    # body is a wrong digest, so refuse rather than truncate.
+    if len(points) >= page_size:
+        raise DocumentEnumerationError(
+            f"document {doc_key!r} returned {len(points)} chunks at the page limit; "
+            "refusing to digest a possibly truncated body"
+        )
+    points.sort(key=lambda p: (p.get("payload") or {}).get(order_key) or 0)
+    return "".join(str((p.get("payload") or {}).get(text_key) or "") for p in points)

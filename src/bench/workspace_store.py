@@ -30,6 +30,9 @@ Notes on the shape:
 - ``asset_publications`` / ``asset_pull_events`` extend the same append-only
   discipline to non-ontology asset kinds (rubrics, samples …): one immutable
   version per (domain, kind), keyed by content digest, plus a pull trail.
+- ``corpus_publications`` / ``corpus_pull_events`` do the same for a *library's*
+  documents (one version series per library, not per domain — a corpus is shared
+  physical layer, ``shared-corpus-library``).
 - ``distribution_consumers`` registers machine pull credentials: only the
   credential digest is stored (never a plaintext token), and revocation is a
   soft flag (``revoked_at``) that the lookup layer treats as fail-closed.
@@ -306,6 +309,49 @@ CREATE TABLE IF NOT EXISTS asset_pull_events (
 );
 CREATE INDEX IF NOT EXISTS asset_pull_events_consumer_idx
     ON asset_pull_events (consumer_id, domain_key, asset_kind, happened_at DESC);
+
+-- add-corpus-publication §3.1 --------------------------------------------------
+-- corpus_publications: 语料库的不可变发布版本。以 **库** 为键而不是域——语料是
+-- 「一次投入、多域取材」的共享物理层，同一份 law-library 被 legal 与 gov 订阅；
+-- 按域编号会让两个消费者对同一份未变语料拿到两个 digest，而 digest 的唯一用途
+-- 就是跨方核对。版本号按库独立单调；append-only，无 UPDATE/DELETE 代码路径。
+-- 同 digest 重复发布由 (library_id, digest) 兜住，返回既有行。
+-- 外键刻意不加：`ensure_schema` 里本文件（WORKSPACE_SCHEMA）先于
+-- `LIBRARY_SCHEMA` 执行，而 `libraries` 是后者建的——加 REFERENCES 会让**全新库**
+-- 在启动期直接 UndefinedTable（实测），而本地/生产库因早已有该表而假绿。
+-- 库的存活由 `corpus_publication.publish_library` 的 `get_library` 校验兜住；
+-- 库被删时留下的孤儿发布行可查可清，与 `domain_assets` 的弱引用同一纪律。
+CREATE TABLE IF NOT EXISTS corpus_publications (
+    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    library_id    BIGINT NOT NULL,
+    version       INTEGER NOT NULL,
+    digest        TEXT NOT NULL,
+    shape_version INTEGER NOT NULL,
+    manifest      JSONB NOT NULL,
+    changelog     JSONB NOT NULL,
+    doc_count     INTEGER NOT NULL,
+    chunk_count   BIGINT NOT NULL,
+    published_by  TEXT NOT NULL,
+    published_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (library_id, version),
+    UNIQUE (library_id, digest)
+);
+CREATE INDEX IF NOT EXISTS corpus_publications_library_idx
+    ON corpus_publications (library_id, version DESC);
+
+-- corpus_pull_events: 语料拉取足迹，append-only。只有成功解析到版本的拉取才落
+-- 一行（凭据被拒、404 都不落），与 distribution_pull_events / asset_pull_events
+-- 同一纪律。
+CREATE TABLE IF NOT EXISTS corpus_pull_events (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    consumer_id BIGINT NOT NULL REFERENCES distribution_consumers(id),
+    library_key TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    version     INTEGER NOT NULL,
+    happened_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS corpus_pull_events_consumer_idx
+    ON corpus_pull_events (consumer_id, library_key, happened_at DESC);
 
 -- domain_agent_runs: 每轮智能体运行一行。这是"昨晚干了什么"的唯一答案，也是
 -- `thin` 与 `failed` 必须分开的地方——前者升级给人，后者不得用重试掩盖。

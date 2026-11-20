@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}{{ domain.name }} · {{ t.console.promotion.h1 }} · {{ t.nav.brand }}{% endblock %}
+
+{% block nav_items %}{% endblock %}
+{% block console_context %}{% include '_domain_switcher.html' %}{% endblock %}
+{% block zone_nav %}{% set area = 'promotion' %}{% include '_domain_zone_nav.html' %}{% endblock %}
+
+{% block content %}
+{#- 升格队列（change console-progress-and-value）。
+
+     这个页面此前不存在：/promotion/queue 是纯 JSON，全控制台没有一个链接指向它，
+     而对外介绍站讲的是「gold/silver/bronze 质量分层」。一个域的阶梯在哪爬、谁爬过，
+     在本页之前没有任何读面。
+
+     本页是纯读：升格动作仍是既有 POST /promotion/units/{kind}/{key}/promote，
+     想动手的人从单位详情页走（那里有既有入口），这里不新开写面。 -#}
+<div class="toolbar between">
+  <div>
+    <h1>{{ t.console.promotion.h1 }}</h1>
+    <p class="hint">{{ t.console.promotion.intro }}</p>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>{{ t.console.promotion.ladder_h2 }}</h2>
+  <p class="hint">{{ t.console.promotion.ladder_hint }}</p>
+  <div class="stat-strip">
+    {% for tier in chain %}
+    <div class="stat">
+      <div class="stat-label">{{ tier }}</div>
+      <div class="stat-value">{{ by_tier.get(tier, 0) }}</div>
+    </div>
+    {% endfor %}
+    <div class="stat">
+      <div class="stat-label">{{ t.console.promotion.stat_total }}</div>
+      <div class="stat-value">{{ queue.total }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="toolbar between">
+    <h2>{{ t.console.promotion.units_h2 }}</h2>
+    <span class="muted">{{ t.console.promotion.showing }} {{ queue.units | length }} / {{ queue.total }}</span>
+  </div>
+  {% if queue.units %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>{{ t.console.promotion.col_unit }}</th>
+        <th>{{ t.console.promotion.col_kind }}</th>
+        <th>{{ t.console.promotion.col_tier }}</th>
+        <th>{{ t.console.promotion.col_reviewer }}</th>
+        <th>{{ t.console.promotion.col_updated }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in queue.units %}
+      <tr>
+        <td><code>{{ u.external_key }}</code></td>
+        <td>{{ u.kind }}</td>
+        <td><span class="badge badge-quiet">{{ u.tier }}</span></td>
+        <td>
+          {% if u.reviewer %}{{ u.reviewer }}
+          {% else %}<span class="muted">{{ t.console.promotion.no_reviewer }}</span>{% endif %}
+        </td>
+        <td class="muted">{{ u.updated_at[:16] | replace('T', ' ') if u.updated_at is string else u.updated_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  {% with message=t.console.promotion.empty, hint=t.console.promotion.empty_hint %}
+    {% include '_empty_state.html' %}
+  {% endwith %}
+  {% endif %}
+</div>
+
+<p class="hint">{{ t.console.promotion.action_note }}</p>
+{% endblock %}

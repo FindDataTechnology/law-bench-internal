@@ -54,6 +54,7 @@
         <th>{{ t.console.estate.col_knowledge }}</th>
         <th>{{ t.console.estate.col_eval }}</th>
         <th>{{ t.console.estate.col_inbox }}</th>
+        <th>{{ t.console.estate.metrics_h3 }}</th>
         <th>{{ t.console.list.col_role }}</th>
         <th></th>
       </tr>
@@ -73,7 +74,13 @@
           {% endif %}
           <code>{{ r.domain.path }}</code>
           {% for g in r.gaps %}
-          <span class="badge badge-warn">{{ t.console.estate['gap_' + g] }}</span>
+          {#- 质量类缺口与「柱为空」缺口视觉可区分：前者 mono 弱底，后者 warn 徽标。
+              标签表缺键时退到通用文案并带上原始键名，MUST NOT 渲染无字空徽标。 -#}
+          {% if g.startswith('quality:') %}
+          <span class="badge badge-quiet" title="{{ g }}">{{ t.console.estate['gap_' + (g | replace(':', '_'))] | default(t.console.estate.gap_quality_short ~ ' (' ~ g ~ ')') }}</span>
+          {% else %}
+          <span class="badge badge-warn">{{ t.console.estate['gap_' + g] | default(g) }}</span>
+          {% endif %}
           {% endfor %}
         </td>
         <td>
@@ -98,6 +105,24 @@
         <td>
           {% if r.inbox.pending %}<strong>{{ r.inbox.pending }}</strong>
           {% else %}<span class="muted">0</span>{% endif %}
+        </td>
+        <td class="quality-cell">
+          {#- 质量比摘要：渲染 estate.matrix() 已算好的结果，不重新计算。
+              三态可辨——达标（默认）/ 低于阈值（warn）/ 无物可算（muted，不显示 0 或 100%）。 -#}
+          {% for name in ('grounding', 'evidence', 'referential', 'key_hygiene', 'judge', 'crosswalk', 'template', 'review_lag') %}
+          {% set m = r.quality.get(name) %}
+          {% if m %}
+          {% set floor = thresholds.get(name) %}
+          {% set bad = m.value is not none and floor is not none and (
+                (m.value < floor) if high_is_better.get(name, true) else (m.value > floor)) %}
+          <span class="q{% if bad %} q-bad{% elif m.value is none %} q-na{% endif %}"
+                title="{{ t.console.estate['metric_' + name] | default(name) }}{% if m.value is not none %} · {{ m.value }}{% endif %}">
+            {% if m.value is none %}{{ t.console.estate['metric_' + name] | default(name) }} —
+            {% elif name == 'review_lag' %}{{ t.console.estate['metric_' + name] | default(name) }} {{ '%.1f' | format(m.value) }}h
+            {% else %}{{ t.console.estate['metric_' + name] | default(name) }} {{ '%.2f' | format(m.value) }}{% endif %}
+          </span>
+          {% endif %}
+          {% endfor %}
         </td>
         <td><span class="badge">{{ t.console.role[r.domain.role] }}</span></td>
         <td class="nowrap">

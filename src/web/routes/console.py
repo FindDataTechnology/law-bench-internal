@@ -62,6 +62,7 @@ from packs.legal import asset_catalog as _legal_asset_catalog  # noqa: F401
 # extraction. The pack itself stays outside src/bench.
 from packs import gov as _gov_pack  # noqa: F401
 from ...bench import ledger as bench_ledger
+from ...bench import quality
 from ...bench import domain_rubrics
 from ...bench import dispatch
 from ...bench import estate
@@ -192,6 +193,10 @@ def console_domain_list(
                 key: len([r for r in all_rows if key in r["gaps"]])
                 for key in ("ontology", "knowledge", "eval")
             },
+            # 质量比呈现在行内渲染 estate.matrix() 已算好的 r.quality——这两份表只供
+            # 模板判「低于阈值」的方向与门槛，不再是第二处计算。
+            "thresholds": quality.QUALITY_THRESHOLDS,
+            "high_is_better": quality.HIGHER_IS_BETTER,
             "platform_admin": is_platform_admin(user),
         },
     )
@@ -1265,6 +1270,48 @@ def console_publish_kind_action(
     return _flash(
         back, "console.flash.published_kind",
         kind=asset_kind, version=publication["version"],
+    )
+
+
+@read_only_router.get(
+    "/d/{domain_key}/promotion", include_in_schema=False, name="console_promotion",
+    dependencies=_READ_GATES,
+)
+def console_promotion(
+    request: Request,
+    domain_key: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """The tier ladder for this domain's units: what can move up, and who moved it.
+
+    Why a page and not just the JSON API: ``/promotion/queue`` has existed since
+    the kernel landed but had **no link anywhere in the console** — the site's
+    front page sells "gold/silver/bronze quality tiers" while the workbench had
+    no reachable place to act on them. The queue is read-only here; promote
+    itself stays a POST on the existing route, so this page adds no write face.
+    """
+    from ...bench import promotion as bench_promotion
+
+    domain = resolve_domain(db, domain_key)
+    namespace = domain.get("path") or domain["key"]
+    queue = bench_promotion.promotion_queue(db, namespace=namespace, limit=100)
+    # 按 tier 汇总本域的计数（同一份 queue 的 counts，不重算）
+    by_tier: dict[str, int] = {t: 0 for t in bench_promotion.CHAIN}
+    for c in queue["counts"]:
+        if c.get("tier") in by_tier:
+            by_tier[c["tier"]] += c["n"]
+    ctx = console_context(db, domain, user)
+    return _templates.TemplateResponse(
+        request,
+        "domain_console_promotion.html",
+        {
+            **ctx,
+            "queue": queue,
+            "by_tier": by_tier,
+            "chain": bench_promotion.CHAIN,
+            "can_promote": bool(ctx["cap"].get("can_write")),
+        },
     )
 
 

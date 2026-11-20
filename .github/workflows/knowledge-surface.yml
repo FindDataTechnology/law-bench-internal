@@ -110,3 +110,12 @@ jobs:
           export database_url="postgresql://app@localhost:5432/law_bench"
           pytest -q tests/test_boot_schema.py tests/test_typed_publications_kernel.py \
                     tests/test_typed_publications_web.py
+
+      # add-corpus-publication：语料发布（以库为单位、两层 digest、清单分页）。
+      # 外部后端用 library_index._qdrant_post 接缝替换，不碰真 Qdrant。
+      - name: Corpus publication gate
+        env:
+          PGPASSWORD: postgres
+        run: |
+          export database_url="postgresql://app@localhost:5432/law_bench"
+          pytest -q tests/test_corpus_publication_kernel.py tests/test_corpus_publication_web.py

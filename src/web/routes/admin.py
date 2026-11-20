@@ -737,16 +737,27 @@ def admin_libraries(request: Request, db: DbConn = Depends(get_db)):
     this page lives beside the other admin gates. Creating one is the step that
     used to require running a script inside a pod.
     """
+    from ...bench import corpus_publication
     from ...bench import libraries as library_store
 
+    libs = library_store.list_libraries(db)
     return _templates.TemplateResponse(
         request,
         "admin_libraries.html",
         {
-            "libraries": library_store.list_libraries(db),
+            "libraries": libs,
             "sources": {
                 lib["library_key"]: library_store.list_sources(db, library_id=lib["id"])
-                for lib in library_store.list_libraries(db)
+                for lib in libs
+            },
+            # add-corpus-publication §5.1: each library's release history beside
+            # its registry row — the console is where "is this corpus frozen, and
+            # at which digest" gets answered.
+            "corpus_publications": {
+                lib["library_key"]: corpus_publication.list_publications(
+                    db, library_key=lib["library_key"]
+                )
+                for lib in libs
             },
             "backends": library_store.BACKENDS,
             "external": library_store.EXTERNAL_BACKENDS,

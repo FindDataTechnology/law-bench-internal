@@ -38,6 +38,9 @@ AREAS: tuple[dict, ...] = (
     # Formerly ``bench``: the shelf of assigned assets plus run history. The old
     # URL is kept as a 302 so no bookmark or legacy link breaks.
     {"id": "eval-runs", "min_role": "annotator"},
+    # 升格阶梯：bronze→silver→gold 的可升格单位与谁确认过。纯读——升格动作仍在
+    # 单位详情的既有 POST 上。此前 /promotion/queue 只有 JSON、零入口（2026-11-20）。
+    {"id": "promotion", "min_role": "annotator"},
     {"id": "inbox", "min_role": "annotator"},
     # 值班长视图：台账 + 质量比 + 按批待确认。只读页，确认动作仍走 inbox 的
     # lead 闸（页面上出现的按钮只是入口，权限不由页面决定）。

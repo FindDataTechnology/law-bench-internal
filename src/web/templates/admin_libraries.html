@@ -96,6 +96,47 @@
     </tbody>
   </table>
 
+  {#- add-corpus-publication §5.1: 语料发布历史。判定「这份语料是否已被冻结、
+      冻结在哪个 digest」的地方就是这一页——所以历史与发布按钮紧挨着源清单。 -#}
+  <div class="panel">
+    <div class="toolbar between">
+      <h3>{{ t.admin.libraries.corpus_h2 }}</h3>
+      <form method="POST" action="{{ url_for('admin_library_publish', library_key=lib.library_key) }}"
+            data-confirm="{{ t.admin.libraries.corpus_publish_confirm }}">
+        <button type="submit" class="btn">{{ t.admin.libraries.corpus_publish_btn }}</button>
+      </form>
+    </div>
+    {% set pubs = corpus_publications.get(lib.library_key) or [] %}
+    {% if pubs %}
+    <table class="table">
+      <thead><tr>
+        <th>{{ t.admin.libraries.col_version }}</th>
+        <th>{{ t.admin.libraries.col_digest }}</th>
+        <th>{{ t.admin.libraries.col_docs }}</th>
+        <th>{{ t.admin.libraries.col_chunks }}</th>
+        <th>{{ t.admin.libraries.col_published_at }}</th>
+      </tr></thead>
+      <tbody>
+        {% for p in pubs | reverse %}
+        <tr>
+          <td class="nowrap">v{{ p.version }}</td>
+          <td><code class="digest">{{ p.digest }}</code></td>
+          <td>{{ p.doc_count }}</td>
+          <td>{{ p.chunk_count }}</td>
+          <td class="muted nowrap">{{ p.published_at[:16] | replace('T', ' ') }} · {{ p.published_by }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="hint">{{ t.admin.libraries.corpus_pull_api }}：
+      <code>/api/v1/distribution/libraries/{{ lib.library_key }}/corpus</code></p>
+    {% else %}
+    {% with message=t.admin.libraries.corpus_no_publication, hint=t.admin.libraries.corpus_no_publication_hint %}
+      {% include '_empty_state.html' %}
+    {% endwith %}
+    {% endif %}
+  </div>
+
   <details>
     <summary>{{ t.admin.libraries.add_source_h2 }}</summary>
     <form method="POST" action="{{ url_for('admin_library_source_add', library_key=lib.library_key) }}" class="filter-form">

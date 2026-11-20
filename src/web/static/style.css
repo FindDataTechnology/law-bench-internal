@@ -39,6 +39,9 @@ a:hover { text-decoration: underline; }
   flex-wrap: wrap;
 }
 .topbar .brand { font-weight: 700; font-size: 1.05rem; color: var(--text); }
+/* 回公开介绍站的链接：与品牌同排但明显更轻，不抢「域优先」这条主线。 */
+.topbar .brand-site { font-size: 0.78rem; color: var(--muted); text-decoration: none; }
+.topbar .brand-site:hover { color: var(--accent); text-decoration: underline; }
 .topbar nav { display: flex; align-items: center; gap: 0.85rem; row-gap: 0.45rem; margin-left: auto; flex-wrap: wrap; }
 .topbar nav > a { padding-bottom: 0.2rem; border-bottom: 2px solid transparent; }
 .topbar nav > a[aria-current="page"] { color: var(--text); font-weight: 700; border-bottom-color: var(--accent); }
@@ -126,6 +129,16 @@ tr:last-child td { border-bottom: none; }
    outdated template anchor, a revoked consumer, a reconciliation gap. */
 .badge.bad { background: var(--fail-tint); color: var(--fail-text); }
 .badge.local { background: var(--local-deep); color: #fff; }
+/* badge-warn / badge-quiet 在全仓 16 处模板里被引用，但此前 CSS 里没有定义——
+   它们退化成 `.badge` 的默认灰，与普通标签无法区分（2026-11-20 查出）。
+   这里按 Tint Verdict Rule 补齐：warn = 琥珀 tint × 同色文字，quiet = 无底色只留边。 */
+.badge.badge-warn { background: #fef3c7; color: #92400e; }
+.badge.badge-quiet {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  font-weight: 500;
+}
 
 .btn {
   display: inline-block;
@@ -353,6 +366,22 @@ table.matrix td.cell.rate { color: var(--accent); background: #eff6ff; }
 }
 
 table.data-table td.dl-cell { white-space: nowrap; }
+
+/* 质量比摘要（运营台行内）：八项小标签，三态可辨——达标默认、低于阈值 ambr、
+   无物可算灰。只做装饰性密度，数值本身由 estate 已算好的结果原样给出。 */
+.quality-cell { max-width: 22rem; }
+.quality-cell .q {
+  display: inline-block;
+  font-size: 0.68rem;
+  padding: 0.05rem 0.35rem;
+  margin: 0 0.25rem 0.2rem 0;
+  border-radius: 3px;
+  background: #f1f5f9;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.quality-cell .q-bad { background: #fef3c7; color: #92400e; font-weight: 600; }
+.quality-cell .q-na { background: transparent; color: var(--muted); font-style: italic; }
 table.data-table td.dl-cell .btn + .btn { margin-left: 0.3rem; }
 
 .pagination {

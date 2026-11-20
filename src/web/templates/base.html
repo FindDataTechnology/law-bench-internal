@@ -13,6 +13,9 @@
       nav_items 块让域页面收起全局法律链接（它们移到域评测区与全局资产池）。 -#}
   <header class="topbar">
     <a class="brand" href="/d">{{ t.nav.brand }}</a>
+    {#- 回公开介绍站的链接（change console-progress-and-value）。运营台与门面互链：
+        门面有「进入工作台」，这里给回去的路。匿名状态下不会走到（本页需登录）。 -#}
+    <a class="brand-site" href="https://bench.finddatatech.cloud/" rel="noopener">{{ t.nav.site_link }}</a>
     {% block console_context %}{% endblock %}
     <nav>
       {% block nav_items %}{% if has_scope('content:read') %}
