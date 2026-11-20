@@ -62,10 +62,34 @@ version_digest    = canonical_digest({"documents": [{doc_key, doc_digest}, ... �
 
 ## 发布
 
-`publish_library(conn, *, library_key, published_by)`
+**入口是独立进程，不是 HTTP 请求**：
+
+```
+kubectl -n law-bench exec <pod> -c law-bench -- \
+    sh -c 'cd /app && .venv/bin/python scripts/publish_corpus.py law-library --by <操作人>'
+```
+
+（或按 `fd-infra-deploy/all-services/law-bench/jobs/corpus-publish-job.yaml` 起一次性 Job。）
+
+为什么不是 web 里的按钮 —— 三条实测读数（2026-11-20，生产容器内）：
+
+| 读数 | 值 |
+|---|---|
+| 服务进程常驻已用 | **426 MB** |
+| 容器内存上限 | **512 Mi**（余量≈85 MB） |
+| 仅 import 应用 + 枚举 32,251 部法规 | **111 MB** |
+| 逐部取正文 | 33.7 ms/次 → 全库 ≈ **18 分钟** |
+
+内联版本**实测被 OOM 杀掉**（exit 137）。判据不是「省点内存」，而是发布不得与
+在线服务共用那个 512 Mi 的进程。因此 `POST /admin/libraries/{key}/publish` 返回
+**409 并指名脚本**；控制台的发布按钮也已换成可复制的命令——留下一个点了必然失败的
+按钮比没有按钮更糟。
+
+`publish_library(conn, *, library_key, published_by, reader)`
 
 1. 枚举（只读外部后端）→ 逐文档取正文算 `doc_digest` → 清单 → `version_digest`。
-2. 该 `(library_id, digest)` 已存在 → 返回既有行，**不新增**（幂等）。
+   **逐文档**是内存约束倒逼的选择：一次只驻留一部法规的正文。
+2. 该 `(library_id, digest)` 已存在 → 返回既有行，**不新增**（幂等，重跑安全）。
 3. 否则版本 `max+1`，changelog 对上一版 diff：`added` / `removed` 为 `doc_key` 列表，
    `changed` 给出**新旧 doc_digest**（消费者据此知道是哪部法规变了）。
 4. 空库拒绝，不产生空版本。
@@ -137,6 +161,6 @@ X-Consumer-Token: <登记时一次性给出的明文>
 
 - **只支持 `qdrant` 后端**。`pgvector-external` / `text-table`（`text-library` /
   `case-library`）的文档身份映射尚未核实，另立。
-- 发布是同步长操作（生产实测 32,251 部 / 365,938 块 ≈ 30 s）。目前够用；
-  若库再大一个数量级，应迁到一次性 Job（契约不变，只换执行宿主）。
+- 发布是长操作（32,251 部 / 365,938 块 ≈ **18 分钟**，逐文档 33.7 ms），
+  且**必须跑在独立进程**（见上「发布」一节的实测读数）。
 - 外部后端不可达时发布失败（报错而非发空版）；已发布版本不受影响。
