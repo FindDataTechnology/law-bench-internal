@@ -48,6 +48,26 @@ def _insert_crosswalk(conn, key: str, *, system: str, connectivity: bool = False
 @pytest.fixture()
 def db_conn(empty_db):  # noqa: F811
     ensure_schema(db_path=empty_db)
+    # `rubrics`/`criteria` come from the legacy seed schema, not ensure_schema,
+    # and the estate matrix reads the domain-attribution columns for template
+    # readiness. Recreating the deployed (post-ALTER) shape here is what
+    # test_estate_matrix.py does for the same reason — without domain_id the
+    # readiness query blows up on a missing column instead of reporting.
+    empty_db.execute(
+        "CREATE TABLE IF NOT EXISTS rubrics ("
+        " id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,"
+        " name TEXT NOT NULL, context TEXT, source TEXT, source_path TEXT,"
+        " description TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(),"
+        " domain_id BIGINT, derived_from BIGINT, fork_diff JSONB)"
+    )
+    empty_db.execute(
+        "CREATE TABLE IF NOT EXISTS criteria ("
+        " id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,"
+        " rubric_id BIGINT NOT NULL REFERENCES rubrics(id) ON DELETE CASCADE,"
+        " name TEXT NOT NULL, description TEXT, guidance TEXT,"
+        " ordinal INTEGER NOT NULL DEFAULT 0)"
+    )
+    empty_db.commit()
     yield empty_db
 
 
@@ -210,7 +230,13 @@ def test_confirming_a_crosswalk_does_not_pass_by_pointing_at_itself(db_conn, dom
 
 
 def test_dangling_gap_is_counted_separately_from_stale(db_conn, domain):
-    """8 rows, near end missing, connectivity absent — two different answers."""
+    """8 rows with three independent defects: they are three facts, not one.
+
+    Production's 8 rows look exactly like this — near end missing, connectivity
+    never verified, and no confidence (the ERP file records an alignment, not
+    "someone checked"). Reporting one number would make the reader pick the
+    wrong remedy, which is the whole reason the three counters exist.
+    """
     for i in range(8):
         _insert_crosswalk(
             db_conn, f"organization:provider-{i}",
@@ -221,7 +247,9 @@ def test_dangling_gap_is_counted_separately_from_stale(db_conn, domain):
     gaps = quality.crosswalk_gaps(db_conn, namespace="erp")
     assert len(gaps["dangling"]) == 8
     assert len(gaps["stale"]) == 8
-    assert gaps["unconfirmed"] == []
+    assert len(gaps["unconfirmed"]) == 8
+    # Three separate keys — a caller cannot mistake one for another.
+    assert set(gaps) == {"dangling", "stale", "unconfirmed"}
 
 
 def test_dangling_gap_reaches_the_matrix(db_conn, domain):
