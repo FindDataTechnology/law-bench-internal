@@ -195,9 +195,14 @@ def test_publishing_never_writes_to_the_external_backend(db_conn, lib, backend):
 
 
 def test_empty_library_is_refused(db_conn, lib, backend):
-    """2.4: no documents must never produce an empty version."""
+    """2.4: no documents must never produce an empty version.
+
+    ``NothingToPublish`` is the specific refusal (an empty *library*), as opposed
+    to ``DocumentEnumerationError`` (a library that cannot be read faithfully).
+    Both must fail; the message here is the one an operator will act on.
+    """
     backend([])
-    with pytest.raises(library_index.DocumentEnumerationError):
+    with pytest.raises(corpus_publication.NothingToPublish):
         corpus_publication.publish_library(
             db_conn, library_key="test-library", published_by="tester"
         )
