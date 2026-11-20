@@ -59,3 +59,9 @@
 - [ ] 6.3 把 `ontology_publications` 统一进 `asset_publications`——**明确不做、不会做**。
   2026-11-20 上产后复核：本体两行 digest（`3586552a…` / `5897354d…`）与 `published_at`
   逐字节未变，wire 仍在按 `…/ontology` 拉取并持有 `5897354d`。搬表或重算=作废一条在跑的分发链。
+
+## 归档豁免
+
+归档豁免：2026-11-21 6.1 RAG 语料发布另立（已被 archive/2026-11-20-add-corpus-publication 承接，7 条 Requirement 正是「按文档冻结 + 两层 digest」且已上产 law-library v1）
+归档豁免：2026-11-21 6.2 跨域合并发布无业务需求，不做（技术路径已写在原条）
+归档豁免：2026-11-21 6.3 把 ontology_publications 统一进 asset_publications 明确不做、不会做

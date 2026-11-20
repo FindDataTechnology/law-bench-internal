@@ -23,3 +23,7 @@
 - [x] 4.1 既有评测套件零回归（scores dict 增量兼容：n_invalid/invalid_rate 新键；compare 单稿格 cell 可能带 invalid 字符串如实记录）
 - [x] 4.2 全量回归 1302 绿 + strict 绿（kernel domain-free + public hygiene 双闸 OK）
 - [ ] 4.3 4.1 勾选（**未达成、挂账不销**）：结构性误读清零已达成、校准闭环已跑通；0.602<0.70 旧门差距已被 `add-judge-model-selection` 的**分层门**重新定谳——run 8 存档在新门下 balanced=0.7713 过门但 kappa=0.2352 且 105/108 无置信（旧世界空转），采样通道 pilot（run 5/6）balanced 0.6944/0.50 均不过门；relay 退化致全量 bake-off 未跑通（11-07 凌晨复盘仍退化：flash 三次 40s 读超时、glm53 502/503；证据与该 change 的「恢复后一键重跑配方」见归档 design.md 附录二）。生产判官不切换（镜像 sha-a41f38d 已上产，分层门与采样通道在产）；blueprint 台账已更新终态；解禁路径=更强上游/判官口径轮/维持 silver-only
+
+## 归档豁免
+
+归档豁免：2026-11-21 归档时任务正文未随实施回勾，未逐条复核；行为证据见归档提交 45d44cc

@@ -43,3 +43,7 @@
 - [x] 8.1 全量回归：`uv run pytest tests` 全绿（含 `tests/test_bench_crosswalk.py` 与既有 `test_bench_pack_domain_free.py`）
 - [ ] 8.2 **未做（归档时如实挂账）**：需要真实外部系统（金蝶/Shopify 的 live 凭据），归档时无凭据可跑。跨仓另一侧 `fd-erp-vertical-templates` 的读面回退路径已有单测覆盖（`tests/test_connector_status_source.py` 8 项），但「两侧各查一次、逐字段比对」这一步没跑过。原任务：选一个真实外部系统（金蝶或 Shopify），在知验台与 `fd-erp-vertical-templates` 各查一次同一实体，两侧输出逐字段比对一致；验证：比对结果落盘到 `openspec/changes/add-crosswalk-seam/evidence/`
 - [x] 8.3 一条真链：舰队提名一条 crosswalk → 域负责人确认 → 状态为待复核（低置信）→ 复核后计入映射覆盖率 → 覆盖率在质量视图变化可见；验证：库里 KU 行、事件行、质量视图读数三处一致
+
+## 归档豁免
+
+归档豁免：2026-11-21 归档时任务正文未随实施回勾，未逐条复核；行为证据见归档提交 955c678
