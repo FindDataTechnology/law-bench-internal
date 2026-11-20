@@ -21,6 +21,13 @@
 {% if domains %}
 <p class="hint">{{ t.console.estate.intro }}</p>
 
+{#- 平台级评测仪表板入口。它读 pipeline_runs（合同起草评测），与域内的 eval-runs 区
+    不是同一口径，所以不挂在某个域下；而顶栏的扁平工具菜单是明确退役的（守卫测试
+    test_nav_is_english_after_switch 点名 >Dashboard< 不得回潮），所以入口放这里。 -#}
+<p class="hint">
+  <a href="/dashboard">{{ t.nav.dashboard }}</a> —— {{ t.console.estate.dashboard_hint }}
+</p>
+
 <div class="toolbar gap" role="group" aria-label="{{ t.console.estate.gap_filter }}">
   <a class="btn btn-sm{% if not gap %} btn-primary{% endif %}"
      href="{{ url_for('console_domain_list') }}">{{ t.console.estate.all }}</a>

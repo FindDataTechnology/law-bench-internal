@@ -55,9 +55,6 @@
       <a href="{{ url_for('admin_domains') }}"{% if request.url.path.startswith('/admin/domains') %} aria-current="page"{% endif %}>{{ t.admin.domains.title }}</a>
 
       <a href="{{ url_for('admin_libraries') }}"{% if request.url.path.startswith('/admin/libraries') %} aria-current="page"{% endif %}>{{ t.admin.libraries.title }}</a>
-      {#- 评测仪表板此前是孤儿页：只被知识库页角落链过一次。它读 pipeline_runs（合同
-          起草评测），与域内的 eval-runs 区不是同一口径，所以挂在平台门而非某个域下。 -#}
-      <a href="/dashboard"{% if request.url.path == '/dashboard' %} aria-current="page"{% endif %}>{{ t.nav.dashboard }}</a>
       {% endif %}
       <span class="lang-switch">
         <a href="{{ request.url.path }}?lang=en"{% if lang == 'en' %} aria-current="true"{% endif %}>{{ t.switch.en }}</a>
