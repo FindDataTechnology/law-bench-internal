@@ -327,10 +327,10 @@ def test_admin_nav_shows_gate_and_no_domain_entries(seeded_db):
     with _client(seeded_db, _user("admin-u", ["*"])) as c:
         r = c.get("/admin/templates")
     assert r.status_code == 200
-    assert 'class="muted">管理门' in r.text
+    assert 'class="nav-group-label">管理门' in r.text
     assert '/admin/templates"' in r.text
     assert '/admin/domains"' in r.text
-    assert 'class="muted">我的域' not in r.text      # no memberships -> no section
+    assert '>我的域</a>' not in r.text      # no memberships -> no section
     assert DOMAIN_A_NAME not in r.text and DOMAIN_B_NAME not in r.text
 
 
@@ -346,7 +346,7 @@ def test_anonymous_invite_page_renders_without_my_domains(cookie_client, seeded_
     )
     r = cookie_client.get(f"/admin/invite/{token}")  # auth-exempt path
     assert r.status_code == 200
-    assert 'class="muted">我的域' not in r.text
+    assert '>我的域</a>' not in r.text
     assert DOMAIN_A_NAME in r.text  # the invite itself shows its domain
 
 

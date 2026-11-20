@@ -729,7 +729,7 @@ def test_nav_workbench_links_follow_membership_and_admin_gate(seeded_db):
     with _client(seeded_db, _user("admin-u", ["*"])) as c:
         r = c.get("/admin/templates")
     assert r.status_code == 200
-    assert 'class="muted">管理门' in r.text
+    assert 'class="nav-group-label">管理门' in r.text
     assert '/admin/templates"' in r.text
     assert '/admin/domains"' in r.text
     assert "/d/" not in r.text                  # no membership -> no domain links
