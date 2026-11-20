@@ -60,9 +60,9 @@
 ## 5. 控制台与文档
 
 - [x] 5.1 库管理面显示每个库的发布历史（版本、总 digest、文档数、块数、发布时间）
-- [ ] 5.2 `docs/corpus-publication-contract.md`：两层 digest 配方、清单形状、分页协议、
+- [x] 5.2 `docs/corpus-publication-contract.md`：两层 digest 配方、清单形状、分页协议、
       单文档核对步骤、已知限制（只支持 qdrant 后端）
-- [ ] 5.3 蓝图 §八 Change 台账补本行
+- [x] 5.3 蓝图 §八 Change 台账补本行
 
 ## 6. 验收
 
