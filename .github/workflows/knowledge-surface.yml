@@ -119,3 +119,20 @@ jobs:
         run: |
           export database_url="postgresql://app@localhost:5432/law_bench"
           pytest -q tests/test_corpus_publication_kernel.py tests/test_corpus_publication_web.py
+
+      # add-finance-erp-domain-slices：本端存在判据在**两条写入口**上都执行，
+      # 悬空映射作为独立缺口进矩阵；金融/ERP 两域的脚本化数据操作。
+      #
+      # 会碰兄弟仓 `fd-erp-vertical-templates` 的用例在这里 **skip**（发布面没有
+      # 那份 checkout），所以这条作业证明的是规则与判据，不证明那两个 pack 的
+      # 内容——后者属内部仓的验收，见 change 的 acceptance.md。
+      - name: Crosswalk endpoint rule + finance/ERP scripts
+        env:
+          PGPASSWORD: postgres
+        run: |
+          export database_url="postgresql://app@localhost:5432/law_bench"
+          pytest -q tests/test_crosswalk_endpoint_rule.py \
+                    tests/test_bench_crosswalk_metrics.py \
+                    tests/test_finance_erp_scripts.py \
+                    tests/test_seed_finance_gold.py \
+                    tests/test_import_account_mapping_crosswalks.py

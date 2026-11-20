@@ -88,22 +88,37 @@ def crosswalk_coverage(
 def crosswalk_gaps(
     conn: Any, *, namespace: str, max_age_days: Optional[float] = None
 ) -> dict:
-    """两类映射缺口，分开计数。
+    """三类映射缺口，分开计数。
 
+    - `dangling`：本端实体不存在（或已被退掉）。问的是"本域少了一条实体"。
     - `stale`：三态证据没齐（或 ok 却没证据）。问的是"这个外部系统还通不通"。
     - `unconfirmed`：缺 confidence。问的是"这条断言有没有人看过"。
 
-    合并成一个数会让值班的人无法决定该做什么——前者要重验对接，后者要找人看。
+    三者合并成一个数会让值班的人无法决定该做什么——悬空要补实体，未接通要重验
+    对接，未复核要找人看。生产实测（2026-11-21）：`erp` 域 8 条映射全部悬空，
+    而质量视图把它们报成"未接通"，读的人会去重验一个从来不是问题所在的对接。
     """
     from . import crosswalk as crosswalk_mod
 
-    stale, unconfirmed = [], []
+    live = {
+        r["external_key"]
+        for r in conn.execute(
+            "SELECT external_key FROM knowledge_units "
+            "WHERE namespace = %s AND (tags->>'deleted') IS NULL "
+            "  AND kind <> 'crosswalk'",
+            (namespace,),
+        ).fetchall()
+    }
+
+    dangling, stale, unconfirmed = [], [], []
     for row in conn.execute(
         "SELECT external_key, attrs FROM knowledge_units "
         "WHERE namespace = %s AND kind = 'crosswalk' AND (tags->>'deleted') IS NULL",
         (namespace,),
     ).fetchall():
         attrs = row["attrs"] or {}
+        if crosswalk_mod.endpoint_problem(row["external_key"] or "", live) is not None:
+            dangling.append(row["external_key"])
         # Missing *or expired*: "checked once, in March" is not a live connection.
         # ``max_age_days=None`` means the domain declared no expiry — nothing is
         # then treated as stale, which is honest rather than silently assuming.
@@ -117,6 +132,7 @@ def crosswalk_gaps(
         if not crosswalk_mod.is_confirmed(attrs, threshold=None):
             unconfirmed.append(row["external_key"])
     return {
+        "dangling": sorted(dangling),
         "stale": stale,
         "unconfirmed": sorted(unconfirmed),
     }

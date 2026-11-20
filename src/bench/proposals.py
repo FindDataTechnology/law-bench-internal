@@ -388,23 +388,15 @@ def _check_crosswalk_proposal(
         )
 
     # The endpoint's identity is `<type>:<key>`, but knowledge units are stored
-    # under the bare key — the type lives in the `kind` column. Comparing the
-    # whole tuple against `known` would never match a real entity (found on
-    # production 2026-11-19: a prefixed key was reported missing while the
-    # corresponding unit was live). So compare the key half, and keep the type
-    # half for the error message where it helps a reader.
-    if ":" in external_key:
-        _, _, bare_key = external_key.partition(":")
-    else:
-        bare_key = external_key
-    if bare_key not in known and external_key not in known:
+    # under the bare key — the type lives in the `kind` column. The rule lives in
+    # `crosswalk.endpoint_problem` so the in-process write path applies exactly
+    # the same one (it did not, until 2026-11-21).
+    problem = crosswalk.endpoint_problem(external_key, known)
+    if problem is not None:
         raise ProposalTargetExists(
             "crosswalk_endpoint_missing",
             external_key=external_key,
-            detail=(
-                f"crosswalk 的本端 {external_key!r} 既不在本域活单位里、"
-                "也不在本域提案箱里"
-            ),
+            detail=problem,
             hint=(
                 "先提交或确认这个实体（crosswalk 是对已存在实体的断言，"
                 "不是新实体的入口）"
@@ -672,6 +664,10 @@ def _write_through_kernel(
             body=proposal["body"],
             operator=actor,
             attrs=dict(mapping),
+            # This proposal's own row is still `pending` here, and its
+            # external_key *is* the near endpoint it asserts about. Leaving it in
+            # the known set would let the check pass by pointing at itself.
+            confirm_proposal_id=proposal["id"],
         )
     if lane == "relationship":
         from_key, to_key = _relationship_endpoints(proposal["evidence"])

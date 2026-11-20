@@ -389,6 +389,33 @@ def authoring_create_unit(
     )
 
 
+def crosswalk_known_endpoints(
+    conn: Any, *, domain: dict, exclude_proposal_id: Optional[int] = None
+) -> set[str]:
+    """Live unit keys ∪ pending proposal keys in this domain.
+
+    A crosswalk's own endpoint must be one of these. Pending counts: a pair of
+    endpoints may be reviewed together, and refusing the second one because the
+    first is not confirmed yet would make a legitimate batch un-submittable.
+
+    ``exclude_proposal_id`` drops one pending row from the set. Confirming a
+    crosswalk is exactly the case that needs it: the proposal's ``external_key``
+    **is** its near endpoint, so leaving its own pending row in the set would
+    make every confirmation pass the check by pointing at itself.
+    """
+    known = set(authoring_live_keys(conn, domain_key=domain["key"]))
+    sql = (
+        "SELECT external_key FROM domain_proposals "
+        "WHERE domain_id = %s AND state = 'pending'"
+    )
+    params: list[Any] = [domain["id"]]
+    if exclude_proposal_id is not None:
+        sql += " AND id <> %s"
+        params.append(exclude_proposal_id)
+    known.update(r["external_key"] for r in conn.execute(sql, tuple(params)).fetchall())
+    return known
+
+
 def authoring_create_crosswalk(
     conn: Any,
     *,
@@ -398,6 +425,7 @@ def authoring_create_crosswalk(
     operator: str,
     attrs: dict,
     tags: Optional[dict] = None,
+    confirm_proposal_id: Optional[int] = None,
 ) -> dict:
     """Create one crosswalk assertion (a KU of kind ``crosswalk``).
 
@@ -407,6 +435,12 @@ def authoring_create_crosswalk(
     asking template authors to declare the seam itself. What validates them is
     ``crosswalk.validate_crosswalk``, called at submission time by the proposal
     inbox and again here — the same predicate both times.
+
+    The near-endpoint rule is checked here too, with the same
+    ``crosswalk.endpoint_problem`` the inbox uses. It used to be enforced only on
+    the inbox path, so importers wrote crosswalks whose near end did not exist
+    (8 such rows on production, measured 2026-11-21) and the quality view
+    reported them as "external system not connected" — the wrong problem.
 
     Everything else is the ordinary write path: the kernel's vocabulary-free
     create, the paired append-only event, one transaction.
@@ -419,6 +453,14 @@ def authoring_create_crosswalk(
             "crosswalk attrs invalid: " + "; ".join(problems)
         )
     domain = _load_domain(conn, domain_key=domain_key)
+    missing = crosswalk_mod.endpoint_problem(
+        external_key,
+        crosswalk_known_endpoints(
+            conn, domain=domain, exclude_proposal_id=confirm_proposal_id
+        ),
+    )
+    if missing is not None:
+        raise ValueError(missing)
     return _create_unit(
         conn,
         domain=domain,

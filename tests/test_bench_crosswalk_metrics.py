@@ -134,6 +134,12 @@ def test_each_crosswalk_gap_has_its_own_route(db_conn):
         assert dispatch.route_for(gap) == dispatch.FLEET_ROUTE
         assert gap in dispatch.GAP_TASKS, "every routable gap needs a task title"
 
+    # Dangling is the exception: filling in the missing entity is work inside
+    # this domain, not a call to an external system, so the deterministic builder
+    # role owns it rather than a fleet.
+    assert dispatch.route_for("quality:crosswalk_dangling") == "kernel:builder"
+    assert "quality:crosswalk_dangling" in dispatch.GAP_TASKS
+
 
 def test_crosswalk_metric_appears_in_all_metrics(db_conn):
     _entity(db_conn, "organization:a")

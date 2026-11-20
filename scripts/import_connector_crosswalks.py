@@ -156,6 +156,7 @@ def main(argv: list[str] | None = None) -> int:
         eval_store.ensure_schema(db_path=conn)
 
         created_crosswalks = updated_crosswalks = 0
+        skipped: list[tuple[str, str]] = []
 
         for row in rows:
             # No provider entity is manufactured. An external system is the
@@ -194,11 +195,18 @@ def main(argv: list[str] | None = None) -> int:
                 conn, kind="crosswalk", external_key=row["crosswalk_key"],
                 namespace=args.domain,
             ) is not None
-            authoring.authoring_create_crosswalk(
-                conn, domain_key=args.domain, external_key=row["crosswalk_key"],
-                body=f"{row['external_system']} ← {args.target}（三态证据）",
-                operator="system:import", attrs=attrs,
-            )
+            try:
+                authoring.authoring_create_crosswalk(
+                    conn, domain_key=args.domain, external_key=row["crosswalk_key"],
+                    body=f"{row['external_system']} ← {args.target}（三态证据）",
+                    operator="system:import", attrs=attrs,
+                )
+            except ValueError as exc:
+                # The write path now refuses a dangling near end. Collect and
+                # report rather than aborting the batch: one missing endpoint
+                # must not stop the others from landing.
+                skipped.append((row["crosswalk_key"], str(exc)))
+                continue
             if existed:
                 updated_crosswalks += 1
             else:
@@ -223,6 +231,17 @@ def main(argv: list[str] | None = None) -> int:
             "note: 未复核的映射不会计入覆盖率——这份文件没说置信度，"
             "所以它们落库后仍是「待复核」，等真人看过才算数。"
         )
+        if skipped:
+            # Reported, not swallowed. A dangling near end is a missing entity in
+            # this domain, not a bad external system — say so and name both.
+            print(
+                f"\nSKIPPED {len(skipped)} mapping(s) — the near endpoint does not "
+                "exist in this domain. Seed the entity first "
+                "(scripts/seed_erp_provider_entities.py), then re-run:",
+                file=sys.stderr,
+            )
+            for key, reason in skipped:
+                print(f"  {key}: {reason}", file=sys.stderr)
         return 0
     finally:
         conn.close()

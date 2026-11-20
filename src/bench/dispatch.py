@@ -54,6 +54,9 @@ GAP_ROUTE: dict[str, str] = {
     "quality:crosswalk": "fleet",
     "quality:crosswalk_stale": "fleet",
     "quality:crosswalk_unconfirmed": "fleet",
+    # 悬空与前两类都不同：处置动作在**本域内部**（补一条实体），与某个外部
+    # 系统无关，所以聚合键是域而不是「域 + 外部系统」。
+    "quality:crosswalk_dangling": "kernel:builder",
 }
 
 #: Route prefix for "an in-process deterministic role owns this".
@@ -130,6 +133,14 @@ GAP_TASKS: dict[str, dict[str, str]] = {
         "detail": "缺口＝crosswalk 缺 confidence（视为未复核）。这问的是「这条断言有没有人"
                   "看过」，处置是找人复核，不是重验对接。验收：该系统的映射都有 confidence，"
                   "且低置信的已逐条复核。",
+    },
+    "quality:crosswalk_dangling": {
+        "title": "补本体：映射指向的本端实体不存在",
+        "detail": "缺口＝crosswalk 的本端（`<类型>:<键>`）在本域既非活单位也不在提案箱里。"
+                  "这问的是「本域少了一条实体」，不是「外部系统通不通」——把两者合并，"
+                  "值班的人会去重验一个从来不是问题所在的对接。做法：补上本端实体（或确认"
+                  "引用它的待确认提案），映射即恢复有效。验收：悬空条数为 0，映射覆盖率的"
+                  "分母随之包含这些实体。",
     },
     "quality:template": {
         "title": "给模板挂尺子：该域锚定模板无法被评测",

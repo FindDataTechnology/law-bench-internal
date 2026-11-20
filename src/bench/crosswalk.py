@@ -150,6 +150,38 @@ def crosswalk_key(entity_type: str, entity_key: str) -> str:
     return f"{entity_type.strip()}:{entity_key.strip()}"
 
 
+def bare_key(external_key: str) -> str:
+    """The key half of ``<type>:<key>`` (the type lives in the ``kind`` column).
+
+    Knowledge units are stored under the bare key, so existence checks compare
+    this half; the whole tuple never matches a live unit. Measured on production
+    2026-11-19: a prefixed key was reported missing while its unit was live.
+    """
+    key = external_key or ""
+    return key.partition(":")[2] if ":" in key else key
+
+
+def endpoint_problem(external_key: str, known: set[str]) -> Optional[str]:
+    """Why this crosswalk's own endpoint cannot be resolved, or ``None``.
+
+    One rule, one implementation, called from **every** write path — the
+    proposal inbox, confirmation, and in-process importers. It used to live only
+    in the inbox, so an importer could write a crosswalk whose near end did not
+    exist; production carried 8 such rows (measured 2026-11-21) and the quality
+    view reported them as "external system not connected", which sends whoever
+    reads it off to re-verify an integration that was never the problem.
+
+    ``known`` is live units ∪ pending proposals in the domain, because a pair of
+    endpoints may legitimately be under review together.
+    """
+    if bare_key(external_key) in known or external_key in known:
+        return None
+    return (
+        f"crosswalk 的本端 {external_key!r} 既不在本域活单位里、"
+        "也不在本域提案箱里"
+    )
+
+
 def is_connectivity_complete(connectivity: Optional[dict]) -> bool:
     """All three states cleared?
 

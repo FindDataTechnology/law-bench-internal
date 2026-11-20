@@ -176,6 +176,25 @@ def matrix(conn: Any, *, domains: list[dict], probed: Optional[dict] = None,
                                 template_readiness=_template_readiness(conn, domain))
             if with_quality else {}
         )
+        # Crosswalk gaps are *not* ratios, so they cannot come out of
+        # ``all_metrics``; until 2026-11-21 nothing emitted them at all — the
+        # routes and vocabularies were declared but the matrix never carried the
+        # gap, so the three-state discipline was unreachable from the page that
+        # dispatches work. Asked once per row here rather than per gap.
+        cw_gaps = (
+            quality.crosswalk_gaps(conn, namespace=path) if with_quality else {}
+        )
+        row_gaps = gaps_for(
+            {"ontology": ontology, "knowledge": knowledge, "eval": evaluation},
+            row_quality,
+        )
+        for gap, keys in (
+            ("quality:crosswalk_dangling", cw_gaps.get("dangling")),
+            ("quality:crosswalk_stale", cw_gaps.get("stale")),
+            ("quality:crosswalk_unconfirmed", cw_gaps.get("unconfirmed")),
+        ):
+            if keys:
+                row_gaps.append(gap)
         rows.append(
             {
                 "domain": {**domain, "path": path},
@@ -185,10 +204,8 @@ def matrix(conn: Any, *, domains: list[dict], probed: Optional[dict] = None,
                 "eval": evaluation,
                 "inbox": _pillar_inbox(conn, domain),
                 "quality": row_quality,
-                "gaps": gaps_for(
-                    {"ontology": ontology, "knowledge": knowledge, "eval": evaluation},
-                    row_quality,
-                ),
+                "crosswalk_gaps": cw_gaps,
+                "gaps": row_gaps,
             }
         )
     return rows
