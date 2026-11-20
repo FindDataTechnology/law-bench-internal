@@ -1067,6 +1067,7 @@ LOCALES: dict[str, dict[str, Any]] = {
                 "scope_error": "范围越权",
                 "smoke_excluded": "疑似测试数据不计：",
                 "none_matching": "没有符合该缺口的域。",
+                "dashboard_hint": "平台级评测仪表板：合同起草的通过率、版本对比与最近运行（与域内「评测运行」区口径不同）。",
                 # 质量类缺口（gaps_for 产出的 quality:* 名）。没有这些键时模板会渲染
                 # 无字空徽标——2026-11-20 查出的真缺陷，不是样式问题。
                 "gap_quality_short": "质量不达标",
@@ -2594,6 +2595,7 @@ LOCALES: dict[str, dict[str, Any]] = {
                 "scope_error": "scope violation",
                 "smoke_excluded": "test data excluded:",
                 "none_matching": "No domain has that gap.",
+                "dashboard_hint": "Platform-level evaluation dashboard: contract-drafting pass rates, version comparison, recent runs (a different measure from the per-domain Runs area).",
                 "gap_quality_short": "Quality below floor",
                 "quality_short": "Q",
                 "gap_quality_grounding": "Low grounding",
