@@ -27,6 +27,9 @@ Notes on the shape:
   versioned snapshot of a domain's content (manifest + changelog JSONB). No
   UPDATE/DELETE code paths exist by design — historical snapshots must stay
   byte-identical forever; new content means a new version row.
+- ``asset_publications`` / ``asset_pull_events`` extend the same append-only
+  discipline to non-ontology asset kinds (rubrics, samples …): one immutable
+  version per (domain, kind), keyed by content digest, plus a pull trail.
 - ``distribution_consumers`` registers machine pull credentials: only the
   credential digest is stored (never a plaintext token), and revocation is a
   soft flag (``revoked_at``) that the lookup layer treats as fail-closed.
@@ -266,6 +269,43 @@ CREATE TABLE IF NOT EXISTS distribution_pull_events (
 );
 CREATE INDEX IF NOT EXISTS distribution_pull_events_consumer_idx
     ON distribution_pull_events (consumer_id, happened_at DESC);
+
+-- add-typed-publications §0.3 -------------------------------------------------
+-- asset_publications: 非本体种类（尺子、金集……）的不可变发布版本。
+-- 刻意与 ontology_publications 分表：本体契约在生产上已被消费方持有
+-- （digest 5897354d…），搬表或重算等于作废一条已在跑的分发链。版本号按
+-- (domain, kind) 独立单调，不承诺跨种类可比。append-only：无 UPDATE/DELETE
+-- 代码路径；同一内容的重复发布由 (domain_id, asset_kind, digest) 唯一约束
+-- 兜住，返回既有行而不是新增。
+CREATE TABLE IF NOT EXISTS asset_publications (
+    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    domain_id     BIGINT NOT NULL REFERENCES domains(id),
+    asset_kind    TEXT NOT NULL,
+    version       INTEGER NOT NULL,
+    digest        TEXT NOT NULL,
+    shape_version INTEGER NOT NULL,
+    manifest      JSONB NOT NULL,
+    changelog     JSONB NOT NULL,
+    published_by  TEXT NOT NULL,
+    published_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (domain_id, asset_kind, version),
+    UNIQUE (domain_id, asset_kind, digest)
+);
+CREATE INDEX IF NOT EXISTS asset_publications_domain_idx
+    ON asset_publications (domain_id, asset_kind, version DESC);
+
+-- asset_pull_events: 按种类的拉取足迹，append-only。只有成功解析到版本的拉取
+-- 才落一行（凭据被拒、404 都不落），与 distribution_pull_events 同一纪律。
+CREATE TABLE IF NOT EXISTS asset_pull_events (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    consumer_id BIGINT NOT NULL REFERENCES distribution_consumers(id),
+    domain_key  TEXT NOT NULL,
+    asset_kind  TEXT NOT NULL,
+    version     INTEGER NOT NULL,
+    happened_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS asset_pull_events_consumer_idx
+    ON asset_pull_events (consumer_id, domain_key, asset_kind, happened_at DESC);
 
 -- domain_agent_runs: 每轮智能体运行一行。这是"昨晚干了什么"的唯一答案，也是
 -- `thin` 与 `failed` 必须分开的地方——前者升级给人，后者不得用重试掩盖。

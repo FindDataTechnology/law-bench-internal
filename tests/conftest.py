@@ -94,6 +94,8 @@ _ALL_TABLES = (
     "authoring_events",
     "authoring_tasks",
     "ontology_publications",
+    "asset_publications",
+    "asset_pull_events",
     "distribution_consumers",
     "rag_corpora",
     "domains",

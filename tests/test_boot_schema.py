@@ -35,6 +35,10 @@ C5_TABLES = (
     "ontology_publications",
 )
 
+# add-typed-publications §0.3: the typed-publication pair. Kept separate from
+# C5_TABLES so the incident's regression list stays exactly what it was.
+TYPED_PUBLICATION_TABLES = ("asset_publications", "asset_pull_events")
+
 
 def _clean_dsn(conn) -> str:
     """A URI DSN without query params for the fixture's database.
@@ -244,6 +248,35 @@ def test_boot_step_fails_loudly_when_the_database_is_unreachable(monkeypatch):
         env={**os.environ},
     )
     assert out.returncode != 0, out.stdout + out.stderr
+
+
+TYPED_PUBLICATION_COLUMNS = {
+    "asset_publications": {
+        "id", "domain_id", "asset_kind", "version", "digest", "shape_version",
+        "manifest", "changelog", "published_by", "published_at",
+    },
+    "asset_pull_events": {
+        "id", "consumer_id", "domain_key", "asset_kind", "version", "happened_at",
+    },
+}
+
+
+def test_boot_step_lands_the_typed_publication_tables(empty_db, monkeypatch):
+    """add-typed-publications §0.3/0.4: both tables, on an empty database."""
+    from src.eval import bootstrap
+    from src.eval.db import close_shared_conn
+
+    monkeypatch.setenv("database_url", _clean_dsn(empty_db))
+    close_shared_conn()
+    assert bootstrap.main() == 0
+    assert bootstrap.main() == 0  # idempotent on a second replica rolling
+    close_shared_conn()
+
+    with psycopg.connect(_clean_dsn(empty_db), row_factory=dict_row) as fresh:
+        assert set(TYPED_PUBLICATION_TABLES) <= _tables(fresh)
+        for table, expected in TYPED_PUBLICATION_COLUMNS.items():
+            got = _columns(fresh, table)
+            assert expected <= got, f"{table} missing {expected - got}"
 
 
 def _entrypoint_branches() -> tuple[list[str], list[str]]:

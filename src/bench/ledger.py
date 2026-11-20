@@ -53,6 +53,7 @@ from . import authoring, templates
 SOURCE_DECLARATION = "ontology_templates"
 SOURCE_CURATION = "knowledge_units"
 SOURCE_PUBLICATION = "ontology_publications"
+SOURCE_ASSET_PUBLICATION = "asset_publications"
 SOURCE_CONSUMPTION = "distribution_consumers + distribution_pull_events"
 
 # Lane labels for the per-kind distribution (the template vocabulary decides
@@ -369,6 +370,88 @@ def publication_layer(conn: Any, *, domain: dict, history_limit: int = 20) -> di
         "history": history,
         "source": SOURCE_PUBLICATION,
     }
+
+
+def typed_publication_layer(
+    conn: Any, *, domain: dict, history_limit: int = 20
+) -> list[dict]:
+    """Every registered publication kind with its own version series.
+
+    add-typed-publications §4.1: the console lists them side by side and never
+    merges the counts — one kind's v2 and another kind's v2 are unrelated
+    numbers. A kind with no publication reports its own empty state (``latest``
+    None) instead of disappearing, so "nothing published yet" is visible.
+
+    An empty registry (no pack imported) yields an empty list: the kernel
+    never invents kinds.
+    """
+    from . import publication_kinds
+
+    kinds = publication_kinds.list_kinds()
+    out: list[dict] = []
+    limit = max(0, int(history_limit))
+    for kind in kinds:
+        try:
+            provider = publication_kinds.resolve(kind)
+        except ValueError:
+            continue
+        cur = conn.execute(
+            "SELECT version, digest, shape_version, published_at, published_by, "
+            "changelog, manifest FROM asset_publications "
+            "WHERE domain_id = %s AND asset_kind = %s "
+            "ORDER BY version DESC LIMIT %s",
+            (domain.get("id"), kind, limit),
+        )
+        history: list[dict] = []
+        for row in cur.fetchall():
+            version, digest, shape_version, published_at, published_by, changelog, manifest = _values(
+                row,
+                ("version", "digest", "shape_version", "published_at",
+                 "published_by", "changelog", "manifest"),
+            )
+            manifest = _decode_jsonb(manifest)
+            history.append(
+                {
+                    "version": int(version),
+                    "digest": digest,
+                    "shape_version": int(shape_version),
+                    "published_at": _iso(published_at),
+                    "published_by": published_by,
+                    "changelog": _decode_jsonb(changelog),
+                    "entry_count": len((manifest or {}).get("entries") or []),
+                }
+            )
+        out.append(
+            {
+                "kind": kind,
+                "label_key": provider["label_key"],
+                "has_publication": bool(history),
+                "latest": history[0] if history else None,
+                "history": history,
+                "source": SOURCE_ASSET_PUBLICATION,
+            }
+        )
+    return out
+
+
+def typed_pull_layer(conn: Any, *, domain: dict) -> dict[str, Optional[dict]]:
+    """Newest successful pull per registered kind (asset_pull_events)."""
+    from . import publication_kinds
+
+    out: dict[str, Optional[dict]] = {}
+    for kind in publication_kinds.list_kinds():
+        row = conn.execute(
+            "SELECT version, happened_at FROM asset_pull_events "
+            "WHERE domain_key = %s AND asset_kind = %s "
+            "ORDER BY happened_at DESC, id DESC LIMIT 1",
+            (domain.get("key"), kind),
+        ).fetchone()
+        if row is None:
+            out[kind] = None
+            continue
+        version, happened_at = _values(row, ("version", "happened_at"))
+        out[kind] = {"version": int(version), "happened_at": _iso(happened_at)}
+    return out
 
 
 def _last_pull(

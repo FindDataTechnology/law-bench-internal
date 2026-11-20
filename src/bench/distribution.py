@@ -37,7 +37,7 @@ from typing import Any, Optional
 
 from fd_ontology_kernel import manifest as kernel_manifest
 
-from . import authoring, submitters, templates, workspaces
+from . import authoring, publication_kinds, submitters, templates, workspaces
 
 # The contract surface carried per knowledge-unit entry in a manifest.
 # Relationship entries additionally carry the structured endpoints
@@ -468,7 +468,163 @@ def list_publications(conn: Any, *, domain_key: str) -> list[dict]:
     return [_publication_to_dict(r) for r in cur.fetchall()]
 
 
-# ----------------------------------------------------------------- consumers
+# ------------------------------------------------- typed asset publications
+# add-typed-publications: non-ontology kinds (a ruler, a gold sample …) get the
+# same immutability guarantee as the ontology snapshot, in their own table. The
+# digest is the SAME ``canonical_digest()`` above — a second implementation
+# would let two surfaces disagree about what "the same content" means, and the
+# only purpose of a digest is to be checkable against someone else's copy.
+
+_ASSET_PUBLICATION_COLS = (
+    "id, domain_id, asset_kind, version, digest, shape_version, manifest, "
+    "changelog, published_by, published_at"
+)
+_ASSET_PUBLICATION_KEYS = (
+    "id",
+    "domain_id",
+    "asset_kind",
+    "version",
+    "digest",
+    "shape_version",
+    "manifest",
+    "changelog",
+    "published_by",
+    "published_at",
+)
+
+
+def _asset_publication_to_dict(row: Any) -> dict:
+    if isinstance(row, dict):
+        values = [row[k] for k in _ASSET_PUBLICATION_KEYS]
+    else:
+        values = list(row)
+    return {
+        "id": values[0],
+        "domain_id": values[1],
+        "asset_kind": values[2],
+        "version": values[3],
+        "digest": values[4],
+        "shape_version": values[5],
+        "manifest": _decode_jsonb(values[6]),
+        "changelog": _decode_jsonb(values[7]),
+        "published_by": values[8],
+        "published_at": _iso(values[9]),
+    }
+
+
+def publish_asset_kind(
+    conn: Any, *, domain_key: str, asset_kind: str, published_by: str
+) -> dict:
+    """Freeze the domain's shelved entries of one kind as the next version.
+
+    Same discipline as :func:`publish_domain`, one (domain, kind) series:
+    unknown domain / unregistered kind / empty projection are refused; a
+    digest that already exists for (domain, kind) returns that row untouched
+    (idempotent — no new row, no new version); otherwise ``max(version)+1``
+    with a changelog diffed against the latest snapshot of the same kind.
+
+    ``shape_version`` is stored beside the manifest, never inside it, so
+    bumping a projection's shape cannot invalidate digests already handed out.
+    """
+    if not published_by:
+        raise ValueError("published_by is required")
+    provider = publication_kinds.resolve(asset_kind)
+    domain = workspaces.get_domain(conn, domain_key=domain_key)
+    if domain is None:
+        raise ValueError(f"domain {domain_key!r} not found")
+
+    manifest = publication_kinds.build_manifest(
+        conn, domain_id=domain["id"], asset_kind=asset_kind
+    )
+    digest = canonical_digest(manifest)
+
+    existing = conn.execute(
+        f"SELECT {_ASSET_PUBLICATION_COLS} FROM asset_publications "
+        "WHERE domain_id = %s AND asset_kind = %s AND digest = %s",
+        (domain["id"], asset_kind, digest),
+    ).fetchone()
+    if existing is not None:
+        return _asset_publication_to_dict(existing)
+
+    max_version = _scalar(
+        conn.execute(
+            "SELECT COALESCE(MAX(version), 0) AS max_version "
+            "FROM asset_publications WHERE domain_id = %s AND asset_kind = %s",
+            (domain["id"], asset_kind),
+        ).fetchone()
+    )
+    latest = conn.execute(
+        f"SELECT manifest FROM asset_publications "
+        "WHERE domain_id = %s AND asset_kind = %s ORDER BY version DESC LIMIT 1",
+        (domain["id"], asset_kind),
+    ).fetchone()
+    previous_manifest = _decode_jsonb(latest["manifest"]) if latest else None
+    changelog = publication_kinds.diff_manifests(previous_manifest, manifest)
+
+    cur = conn.execute(
+        f"INSERT INTO asset_publications "
+        f"(domain_id, asset_kind, version, digest, shape_version, manifest, "
+        f"changelog, published_by) "
+        f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
+        f"RETURNING {_ASSET_PUBLICATION_COLS}",
+        (
+            domain["id"],
+            asset_kind,
+            int(max_version or 0) + 1,
+            digest,
+            provider["shape_version"],
+            json.dumps(manifest),
+            json.dumps(changelog),
+            published_by,
+        ),
+    )
+    publication = _asset_publication_to_dict(cur.fetchone())
+    conn.commit()
+    return publication
+
+
+def get_asset_publication(
+    conn: Any,
+    *,
+    domain_key: str,
+    asset_kind: str,
+    version: Optional[int] = None,
+) -> Optional[dict]:
+    """One published version of one kind; ``version is None`` = the latest.
+
+    ``None`` when the domain is unknown, the kind was never published, or the
+    requested version does not exist.
+    """
+    domain = workspaces.get_domain(conn, domain_key=domain_key)
+    if domain is None:
+        return None
+    sql = (
+        f"SELECT {_ASSET_PUBLICATION_COLS} FROM asset_publications "
+        "WHERE domain_id = %s AND asset_kind = %s"
+    )
+    params: list[Any] = [domain["id"], asset_kind]
+    if version is not None:
+        sql += " AND version = %s"
+        params.append(version)
+    sql += " ORDER BY version DESC LIMIT 1"
+    row = conn.execute(sql, tuple(params)).fetchone()
+    return _asset_publication_to_dict(row) if row else None
+
+
+def list_asset_publications(conn: Any, *, domain_key: str, asset_kind: str) -> list[dict]:
+    """Every published version of one kind, version ascending."""
+    domain = workspaces.get_domain(conn, domain_key=domain_key)
+    if domain is None:
+        return []
+    cur = conn.execute(
+        f"SELECT {_ASSET_PUBLICATION_COLS} FROM asset_publications "
+        "WHERE domain_id = %s AND asset_kind = %s ORDER BY version ASC",
+        (domain["id"], asset_kind),
+    )
+    return [_asset_publication_to_dict(r) for r in cur.fetchall()]
+
+
+# ------------------------------------------------------------------ consumers
 
 
 def register_consumer(

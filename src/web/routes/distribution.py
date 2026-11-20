@@ -1060,3 +1060,93 @@ def list_domain_crosswalks(
         "crosswalks": rows,
         "gaps": quality.crosswalk_gaps(db, namespace=path),
     }
+
+
+# ----------------------------------------------------- typed pull (kinds) #
+# add-typed-publications §3: ``GET /api/v1/distribution/{domain}/{kind}`` serves
+# any pack-registered publication kind. Registered AFTER every fixed path in
+# this module, so ``/ontology`` × ``/rulers`` × ``/crosswalks`` keep matching
+# their own handlers (a wildcard route earlier in the file would shadow them).
+
+
+@read_only_router.get(
+    "/api/v1/distribution/{domain_key}/{kind}",
+    name="distribution_pull_asset_kind",
+)
+def pull_asset_kind(
+    domain_key: str,
+    kind: str,
+    request: Request,
+    version: Optional[int] = None,
+    db: DbConn = Depends(get_db),
+):
+    """Serve the latest (or a pinned) version of one published asset kind.
+
+    ``ontology`` is not a second implementation — it maps back to the existing
+    handler, so the payload wire pulls today is byte-identical. An unregistered
+    ``kind`` is 400 naming the registered kinds: 404 would say "wrong path",
+    which is a different and false statement.
+
+    Auth is the shared three-state token check, and it runs BEFORE the kind is
+    resolved: an anonymous caller must get 401, not a list of what this
+    deployment happens to publish. The pull footprint (``asset_pull_events``) is
+    written only after a version actually resolved — a rejected credential or a
+    missing version leaves no row, so the trail never claims a pull that did not
+    happen.
+    """
+    if kind == "ontology":
+        return pull_domain_ontology(
+            domain_key, request, version=version, format="json", db=db
+        )
+    consumer = _authenticate_consumer(request, db, domain_key)
+    provider = _resolve_kind(kind)
+
+    publication = distribution.get_asset_publication(
+        db, domain_key=domain_key, asset_kind=kind, version=version
+    )
+    if publication is None:
+        detail = (
+            f"该域尚无 {kind} 发布"
+            if version is None
+            else f"该域无 {kind} 版本 v{version}"
+        )
+        raise HTTPException(status_code=404, detail=detail)
+
+    try:
+        db.execute(
+            "INSERT INTO asset_pull_events "
+            "(consumer_id, domain_key, asset_kind, version) VALUES (%s, %s, %s, %s)",
+            (consumer["id"], domain_key, kind, publication["version"]),
+        )
+        db.commit()
+    except Exception:  # noqa: BLE001 - a footprint write must never 500 a pull
+        pass
+
+    manifest = publication.get("manifest") or {}
+    return JSONResponse(
+        content={
+            "domain": domain_key,
+            "kind": kind,
+            "publication_version": publication["version"],
+            "digest": publication["digest"],
+            "shape_version": publication["shape_version"],
+            "label_key": provider["label_key"],
+            "entries": manifest.get("entries") or [],
+            "changelog": publication.get("changelog"),
+        }
+    )
+
+
+def _resolve_kind(kind: str) -> dict:
+    """The provider for a registration-aware kind, 400 when unregistered.
+
+    Kept as a helper so the pull route, the console page and the publish action
+    refuse an unknown kind identically (naming the registered ones), rather than
+    one saying 400 and the other silently rendering nothing.
+    """
+    from ...bench import publication_kinds
+
+    try:
+        return publication_kinds.resolve(kind)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

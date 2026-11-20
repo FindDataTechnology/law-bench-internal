@@ -98,3 +98,15 @@ jobs:
           export database_url="postgresql://app@localhost:5432/law_bench"
           python scripts/ontology_gate.py --list
           python scripts/ontology_gate.py
+
+      # add-typed-publications：本变更的三份判据（DDL 落表 + 内核发布语义 +
+      # 拉取面 HTTP 行为）。它们要真 PG（DDL 是 PG 方言），上面那个 service 就是。
+      # 与 conformance 分开成一步，失败时看得出是哪一层红的。
+      - name: Typed publication gate (DDL + kernel + pull surface)
+        env:
+          PGPASSWORD: postgres
+        run: |
+          pip install pytest
+          export database_url="postgresql://app@localhost:5432/law_bench"
+          pytest -q tests/test_boot_schema.py tests/test_typed_publications_kernel.py \
+                    tests/test_typed_publications_web.py

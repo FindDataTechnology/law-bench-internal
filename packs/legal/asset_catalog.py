@@ -35,11 +35,17 @@ Each relation projects exactly one row per key with two columns —
 ``asset_key`` and ``name`` — so the kernel can LEFT JOIN (``exists``) or
 anti-join (the unassigned pool) without ever reading asset content or mutating
 an asset.
+
+``PUBLICATION_KINDS`` below is the sibling declaration for *publishing*
+(``src/bench/publication_kinds``): which kinds freeze into a versioned snapshot,
+what each entry projects (key + name + content summary), and the order they are
+sorted in.
 """
 
 from __future__ import annotations
 
 from src.bench.domain_assets import register_providers
+from src.bench.publication_kinds import register_kinds
 
 #: One provider per kind, in the console's listing order. ``relation`` is a
 #: self-contained SELECT of (asset_key, name); ``label_key`` names the kind in
@@ -86,3 +92,46 @@ PROVIDERS: dict[str, dict] = {
 }
 
 register_providers(PROVIDERS)
+
+#: Publishable kinds (change ``add-typed-publications``). Same relation shape as
+#: the catalog providers, plus ``sort_key`` (the projected column the snapshot
+#: orders entries by) and ``shape_version`` (the projection's shape; it travels
+#: beside the digest, never inside it — bumping it must not invalidate digests
+#: already handed out). Only the kinds whose content can be frozen usefully are
+#: publishable starters: a ruler and a gold sample. The list is data: adding a
+#: kind here is a pack change, not a kernel change.
+PUBLICATION_KINDS: dict[str, dict] = {
+    # A ruler is published whole, with its criteria inline: two versions differ
+    # when a criterion's wording changes, and the consumer must see that.
+    "rubric": {
+        "relation": (
+            "SELECT r.name AS asset_key, r.name AS name, "
+            "concat_ws(E'\\n', r.context, "
+            "  (SELECT string_agg(c.name || '：' || c.description, E'\\n' "
+            "     ORDER BY c.ordinal) FROM criteria c WHERE c.rubric_id = r.id)) "
+            "AS summary "
+            "FROM rubrics r"
+        ),
+        "label_key": "bench_catalog.kind.rubric",
+        "sort_key": "name",
+        "shape_version": 1,
+    },
+    # A gold sample is content-addressed: the body is the whole asset.
+    # Superseded artifacts are excluded — they are history, not the corpus the
+    # shelf offers today, and publishing them would let a stale draft ride in
+    # under the current version number.
+    "sample": {
+        "relation": (
+            "SELECT body_hash AS asset_key, "
+            "concat_ws(' · ', contract_type, scenario, stance) AS name, "
+            "body_text AS summary FROM contract_artifacts "
+            "WHERE superseded_at IS NULL"
+        ),
+        "label_key": "bench_catalog.kind.sample",
+        "sort_key": "name",
+        "shape_version": 1,
+    },
+}
+
+register_kinds(PUBLICATION_KINDS)
+

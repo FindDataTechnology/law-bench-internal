@@ -505,6 +505,8 @@ _REQUIRED_TABLES: tuple[str, ...] = (
     "authoring_tasks",
     "domain_agent_runs",
     "distribution_consumers",
+    "asset_publications",
+    "asset_pull_events",
     "corpus_chunks",
 )
 

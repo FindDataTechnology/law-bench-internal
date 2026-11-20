@@ -1204,6 +1204,10 @@ def console_publish(
         {
             **console_context(db, domain, user),
             "publication": bench_ledger.publication_layer(db, domain=domain),
+            "typed_publications": bench_ledger.typed_publication_layer(
+                db, domain=domain
+            ),
+            "typed_pulls": bench_ledger.typed_pull_layer(db, domain=domain),
             "consumption": bench_ledger.consumption_layer(db, domain=domain),
         },
     )
@@ -1232,6 +1236,36 @@ def console_publish_action(
     except ValueError as exc:
         return _flash(back, "console.flash.publish_failed", err=True, detail=str(exc))
     return _flash(back, "console.flash.published", version=publication["version"])
+
+
+@write_router.post(
+    "/d/{domain_key}/publish/{asset_kind}", include_in_schema=False,
+    name="console_publish_kind_action", dependencies=_LEAD_GATES,
+)
+def console_publish_kind_action(
+    domain_key: str,
+    asset_kind: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(require_scope("content:write")),
+):
+    """Publish ONE asset kind (a ruler, a gold sample) as its own version series.
+
+    Deliberately one kind per request: a button that published all three at once
+    would freeze snapshots nobody reviewed, and the three series version
+    independently.
+    """
+    back = f"/d/{quote(domain_key, safe='')}/publish"
+    try:
+        publication = bench_distribution.publish_asset_kind(
+            db, domain_key=domain_key, asset_kind=asset_kind,
+            published_by=_operator_of(user),
+        )
+    except ValueError as exc:
+        return _flash(back, "console.flash.publish_failed", err=True, detail=str(exc))
+    return _flash(
+        back, "console.flash.published_kind",
+        kind=asset_kind, version=publication["version"],
+    )
 
 
 # -------------------------------------------------------------------- bench #
