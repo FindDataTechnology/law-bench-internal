@@ -15,6 +15,7 @@ modules can import it without a circular import through this module.
 
 from __future__ import annotations
 
+import logging
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, Request
@@ -31,6 +32,10 @@ from src.eval.manage import (
 )
 
 from .i18n import resolve_locale
+
+#: 模块 logger。`_reap_stale_generation_jobs` 的两条 warning 都用它——此前全文件
+#: 没有定义，异常分支一触发就 NameError 把整个应用启动打掉（2026-11-21 实测）。
+logger = logging.getLogger(__name__)
 from .paths import STATIC_DIR, TEMPLATES_DIR
 from .routes import (
     admin,

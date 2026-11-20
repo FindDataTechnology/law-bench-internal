@@ -65,7 +65,9 @@
           不该在顶栏常驻给同办公室/外部维护者看；它在下拉里以 title 呈现。 -#}
       <details class="account-menu">
         <summary title="{{ user.email or user.sub }}">
-          <span class="account-name">{{ user.name or user.email or user.sub }}</span>
+          {#- 顶栏只显示短名：Logto 常常只有 email 没有 name，直接显示整串邮箱既长
+              又是个人数据。取 @ 前那段作为显示名；完整地址在下拉面板里。 -#}
+          <span class="account-name">{{ user.name or ((user.email or user.sub).split('@')[0]) }}</span>
         </summary>
         <div class="account-panel">
           {% if user.email %}
