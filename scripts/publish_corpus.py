@@ -1,31 +1,32 @@
 #!/usr/bin/env python3
-"""Publish a corpus library — run in its OWN process, never inside the web pod.
+"""Publish a corpus library — in its OWN POD, never inside the app container.
 
 ## Why this is a script and not a request handler
 
-Publication enumerates every document and fetches each body, which on the live
-corpus is 32,251 round trips (~34 ms each). Measured inside the web pod
-(2026-11-20):
+Publication enumerates every document and fetches each body: 32,251 round trips
+on the live corpus, and ~109 MB RSS just to import the app and enumerate. The
+app container is capped at 512 Mi and already holds 426–470 MB while serving.
 
-    import the app + enumerate the documents   ~111 MB RSS
-    container memory limit                      512 Mi
-    what the serving process already holds      ~426 MB
+**Two measured OOMKills (exit 137) proved the boundaries**, in order:
 
-So there is roughly 85 MB of headroom for a job that needs minutes and, in the
-first (streaming) attempt, was **OOM-killed (exit 137)**. The binding constraint
-is memory, not speed — which means publishing must not share the serving
-process at all. `POST /admin/libraries/{key}/publish` therefore refuses and
-points here.
+1. inline in the request path — shares the serving process, dies;
+2. ``kubectl exec`` into the app pod — **also dies**, because an exec'd process
+   shares that container's cgroup, so the 512 Mi ceiling still applies. This one
+   ran ~55 minutes before being killed.
+
+So "a separate process" is NOT the fix; "a separate Pod" is. Run it as
+``fd-infra-deploy/all-services/law-bench/jobs/corpus-publish-job.yaml``, which
+gives the publisher its own memory limit. `POST /admin/libraries/{key}/publish`
+refuses (409) and points here.
 
 ## Usage
 
-Inside the pod (a separate process with its own memory):
+    kubectl -n law-bench apply -f \\
+        fd-infra-deploy/all-services/law-bench/jobs/corpus-publish-job.yaml
 
-    kubectl -n law-bench exec <pod> -c law-bench -- \\
-        sh -c 'cd /app && .venv/bin/python scripts/publish_corpus.py law-library --by <operator>'
+Direct invocation is fine for small libraries or tests — just do not point it at
+a full corpus inside a 512 Mi container.
 
-Or as a one-off Job (see ``deploy/cheap-box/corpus-publish-job.yaml``), which is
-the intended production path once it is scheduled.
 
 Exit code 0 = published (or already published, idempotent); 1 = refused/failed.
 """

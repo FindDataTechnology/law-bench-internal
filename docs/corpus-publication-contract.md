@@ -62,28 +62,36 @@ version_digest    = canonical_digest({"documents": [{doc_key, doc_digest}, ... �
 
 ## 发布
 
-**入口是独立进程，不是 HTTP 请求**：
+**入口不在 HTTP 请求里，而且不能跑在应用 pod 里。**
 
-```
-kubectl -n law-bench exec <pod> -c law-bench -- \
-    sh -c 'cd /app && .venv/bin/python scripts/publish_corpus.py law-library --by <操作人>'
-```
+`POST /admin/libraries/{key}/publish` 返回 **409** 并指向 `scripts/publish_corpus.py`；
+控制台的发布按钮已换成可复制的命令——留下一个点了必然失败的按钮比没有按钮更糟。
 
-（或按 `fd-infra-deploy/all-services/law-bench/jobs/corpus-publish-job.yaml` 起一次性 Job。）
+### 为什么连「exec 进 pod 开个独立进程」也不行
 
-为什么不是 web 里的按钮 —— 三条实测读数（2026-11-20，生产容器内）：
+这是我第一版写错的结论，已按实测推翻：**exec 进来的进程和 web 进程共享同一个
+cgroup**，那 512 Mi 是共用的。实测读数（2026-11-20，生产）：
 
 | 读数 | 值 |
 |---|---|
-| 服务进程常驻已用 | **426 MB** |
-| 容器内存上限 | **512 Mi**（余量≈85 MB） |
-| 仅 import 应用 + 枚举 32,251 部法规 | **111 MB** |
-| 逐部取正文 | 单次 HTTP 实测 ~34 ms；**端到端耗时待实测**（首轮发布已超过 55 分钟仍未结束，此前「37 分钟」是按系统调用速率外推的估算，非实测值）|
+| web 容器常驻 | **426–470 MB** |
+| 容器内存上限 | **512 Mi**（余量 42–86 MB） |
+| 仅 import 应用 | 47 MB |
+| + 枚举 32,251 部法规 | **109 MB**（累计） |
+| 逐部取正文端到端 | 单次 HTTP ~34 ms；**全量端到端耗时尚无实测值**（首轮跑 55 分钟未完成） |
 
-内联版本**实测被 OOM 杀掉**（exit 137）。判据不是「省点内存」，而是发布不得与
-在线服务共用那个 512 Mi 的进程。因此 `POST /admin/libraries/{key}/publish` 返回
-**409 并指名脚本**；控制台的发布按钮也已换成可复制的命令——留下一个点了必然失败的
-按钮比没有按钮更糟。
+实测两次 OOMKilled（exit 137）：一次是请求内联，一次是 pod 内 exec 独立进程。
+两次都杀在同一个 512 Mi 的 cgroup 上。
+
+**因此正确宿主是「单独的 Pod」，不是「同一个 Pod 里的另一个进程」**：
+`fd-infra-deploy/all-services/law-bench/jobs/corpus-publish-job.yaml`
+（`jobs/` 子目录，避开 ArgoCD 的 `*.yaml` 自愈回收）。它有自己的内存上限。
+
+### 幂等与安全
+
+同一份内容重跑返回既有版本、不新增行，所以中途被杀后重跑是安全的；
+`publish_library` 只在最后一步落库，中途终止**不会**留下半条发布记录（实测确认：两次 OOM 后
+`corpus_publications` 都是 0 行）。
 
 `publish_library(conn, *, library_key, published_by, reader)`
 
