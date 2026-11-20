@@ -38,6 +38,6 @@
 
 ## 7. 验收
 
-- [ ] 7.1 全量回归：`uv run pytest tests` 全绿，无跳过的新增用例
-- [ ] 7.2 一条真链：`enterprise-base v1` 生成一条 `subject_kind=template` 的结论 → 升版 v2 经过门 → 结论入台账 → `register_retest` 登记复测工单；验证：库里四份证据（模板 v2 行、结论行、升版记录、工单行）都能查到
-- [ ] 7.3 生产冒烟：部署后 `bash scripts/smoke_prod.sh` 绿，模板列表页可见四份新模板且详情标出层与权威
+- [x] 7.1 全量回归：`uv run pytest tests` 全绿，无跳过的新增用例
+- [ ] 7.2 **未做（归档时如实挂账）**：该链要求「模板声明的尺子集能解析 → 跑评 → 升版过门」，而 `enterprise-base` / `foundation-v1` / `finance-market` 三份新模板的 `rubric_refs` 都是空的（生产实测 `rate: None`），89 条既有尺子全挂在 legal 域、industry 层解析不到。「不可评」这件事本身已被验证（模板详情页如实报「未声明尺子：该模板不可评」）——缺的是 ERP 域自己的尺子资产，不是本 change 的代码。原任务：`enterprise-base v1` 生成一条 `subject_kind=template` 的结论 → 升版 v2 经过门 → 结论入台账 → `register_retest` 登记复测工单；验证：库里四份证据（模板 v2 行、结论行、升版记录、工单行）都能查到
+- [x] 7.3 生产冒烟：部署后 `bash scripts/smoke_prod.sh` 绿，模板列表页可见四份新模板且详情标出层与权威
