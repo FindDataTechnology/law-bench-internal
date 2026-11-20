@@ -43,8 +43,8 @@
 
 ## 5. 验收
 
-- [ ] 5.1 真库演练：legal 域发布 `rubric` 一版，用已登记消费者拉取，比对 digest
-- [ ] 5.2 回归：本体发布/拉取/幂等/换底 digest 五条既有场景全绿
+- [x] 5.1 真库演练：legal 域发布 `rubric` 一版，用已登记消费者拉取，比对 digest
+- [x] 5.2 回归：本体发布/拉取/幂等/换底 digest 五条既有场景全绿
 - [x] 5.3 `openspec validate add-typed-publications --strict` 绿
 - [x] 5.4 `acceptance.md`：逐条判据 + 真库读数
 

@@ -63,12 +63,38 @@ SELECT d.key, p.version, p.digest, p.published_at
 
 ## 5. 验收
 
-| # | 判据 | 读数 |
+**上产**：镜像 `sha-ffaf866`（GHA image.yml：test job 全量套件绿 → hkccr → relay → ccr），
+GitOps tag 在 `fd-infra-deploy@ad21961`，ArgoCD synced/Healthy，pod `law-bench-6b7c8dc65c-sk8jc`
+`1/1`、`restarts=0`。boot 的 `ensure_schema` 自动建表——**上产前**两表实测不存在，**上产后**
+`to_regclass` 均返回表名。
+
+| # | 判据 | 读数（真库，2026-11-20 06:0xZ） |
 |---|---|---|
-| 5.1 | 真库：legal 域发布 `rubric` 一版，用已登记消费者拉取，比对 digest | **待跑** — 需先把本次改动上产（镜像滚版后 `ensure_schema` 自动落两表） |
-| 5.2 | 回归：本体发布/拉取/幂等/换底 digest 五条既有场景全绿 | **待跑** |
+| 5.1 | 真库：legal 域发布 `rubric` 一版，用已登记消费者拉取，比对 digest | ✅ `domain_assets.assign(legal, rubric, contract_bailment_v1)` → `publish_asset_kind` 得 **v1 · digest `5a2bb76613a946f1411b91bd809b14ed54587444282d8bf430cd022fd819d699` · shape_version 1 · entries 1 · changelog initial**；经 `http://127.0.0.1:8010/api/v1/distribution/legal/rubric`（`X-Consumer-Token`）拉取 **HTTP 200**，digest **逐字节相同**；`asset_pull_events` 恰好 1 行（legal/rubric/v1）。演练后已 `unassign` 书架归属 + 吊销演练消费者（见下「演练残留」）。 |
+| 5.2 | 回归：本体发布/拉取/幂等/换底 digest 五条既有场景全绿 | ✅ 生产 `ontology_publications` 两行 digest 与 `published_at` **与上产前逐字节一致**（`3586552a…` / `5897354d…`）；`/api/v1/distribution/legal/ontology` 实探 200，字段集合仍为 `{domain, template_name, template_version, publication_version, digest, entities, relationships, changelog}`。CI 里 `tests/test_distribution_kernel.py` + `test_distribution_web.py` 全绿（image workflow test job）。 |
 | 5.3 | `openspec validate add-typed-publications --strict` 绿 | 实跑：`Change 'add-typed-publications' is valid` ✓ |
 | 5.4 | 本文件 | 本文件 |
+
+### 生产实探的附加判据（防「路由被遮蔽」这类静默回归）
+
+在 pod 内用同一凭证打四条路径：
+
+| 路径 | 期望 | 实得 |
+|---|---|---|
+| `/legal/ontology` | 200，字段集合不变 | 200，8 字段 ✓ |
+| `/legal/rulers` | 走它自己的舰队校验（403 非 fleet） | 403「只有舰队登记可以调用该接口」✓ **未被 `/{kind}` 遮蔽** |
+| `/legal/crosswalks` | 200 | 200 ✓ |
+| `/legal/prompt` | 400 列出可用种类 | 400 `asset_kind must be one of ['rubric', 'sample']` ✓ |
+
+pod 内路由注册序实测：`[ontology, runs, work-orders, proposals/outcomes, verdicts, verdicts/{run_id}, rulers, crosswalks, {kind}]` —— 通配段在最后。
+
+### 演练残留（如实记录）
+
+- `asset_publications` 留 **1 行**（legal / rubric / v1 / `5a2bb766…`）：不可变发布按设计不可删；
+  它正是 5.1 的证据，且书架归属已解除，不影响任何域的内容。
+- `asset_pull_events` 留 **1 行**（append-only 足迹）。
+- `distribution_consumers` 多一条 **已吊销** 登记 `drill-typed-publication-5-1`（审计行）。
+- `domain_assets` 复原为 0 行（与上产前一致）。
 
 ## 6. 挂账（明确不做，理由见 proposal 末节与 design D1）
 

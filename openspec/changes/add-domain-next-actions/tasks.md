@@ -1,5 +1,14 @@
 # Tasks: add-domain-next-actions
 
+> **2026-11-20 治理复核**：两个声明的依赖都已达成——`add-fleet-execution-loop` 已于
+> 2026-11-14 归档、`add-typed-publications` 已 25/30（正在另一个会话实施中）。所以本 change
+> 现在**可以开工**，阻塞点已经解除。
+>
+> 缺口属实：`src/web/` 里没有任何 `next_action` 概念，域页面确实只回答「我这一块是什么状态」
+> 而不回答「我该做什么」。28 项全未做，是「依赖未清」而非「被遗忘」。
+>
+> **不归档。** 它是本轮 inventory 里唯一一个「依赖刚解除、最该被认领」的。
+
 > 依赖：`add-fleet-execution-loop`（工单 / 舰队运行）与 `add-typed-publications`（三类发布）的读面先上——否则清单里那几类条目算不出来。
 > UI 纪律：动任何页面前先写 surface brief（§0.1），沿 C5 §0.1 的做法。
 
