@@ -159,13 +159,14 @@ _NO_PUBLICATION_DETAIL = "该域尚无发布"
 _ALLOWED_FORMATS = ("json", "yaml")
 
 
-def _authenticate_consumer(request: Request, db: Any, domain_key: str) -> dict:
-    """Three-state machine auth, shared by every ``/api/v1/distribution`` route.
+def _authenticate_token(request: Request, db: Any) -> dict:
+    """The three-state credential check alone: 401 missing / 403 unknown or revoked.
 
-    One implementation on purpose: the read-back route below answers "did my run
-    land?" for the *same* credential that pulls content. A second copy of this
-    check would drift, and the drift would look like a scope bug rather than a
-    missing branch.
+    Split from the domain-scope check on purpose. Corpus publications are keyed
+    by **library**, not domain, so their routes have no domain key to compare
+    against — passing the library key into the domain check made every corpus
+    pull answer "该域不在绑定范围" (CI caught it: 8 web tests red). One shared
+    credential check, and each family applies its own scope rule on top.
     """
     token = request.headers.get("x-consumer-token")
     if not token:
@@ -177,6 +178,18 @@ def _authenticate_consumer(request: Request, db: Any, domain_key: str) -> dict:
         raise HTTPException(status_code=403, detail=_UNREGISTERED_DETAIL)
     if consumer.get("revoked_at") is not None:
         raise HTTPException(status_code=403, detail=_REVOKED_DETAIL)
+    return consumer
+
+
+def _authenticate_consumer(request: Request, db: Any, domain_key: str) -> dict:
+    """Three-state machine auth + domain scope, shared by the domain routes.
+
+    One implementation on purpose: the read-back route below answers "did my run
+    land?" for the *same* credential that pulls content. A second copy of this
+    check would drift, and the drift would look like a scope bug rather than a
+    missing branch.
+    """
+    consumer = _authenticate_token(request, db)
     if domain_key not in (consumer.get("domains") or []):
         raise HTTPException(status_code=403, detail=_OUT_OF_SCOPE_DETAIL)
     return consumer
@@ -1179,7 +1192,7 @@ def _authenticate_for_library(request: Request, db: Any, library_key: str) -> tu
     """
     from ...bench import libraries
 
-    consumer = _authenticate_consumer(request, db, library_key)
+    consumer = _authenticate_token(request, db)
     allowed: set[str] = set()
     subscribed = False
     for domain_key in consumer.get("domains") or []:
