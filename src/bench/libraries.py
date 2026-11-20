@@ -611,13 +611,17 @@ def set_owner(conn: Any, *, library_key: str, owner: Optional[str], by: str) -> 
 def may_publish(conn: Any, *, library_key: str, user_id: str, is_admin: bool) -> bool:
     """Whether this caller may publish the library's corpus.
 
-    Admin scope passes unconditionally (the platform can always step in). A
-    named owner passes without it. Everyone else fails closed — including when
-    the library does not exist (an unknown key must not read as "allowed").
+    Admin scope passes unconditionally (the platform can always step in) — and
+    without needing a user id, because admin is a capability, not an identity.
+    A named owner passes for its own id only. Everyone else fails closed,
+    including when the library does not exist (an unknown key must not read as
+    "allowed").
     """
     lib = get_library(conn, library_key=library_key)
-    if lib is None or not user_id:
+    if lib is None:
         return False
     if is_admin:
         return True
+    if not user_id:
+        return False
     return (lib.get("owner") or "") == user_id

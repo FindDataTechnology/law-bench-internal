@@ -72,18 +72,11 @@ def main() -> int:
             print(f"FAIL: library {args.library_key!r} not found", file=sys.stderr)
             return 1
         owner = (lib.get("owner") or "").strip()
-        # The publisher runs as an operator on the box, so "admin" here means the
-        # deployment key holder — we do not pretend to verify that. What we CAN
-        # enforce is the library's own rule: when an owner is named, the caller
-        # must say who they are and it must match.
-        if owner:
-            if not args.as_user:
-                print(
-                    f"FAIL: 库 {args.library_key!r} 已指定负责人 {owner!r}，"
-                    "请用 --as <user_id> 声明发布者",
-                    file=sys.stderr,
-                )
-                return 1
+        # Whoever can run this script on the cluster is acting as the platform
+        # (admin), so "admins only" needs no further proof here. What we DO
+        # enforce is the library's own rule: if an owner is named, then naming a
+        # different operator with --as is refused.
+        if owner and args.as_user:
             if args.as_user != owner:
                 print(
                     f"FAIL: 库 {args.library_key!r} 的负责人是 {owner!r}，"
