@@ -373,7 +373,18 @@ table.data-table td.dl-cell { white-space: nowrap; }
 /* 加了质量比列之后四柱被挤窄，语料/评测两列会折成两行。给它们一个不许再窄的下限。 */
 .panel table.data-table td:nth-child(2),
 .panel table.data-table td:nth-child(3),
-.panel table.data-table td:nth-child(4) { white-space: nowrap; }
+.panel table.data-table td:nth-child(4),
+.panel table.data-table td:nth-child(5),
+.panel table.data-table th:nth-child(5) { white-space: nowrap; }
+/* 表头一律不折行：加了质量比列之后「待确认提案」在 1440 宽下曾被挤成一字一行。
+   表格需要的最小平宽由内容决定，面板负责横向滚动，不靠压缩列宽。 */
+.panel table.data-table th { white-space: nowrap; }
+/* 域名本身不折行，但缺口徽标允许换行——否则一排徽标会把域名列撑到 400px+，
+   把质量比与操作列挤出可视区（1440 宽下实测过）。 */
+.panel table.data-table td:first-child { white-space: normal; }
+.panel table.data-table td:first-child > a,
+.panel table.data-table td:first-child > code { white-space: nowrap; }
+.panel table.data-table td:last-child { white-space: nowrap; }
 .quality-cell .q {
   display: inline-block;
   font-size: 0.68rem;
