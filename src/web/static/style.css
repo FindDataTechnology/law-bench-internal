@@ -721,3 +721,18 @@ code.digest { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
   overflow: hidden; overflow-wrap: anywhere;
 }
+
+/* 表格内的操作列表单：允许换行、不撑宽表格。
+   实测（2026-11-20 生产 1440 宽）：提案箱「操作」列被 confirm/reject 两个表单 +
+   一个输入框撑到 1572px，整表 2359px、整页横向溢出 1191px。
+   `.inline-form` 原本是 inline-flex + white-space:nowrap，在单元格里没有折行余地。 */
+.panel table.data-table td .inline-form,
+.panel table.data-table td form.inline-form { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.15rem 0; white-space: normal; }
+.panel table.data-table td .inline-form input[type="text"] { width: 9rem; min-width: 6rem; flex: 0 1 auto; }
+.panel table.data-table td form { margin: 0 0.3rem 0.3rem 0; }
+.panel table.data-table td form:last-child { margin-bottom: 0; }
+
+/* team 页用的是 .table 而非 .data-table，同一套换行规则也要覆盖。 */
+.panel table.table { width: 100%; }
+.panel table.table td { overflow-wrap: anywhere; }
+.panel table.table th { white-space: nowrap; }
