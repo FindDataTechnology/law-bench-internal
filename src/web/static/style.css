@@ -98,7 +98,9 @@ a:hover { text-decoration: underline; }
 @media (max-width: 900px) {
   .topbar { height: auto; flex-wrap: wrap; padding: 0.6rem 1rem; row-gap: 0.5rem; }
   .topbar-nav { margin-left: 0; gap: 0.8rem; flex-wrap: wrap; }
-  .topbar-account { border-left: none; padding-left: 0; }
+  /* 换行后竖线不再分隔左右，改成上下两条 1px 规则，读起来仍是三段。 */
+  .topbar-nav .nav-group-label { border-left: none; padding-left: 0; }
+  .topbar-account { border-left: none; padding-left: 0; border-top: 1px solid var(--border); width: 100%; padding-top: 0.5rem; }
 }
 
 .container { max-width: 980px; margin: 1.5rem auto; padding: 0 1.25rem; }
