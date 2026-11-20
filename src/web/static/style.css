@@ -749,3 +749,19 @@ code.digest { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
   overflow-wrap: anywhere;
   word-break: break-word;
 }
+
+/* 单元格内的块级子元素（驳回理由 div.hint、影响行等）：
+   把断行规则下推到子元素，不能只写在 td 上——子元素若自带 white-space
+   或自身是块级，td 的 overflow-wrap 不一定能约束它的 min-content。
+   实测：提案箱第 3 行操作格的 div.hint 占 1553px，把表格撑到 2359px。 */
+.panel table.data-table td > div,
+.panel table.data-table td > p,
+.panel table.data-table td > span,
+.panel table.table td > div,
+.panel table.table td > p {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+}
