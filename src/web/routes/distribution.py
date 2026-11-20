@@ -1397,42 +1397,25 @@ async def admin_library_publish(
     db: DbConn = Depends(get_db),
     user: User = Depends(require_scope("admin")),
 ):
-    """Freeze the library's current documents as the next corpus version.
+    """Refuse to publish from the request path — and say where to run it.
 
-    Platform-admin only: a library exists independently of the domain tree
-    (``shared-corpus-library``), so binding publish rights to any one
-    subscriber's lead would let one domain decide the version every other
-    subscriber reads.
+    Publishing is minutes of work and, on the live corpus, needs more memory than
+    the serving process has left (111 MB to enumerate against a ~85 MB margin;
+    the first inline attempt was OOM-killed, exit 137). A request that dies
+    half-way would leave the operator unsure whether a version landed, so the
+    honest answer is a 409 that names the supported path.
 
-    Publishing is strictly **read-only against the external backend** — no
-    re-ingest, no index write, no ingest-rule change. Idempotent on content.
+    The supported path is ``scripts/publish_corpus.py`` in its own process (or a
+    one-off Job). Publishing is equally reachable through the kernel
+    (``corpus_publication.publish_library``) for callers that own their memory,
+    e.g. tests.
     """
-    from ...bench import corpus_publication
-
-    try:
-        known = {
-            p.get("digest")
-            for p in corpus_publication.list_publications(db, library_key=library_key)
-        }
-        from ...search.library_index import LibraryCorpusReader
-
-        publication = corpus_publication.publish_library(
-            db, library_key=library_key, published_by=_operator_of(user),
-            reader=LibraryCorpusReader(db),
-        )
-    except ValueError as exc:
-        return _flash(
-            f"/admin/libraries", "flash.corpus_publish_failed", err=True, detail=str(exc)
-        )
-    if publication.get("digest") in known:
-        return _flash(
-            "/admin/libraries", "flash.published_idempotent",
-            detail=f"v{publication['version']}",
-        )
-    return _flash(
-        "/admin/libraries", "flash.corpus_published",
+    raise HTTPException(
+        status_code=409,
         detail=(
-            f"v{publication['version']} · {publication['doc_count']} docs · "
-            f"digest {str(publication.get('digest'))[:12]}"
+            "语料发布不在请求内执行（实测量级：32k 部法规 ≈18 分钟，且需 ~111 MB，"
+            "而服务进程余量约 85 MB——内联版本实测被 OOM 杀掉）。"
+            "请在独立进程执行：scripts/publish_corpus.py "
+            f"{library_key} --by <操作人>"
         ),
     )

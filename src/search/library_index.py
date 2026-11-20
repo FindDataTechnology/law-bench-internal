@@ -1019,24 +1019,49 @@ class LibraryCorpusReader:
 
     ``src/bench/corpus_publication`` must not import this module — the kernel
     package-boundary gate forbids relative imports that escape ``src/bench``
-    (CI caught exactly that violation). So the dependency points this way: the
-    kernel takes a *reader object*, and this is the production one. It owns
-    every backend detail (Qdrant scroll, payload mappings, page limits) plus the
-    borrowed connection, so the kernel never has to reach for either.
+    (CI caught exactly that). The dependency points this way: the kernel takes a
+    *reader object*, and this is the production one.
+
+    **Memory is the binding constraint, not speed.** Measured 2026-11-20 on the
+    live corpus inside the web pod: importing the app plus enumerating the
+    32,251 documents costs ~111 MB, the container's limit is 512 Mi, and the
+    serving process already holds ~426 MB. So this reader materializes ONE
+    document's text at a time and never a page of chunks' worth — the first
+    attempt to stream a whole page of chunks was OOM-killed (exit 137).
+
+    That makes publishing slow (~34 ms per document, ≈18 min for the corpus),
+    which is exactly why publication does not run inside the request path: it
+    runs from ``scripts/publish_corpus.py`` in a separate process. A caller that
+    has the headroom may still call it inline (tests do).
     """
 
     def __init__(self, conn: Any, *, page_size: int = 4000, timeout: float = 60.0,
-                 max_seconds: float = 300.0):
+                 max_seconds: float = 3600.0, max_pages: int = 2000):
         self.conn = conn
         self.page_size = page_size
         self.timeout = timeout
         self.max_seconds = max_seconds
+        self.max_pages = max_pages
 
-    def enumerate_documents(self, *, lib: dict) -> list[dict]:
-        return enumerate_documents(
+    def iter_documents(self, *, lib: dict):
+        """Yield one document at a time: identity, metadata, and its text.
+
+        Identity comes from :func:`enumerate_documents` (one bounded scroll pass
+        that keeps only keys/metadata), then each body is fetched individually
+        and released before the next. Slower than a single streaming pass by a
+        wide margin, and deliberately so: the streaming variant needed a page of
+        chunks resident and was OOM-killed in production.
+        """
+        docs = enumerate_documents(
             self.conn, lib=lib, page_size=self.page_size,
             timeout=self.timeout, max_seconds=self.max_seconds,
+            max_pages=self.max_pages,
         )
+        for doc in docs:
+            yield {
+                **doc,
+                "text": self.document_body(lib, doc["doc_key"], doc["source_key"]),
+            }
 
     def document_body(self, lib: dict, doc_key: str, source_key: str) -> str:
         """One document's text, read through ITS OWN source's payload mapping."""

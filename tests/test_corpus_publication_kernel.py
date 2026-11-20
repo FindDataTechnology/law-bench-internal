@@ -92,13 +92,10 @@ class _FakeReader:
     def __init__(self, conn):
         self.conn = conn
 
-    def enumerate_documents(self, *, lib):
-        return library_index.enumerate_documents(self.conn, lib=lib)
-
-    def document_body(self, lib, doc_key, source_key):
-        return library_index.LibraryCorpusReader(self.conn).document_body(
-            lib, doc_key, source_key
-        )
+    def iter_documents(self, *, lib):
+        reader = library_index.LibraryCorpusReader(self.conn)
+        for doc in reader.iter_documents(lib=lib):
+            yield doc
 
 
 @pytest.fixture()

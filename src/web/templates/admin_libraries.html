@@ -101,10 +101,10 @@
   <div class="panel">
     <div class="toolbar between">
       <h3>{{ t.admin.libraries.corpus_h2 }}</h3>
-      <form method="POST" action="{{ url_for('admin_library_publish', library_key=lib.library_key) }}"
-            data-confirm="{{ t.admin.libraries.corpus_publish_confirm }}">
-        <button type="submit" class="btn">{{ t.admin.libraries.corpus_publish_btn }}</button>
-      </form>
+      {#- 不提供发布按钮：发布会跑十几分钟且需要服务进程没有的内存
+          （实测内联版本被 OOM 杀掉）。这里只给可复制的命令，不给一个
+          点了必然失败的按钮——那比没有按钮更糟。 -#}
+      <code>scripts/publish_corpus.py {{ lib.library_key }}</code>
     </div>
     {% set pubs = corpus_publications.get(lib.library_key) or [] %}
     {% if pubs %}

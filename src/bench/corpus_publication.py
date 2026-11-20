@@ -131,27 +131,21 @@ def build_manifest(conn: Any, *, lib: dict, reader: Any) -> dict:
     """Project the library's documents into a publishable manifest.
 
     ``reader`` is the *caller-supplied* backend accessor — the kernel must not
-    reach into ``src.search`` (kernel domain-freedom and package-boundary gate:
-    a relative import that escapes ``src/bench`` is a violation, and CI caught
-    exactly that). The reader answers two questions and owns every backend
-    detail:
+    reach into ``src.search`` (kernel package-boundary gate: a relative import
+    that escapes ``src/bench`` is a violation, and CI caught exactly that).
 
-        docs = reader.enumerate_documents(lib=lib)   # identity + metadata
-        text = reader.document_body(lib, doc_key, source_key)   # one body
+        for doc in reader.iter_documents(lib=lib):
+            doc["doc_key"], doc["title"], doc["source_key"],
+            doc["chunk_count"], doc["text"]
 
-    Two passes (design D3): enumerate identities, then fetch one body at a time
-    and drop it as soon as its digest exists. Peak memory is one document plus
-    the key list, never the corpus.
+    **One streaming pass**, not "enumerate then fetch each body": the first
+    implementation did one round trip per document, and on the live corpus that
+    is 32,251 requests × ~34 ms ≈ 18 minutes (measured 2026-11-20 *after* the
+    rehearsal timed out). Streaming keeps the same peak memory — one document's
+    text at a time — while paying for a single pass over the collection.
     """
-    docs = reader.enumerate_documents(lib=lib)
-    if not docs:
-        raise NothingToPublish(
-            f"library {lib.get('library_key')!r} has no documents to publish"
-        )
-
     entries: list[dict] = []
-    for doc in docs:
-        text = reader.document_body(lib, doc["doc_key"], doc["source_key"])
+    for doc in reader.iter_documents(lib=lib):
         entries.append(
             {
                 "doc_key": doc["doc_key"],
@@ -162,8 +156,12 @@ def build_manifest(conn: Any, *, lib: dict, reader: Any) -> dict:
                 # bytes (a wrong digest is worse than a failed read).
                 "source_key": doc["source_key"],
                 "chunk_count": doc["chunk_count"],
-                "doc_digest": doc_digest(doc["title"], text),
+                "doc_digest": doc_digest(doc["title"], doc["text"]),
             }
+        )
+    if not entries:
+        raise NothingToPublish(
+            f"library {lib.get('library_key')!r} has no documents to publish"
         )
     entries.sort(key=lambda e: e["doc_key"])
     return {

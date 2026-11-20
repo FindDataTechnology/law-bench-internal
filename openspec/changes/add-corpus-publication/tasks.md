@@ -77,4 +77,5 @@
 - [ ] 7.1 `pgvector-external` / `text-table` 后端的文档身份映射（`text-library` / `case-library`）
       —— 需先核实其 `ingest_rule.document` 的真实字段，另立
 - [ ] 7.2 库级 owner 角色与发布授权细分 —— `libraries` 无 owner 列，加列是另一件事
-- [x] 7.3 发布动作迁到一次性 Job —— 0.3 实测峰值 RSS 35 MB、全量 19.5s（pod 限 512 Mi），**不需要**，本条关闭
+- [ ] 7.3 发布动作迁到**独立执行宿主** —— **本条重新打开（2026-11-20 生产实证）**：0.3 那次测的 35 MB 是裸 urllib 脚本，不含应用 import；挂进 web pod 后 `import` 只占 111 MB（枚举步），而容器上限 512 Mi、常驻已用 426 MB（余量≈85 MB），任何「整页正文驻留」都会 OOM（实测 exit 137 / OOMKilled）。
+     判据不是「内存省一点」，而是**发布不得与在线服务共用 512 Mi 的进程**。

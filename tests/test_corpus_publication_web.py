@@ -320,20 +320,25 @@ def test_corpus_routes_do_not_shadow_the_domain_routes(world):
     assert "库" not in rulers.json().get("detail", "")
 
 
-def test_admin_publish_route_is_admin_gated_and_idempotent(world):
+def test_admin_publish_route_refuses_and_names_the_supported_path(world):
+    """Publishing must not run in the request path.
+
+    Inline publishing enumerates 32k documents (~111 MB) while the serving
+    process has ~85 MB of headroom; the first inline attempt was OOM-killed
+    (exit 137). The route's job is to say so and name ``scripts/publish_corpus.py``,
+    not to start work that cannot finish.
+    """
     admin = User(sub="admin-u", name="admin", email="a@example.com",
                  scopes=["*"], channel="test")
     with _client(world, admin) as client:
-        first = client.post(
+        r = client.post(
             f"/admin/libraries/{LIBRARY_KEY}/publish", data={}, follow_redirects=False
         )
-        second = client.post(
-            f"/admin/libraries/{LIBRARY_KEY}/publish", data={}, follow_redirects=False
-        )
-    assert first.status_code == 303
-    assert "flash.corpus_published" in first.headers["location"]
-    assert second.status_code == 303
-    assert "flash.published_idempotent" in second.headers["location"]
+    assert r.status_code == 409
+    assert "publish_corpus.py" in r.json()["detail"]
+    assert world.execute(
+        "SELECT count(*) AS n FROM corpus_publications"
+    ).fetchone()["n"] == 0
 
     non_admin = User(sub="someone", name="s", email="s@example.com",
                      scopes=["content:read"], channel="test")
