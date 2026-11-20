@@ -765,3 +765,12 @@ code.digest { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
   word-break: break-word;
   white-space: normal;
 }
+
+/* 本体台账的四层分区：窄屏下 layer-body 里的四列表格会撑破页面（实测 390 宽溢出 174px）。
+   让分区自己横向滚动，而不是把整页撑宽——这是窄屏下多列表格的标准做法。 */
+.layer-body { min-width: 0; }
+@media (max-width: 720px) {
+  .layer-body { overflow-x: auto; }
+  .layer-head, .layer-body { max-width: 100%; }
+  .layer-body table.data-table { min-width: 480px; }
+}
