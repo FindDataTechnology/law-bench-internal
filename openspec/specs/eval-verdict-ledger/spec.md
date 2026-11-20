@@ -13,6 +13,10 @@
 
 一条结论缺少对象地址或尺子地址时 SHALL 被拒绝写入，错误 SHALL 指明缺哪一项；MUST NOT 以空值落库后再由读面猜测。
 
+被评对象的种类 SHALL 可取 `template`，用于本体模板作为被评对象。本能力 SHALL 导出该种类标识为常量，使「模板升版门」不必在代码里散落字符串字面量。
+
+种类的取值集合 MUST NOT 收窄为闭集：既有 `docs/evaluation-system.md` 将其定义为「任意」，且生产里已有 `judge`（判官校准）与 `knowledge-units`（数据检查）两种取值；关集合会打死既有写入路径，而收益只是让一个字符串早一点报错。
+
 #### Scenario: 缺对象地址拒绝写入
 - **WHEN** 评测调用方未提供被评对象地址或版本为空
 - **THEN** 写入被拒并指明缺项，台账不产生该行
@@ -24,6 +28,14 @@
 #### Scenario: 尺子 digest 与发布面一致
 - **WHEN** 某 rubric 已经由发布面发布并持有 digest
 - **THEN** 以该 rubric 评出的结论所记 digest 与发布面返回的 digest 逐字节相等
+
+#### Scenario: 既有对象种类零回归
+- **WHEN** 以 `subject_kind="knowledge-units"` 写入一条数据检查结论
+- **THEN** 写入成功，不因新增 `template` 种类而被拒
+
+#### Scenario: 模板作为被评对象
+- **WHEN** 对 `enterprise-base` v1 跑一次覆盖度评估并写入结论
+- **THEN** 台账出现一行 `subject_kind=template`、`subject_key=enterprise-base`、`subject_version=v1`，其尺子地址由该模板 `rubric_refs` 解析结果派生
 
 ### Requirement: 四道门是闭集，门不可自创
 
