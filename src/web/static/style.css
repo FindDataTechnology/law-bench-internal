@@ -736,3 +736,16 @@ code.digest { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
 .panel table.table { width: 100%; }
 .panel table.table td { overflow-wrap: anywhere; }
 .panel table.table th { white-space: nowrap; }
+
+/* 跨列出问题的「影响」行：colspan=7 且内容是一整段原文（宪法修正案全文），
+   实测 2359px 宽、把整页撑出 1190px。`overflow-wrap` 单独无效——该格命中
+   nth-child 的 `white-space: nowrap`，nowrap 优先于任何断行规则。
+   跨列单元格必须显式清掉 nowrap。 */
+.panel table.data-table td[colspan],
+.ledger-sheet table.data-table td[colspan],
+.panel table.data-table td.hint[colspan],
+.panel table.table td[colspan] {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
