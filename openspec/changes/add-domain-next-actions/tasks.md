@@ -1,3 +1,5 @@
+> **延后（2026-11-21）**：依赖已解除（`add-fleet-execution-loop` 11-14 归档、`add-typed-publications` 11-21 归档），但功能本体未开工——`src/bench/next_actions.py` 不存在、`src/web` 无 `next_action` 概念。28 项全是真欠账，不是没回勾。
+
 # Tasks: add-domain-next-actions
 
 > **2026-11-20 治理复核**：两个声明的依赖都已达成——`add-fleet-execution-loop` 已于
