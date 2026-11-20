@@ -55,9 +55,32 @@ def main() -> int:
     conn = connect()
     reader = LibraryCorpusReader(conn)
     started = time.monotonic()
+
+    # Progress on stderr, every N documents. Publishing takes ~20 minutes and
+    # the first run gave the operator no way to tell "working" from "hung" —
+    # system-call counters and bytes-read turned out to be unusable proxies
+    # (module imports dominate early, so byte counts grossly overstate progress).
+    # A counted line is the only honest signal.
+    total_docs_holder = {"n": 0}
+
+    class _ProgressingReader:
+        def iter_documents(self, *, lib):
+            for doc in reader.iter_documents(lib=lib):
+                total_docs_holder["n"] += 1
+                n = total_docs_holder["n"]
+                if n % 500 == 0:
+                    rate = n / max(time.monotonic() - started, 1e-6)
+                    print(
+                        f"  ... {n} documents ({rate:.0f}/s, "
+                        f"{time.monotonic() - started:.0f}s elapsed)",
+                        file=sys.stderr, flush=True,
+                    )
+                yield doc
+
     try:
         publication = corpus_publication.publish_library(
-            conn, library_key=args.library_key, published_by=args.by, reader=reader
+            conn, library_key=args.library_key, published_by=args.by,
+            reader=_ProgressingReader(),
         )
     except ValueError as exc:
         print(f"FAIL: {exc}", file=sys.stderr)

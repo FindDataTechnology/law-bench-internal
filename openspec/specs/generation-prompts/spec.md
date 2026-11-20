@@ -2,7 +2,9 @@
 
 ## Purpose
 Storage and management of per-contract-type generation/drafting prompts.
+
 ## Requirements
+
 ### Requirement: Generation Prompt Storage
 
 The system SHALL store generation prompts in a `prompts` table within the PostgreSQL database addressed by the `database_url` environment variable.
@@ -32,6 +34,7 @@ The `prompts` table SHALL be created by the same schema source of truth that cre
 #### Scenario: split-out behaviour 2
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: Idempotent Prompt Seeding
 The system SHALL provide `scripts/seed_contract_prompts.py` that idempotently upserts a registry of per-contract-type drafting prompts (one per 民法典 named contract type) into the `prompts` table. Re-running the script SHALL NOT create duplicate prompt rows and SHALL NOT modify any row in `rubrics` or `criteria`.
 
@@ -99,6 +102,7 @@ The 19 seeded per-type prompts SHALL be seeded with `prompt_type = baseline`.
 #### Scenario: split-out behaviour 2
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: Practical Contract Type Drafting Prompts
 The system SHALL seed a matching set of 22 per-type drafting prompts for the practical (中国合同分类法 Part 2) contract types, one per practical rubric type key:
 
@@ -127,6 +131,7 @@ The system SHALL seed a matching set of 22 per-type drafting prompts for the pra
 - **WHEN** the practical prompt `contract_type` values and the practical rubric `<type>` segments are compared
 - **THEN** the two sets of type keys are identical
 - **AND** each `draft_<type>` prompt corresponds to exactly one `contract_<type>_v1` rubric
+
 ### Requirement: be named `draft_<type>`, with `contract_type` set … (#5)
 
 Each SHALL be named `draft_<type>`, with `contract_type` set to the type key (loose coupling, no foreign key), `purpose = drafting`, `source = local`, `prompt_type = baseline`, and a `content` body that is a Chinese drafting instruction tailored to that type's mandatory clauses (mirroring the per-type rubric theme).
@@ -142,6 +147,7 @@ The seeding script (`scripts/seed_contract_prompts.py`) SHALL seed both the 民�
 #### Scenario: split-out behaviour 2
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: Law-Refined Variant Drafting Prompts
 
 The system SHALL seed a second set of per-contract-type drafting prompts - the **law-refined** variants - one per contract type key (the same 41 keys covered by the baseline: 19 民法典 types + 22 practical types).
@@ -196,3 +202,15 @@ The seeding script (`scripts/seed_contract_prompts.py`) SHALL seed the baseline 
 #### Scenario: split-out behaviour 3
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
+### Requirement: 评分链 prompt 版本化
+
+判官评分链 prompt（judge scoring task prompt）SHALL 以新版本行落入既有 prompt 存储域（沿 `Prompt Provenance` 与 `Prompt Type (Variant Lineage)` 既有需求）：修复版本不覆盖历史行；provenance SHALL 记录修复动因（`add-judge-misread-remediation`）与生效范围（judge scoring）；回滚 = 查询既有版本行。
+
+#### Scenario: 修复版本落库
+- **WHEN** 修复后的评分链 prompt 落库
+- **THEN** 新版本行可查，历史行不变，provenance 记录动因与范围
+
+#### Scenario: 按版本回滚
+- **WHEN** 需要回退到修复前行为
+- **THEN** 查询并启用既有版本行即可，无数据迁移
