@@ -257,8 +257,9 @@ def test_ontology_still_answers_with_unchanged_fields_and_digest(world):
 
 
 def test_publish_button_is_per_kind_and_refuses_an_empty_kind(world):
+    # Both scopes: the page GET is gated on content:read, the POST on content:write.
     lara = User(sub="lara", name="lara", email="lara@example.com",
-                scopes=["content:write"], channel="test")
+                scopes=["content:read", "content:write"], channel="test")
     with _client(world, lara) as client:
         ok = client.post(
             f"/d/{A_KEY}/publish/rubric", data={}, follow_redirects=False
