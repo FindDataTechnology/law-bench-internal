@@ -702,3 +702,20 @@ code.digest { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
   line-height: 1.6;
 }
 .panel table.data-table td details summary { cursor: pointer; }
+
+/* ── 表格不得被长内容撑破（2026-11-20 生产实测四页横向溢出）─────────────
+   四个页面同一个病根：单元格里的长字符串（键名、变更摘要、说明）没有换行规则，
+   把 table 撑到 3295 / 1358 / 1235px，整页横向溢出 2655 / 191 / 68px。
+   规则：所有 td 允许在任意处断行；需要整体不折的（按钮列、时间列）由更具体的
+   选择器覆盖（见上面的 nth-child 规则）。表格自身定宽 100%，超出由内容换行吸收。 */
+.panel table.data-table,
+.ledger-sheet table.data-table { width: 100%; }
+.panel table.data-table td,
+.ledger-sheet table.data-table td { overflow-wrap: anywhere; }
+.panel table.data-table td code,
+.ledger-sheet table.data-table td code { overflow-wrap: anywhere; white-space: normal; }
+/* 长键名列表 / digest 之类：最多两行，超出省略，点开看全文由详情页负责。 */
+.cell-clamp {
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere;
+}
