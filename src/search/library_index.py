@@ -1051,16 +1051,42 @@ class LibraryCorpusReader:
         and released before the next. Slower than a single streaming pass by a
         wide margin, and deliberately so: the streaming variant needed a page of
         chunks resident and was OOM-killed in production.
+
+        **Sources and their payload mappings are resolved ONCE here**, not per
+        document. The first version called ``document_body`` for each document,
+        which re-queried ``library_sources`` every time — measured 2026-11-20 at
+        174 ms/document (≈94 minutes for the corpus), against a single Qdrant
+        round trip of ~34 ms. The extra DB query per document was most of the
+        difference.
         """
         docs = enumerate_documents(
             self.conn, lib=lib, page_size=self.page_size,
             timeout=self.timeout, max_seconds=self.max_seconds,
             max_pages=self.max_pages,
         )
+        sources = {
+            s["source_key"]: s
+            for s in libraries.list_sources(self.conn, library_id=lib["id"])
+        }
+        mappings = {k: _document_rule(s) for k, s in sources.items()}
+        loc = libraries.resolve_location(lib)
+
         for doc in docs:
+            source_key = doc["source_key"]
+            mapping = mappings.get(source_key)
+            if mapping is None:
+                raise DocumentEnumerationError(
+                    f"library {lib.get('library_key')!r} no longer has source "
+                    f"{source_key!r}; cannot read document {doc['doc_key']!r} faithfully"
+                )
             yield {
                 **doc,
-                "text": self.document_body(lib, doc["doc_key"], doc["source_key"]),
+                "text": fetch_document_body(
+                    url=loc["url_env"], collection=loc["collection"],
+                    id_key=mapping["id"], text_key=mapping["text"],
+                    order_key=mapping["order"], doc_key=doc["doc_key"],
+                    page_size=self.page_size, timeout=self.timeout,
+                ),
             }
 
     def document_body(self, lib: dict, doc_key: str, source_key: str) -> str:

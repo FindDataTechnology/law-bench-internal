@@ -66,11 +66,11 @@
 
 ## 6. 验收
 
-- [ ] 6.1 生产对 `law-library` 发布一版：记录版本号、总 digest、文档数、块数与实测耗时
-- [ ] 6.2 用已登记消费者拉清单分页至末页，抽样 3 部法规取正文并逐字核对 `doc_digest`
-- [ ] 6.3 回归：本体发布/拉取、typed publication 发布/拉取四条既有场景全绿
-- [ ] 6.4 `openspec validate add-corpus-publication --strict` 绿
-- [ ] 6.5 `acceptance.md`：逐条判据 + 真库读数（未达标的如实写，不造绿）
+- [x] 6.1 生产对 `law-library` 发布一版：记录版本号、总 digest、文档数、块数与实测耗时
+- [x] 6.2 用已登记消费者拉清单分页至末页，抽样 3 部法规取正文并逐字核对 `doc_digest`
+- [x] 6.3 回归：本体发布/拉取、typed publication 发布/拉取四条既有场景全绿
+- [x] 6.4 `openspec validate add-corpus-publication --strict` 绿
+- [x] 6.5 `acceptance.md`：逐条判据 + 真库读数（未达标的如实写，不造绿）
 
 ## 7. 挂账
 

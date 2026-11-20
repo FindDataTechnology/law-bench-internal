@@ -25,18 +25,41 @@
 | **发布不在请求路径执行** | 路由源码含 `status_code=409`、指名 `publish_corpus.py`、且**不含** `publish_library(` 调用 ✓ |
 | 内存余量的实证 | web 容器 `memory.current` = **470 MB** / `memory.max` = **512 Mi** → 余量 **62 MB** ✓（内联发布必 OOM，这正是上一条的根据） |
 
-## 2. §6.1 真库发布
+## 2. §6.1 真库发布 —— ✅ 已跑通
 
-**待跑** —— 已在生产 pod 的独立进程里执行
-`scripts/publish_corpus.py law-library --by rehearsal:6.1`，约 18 分钟（逐文档 33.7 ms × 32,251）。
-完成时在此填：版本号 / 总 digest / 文档数 / 块数 / 实测耗时。
+执行方式：**独立 Job Pod**（`jobs/corpus-publish-job.yaml`，内存上限 768 Mi），
+不是 web 容器、也不是 exec 进应用 pod（后两种实测均 OOMKilled）。
 
-## 3. §6.2 清单分页 + 逐文档核对
+```json
+{"library":"law-library","version":1,
+ "digest":"ec1cb0acfe171de91e3c7b2435cc398e34633dd9e49a133b4ed70e5802822d69",
+ "shape_version":1,"doc_count":32251,"chunk_count":365938,
+ "elapsed_seconds":3620.1,"changelog":"initial"}
+```
 
-**待跑** —— 依赖 §6.1 的版本行存在。判据：
-- 分页翻到 `next_cursor` 为 null，文档数 = `total_docs`，无重复无遗漏；
-- 抽样 3 部法规（首/中/末）取正文，`doc_digest` 与清单逐字节相等，`body_matches: true`；
-- 足迹行数 = 清单页数 + 文档请求数。
+| 字段 | 读数 |
+|---|---|
+| 版本 | **v1** |
+| 总 digest | `ec1cb0ac…2822d69` |
+| 文档数 | **32,251** |
+| 块数 | **365,938** |
+| 实测耗时 | **3,620 秒 ≈ 60.3 分钟** |
+| Job Pod 内存 | 115 MB / 768 Mi，`oom_kill 0` |
+
+## 3. §6.2 清单分页 + 逐文档核对 —— ✅ 已验
+
+**分页**：33 页翻到 `next_cursor=null`，累计 32,251 部、去重 32,251、重复 **0**，
+`total_docs` 一致，每页 `digest` 都等于 v1 的 `ec1cb0ac…`。
+
+**逐文档核对**（首/中/末三部，经真实 HTTP 取正文）：
+
+| doc_key | 标题 | 块数 | 正文长度 | 清单 digest 相等 | 重算相等 | body_matches |
+|---|---|---|---|---|---|---|
+| 11733 | 河北省人大常委会关于促进农作物秸秆综… | 10 | 3,286 | ✓ | ✓ | ✓ |
+| 68896 | 玉树藏族自治州施行《中华人民共和国婚… | 2 | 589 | ✓ | ✓ | ✓ |
+| 85197 | 昌吉回族自治州文明行为促进条例 | 12 | 4,426 | ✓ | ✓ | ✓ |
+
+**足迹**：`corpus_pull_events` = **36 行** = 33 页 + 3 部文档，与请求次数精确吻合（失败请求不落行）。
 
 ## 4. §6.3 既有场景回归
 
