@@ -841,7 +841,7 @@ def _scroll_qdrant(
             )
 
 
-def _source_for_payload(payload: dict, rules: dict[str, dict]) -> list[str]:
+def _sources_accepting(payload: dict, rules: dict[str, dict]) -> list[str]:
     """Which sources' ``match`` rules accept this point (empty = unclaimed).
 
     A point claimed by no source is corpus the library cannot account for; a
@@ -938,7 +938,7 @@ def enumerate_documents(
     ):
         for point in page:
             payload = point.get("payload") or {}
-            owning = _source_for_payload(payload, rules)
+            owning = _sources_accepting(payload, rules)
             if not owning:
                 unclaimed += 1
                 continue
@@ -1012,3 +1012,51 @@ def fetch_document_body(
         )
     points.sort(key=lambda p: (p.get("payload") or {}).get(order_key) or 0)
     return "".join(str((p.get("payload") or {}).get(text_key) or "") for p in points)
+
+
+class LibraryCorpusReader:
+    """The corpus-publication kernel's backend seam.
+
+    ``src/bench/corpus_publication`` must not import this module — the kernel
+    package-boundary gate forbids relative imports that escape ``src/bench``
+    (CI caught exactly that violation). So the dependency points this way: the
+    kernel takes a *reader object*, and this is the production one. It owns
+    every backend detail (Qdrant scroll, payload mappings, page limits) plus the
+    borrowed connection, so the kernel never has to reach for either.
+    """
+
+    def __init__(self, conn: Any, *, page_size: int = 4000, timeout: float = 60.0,
+                 max_seconds: float = 300.0):
+        self.conn = conn
+        self.page_size = page_size
+        self.timeout = timeout
+        self.max_seconds = max_seconds
+
+    def enumerate_documents(self, *, lib: dict) -> list[dict]:
+        return enumerate_documents(
+            self.conn, lib=lib, page_size=self.page_size,
+            timeout=self.timeout, max_seconds=self.max_seconds,
+        )
+
+    def document_body(self, lib: dict, doc_key: str, source_key: str) -> str:
+        """One document's text, read through ITS OWN source's payload mapping."""
+        sources = {
+            s["source_key"]: s
+            for s in libraries.list_sources(self.conn, library_id=lib["id"])
+        }
+        source = sources.get(source_key)
+        if source is None:
+            # A version may outlive the source that produced it. Reading another
+            # source's fields would hash the wrong bytes, so refuse.
+            raise DocumentEnumerationError(
+                f"library {lib.get('library_key')!r} no longer has source "
+                f"{source_key!r}; cannot read document {doc_key!r} faithfully"
+            )
+        mapping = _document_rule(source)
+        loc = libraries.resolve_location(lib)
+        return fetch_document_body(
+            url=loc["url_env"], collection=loc["collection"],
+            id_key=mapping["id"], text_key=mapping["text"],
+            order_key=mapping["order"], doc_key=doc_key,
+            page_size=self.page_size, timeout=self.timeout,
+        )

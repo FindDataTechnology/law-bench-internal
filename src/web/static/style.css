@@ -369,7 +369,11 @@ table.data-table td.dl-cell { white-space: nowrap; }
 
 /* 质量比摘要（运营台行内）：八项小标签，三态可辨——达标默认、低于阈值 ambr、
    无物可算灰。只做装饰性密度，数值本身由 estate 已算好的结果原样给出。 */
-.quality-cell { max-width: 22rem; }
+.quality-cell { max-width: 22rem; min-width: 15rem; }
+/* 加了质量比列之后四柱被挤窄，语料/评测两列会折成两行。给它们一个不许再窄的下限。 */
+.panel table.data-table td:nth-child(2),
+.panel table.data-table td:nth-child(3),
+.panel table.data-table td:nth-child(4) { white-space: nowrap; }
 .quality-cell .q {
   display: inline-block;
   font-size: 0.68rem;

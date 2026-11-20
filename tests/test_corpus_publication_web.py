@@ -160,8 +160,11 @@ def _no_idp(monkeypatch):
 
 
 def _publish(conn) -> dict:
+    from src.search.library_index import LibraryCorpusReader
+
     return corpus_publication.publish_library(
-        conn, library_key=LIBRARY_KEY, published_by="seed"
+        conn, library_key=LIBRARY_KEY, published_by="seed",
+        reader=LibraryCorpusReader(conn),
     )
 
 

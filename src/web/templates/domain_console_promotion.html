@@ -33,7 +33,7 @@
     {% endfor %}
     <div class="stat">
       <div class="stat-label">{{ t.console.promotion.stat_total }}</div>
-      <div class="stat-value">{{ queue.total }}</div>
+      <div class="stat-value">{{ ladder_total }}</div>
     </div>
   </div>
 </div>
@@ -41,9 +41,9 @@
 <div class="panel">
   <div class="toolbar between">
     <h2>{{ t.console.promotion.units_h2 }}</h2>
-    <span class="muted">{{ t.console.promotion.showing }} {{ queue.units | length }} / {{ queue.total }}</span>
+    <span class="muted">{{ t.console.promotion.showing }} {{ units | length }}</span>
   </div>
-  {% if queue.units %}
+  {% if units %}
   <table class="data-table">
     <thead>
       <tr>
@@ -55,7 +55,7 @@
       </tr>
     </thead>
     <tbody>
-      {% for u in queue.units %}
+      {% for u in units %}
       <tr>
         <td><code>{{ u.external_key }}</code></td>
         <td>{{ u.kind }}</td>

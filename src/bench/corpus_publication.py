@@ -33,7 +33,6 @@ from typing import Any, Optional
 
 from . import distribution, libraries
 from .distribution import canonical_digest
-from ..search import library_index
 
 #: Projection shape version. Lives BESIDE every digest, never inside one — a
 #: shape bump must not invalidate digests already handed out (design D3).
@@ -128,44 +127,31 @@ def version_digest(entries: list[dict]) -> str:
 # ------------------------------------------------------------- projection
 
 
-def build_manifest(
-    conn: Any,
-    *,
-    lib: dict,
-    allowed: Optional[set[str]] = None,
-    page_size: int = 4000,
-    timeout: float = 60.0,
-    max_seconds: float = 300.0,
-) -> dict:
+def build_manifest(conn: Any, *, lib: dict, reader: Any) -> dict:
     """Project the library's documents into a publishable manifest.
+
+    ``reader`` is the *caller-supplied* backend accessor — the kernel must not
+    reach into ``src.search`` (kernel domain-freedom and package-boundary gate:
+    a relative import that escapes ``src/bench`` is a violation, and CI caught
+    exactly that). The reader answers two questions and owns every backend
+    detail:
+
+        docs = reader.enumerate_documents(lib=lib)   # identity + metadata
+        text = reader.document_body(lib, doc_key, source_key)   # one body
 
     Two passes (design D3): enumerate identities, then fetch one body at a time
     and drop it as soon as its digest exists. Peak memory is one document plus
     the key list, never the corpus.
     """
-    docs = library_index.enumerate_documents(
-        conn, lib=lib, allowed=allowed, timeout=timeout, max_seconds=max_seconds
-    )
+    docs = reader.enumerate_documents(lib=lib)
     if not docs:
         raise NothingToPublish(
             f"library {lib.get('library_key')!r} has no documents to publish"
         )
-    loc = libraries.resolve_location(lib)
-    sources = {s["source_key"]: s for s in libraries.list_sources(conn, library_id=lib["id"])}
 
     entries: list[dict] = []
     for doc in docs:
-        mapping = library_index._document_rule(sources[doc["source_key"]])
-        text = library_index.fetch_document_body(
-            url=loc["url_env"],
-            collection=loc["collection"],
-            id_key=mapping["id"],
-            text_key=mapping["text"],
-            order_key=mapping["order"],
-            doc_key=doc["doc_key"],
-            page_size=page_size,
-            timeout=timeout,
-        )
+        text = reader.document_body(lib, doc["doc_key"], doc["source_key"])
         entries.append(
             {
                 "doc_key": doc["doc_key"],
@@ -226,7 +212,9 @@ def diff_manifests(old: Optional[dict], new: dict) -> dict:
 # -------------------------------------------------------------- publishing
 
 
-def publish_library(conn: Any, *, library_key: str, published_by: str) -> dict:
+def publish_library(
+    conn: Any, *, library_key: str, published_by: str, reader: Optional[Any] = None
+) -> dict:
     """Freeze the library's current documents as the next immutable version.
 
     Idempotent on the version digest (an unchanged corpus returns the existing
@@ -239,7 +227,15 @@ def publish_library(conn: Any, *, library_key: str, published_by: str) -> dict:
     if lib is None:
         raise ValueError(f"library {library_key!r} not found")
 
-    manifest = build_manifest(conn, lib=lib)
+    if reader is None:
+        # The kernel never imports the backend layer (package-boundary gate). A
+        # caller that wants the default must hand the reader in; the web/admin
+        # surface does that with ``search.library_index``.
+        raise ValueError(
+            "publish_library requires a reader (see build_manifest); the web "
+            "surface passes src.search.library_index"
+        )
+    manifest = build_manifest(conn, lib=lib, reader=reader)
     digest = version_digest(manifest["documents"])
 
     existing = conn.execute(

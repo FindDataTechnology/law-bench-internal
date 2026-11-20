@@ -1414,8 +1414,11 @@ async def admin_library_publish(
             p.get("digest")
             for p in corpus_publication.list_publications(db, library_key=library_key)
         }
+        from ...search.library_index import LibraryCorpusReader
+
         publication = corpus_publication.publish_library(
-            db, library_key=library_key, published_by=_operator_of(user)
+            db, library_key=library_key, published_by=_operator_of(user),
+            reader=LibraryCorpusReader(db),
         )
     except ValueError as exc:
         return _flash(

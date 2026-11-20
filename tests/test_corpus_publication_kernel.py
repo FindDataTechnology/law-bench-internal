@@ -86,6 +86,21 @@ def backend(monkeypatch):
     return install
 
 
+class _FakeReader:
+    """The kernel's reader contract over the fake transport + a real connection."""
+
+    def __init__(self, conn):
+        self.conn = conn
+
+    def enumerate_documents(self, *, lib):
+        return library_index.enumerate_documents(self.conn, lib=lib)
+
+    def document_body(self, lib, doc_key, source_key):
+        return library_index.LibraryCorpusReader(self.conn).document_body(
+            lib, doc_key, source_key
+        )
+
+
 @pytest.fixture()
 def lib(db_conn, monkeypatch):
     """A registered qdrant library with two sources covering the fixture corpus."""
@@ -159,7 +174,8 @@ def test_publish_builds_a_manifest_and_is_idempotent(db_conn, lib, backend):
     """2.4/2.5: one version, then an unchanged republish returns it."""
     backend()
     v1 = corpus_publication.publish_library(
-        db_conn, library_key="test-library", published_by="tester"
+        db_conn, library_key="test-library", published_by="tester",
+        reader=_FakeReader(db_conn),
     )
     assert v1["version"] == 1
     assert v1["doc_count"] == 3
@@ -177,7 +193,8 @@ def test_publish_builds_a_manifest_and_is_idempotent(db_conn, lib, backend):
     assert "body" not in v1["manifest"]["documents"][0]
 
     again = corpus_publication.publish_library(
-        db_conn, library_key="test-library", published_by="tester"
+        db_conn, library_key="test-library", published_by="tester",
+        reader=_FakeReader(db_conn),
     )
     assert (again["version"], again["digest"]) == (v1["version"], v1["digest"])
     rows = db_conn.execute("SELECT count(*) AS n FROM corpus_publications").fetchone()
@@ -188,7 +205,8 @@ def test_publishing_never_writes_to_the_external_backend(db_conn, lib, backend):
     """Publication is read-only against the store the corpus lives in."""
     fake = backend()
     corpus_publication.publish_library(
-        db_conn, library_key="test-library", published_by="tester"
+        db_conn, library_key="test-library", published_by="tester",
+        reader=_FakeReader(db_conn),
     )
     assert fake.write_calls == []
     assert fake.scroll_calls > 0  # it read, and only read
@@ -215,7 +233,8 @@ def test_changelog_names_the_document_that_moved(db_conn, lib, backend):
     """2.4: added / removed / changed, changed carrying both digests."""
     backend()
     v1 = corpus_publication.publish_library(
-        db_conn, library_key="test-library", published_by="tester"
+        db_conn, library_key="test-library", published_by="tester",
+        reader=_FakeReader(db_conn),
     )
     # 甲法's text changes, 乙法 disappears, 丁法 appears.
     changed_points = [
@@ -226,7 +245,8 @@ def test_changelog_names_the_document_that_moved(db_conn, lib, backend):
     ]
     backend(changed_points)
     v2 = corpus_publication.publish_library(
-        db_conn, library_key="test-library", published_by="tester"
+        db_conn, library_key="test-library", published_by="tester",
+        reader=_FakeReader(db_conn),
     )
     assert v2["version"] == 2
     log = v2["changelog"]
