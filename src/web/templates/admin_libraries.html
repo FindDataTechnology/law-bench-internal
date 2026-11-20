@@ -71,7 +71,27 @@
       {% if lib.embedding_model %}· <code>{{ lib.embedding_model }}</code>{% endif %}
     </span>
   </div>
-  <p class="muted">{{ lib.name }} · {{ t.admin.libraries.source_count }} {{ lib.source_count }}</p>
+  <p class="muted">{{ lib.name }} · {{ t.admin.libraries.source_count }} {{ lib.source_count }}
+    · {{ t.admin.libraries.owner_label }}：{% if lib.owner %}<code>{{ lib.owner }}</code>{% else %}{{ t.admin.libraries.owner_none }}{% endif %}
+  </p>
+
+  {#- §7.2：库负责人可由平台管理员指定；指定后该用户可不带 admin scope 发布本库。
+      未指定时维持「仅平台管理员可发布」，与加此列之前的行为一致。 -#}
+  <details>
+    <summary>{{ t.admin.libraries.owner_h2 }}</summary>
+    <form method="POST" action="{{ url_for('admin_library_owner', library_key=lib.library_key) }}" class="filter-form">
+      <div class="filter-group">
+        <label for="own-{{ lib.library_key }}">{{ t.admin.libraries.owner_label }}</label>
+        <input type="text" name="owner" id="own-{{ lib.library_key }}" value="{{ lib.owner or '' }}"
+               placeholder="{{ t.admin.libraries.owner_placeholder }}">
+      </div>
+      <div class="filter-group">
+        <label>&nbsp;</label>
+        <button type="submit" class="btn">{{ t.admin.libraries.owner_set_btn }}</button>
+      </div>
+    </form>
+    <p class="muted">{{ t.admin.libraries.owner_hint }}</p>
+  </details>
 
   <table class="table">
     <thead><tr>

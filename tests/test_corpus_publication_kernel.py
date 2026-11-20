@@ -272,3 +272,72 @@ def test_enumeration_rejects_an_ambiguous_document(db_conn, lib, backend):
             db_conn, library_key="test-library", published_by="tester",
             reader=_FakeReader(db_conn),
         )
+
+# ------------------------------------------------------------------ §7.1/7.2
+
+
+def test_readiness_checklists_what_each_source_is_missing(db_conn, lib):
+    """7.1 hand-off: a source without a document mapping says exactly why."""
+    from src.search.library_index import document_readiness
+
+    rows = {r["source_key"]: r for r in document_readiness(db_conn, lib=lib)}
+    assert rows["statutes"]["ok"] is True
+    assert rows["statutes"]["shape"] == "document"
+
+    # A source with no rule at all: every role missing, and the shape says so.
+    libraries.add_source(
+        db_conn, library_key="test-library", source_key="bare",
+        uri="t", source_kind="external-table", ingest_rule={}, created_by="t",
+    )
+    rows = {r["source_key"]: r for r in document_readiness(db_conn, lib=lib)}
+    assert rows["bare"]["ok"] is False
+    assert rows["bare"]["shape"] == "none"
+    assert rows["bare"]["missing"] == ["id", "title", "text", "order"]
+
+
+def test_readiness_recognises_the_columns_shape(db_conn, lib):
+    """`case-library` uses `columns`/`order_by` rather than `document`."""
+    from src.search.library_index import document_readiness
+
+    libraries.add_source(
+        db_conn, library_key="test-library", source_key="cases",
+        uri="guide_cases", source_kind="text-table", created_by="t",
+        ingest_rule={"columns": {"id": "case_no", "text": "gist", "title": "title"}},
+    )
+    rows = {r["source_key"]: r for r in document_readiness(db_conn, lib=lib)}
+    assert rows["cases"]["shape"] == "columns"
+    assert rows["cases"]["missing"] == ["order"]
+    assert rows["cases"]["ok"] is False
+
+
+def test_owner_gates_publishing_and_clearing_restores_admin_only(db_conn, lib):
+    """7.2: a named owner may publish; nobody else; clearing reverts."""
+    assert libraries.may_publish(
+        db_conn, library_key="test-library", user_id="anyone", is_admin=False
+    ) is False
+    assert libraries.may_publish(
+        db_conn, library_key="test-library", user_id="", is_admin=True
+    ) is True
+
+    libraries.set_owner(db_conn, library_key="test-library", owner="lara", by="t")
+    assert libraries.may_publish(
+        db_conn, library_key="test-library", user_id="lara", is_admin=False
+    ) is True
+    assert libraries.may_publish(
+        db_conn, library_key="test-library", user_id="alice", is_admin=False
+    ) is False
+    # An admin can still step in.
+    assert libraries.may_publish(
+        db_conn, library_key="test-library", user_id="admin", is_admin=True
+    ) is True
+
+    libraries.set_owner(db_conn, library_key="test-library", owner=None, by="t")
+    assert libraries.may_publish(
+        db_conn, library_key="test-library", user_id="lara", is_admin=False
+    ) is False
+
+
+def test_may_publish_fails_closed_for_an_unknown_library(db_conn, lib):
+    assert libraries.may_publish(
+        db_conn, library_key="no-such-library", user_id="x", is_admin=True
+    ) is False

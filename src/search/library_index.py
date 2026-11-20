@@ -1111,3 +1111,62 @@ class LibraryCorpusReader:
             order_key=mapping["order"], doc_key=doc_key,
             page_size=self.page_size, timeout=self.timeout,
         )
+
+
+def document_readiness(conn: Any, *, lib: dict) -> list[dict]:
+    """Per-source readiness for corpus publication — a hand-off checklist.
+
+    Why this exists: publishing a library needs each source to declare **which
+    payload fields identify a document** (``ingest_rule.document``), and that is
+    a fact only the corpus's owner knows. The publisher cannot invent it. What it
+    CAN do is state precisely, per source, what shape it currently has and which
+    of the four roles are missing — so the person filling it in does not have to
+    read code or guess at a schema.
+
+    Pure read: no backend calls, no writes. Each item is:
+
+        {source_key, source_kind, ok, shape, missing, expected}
+    """
+    sources = libraries.list_sources(conn, library_id=lib["id"])
+    out: list[dict] = []
+    for src in sources:
+        rule = src.get("ingest_rule") or {}
+        if isinstance(rule, str):
+            import json as _json
+
+            rule = _json.loads(rule or "{}")
+        doc = rule.get("document")
+        columns = rule.get("columns")  # case-library's shape
+        if isinstance(doc, dict) and doc:
+            shape = "document"
+            missing = [r for r in _DOC_ROLES if not doc.get(r)]
+        elif isinstance(columns, dict) and columns:
+            # A column mapping exists but under a different key: the roles it
+            # names may line up, and saying so is more useful than "missing".
+            shape = "columns"
+            alias = {"id": "id", "title": "title", "text": "text", "order": "order_by"}
+            missing = [
+                r for r in _DOC_ROLES
+                if not (columns.get(alias[r]) or (r == "order" and columns.get("order_by")))
+            ]
+        else:
+            shape = "none"
+            missing = list(_DOC_ROLES)
+        out.append(
+            {
+                "source_key": src["source_key"],
+                "source_kind": src.get("source_kind"),
+                "ok": not missing,
+                "shape": shape,
+                "missing": missing,
+                "expected": {
+                    "document": {
+                        "id": "<一行的稳定标识所在列>",
+                        "title": "<标题列>",
+                        "text": "<正文列>",
+                        "order": "<块序数列>",
+                    }
+                },
+            }
+        )
+    return out

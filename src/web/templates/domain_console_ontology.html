@@ -143,7 +143,35 @@
             <td>v{{ p.version }}</td>
             <td><code class="digest">{{ p.digest }}</code></td>
             <td class="muted">{{ p.published_at[:16] | replace('T', ' ') }}</td>
-            <td class="muted">{{ p.changelog if p.changelog is string else (p.changelog | tojson) }}</td>
+            <td class="muted">
+              {#- 变更摘要只给计数，完整键名列表放进 details。
+                  `| tojson` 把整个 added 列表原样 dump 进单元格——legal v2 的 added 有
+                  5142 条键名，单个 td 达 284,473 字符，页面总宽 4095px、
+                  横向溢出 2655px（2026-11-20 生产实测）。发布页早就只显示 counts，
+                  这里对齐那个做法。 -#}
+              {% if p.changelog is mapping %}
+                {% if p.changelog.initial %}
+                {{ tr('console.publish.changelog_initial',
+                      entities=p.changelog.counts.entities,
+                      relationships=p.changelog.counts.relationships) }}
+                {% else %}
+                {{ tr('console.publish.changelog_diff',
+                      added=p.changelog.added | default([], true) | length,
+                      removed=p.changelog.removed | default([], true) | length,
+                      changed=p.changelog.changed | default([], true) | length,
+                      entities=p.changelog.counts.entities,
+                      relationships=p.changelog.counts.relationships) }}
+                {% if p.changelog.added is sequence and (p.changelog.added | length) > 0 %}
+                <details>
+                  <summary>{{ t.console.ontology.changelog_keys_added }}</summary>
+                  <div class="changelog-keys">{{ p.changelog.added | join('、') }}</div>
+                </details>
+                {% endif %}
+                {% endif %}
+              {% else %}
+              {{ p.changelog }}
+              {% endif %}
+            </td>
           </tr>
           {% endfor %}
         </tbody>

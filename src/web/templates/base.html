@@ -12,12 +12,11 @@
       域页面用 console_context 块在 brand 与 nav 之间插入当前域 + 切换器；
       nav_items 块让域页面收起全局法律链接（它们移到域评测区与全局资产池）。 -#}
   <header class="topbar">
-    <a class="brand" href="/d">{{ t.nav.brand }}</a>
-    {#- 回公开介绍站的链接（change console-progress-and-value）。运营台与门面互链：
-        门面有「进入工作台」，这里给回去的路。匿名状态下不会走到（本页需登录）。 -#}
-    <a class="brand-site" href="https://bench.finddatatech.cloud/" rel="noopener">{{ t.nav.site_link }}</a>
-    {% block console_context %}{% endblock %}
-    <nav>
+    <div class="topbar-brand">
+      <a class="brand" href="/d">{{ t.nav.brand }}</a>
+      {% block console_context %}{% endblock %}
+    </div>
+    <nav class="topbar-nav">
       {% block nav_items %}{% if has_scope('content:read') %}
       {#- 三层导航（add-domain-tree-and-shared-libraries §5）：全域 → 我的域 → 域内区。
 
@@ -50,32 +49,37 @@
          nav_items block by C5 so it survives on domain pages, which suppress
          the global asset links: the platform gate is not a domain area. #}
       {% if has_scope('admin') %}
-      <span class="muted">{{ t.admin.nav_gate }}</span>
+      <span class="nav-group-label">{{ t.admin.nav_gate }}</span>
       <a href="{{ url_for('admin_templates') }}"{% if request.url.path.startswith('/admin/templates') %} aria-current="page"{% endif %}>{{ t.admin.templates.title }}</a>
       <a href="{{ url_for('admin_domains') }}"{% if request.url.path.startswith('/admin/domains') %} aria-current="page"{% endif %}>{{ t.admin.domains.title }}</a>
-
       <a href="{{ url_for('admin_libraries') }}"{% if request.url.path.startswith('/admin/libraries') %} aria-current="page"{% endif %}>{{ t.admin.libraries.title }}</a>
       {% endif %}
+    </nav>
+    <div class="topbar-account">
       <span class="lang-switch">
         <a href="{{ request.url.path }}?lang=en"{% if lang == 'en' %} aria-current="true"{% endif %}>{{ t.switch.en }}</a>
-        <span class="muted">|</span>
         <a href="{{ request.url.path }}?lang=zh"{% if lang == 'zh' %} aria-current="true"{% endif %}>{{ t.switch.zh }}</a>
       </span>
       {% if user and user.sub %}
-      <span class="identity">
-        <span class="muted">{{ t.auth.signed_in_as }}</span>
-        <span class="identity-name">{{ user.name or user.email or user.sub }}</span>
-        {# 互认回链 (C5 P0-D): the workbench is one of five product lines, so the
-           chrome always offers the way back to what it is. External page. #}
-        <a href="{{ official_bench_url }}" target="_blank" rel="noopener noreferrer">{{ t.auth.about_bench }} ↗</a>
-        <a href="/auth/logout">{{ t.auth.logout }}</a>
-      </span>
+      {#- 账户区收成一个按钮：显示名 + 下拉。邮箱（完整地址）是个人数据，
+          不该在顶栏常驻给同办公室/外部维护者看；它在下拉里以 title 呈现。 -#}
+      <details class="account-menu">
+        <summary title="{{ user.email or user.sub }}">
+          <span class="account-name">{{ user.name or user.email or user.sub }}</span>
+        </summary>
+        <div class="account-panel">
+          {% if user.email %}
+          <div class="account-email">{{ user.email }}</div>
+          {% endif %}
+          <a href="https://bench.finddatatech.cloud/" target="_blank" rel="noopener noreferrer">{{ t.nav.site_link }}</a>
+          <a href="{{ official_bench_url }}" target="_blank" rel="noopener noreferrer">{{ t.auth.about_bench }} ↗</a>
+          <a href="/auth/logout">{{ t.auth.logout }}</a>
+        </div>
+      </details>
       {% else %}
-      <span class="identity">
-        <a href="/auth/login">{{ t.auth.login }}</a>
-      </span>
+      <a class="account-signin" href="/auth/login">{{ t.auth.login }}</a>
       {% endif %}
-    </nav>
+    </div>
   </header>
   {#- L2/L3 navigation lives in the SAME 980px column as the page body:
       full-bleed breadcrumbs read as page chrome from another product. -#}

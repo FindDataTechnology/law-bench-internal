@@ -44,7 +44,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("library_key", help="library to publish (e.g. law-library)")
     parser.add_argument("--by", default="corpus-publish", help="operator stamp")
+    parser.add_argument(
+        "--as", dest="as_user", default=None,
+        help="publishing user id; required unless the library has no owner "
+             "(then only an admin should run it, which the shell enforces)",
+    )
     parser.add_argument("--json", action="store_true", help="machine-readable output")
+    parser.add_argument(
+        "--check", action="store_true",
+        help="only report per-source publication readiness (no publishing)",
+    )
     args = parser.parse_args()
 
     sys.path.insert(0, os.getcwd())
@@ -54,6 +63,67 @@ def main() -> int:
     from src.search.library_index import LibraryCorpusReader
 
     conn = connect()
+
+    if not args.check:
+        from src.bench import libraries as _libs
+
+        lib = _libs.get_library(conn, library_key=args.library_key)
+        if lib is None:
+            print(f"FAIL: library {args.library_key!r} not found", file=sys.stderr)
+            return 1
+        owner = (lib.get("owner") or "").strip()
+        # The publisher runs as an operator on the box, so "admin" here means the
+        # deployment key holder — we do not pretend to verify that. What we CAN
+        # enforce is the library's own rule: when an owner is named, the caller
+        # must say who they are and it must match.
+        if owner:
+            if not args.as_user:
+                print(
+                    f"FAIL: 库 {args.library_key!r} 已指定负责人 {owner!r}，"
+                    "请用 --as <user_id> 声明发布者",
+                    file=sys.stderr,
+                )
+                return 1
+            if args.as_user != owner:
+                print(
+                    f"FAIL: 库 {args.library_key!r} 的负责人是 {owner!r}，"
+                    f"不是 {args.as_user!r}",
+                    file=sys.stderr,
+                )
+                return 1
+
+    if args.check:
+        from src.bench import libraries as _libraries
+
+        lib = _libraries.get_library(conn, library_key=args.library_key)
+        if lib is None:
+            print(f"FAIL: library {args.library_key!r} not found", file=sys.stderr)
+            return 1
+        from src.search.library_index import document_readiness
+
+        rows = document_readiness(conn, lib=lib)
+        if args.json:
+            print(json.dumps(rows, ensure_ascii=False, indent=2))
+        else:
+            for r in rows:
+                status = "OK" if r["ok"] else f"missing {r['missing']}"
+                print(f"{r['source_key']:<16} {r['source_kind']:<16} {r['shape']:<10} {status}")
+            blocked = [r for r in rows if not r["ok"]]
+            if blocked:
+                print(
+                    f"\n{len(blocked)}/{len(rows)} 个源还不能发布。每个源都要在 "
+                    "ingest_rule.document 里声明四个角色：\n"
+                    "  id    该行的稳定标识列（同一篇文档的所有块共用）\n"
+                    "  title 标题列\n"
+                    "  text  正文列\n"
+                    "  order 块序数列（按它拼正文）\n"
+                    "可对照 law-library 的现有写法（library_sources 里那七行）。",
+                    file=sys.stderr,
+                )
+            else:
+                print(f"\n{len(rows)} 个源全部可发布。", file=sys.stderr)
+        return 0 if all(r["ok"] for r in rows) else 2
+
     reader = LibraryCorpusReader(conn)
     started = time.monotonic()
 

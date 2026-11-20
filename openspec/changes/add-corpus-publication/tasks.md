@@ -74,9 +74,11 @@
 
 ## 7. 挂账
 
-- [ ] 7.1 `pgvector-external` / `text-table` 后端的文档身份映射（`text-library` / `case-library`）
-      —— 需先核实其 `ingest_rule.document` 的真实字段，另立
-- [ ] 7.2 库级 owner 角色与发布授权细分 —— `libraries` 无 owner 列，加列是另一件事
+- [x] 7.1 另两种后端的文档身份映射 —— **已把「缺什么」变成可读清单**（`publish_corpus.py --check`）。
+      生产实测：`law-library` 7/7 源可发布；`text-library` 0/4（`gov` 缺 order，`news`/`papers`/`screenplay` 四个角色全缺）；
+      `case-library` 0/1（`columns` 形状缺 order）。**具体的文档身份必须由语料方定义**，代码无法猜——清单交给来人即可。
+- [x] 7.2 库级 owner —— 已做：`libraries.owner`（NULL=仅平台管理员，与加列前行为一致）；
+      命名后可不受 admin scope 发布本库；控制台可设；`may_publish()` 对未知库 fail-closed。
 - [x] 7.3 发布迁独立执行宿主 —— **结论已按两次实测 OOM 修正**：不是「换个进程」而是「换个 Pod」。
      exec 进应用 pod 的进程与 web 进程**共享同一 cgroup**（512 Mi），实测两次 exit 137：
      一次请求内联、一次 pod 内 exec。正确宿主=`jobs/corpus-publish-job.yaml` 的独立 Pod

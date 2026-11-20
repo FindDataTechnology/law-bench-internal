@@ -1419,3 +1419,36 @@ async def admin_library_publish(
             f"{library_key} --by <操作人>"
         ),
     )
+
+@write_router.post(
+    "/admin/libraries/{library_key}/owner", include_in_schema=False,
+    name="admin_library_owner",
+    dependencies=[Depends(require_scope("admin"))],
+)
+async def admin_library_owner(
+    request: Request,
+    library_key: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(require_scope("admin")),
+):
+    """Name (or clear) the user who may publish this library's corpus.
+
+    Admin-only on purpose: the owner column grants one verb, so only someone who
+    already has every verb should be able to hand it out. An empty value clears
+    the owner, restoring "platform admins only" — the behaviour every library
+    had before this column existed.
+    """
+    from ...bench import libraries
+
+    form = await request.form()
+    owner = (form.get("owner") or "").strip() or None
+    try:
+        libraries.set_owner(
+            db, library_key=library_key, owner=owner, by=_operator_of(user)
+        )
+    except ValueError as exc:
+        return _flash("/admin/libraries", "flash.library_owner_failed", err=True, detail=str(exc))
+    return _flash(
+        "/admin/libraries", "flash.library_owner_set",
+        name=library_key, detail=(owner or "—"),
+    )

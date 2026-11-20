@@ -120,6 +120,19 @@ $lib$;
 -- would leak through all three. Owned libraries keep this empty.
 ALTER TABLE IF EXISTS libraries ADD COLUMN IF NOT EXISTS location JSONB NOT NULL DEFAULT '{}'::jsonb;
 
+-- add-corpus-publication §7.2: who may publish this library's corpus.
+--
+-- NULL means "platform admins only" — the behaviour every existing library has
+-- today, so this column changes nothing until someone is named. A named owner is
+-- a user id (same vocabulary as domain_members.user_id) who may publish without
+-- holding the admin scope: a corpus is shared physical layer, and the people who
+-- actually maintain one are not necessarily platform administrators.
+--
+-- Kept as a plain column rather than a roles table on purpose: one library has
+-- one publisher, and inventing a second membership system for a single field
+-- would be a bigger surface than the thing it guards.
+ALTER TABLE IF EXISTS libraries ADD COLUMN IF NOT EXISTS owner TEXT;
+
 -- One source = one addressable slice with its own ingest rule. uri is opaque
 -- to this module (object-store prefix, dataset id, …); source_kind says which
 -- reader to use.
@@ -321,7 +334,8 @@ def get_library(conn: Any, *, library_key: str) -> Optional[dict]:
     return _with_location(
         _row(
             conn.execute(
-                "SELECT id, library_key, name, backend, embedding_model, dims, location "
+                "SELECT id, library_key, name, backend, embedding_model, dims, "
+                "       location, owner "
                 "FROM libraries WHERE library_key = %s",
                 (library_key,),
             ).fetchone()
@@ -335,7 +349,7 @@ def list_libraries(conn: Any) -> list[dict]:
         _with_location(dict(r))
         for r in conn.execute(
             "SELECT l.id, l.library_key, l.name, l.backend, l.embedding_model, l.dims, "
-            "       l.location, "
+            "       l.location, l.owner, "
             "       (SELECT COUNT(*) FROM library_sources s WHERE s.library_id = l.id) "
             "       AS source_count "
             "FROM libraries l ORDER BY l.library_key"
@@ -572,3 +586,38 @@ def resolve_location(lib: dict, *, env: Any = None) -> dict:
                 )
             resolved[key] = value
     return resolved
+
+
+def set_owner(conn: Any, *, library_key: str, owner: Optional[str], by: str) -> dict:
+    """Name (or clear) the user who may publish this library's corpus.
+
+    ``owner=None`` restores "platform admins only". Setting an owner does not
+    grant them admin scope — it grants exactly the one verb this column guards
+    (publishing this library).
+    """
+    lib = get_library(conn, library_key=library_key)
+    if lib is None:
+        raise ValueError(f"library {library_key!r} not found")
+    value = (owner or "").strip() or None
+    if value is not None and not value.strip():
+        raise ValueError("owner must be a user id, or None to clear it")
+    conn.execute(
+        "UPDATE libraries SET owner = %s WHERE id = %s", (value, lib["id"])
+    )
+    conn.commit()
+    return get_library(conn, library_key=library_key)
+
+
+def may_publish(conn: Any, *, library_key: str, user_id: str, is_admin: bool) -> bool:
+    """Whether this caller may publish the library's corpus.
+
+    Admin scope passes unconditionally (the platform can always step in). A
+    named owner passes without it. Everyone else fails closed — including when
+    the library does not exist (an unknown key must not read as "allowed").
+    """
+    lib = get_library(conn, library_key=library_key)
+    if lib is None or not user_id:
+        return False
+    if is_admin:
+        return True
+    return (lib.get("owner") or "") == user_id
