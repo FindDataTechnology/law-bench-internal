@@ -222,7 +222,8 @@ def test_empty_library_is_refused(db_conn, lib, backend):
     backend([])
     with pytest.raises(corpus_publication.NothingToPublish):
         corpus_publication.publish_library(
-            db_conn, library_key="test-library", published_by="tester"
+            db_conn, library_key="test-library", published_by="tester",
+            reader=_FakeReader(db_conn),
         )
     assert db_conn.execute(
         "SELECT count(*) AS n FROM corpus_publications"
@@ -271,5 +272,6 @@ def test_enumeration_rejects_an_ambiguous_document(db_conn, lib, backend):
     backend(points)
     with pytest.raises(library_index.DocumentEnumerationError):
         corpus_publication.publish_library(
-            db_conn, library_key="test-library", published_by="tester"
+            db_conn, library_key="test-library", published_by="tester",
+            reader=_FakeReader(db_conn),
         )
