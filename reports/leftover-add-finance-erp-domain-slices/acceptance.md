@@ -121,3 +121,26 @@ content to publish"**。
   本平台看不到。这正是 `evidence()` 那条「有 attrs 不等于有依据」判据的真实命中。
 - erp 域的 `quality:crosswalk_unconfirmed` = 31、`stale` = 8 同样保留红：ERP 的
   科目映射 pack 记录的是「对齐」，不是「谁看过」，硬填 confidence 就是在伪造复核。
+
+## 5.3 消费侧分段判据（2026-11-21 23:40 实查）
+
+按任务要求「MUST NOT 因发布成功就写『已接通』」，直接查生产库：
+
+```sql
+select domain_key, count(*), min(happened_at)::date, max(happened_at)::date
+  from distribution_pull_events group by 1;
+```
+
+结果：
+```
+legal | 55 | 2026-11-11 | 2026-11-21
+erp   |  0 |      -     |      -
+```
+
+**结论：erp 已发布，但消费方未接（`domain_key='erp'` 0 行）。**
+
+对照：`legal` 域 55 行、跨 11 天，说明这套拉起事件的机制本身是工作的——
+不是表没通，是这个域还没有消费方来拉。按任务判据这属于「=0 如实记
+『已发布、消费方未接』」，**不记「已接通」**。
+
+（发布成功 ≠ 有人消费。这条判据存在的意义就是防这个混同。）
