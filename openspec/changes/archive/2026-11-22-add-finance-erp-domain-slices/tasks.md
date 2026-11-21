@@ -51,7 +51,7 @@
   - **2026-11-22 06:30 完成，但跑法必须换**：单进程 2646 条会被 SIGKILL 在中途 40-46%
     （`ps` 里进程直接消失、无 traceback、无 OOM 记录）。改成**按文件切 6 块并行**
     （每块 34-35 个 `tests/test_*.py`）后全部跑完：
-    c0 530 passed / c1 456 passed / c2 见下 / c3 354 passed / c4 319 passed /
+    c0 530 passed / c1 456 passed / c2 503 passed / c3 354 passed / c4 319 passed /
     c5 **2 failed, 406 passed**。
   - 那 2 个失败是**真缺陷**（不是环境）：`tests/test_seed_finance_gold.py` 读到
     `FileNotFoundError: <repo>/fd-sentiment/gold/gold-v9.json`。根因 `1df8046`（11-19）
