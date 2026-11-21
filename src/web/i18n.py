@@ -1557,6 +1557,7 @@ LOCALES: dict[str, dict[str, Any]] = {
                 "sample": "样本",
                 "clause": "条款",
                 "law_info": "法规",
+                "fact": "金标事实",
             },
         },
         "ledger": {
@@ -3091,6 +3092,7 @@ LOCALES: dict[str, dict[str, Any]] = {
                 "sample": "Sample",
                 "clause": "Clause",
                 "law_info": "Law info",
+                "fact": "Gold fact",
             },
         },
         "ledger": {

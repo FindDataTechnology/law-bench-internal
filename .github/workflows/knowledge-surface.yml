@@ -134,5 +134,6 @@ jobs:
           pytest -q tests/test_crosswalk_endpoint_rule.py \
                     tests/test_bench_crosswalk_metrics.py \
                     tests/test_finance_erp_scripts.py \
+                    tests/test_finance_asset_catalog.py \
                     tests/test_seed_finance_gold.py \
                     tests/test_import_account_mapping_crosswalks.py
