@@ -191,7 +191,10 @@ def test_full_chain_and_gold_requires_reviewer(db_conn):
 
 def test_steps_are_adjacent_no_skipping(db_conn):
     _sync(db_conn)
-    with pytest.raises(TierTransitionError, match="one adjacent step"):
+    # A synced unit lands at `bronze`, which is the entry tier and sits outside
+    # the main ladder (2026-11-21). It may only step to `silver`; jumping to gold
+    # is refused by the entry-tier rule, and the message names the way through.
+    with pytest.raises(TierTransitionError, match="只能升到 'silver'"):
         promotion.promote_unit(db_conn, kind="entity", external_key="1",
                                namespace=NAMESPACE, to_tier="gold",
                                reviewer="rev@example.com")

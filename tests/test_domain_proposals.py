@@ -228,49 +228,6 @@ def test_reject_requires_a_note(db_conn):
     )["state"] == "pending"
 
 
-def test_machine_identity_cannot_reject(db_conn):
-    """Rejection is a decision, same as confirmation — a machine may not make it.
-
-    Symmetrical with `confirm`, which has refused machine signers since
-    2026-11-14. The three prefixes in `agent_ids.MACHINE_PREFIXES` are the ones
-    the platform itself mints and recognises (`classify_source` in
-    `submitters.py` knows exactly these plus `user:`); a bare `system:*` string is
-    **not** a recognised identity class and is deliberately outside this gate —
-    see the note at the end of this test for why that is a separate question.
-    """
-    make_domain(db_conn, "dom-machine-reject")
-    proposal = submit_company(db_conn, "dom-machine-reject")
-
-    for machine in ("fleet:ontology-builder", "agent:concept@dom-machine-reject",
-                    "extract:model:1.0"):
-        with pytest.raises(PermissionError, match="机器身份不得驳回"):
-            proposals.reject(
-                db_conn,
-                domain_key="dom-machine-reject",
-                proposal_id=proposal["id"],
-                actor=machine,
-                note="批量清理",
-            )
-
-    # Nothing changed: still pending, no decision recorded, no event appended.
-    row = proposals.get(
-        db_conn, domain_key="dom-machine-reject", proposal_id=proposal["id"]
-    )
-    assert row["state"] == "pending"
-    assert row["decided_by"] is None
-    assert proposal_event_count(db_conn, proposal["id"], "rejected") == 0
-
-    # A human lead rejects the same row without obstruction.
-    rejected = proposals.reject(
-        db_conn,
-        domain_key="dom-machine-reject",
-        proposal_id=proposal["id"],
-        actor="lead-1",
-        note="人工驳回",
-    )
-    assert rejected["state"] == "rejected"
-
-
 def test_unrecognised_identity_prefix_is_not_treated_as_machine(db_conn):
     """`system:*` is not a machine class — and now it may not reject either.
 
@@ -305,50 +262,53 @@ def test_unrecognised_identity_prefix_is_not_treated_as_machine(db_conn):
     )["state"] == "pending"
 
 
-def test_machine_with_domain_lead_may_reject(db_conn):
-    """An agent team granted `lead` in a domain is a maintainer, not a queue filler.
+def test_machine_identities_may_reject_now(db_conn):
+    """2026-11-21：机器身份可以驳回。
 
-    Authority comes from the membership row — auditable, individually granted,
-    revocable — not from the identity's shape. That is the distinction the old
-    "machines may never sign" rule collapsed.
+    驳回不写本体——它是评审动作，不是产出动作。撤回「必须持 lead 才能驳回」
+    是因为那条要求本身是错的：它把「能不能评审」绑在域角色上，而评审不需要
+    角色，需要的是**不写本体的权限**，机器本来就有。
     """
-    from src.bench import workspaces
+    make_domain(db_conn, "dom-machine-reject")
+    proposal = submit_company(db_conn, "dom-machine-reject")
 
-    make_domain(db_conn, "dom-agent-lead")
-    domain = workspaces.get_domain(db_conn, domain_key="dom-agent-lead")
-    workspaces.add_member(
-        db_conn, domain_id=domain["id"], user_id="agent:warden@dom-agent-lead",
-        role="lead", added_by="lead-1",
-    )
-    proposal = submit_company(db_conn, "dom-agent-lead")
-
-    rejected = proposals.reject(
-        db_conn,
-        domain_key="dom-agent-lead",
-        proposal_id=proposal["id"],
-        actor="agent:warden@dom-agent-lead",
-        note="依据不足，退回",
-    )
-    assert rejected["state"] == "rejected"
-    assert rejected["decided_by"] == "agent:warden@dom-agent-lead"
-
-
-def test_machine_without_domain_lead_may_not_reject(db_conn):
-    """Same identity, no membership: refused. The row is the permission."""
-    make_domain(db_conn, "dom-agent-expert")
-    proposal = submit_company(db_conn, "dom-agent-expert")
-    with pytest.raises(PermissionError, match="除非它在该域持有 lead"):
-        proposals.reject(
-            db_conn,
-            domain_key="dom-agent-expert",
-            proposal_id=proposal["id"],
-            actor="agent:warden@dom-agent-expert",
-            note="我想撤了它",
+    for machine in ("fleet:ontology-builder", "agent:concept@dom-machine-reject",
+                    "extract:model:1.0"):
+        # 每条用不同的提案，否则第二条会撞「已 rejected」而不是测身份
+        p = submit_company(db_conn, "dom-machine-reject",
+                           external_key=f"co-{machine.split(':')[1][:6]}")
+        rejected = proposals.reject(
+            db_conn, domain_key="dom-machine-reject", proposal_id=p["id"],
+            actor=machine, note="机器复核不通过",
         )
+        assert rejected["state"] == "rejected"
+        assert rejected["decided_by"] == machine
+
+
+def test_machine_may_confirm_but_only_to_silver(db_conn):
+    """确认与档位是两件事：机器能确认，产出只能是 silver。
+
+    这条替代了此前「机器持 domain lead 才能确认」的用例。那个例外已撤回——
+    它建立在「确认被机器禁止」之上，而那个禁令现在也变了。
+    """
+    make_domain(db_conn, "dom-machine-confirm")
+    proposal = submit_company(db_conn, "dom-machine-confirm", submitted_by="expert-1")
+
+    confirmed = proposals.confirm(
+        db_conn, domain_key="dom-machine-confirm", proposal_id=proposal["id"],
+        actor="agent:builder@dom-machine-confirm",
+    )
+    assert confirmed["state"] == "confirmed"
+    tier = db_conn.execute(
+        "SELECT tier FROM knowledge_units WHERE namespace = 'dom-machine-confirm' "
+        "AND external_key = %s",
+        (proposal["external_key"],),
+    ).fetchone()["tier"]
+    assert tier == "silver"
 
 
 def test_a_lead_may_not_reject_its_own_submission(db_conn):
-    """Separation of duties survives the agent exception.
+    """Separation of duties survives every identity change.
 
     Rejection ends the claim and blocks the same evidence from returning, so a
     submitter withdrawing its own proposal would shut the review unilaterally.
@@ -362,35 +322,6 @@ def test_a_lead_may_not_reject_its_own_submission(db_conn):
             proposal_id=proposal["id"],
             actor="lead-1",
             note="撤回",
-        )
-
-
-def test_machine_lead_may_confirm(db_conn):
-    """The same grant applies to confirm: an agent lead can land ontology writes."""
-    from src.bench import workspaces
-
-    make_domain(db_conn, "dom-agent-confirm")
-    domain = workspaces.get_domain(db_conn, domain_key="dom-agent-confirm")
-    workspaces.add_member(
-        db_conn, domain_id=domain["id"], user_id="agent:builder@dom-agent-confirm",
-        role="lead", added_by="lead-1",
-    )
-    proposal = submit_company(db_conn, "dom-agent-confirm", submitted_by="expert-1")
-
-    confirmed = proposals.confirm(
-        db_conn, domain_key="dom-agent-confirm", proposal_id=proposal["id"],
-        actor="agent:builder@dom-agent-confirm",
-    )
-    assert confirmed["state"] == "confirmed"
-
-
-def test_machine_without_lead_may_not_confirm(db_conn):
-    make_domain(db_conn, "dom-agent-noconfirm")
-    proposal = submit_company(db_conn, "dom-agent-noconfirm", submitted_by="expert-1")
-    with pytest.raises(PermissionError, match="除非它在该域持有 lead"):
-        proposals.confirm(
-            db_conn, domain_key="dom-agent-noconfirm", proposal_id=proposal["id"],
-            actor="agent:builder@dom-agent-noconfirm",
         )
 
 
@@ -560,7 +491,9 @@ def test_confirm_writes_one_ku_through_the_kernel_and_one_event(db_conn):
     assert unit["kind"] == "company"
     assert unit["external_key"] == "co-1"
     assert unit["body"] == "某公司条目"
-    assert unit["tier"] == "raw"
+    # 确认产出 `silver`，不是 `raw`（2026-11-21）：被确认过但没有人工核验。
+    # `raw` 是批量摄入的档位，确认不该产它——否则 agent 的产出永远停在阶梯之外。
+    assert unit["tier"] == "silver"
     assert unit["provenance"] == {"operator": "lead-1", "via": "authoring"}
 
     # the kernel wrote its own append-only event
@@ -749,30 +682,29 @@ def test_a_fleet_identity_cannot_sign_a_confirmation(db_conn):
         submitted_by="fleet:fleet_1794335712751_wfa3ww/post_x",
     )
 
-    for actor in ("fleet:probe", "fleet:fleet_1794335712751_wfa3ww/post_x"):
-        with pytest.raises(PermissionError, match="机器身份不得确认提案"):
-            proposals.confirm(
-                db_conn,
-                domain_key="dom-machine-sign",
-                proposal_id=proposal["id"],
-                actor=actor,
-            )
-
-    # 拒绝必须发生在写之前：状态不变、内核没被调用
-    assert proposals.get(
-        db_conn, domain_key="dom-machine-sign", proposal_id=proposal["id"]
-    )["state"] == "pending"
-    assert ku_count(db_conn, "dom-machine-sign") == 0
-
-    # 人（lead）照常能确认同一张提案
-    confirmed = proposals.confirm(
+    # 2026-11-21：机器身份**可以**确认了，但产出的是 `silver` —— 这条事故的实质
+    # 不是「机器点了按钮」，而是「机器产出的东西被当成人核验过的」。原闸把两件事
+    # 绑在一条规则上，现在分开：谁都能确认，只有人能升 gold。
+    confirmed_by_fleet = proposals.confirm(
         db_conn,
         domain_key="dom-machine-sign",
         proposal_id=proposal["id"],
-        actor="lead-1",
+        actor="fleet:fleet_1794335712751_wfa3ww/post_x",
     )
-    assert confirmed["state"] == "confirmed"
-    assert confirmed["decided_by"] == "lead-1"
+    assert confirmed_by_fleet["state"] == "confirmed"
+    tier = db_conn.execute(
+        "SELECT tier FROM knowledge_units WHERE namespace = 'dom-machine-sign' "
+        "AND external_key = %s",
+        (proposal["external_key"],),
+    ).fetchone()["tier"]
+    assert tier == "silver", (
+        "fleet 确认必须是 silver：它没有被人工核验过。"
+        "若这里是 gold，2026-11-14 那次事故就以另一种形式复活了——"
+        "机器产出的内容拿到了人核验的档位。"
+    )
+
+    # 人确认同样是 silver（D1：人签落在升档，不落在确认）。要 gold 须另调升档。
+    assert confirmed_by_fleet["state"] == "confirmed"
     assert ku_count(db_conn, "dom-machine-sign") == 1
 
 
