@@ -140,6 +140,29 @@ def test_reregistering_the_same_kind_identically_is_idempotent():
     assert domain_assets.providers()["stable"] == provider
 
 
+def test_publication_kind_allows_a_shape_bump_but_not_a_projection_change():
+    """`shape_version` is a version number; the other three fields *are* the kind.
+
+    Bumping the shape on the same kind is the documented way to evolve a
+    projection without invalidating digests — `test_typed_publications_kernel`
+    does exactly that. Changing the relation/label/sort key under an existing name
+    is the cross-pack clash this guard exists for.
+    """
+    provider = {
+        "relation": "SELECT 1 AS asset_key, 1 AS name, 1 AS summary",
+        "label_key": "k", "sort_key": "name", "shape_version": 1,
+    }
+    publication_kinds.register_kinds({"shape-demo": provider})
+    publication_kinds.register_kinds({"shape-demo": {**provider, "shape_version": 2}})
+    assert publication_kinds.resolve("shape-demo")["shape_version"] == 2
+
+    with pytest.raises(ValueError, match="already registered by another pack"):
+        publication_kinds.register_kinds({
+            "shape-demo": {**provider,
+                           "relation": "SELECT 2 AS asset_key, 2 AS name, 2 AS summary"},
+        })
+
+
 def test_finance_pack_does_not_redefine_rubric():
     """`rubric` belongs to the legal pack; this pack must not touch it."""
     legal_rubrics_before = domain_assets.providers().get("rubric")

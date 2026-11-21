@@ -108,15 +108,26 @@ def register_kinds(providers: Mapping[str, Mapping[str, Any]]) -> None:
         kind: _validate_provider(kind, provider)
         for kind, provider in providers.items()
     }
+    # Conflict = the *projection* differs, not the whole dict. `shape_version` is
+    # excluded on purpose: it is a version number that exists precisely so a
+    # consumer can be told the shape moved without any digest changing
+    # (`test_shape_version_is_outside_the_payload_and_the_digest` bumps it on the
+    # same kind by design). Refusing that would forbid the feature this module
+    # documents. The three identity fields are what actually decide which rows
+    # and columns a kind projects.
     clashes = sorted(
         kind for kind, provider in validated.items()
-        if kind in _PROVIDERS and _PROVIDERS[kind] != provider
+        if kind in _PROVIDERS
+        and {f: _PROVIDERS[kind].get(f) for f in _STRING_FIELDS}
+        != {f: provider.get(f) for f in _STRING_FIELDS}
     )
     if clashes:
         raise ValueError(
             "publication kind(s) already registered by another pack with a "
             f"different projection: {', '.join(clashes)}. A kind name is "
-            "process-global; give this pack's kind its own name."
+            "process-global; give this pack's kind its own name. "
+            "(Bumping shape_version on the same kind is allowed and is not a "
+            "conflict.)"
         )
     global KINDS
     _PROVIDERS.update(validated)
