@@ -104,11 +104,27 @@ def test_a_human_key_may_still_be_admin(conn):
 # ── 第二道闸：确认 ──────────────────────────────────────────────────────────
 
 
-def test_an_agent_can_never_confirm(conn):
-    proposal = _submit(conn)
-    with pytest.raises(PermissionError, match="机器身份不得确认提案"):
-        proposals.confirm(conn, domain_key="legal", proposal_id=proposal["id"],
-                          actor="agent:verifier@legal", admin_override=False)
+def test_an_agent_may_confirm_but_only_to_silver(conn):
+    """2026-11-21 修订：禁令从「不得确认」改为「确认产出 silver」。
+
+    原文断言的是「机器身份不得确认提案」。改的是承载物不是尺度：agent 现在可以
+    确认，但它产出的内容拿不到人核验的档位——这才是不许机器签字的本意。
+    """
+    from src.bench import store
+
+    # 由人提交、agent 确认——自提自确认对所有身份都禁，所以两者必须不同身份。
+    proposal = _submit(conn, source="user:expert@example.com",
+                       key="违约金调整-他人提交")
+    confirmed = proposals.confirm(
+        conn, domain_key="legal", proposal_id=proposal["id"],
+        actor="agent:verifier@legal", admin_override=False,
+    )
+    assert confirmed["state"] == "confirmed"
+    unit = store.get_knowledge_unit(
+        conn, kind=proposal["kind"], external_key=proposal["external_key"],
+        namespace="legal",
+    )
+    assert unit["tier"] == "silver"
 
 
 def test_admin_override_does_not_sign_for_an_agent(conn):

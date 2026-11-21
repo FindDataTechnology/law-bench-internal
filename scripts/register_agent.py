@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -87,7 +88,10 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         key = apikey.create_key(
-            identity, args.label or f"{args.role}@{args.domain}", scopes
+            identity, args.label or f"{args.role}@{args.domain}", scopes,
+            # 这是人的运维动作（脚本由人跑），铸造者记成运维裁决身份，
+            # 使审计里读得出「这把钥匙是谁给的」。
+            minted_by=f"ops:{os.environ.get('USER', 'operator')}/register-agent",
         )
         print()
         print("凭据（只显示这一次，请立刻存进 0600 的凭据文件，不要贴进任何文档/提交）：")

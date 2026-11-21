@@ -338,7 +338,7 @@ def create_api_key(
     prefix + salted hash are persisted. The response carries the plaintext plus
     what was requested; the full row (with id) is available via ``GET /api/keys``.
     """
-    plaintext = apikey.create_key(user.sub, body.label, body.scopes)
+    plaintext = apikey.create_key(user.sub, body.label, body.scopes, minted_by=user.sub)
     return {
         "key": plaintext,
         "label": body.label,

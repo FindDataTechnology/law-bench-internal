@@ -283,6 +283,26 @@ def _is_human_or_user_actor(actor: str) -> bool:
     return True
 
 
+def _is_same_producer(proposal: dict, *, actor: str) -> bool:
+    """Whether ``actor`` is the submitter — including "same pipeline, other name".
+
+    A proposal carries three self-declarations: ``submitted_by``, ``source`` and
+    the ``sources`` list. A pipeline that uses both a `source` prefix and a
+    `submitted_by` label can confirm its own proposal by signing under the other
+    one — that is what `extract:source-scouting:1.0` confirming
+    `system:source-scouting`'s proposal did (found 2026-11-21, after the blanket
+    "machines may not confirm" rule was replaced by the tier mechanism).
+
+    The rule is therefore "no name this proposal claims is the actor's own", not
+    "submitted_by equals actor". Comparing only the primary field is how the gap
+    opened in the first place.
+    """
+    names = {proposal.get("submitted_by"), proposal.get("source")}
+    names.update(proposal.get("sources") or [])
+    names.discard(None)
+    return actor in {str(n).strip() for n in names}
+
+
 def _load_domain(conn: Any, *, domain_key: str) -> dict:
     """Resolve the domain or refuse the operation (fail-closed isolation)."""
     domain = workspaces.get_domain(conn, domain_key=domain_key)
@@ -952,7 +972,7 @@ def confirm(
         raise PermissionError(
             "管理员豁免不适用于机器身份提交的提案；请由人类负责人正常确认"
         )
-    if proposal["submitted_by"] == actor and not admin_override:
+    if _is_same_producer(proposal, actor=actor) and not admin_override:
         raise PermissionError("提案人不得自提自确认")
 
     _write_through_kernel(conn, domain=domain, proposal=proposal, actor=actor)
@@ -1056,7 +1076,7 @@ def reject(
     # digest 的再提交被拒，所以「我提交、我自己撤」等于让提交方单方面关掉评审。
     # confirm 早就有这道闸，reject 一直没有——补上之后，被授予 lead 的 agent 也
     # 不能靠自己提交、再自己撤销把一条主张悄悄抹掉。
-    if proposal["submitted_by"] == actor:
+    if _is_same_producer(proposal, actor=actor):
         raise PermissionError(
             "不得驳回自己提交的提案；撤回请由同域另一位 lead 或运维裁决身份执行"
         )
