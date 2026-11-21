@@ -114,6 +114,8 @@ def test_an_agent_may_confirm_but_only_to_silver(conn):
 
     # 由人提交、agent 确认——自提自确认对所有身份都禁，所以两者必须不同身份。
     proposal = _submit(conn, source="user:expert@example.com",
+                       # `user:` 类别比对的是前缀后的身份，不是带前缀的全串
+                       authenticated_as="expert@example.com",
                        key="违约金调整-他人提交")
     confirmed = proposals.confirm(
         conn, domain_key="legal", proposal_id=proposal["id"],
