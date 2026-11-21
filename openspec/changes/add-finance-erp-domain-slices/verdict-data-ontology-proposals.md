@@ -149,3 +149,15 @@ monitor     49 行  period 取值 3 个
 `data-ontology` 的唯一成员是 `fleet:ontology-builder`（`expert`），没有任何人类
 `lead`/`admin`。后果是**任何提案都无法在该域被确认**，只能由运维身份驳回。
 补一个人类 lead 是运维动作（`workspaces.add_member`），不是代码改动，本轮未做。
+
+## 2026-11-21 后记：档位语义变更后的状态
+
+本裁决单执行之后，`add-agent-autonomous-iteration` 改了确认的产出档位：
+
+- 两条**已确认**的单元（`securities_company_financials` / `securities_industry_monitor`）
+  原为 `tier='raw'`，已补账为 **`silver`**（provenance 里记了 `tier_backfill` 与原因）。
+  没有重放确认动作——那会再写一次内容、再记一条事件。
+- `fleet:ontology-builder` 当时被升为 `lead` 以便确认，**已退回 `expert`**。
+  它的确认能力改由档位机制提供：确认产出 `silver`，不需要域角色。
+  生产实测：`expert` 级的它仍然能确认，落库 `silver`。
+- 该域现在是：`aloadtree@gmail.com(lead, 人)` + `fleet:ontology-builder(expert, agent)`。
