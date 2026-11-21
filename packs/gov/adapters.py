@@ -73,7 +73,12 @@ GOV_REPO = Path(
     # .name is "" — so `SENTIMENT_REPO.name == "fd-cn-gov"` (the thing that tells a
     # reader where the default points) silently became false. The env var still
     # wins at call time via the accessor.
-    os.environ.get("FD_GOV_REPO", "") or (Path(__file__).resolve().parents[2] / "fd-cn-gov")
+    #
+    # 2026-11-22 订正：原写 parents[2] = 本仓根本身（<repo>/packs/<pack> 往上两级），
+    # 于是默认指向 `<repo>/fd-sentiment` —— 一个仓内不存在的路径。它看起来对，是因为
+    # 那条 `.name == "fd-sentiment"` 的断言在两级和三级上都成立（末段同名），
+    # 真正读文件时才 FileNotFoundError。兄弟仓在**仓的旁边**，是 parents[3]。
+    os.environ.get("FD_GOV_REPO", "") or (Path(__file__).resolve().parents[3] / "fd-cn-gov")
 )
 
 # Registry file inside the sibling repo (verified to exist there).
