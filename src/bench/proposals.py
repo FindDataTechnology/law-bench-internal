@@ -981,6 +981,20 @@ def reject(
             "a confirmed proposal cannot be rejected"
         )
 
+    # 机器身份闸，与 ``confirm`` 的第一道同源、同理。
+    #
+    # 驳回和确认一样是**裁决**：它写 ``decided_by``、终止这条主张、并让同 digest
+    # 的再次提交被拒（PROPOSAL_STALE_EVIDENCE）。confirm 早就拦了机器签字人，
+    # reject 一直没拦——于是任何 ``system:*`` 形状的身份都能驳回，而
+    # ``fleet:``/``agent:``/``extract:`` 反而被 ``is_machine`` 认出。
+    #
+    # 2026-11-21 实测到的后果不是假设：``data-ontology`` 域由 ``system:ontology-fleet``
+    # 创建、唯一成员是 ``fleet:ontology-builder``，域内没有任何人类 lead。在这种域里
+    # 「谁能驳回」实际只由身份字符串的形状决定，而形状恰恰是最容易伪造的部分。
+    # 加固后人工 lead 正常驳回（``user:``/邮箱）不受任何影响。
+    if agent_ids.is_machine(actor):
+        raise PermissionError("机器身份不得驳回提案；驳回是人类 lead 的职责")
+
     cur = conn.execute(
         f"UPDATE domain_proposals SET state = 'rejected', decided_by = %s, "
         f"decided_at = now(), decision_note = %s "

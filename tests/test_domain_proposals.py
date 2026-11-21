@@ -228,6 +228,49 @@ def test_reject_requires_a_note(db_conn):
     )["state"] == "pending"
 
 
+def test_machine_identity_cannot_reject(db_conn):
+    """Rejection is a decision, same as confirmation — a machine may not make it.
+
+    Symmetrical with `confirm`, which has refused machine signers since
+    2026-11-14. Before this guard, `fleet:`/`agent:`/`extract:` were caught by
+    `is_machine` while any `system:*` string sailed through — so in a domain with
+    no human lead (measured 2026-11-21: `data-ontology`, sole member
+    `fleet:ontology-builder`) "who may reject" came down to the shape of an
+    identity string, which is the easiest part to type.
+    """
+    make_domain(db_conn, "dom-machine-reject")
+    proposal = submit_company(db_conn, "dom-machine-reject")
+
+    for machine in ("system:import", "fleet:ontology-builder",
+                    "agent:concept@dom-machine-reject", "extract:model:1.0"):
+        with pytest.raises(PermissionError, match="机器身份不得驳回"):
+            proposals.reject(
+                db_conn,
+                domain_key="dom-machine-reject",
+                proposal_id=proposal["id"],
+                actor=machine,
+                note="批量清理",
+            )
+
+    # Nothing changed: still pending, no decision recorded, no event appended.
+    row = proposals.get(
+        db_conn, domain_key="dom-machine-reject", proposal_id=proposal["id"]
+    )
+    assert row["state"] == "pending"
+    assert row["decided_by"] is None
+    assert proposal_event_count(db_conn, proposal["id"], "rejected") == 0
+
+    # A human lead rejects the same row without obstruction.
+    rejected = proposals.reject(
+        db_conn,
+        domain_key="dom-machine-reject",
+        proposal_id=proposal["id"],
+        actor="lead-1",
+        note="人工驳回",
+    )
+    assert rejected["state"] == "rejected"
+
+
 def test_reject_then_resubmit_needs_new_evidence(db_conn):
     """Same evidence after rejection -> refused; different evidence -> a new
     pending row (the rejected row stays on record)."""
