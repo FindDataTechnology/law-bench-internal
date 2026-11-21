@@ -26,9 +26,6 @@ env:
   NAMESPACE: law-bench
 
 jobs:
-  # 测试先跑：合同模板/槽位审计/条款装配/评测规则是核心不变量，测试不过不应出片。
-  # 套件是 hermetic 的，只要求一个可达 PostgreSQL（conftest 为每个用例建库）。
-  # 需要真实 MinIO 的两个集成用例带 @pytest.mark.external，这里显式排除并打印清单。
   test:
     runs-on: ubuntu-latest
     services:
@@ -81,89 +78,19 @@ jobs:
           echo "== 正式跑 =="
           python -m pytest tests -q -m "not external"
 
-  build-push:
+  law-template:
     needs: test
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - image: law-template
-            dockerfile: Dockerfile
-          - image: law-render
-            dockerfile: Dockerfile.render
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    uses: FindDataTechnology/fd-ci/.github/workflows/image-build.yml@main
+    secrets: inherit
+    with:
+      image: law-template
+      namespace: law-bench
 
-      - uses: docker/setup-buildx-action@v3
-
-      - uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.TCR_USERNAME }}
-          password: ${{ secrets.TCR_PASSWORD }}
-
-      # 内容基线：读 main 当前 digest（未认证/不存在都容忍，空 = 首次构建）
-      - id: prev
-        name: 读 main 当前 digest（内容基线）
-        run: |
-          img="$REGISTRY/$NAMESPACE/${{ matrix.image }}"
-          cur=$(docker buildx imagetools inspect "$img:main" \
-                --format '{{.Manifest.Digest}}' 2>/dev/null || true)
-          echo "digest=$cur" >> "$GITHUB_OUTPUT"
-          echo "${{ matrix.image }} main 当前 digest: ${cur:-<不存在，本次为首次构建>}"
-
-      - id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ matrix.image }}
-          tags: |
-            type=raw,value=main
-
-      - id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ${{ matrix.dockerfile }}
-          platforms: linux/amd64
-          push: true
-          # 硬约束：开了 attestation，同内容两次构建 digest 必然不同，闸门永久失效。
-          provenance: false
-          tags: ${{ steps.meta.outputs.tags }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      # 内容闸门：digest 变了才铸 sha-<commit>，让「同内容多 tag」结构上不可能。
-      - name: 内容变了才铸不可变 tag
-        env:
-          NEW: ${{ steps.build.outputs.digest }}
-          OLD: ${{ steps.prev.outputs.digest }}
-          IMAGE: ${{ matrix.image }}
-        run: |
-          set -euo pipefail
-          img="$REGISTRY/$NAMESPACE/${{ matrix.image }}"
-          [ -n "$NEW" ] || { echo "::error::构建未产出 digest"; exit 1; }
-          if [ "$NEW" = "$OLD" ]; then
-            echo "内容未变（${NEW}）：不铸新 tag"
-            {
-              echo "### 内容未变，未产出新 tag"
-              echo ""
-              echo "本次构建与 \`main\` 当前指向完全一致。"
-              echo ""
-              echo "- 可直接 pin：\`$img@$NEW\`"
-              echo "- 滚动引用：\`$img:main\`"
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          tag="sha-${GITHUB_SHA::7}"
-          docker buildx imagetools create -t "$img:$tag" "$img@$NEW"
-          echo "已铸 $tag → $NEW"
-          {
-            echo "### 内容有变化，已铸不可变 tag"
-            echo ""
-            echo "| 字段 | 值 |"
-            echo "|---|---|"
-            echo "| tag | \`$tag\` |"
-            echo "| digest | \`$NEW\` |"
-            echo "| 上一内容 digest | \`${OLD:-<无>}\` |"
-          } >> "$GITHUB_STEP_SUMMARY"
+  law-render:
+    needs: test
+    uses: FindDataTechnology/fd-ci/.github/workflows/image-build.yml@main
+    secrets: inherit
+    with:
+      image: law-render
+      namespace: law-bench
+      dockerfile: Dockerfile.render
