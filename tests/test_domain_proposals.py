@@ -232,17 +232,17 @@ def test_machine_identity_cannot_reject(db_conn):
     """Rejection is a decision, same as confirmation — a machine may not make it.
 
     Symmetrical with `confirm`, which has refused machine signers since
-    2026-11-14. Before this guard, `fleet:`/`agent:`/`extract:` were caught by
-    `is_machine` while any `system:*` string sailed through — so in a domain with
-    no human lead (measured 2026-11-21: `data-ontology`, sole member
-    `fleet:ontology-builder`) "who may reject" came down to the shape of an
-    identity string, which is the easiest part to type.
+    2026-11-14. The three prefixes in `agent_ids.MACHINE_PREFIXES` are the ones
+    the platform itself mints and recognises (`classify_source` in
+    `submitters.py` knows exactly these plus `user:`); a bare `system:*` string is
+    **not** a recognised identity class and is deliberately outside this gate —
+    see the note at the end of this test for why that is a separate question.
     """
     make_domain(db_conn, "dom-machine-reject")
     proposal = submit_company(db_conn, "dom-machine-reject")
 
-    for machine in ("system:import", "fleet:ontology-builder",
-                    "agent:concept@dom-machine-reject", "extract:model:1.0"):
+    for machine in ("fleet:ontology-builder", "agent:concept@dom-machine-reject",
+                    "extract:model:1.0"):
         with pytest.raises(PermissionError, match="机器身份不得驳回"):
             proposals.reject(
                 db_conn,
@@ -267,6 +267,42 @@ def test_machine_identity_cannot_reject(db_conn):
         proposal_id=proposal["id"],
         actor="lead-1",
         note="人工驳回",
+    )
+    assert rejected["state"] == "rejected"
+
+
+def test_unrecognised_identity_prefix_is_not_treated_as_machine(db_conn):
+    """Pins a known gap rather than pretending it is covered.
+
+    `agent_ids.is_machine` recognises the three prefixes the platform mints
+    (`agent:` / `fleet:` / `extract:`). `system:*` is **not** one of them, so an
+    actor of `system:anything` passes this gate and can reject.
+
+    This is asserted, not fixed: `system:*` is also absent from
+    `submitters.classify_source`, so it is an unrecognised identity class rather
+    than a machine one — several scripts do use it as an operator label
+    (`operator="system:import"`). Whether the platform should mint a `system:`
+    class is a separate decision from whether rejection is human-only; folding
+    them together here would change `confirm`'s behaviour too.
+
+    What this test buys: if someone later adds `system:` to MACHINE_PREFIXES,
+    this fails and forces that change to be deliberate.
+    """
+    make_domain(db_conn, "dom-system-prefix")
+    proposal = submit_company(db_conn, "dom-system-prefix")
+
+    # Today: not classified as machine, so the gate does not stop it.
+    from src.bench.agent_ids import MACHINE_PREFIXES, is_machine
+
+    assert not any(p.startswith("system") for p in MACHINE_PREFIXES)
+    assert is_machine("system:import") is False
+
+    rejected = proposals.reject(
+        db_conn,
+        domain_key="dom-system-prefix",
+        proposal_id=proposal["id"],
+        actor="system:import",
+        note="脚本清理",
     )
     assert rejected["state"] == "rejected"
 

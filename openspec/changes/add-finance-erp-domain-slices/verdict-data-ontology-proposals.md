@@ -1,8 +1,8 @@
 # 裁决单：data-ontology 域 7 条 pending 提案
 
 > 状态：**未执行，等待人类 lead 签字**。域内唯一成员是 `fleet:ontology-builder`
-> （机器身份），`system:*` 身份驳回会绕过 `confirm` 有而 `reject` 没有的机器身份闸
-> —— 见文末「为什么不自动执行」。
+> （机器身份，`reject` 的机器闸会拦它），域内没有任何 `lead`/`admin` 成员——
+> 见文末「为什么不自动执行」。
 > 调研时间：2026-11-21。数据来源：`wire_datasets` 真行聚合 + `law_bench` 提案表。
 
 ## 结论
@@ -65,12 +65,19 @@ monitor ⊇ financials: True，交集 3 个
 
 ## 为什么不自动执行
 
-1. **`reject` 缺少 `confirm` 有的机器身份闸**。`proposals.py:909` 拦住机器身份确认提案；
-   `reject()` 没有对应检查。因此一个 `system:*` 身份**能**驳回提案。我用它，等于用一个
-   设计漏洞替人做决定，而不是走设计给的路。
-2. **域里没有人类 lead**。`data-ontology` 唯一成员是 `fleet:ontology-builder`（expert），
-   `reject` 的路由侧要求 `lead` 角色（`console.py:263` 的 `require_domain_role("lead")`），
-   所以正常路径下这个域**当前无法被驳回任何提案**——这是一个独立于本裁决的运维缺口。
+1. **域里没有任何人类成员，这才是真障碍**。`data-ontology` 唯一成员是
+   `fleet:ontology-builder`（`expert`）。驳回的路由侧要求 `lead` 角色
+   （`console.py:263` 的 `require_domain_role("lead")`），而机器身份在 bench 层被
+   `reject` 的新闸拦住（`proposals.py`，2026-11-21 补，与 `confirm` 对称）。
+   **两条路都关着**：正常路径下这个域当前无法处置任何提案。
+   正解不是放宽闸，是**给这个域加一个人类 lead**——那是运维动作，不是代码动作。
+2. **`system:*` 是一个未闭合的口子，但不是本裁决的抓手**。`agent_ids.MACHINE_PREFIXES`
+   只含 `agent:`/`fleet:`/`extract:`；`submitters.classify_source` 也认不出 `system:`。
+   所以 `actor="system:import"` 能驳回，而 `fleet:` 不能。这不对称，但把 `system:`
+   加进机器类是**改身份体系**（影响 `confirm` 与所有 `operator="system:*"` 的脚本），
+   不属于「让驳回与确认对称」这件事。已由
+   `tests/test_domain_proposals.py::test_unrecognised_identity_prefix_is_not_treated_as_machine`
+   钉住现状：将来有人加它，那条测试会红，逼这个决定被显式做出来。
 3. **驳回是单向的**：同 digest 不可重提，`#90`/`#94` 换证据等于重做整条提案。
 
 ## 执行方式（人类 lead 签字后）
