@@ -7,6 +7,16 @@
 #
 # Matrix on push: law-template (web app + bundled MCP) + law-render
 # (extract-render-service: shared DOCX->PDF render pod).
+#
+# **本仓是这两个镜像名的唯一写者（2026-11-22）。**
+#
+# 公开导出面 `FindDataTechnology/law-bench` 也有一个同内容的 image.yml，两仓都推
+# `law-bench/law-template` 与 `law-bench/law-render` —— 谁最后跑谁定义 `:main`。
+# 那个仓已归档，但归档挡 push、不挡 workflow_dispatch，所以它的 workflow 仍是
+# 一个可触发的第二写者。该文件已删除。
+#
+# 因此：本仓的 image.yml 不能被导出到公开面。导出白名单若整目录带 `.github/`，
+# 需要显式排除这个文件；否则每导一次就把冲突装回去。
 name: image
 
 on:
