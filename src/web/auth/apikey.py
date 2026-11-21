@@ -126,6 +126,14 @@ def create_key(
                 "它只能是目标域里 role=expert 的普通成员"
             )
 
+    # 铸凭据是硬停动作之一：机器身份不得执行（硬停清单的落点，见 hard_stops）。
+    # 这与上面那道「agent 不得持 admin」是两个问题：那道管**铸出什么**，这道管
+    # **谁能铸**。机器一旦能替自己或同伴铸凭据，上面那道闸就形同虚设——它可以
+    # 铸一把带 admin 的给另一个身份，再让那个身份去签字。
+    from ...bench import hard_stops
+
+    hard_stops.check(user_id, "mint_credential")
+
     ensure_schema(db_path)
     scopes_json = json.dumps(list(scopes) if scopes else [], ensure_ascii=False)
 

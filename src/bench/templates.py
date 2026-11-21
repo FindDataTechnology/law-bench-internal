@@ -331,7 +331,12 @@ def update_template(conn: Any, *, name: str, schema: dict, created_by: str) -> d
     An as-yet unseen name gets version 1 (the literal ``max + 1`` with ``max``
     treated as 0); callers that require an existing template should guard with
     :func:`get_template` first.
+
+    模板升版是硬停动作之一：机器身份不得执行（硬停清单的落点，见 ``hard_stops``）。
     """
+    from . import hard_stops
+
+    hard_stops.check(created_by, "change_template_version")
     if not name:
         raise ValueError("name is required")
     problems = validate_template_schema(schema)

@@ -137,3 +137,15 @@ jobs:
                     tests/test_finance_asset_catalog.py \
                     tests/test_seed_finance_gold.py \
                     tests/test_import_account_mapping_crosswalks.py
+
+      # add-agent-autonomous-iteration：硬停清单落代码 + 确认产 silver + 阶梯补全。
+      # 这三组互相依赖（护栏先于放宽），所以单独一步，红的时候一眼看出是哪层。
+      - name: Agent autonomy gates (hard stops + tier ladder + confirm-silver)
+        env:
+          PGPASSWORD: postgres
+        run: |
+          export database_url="postgresql://app@localhost:5432/law_bench"
+          pytest -q tests/test_agent_autonomy_guards.py \
+                    tests/test_agent_autonomous_iteration.py \
+                    tests/test_bench_promotion.py \
+                    tests/test_domain_proposals.py

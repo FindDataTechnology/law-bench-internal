@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from . import templates
+from . import agent_ids, hard_stops, templates
 
 ROLES = ("annotator", "expert", "lead")  # ascending rank
 ROLE_RANK = {"annotator": 0, "expert": 1, "lead": 2}
@@ -135,6 +135,8 @@ def instantiate_domain(
     own key. A missing parent is refused rather than silently creating a root —
     a typo must not detach a sub-domain from its industry parent.
     """
+    # 开域是硬停动作之一：机器身份不得执行（硬停清单的落点，见 hard_stops）。
+    hard_stops.check(created_by, "open_or_archive_domain")
     if not key or not name:
         raise ValueError("key and name are required")
     tmpl = templates.get_template(
@@ -261,6 +263,7 @@ def archive_domain(conn: Any, *, domain_key: str, actor: str) -> dict:
     Only ``archived_at`` is written. Idempotent — archiving twice keeps the first
     timestamp, because "when did this line stop" should not move.
     """
+    hard_stops.check(actor, "open_or_archive_domain")
     domain = get_domain(conn, domain_key=domain_key)
     if domain is None:
         raise ValueError(f"domain {domain_key!r} not found")
@@ -275,6 +278,7 @@ def archive_domain(conn: Any, *, domain_key: str, actor: str) -> dict:
 
 def restore_domain(conn: Any, *, domain_key: str, actor: str) -> dict:
     """Undo an archive: clear the timestamp, nothing else."""
+    hard_stops.check(actor, "open_or_archive_domain")
     domain = get_domain(conn, domain_key=domain_key)
     if domain is None:
         raise ValueError(f"domain {domain_key!r} not found")
@@ -402,10 +406,31 @@ def _insert_member_row(
 def add_member(
     conn: Any, *, domain_id: int, user_id: str, role: str, added_by: str
 ) -> dict:
-    """Add/replace a membership append-only: retire the active row, then insert."""
+    """Add/replace a membership append-only: retire the active row, then insert.
+
+    **A machine identity may not be granted ``lead``.** Its ceiling is ``expert``.
+
+    This is the guard for spec `domain-agent-team`'s "智能体身份是域成员，不是平台
+    管理员". It was written in the spec for months with nothing enforcing it, and on
+    2026-11-21 that gap was used for real: a fleet was promoted to `lead` so it
+    could confirm proposals, which broke three spec clauses at once.
+
+    The refusal names the legitimate path, because the person hitting it is trying
+    to give an agent authority it needs *now* — if the only answer is "no", the
+    next move is to find another way around (which is exactly what happened).
+    An agent that needs to land content confirms proposals and gets `silver`; it
+    does not need a domain role to do that.
+    """
     _validate_role(role)
     if not user_id:
         raise ValueError("user_id is required")
+    if role == "lead" and agent_ids.is_machine(user_id):
+        raise PermissionError(
+            f"机器身份 {user_id!r} 的角色上限是 'expert'，不能授 lead。"
+            "若它需要把内容落进本体：确认提案即可（产出 silver 档），不必提权；"
+            "若确需人来裁决，正解是让人的 lead 去签，或由运维裁决身份 "
+            "ops:<operator>/<reason> 处置。"
+        )
     _deactivate_active_membership(conn, domain_id=domain_id, user_id=user_id)
     member = _insert_member_row(
         conn, domain_id=domain_id, user_id=user_id, role=role, added_by=added_by

@@ -384,7 +384,14 @@ def subscribe(
     ``source_filter=None`` means every source. Narrowing against the parent is
     validated by :func:`effective_sources` — this function only stores the
     claim, because the parent's set may legitimately change later.
+
+    Subscribing is a hard-stop action: a machine identity may not widen what a
+    domain reads (see ``hard_stops``). Not because a source is dangerous, but
+    because "which corpus this domain sees" is a scoping decision a person owns.
     """
+    from . import hard_stops
+
+    hard_stops.check(created_by, "widen_sourcing_scope")
     lib = get_library(conn, library_key=library_key)
     if lib is None:
         raise ValueError(f"library {library_key!r} not found")

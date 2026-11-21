@@ -283,6 +283,7 @@ def _create_unit(
     tags: Optional[dict],
     attrs: Optional[dict],
     vocab_key: str,
+    tier: str = "raw",
 ) -> dict:
     """Shared create path: delegate to the kernel's single write path.
 
@@ -308,7 +309,7 @@ def _create_unit(
             via="authoring",
             tags=tags,
             attrs=attrs,
-            tier="raw",
+            tier=tier,
             provenance={"operator": operator},
             vocab_name=vocab_key,
         )
@@ -368,12 +369,18 @@ def authoring_create_unit(
     operator: str,
     tags: Optional[dict] = None,
     attrs: Optional[dict] = None,
+    tier: str = "raw",
 ) -> dict:
     """Create (or, if the key already exists, effectively update) one unit.
 
     The kind must be in the domain's ``entity_types`` vocabulary; anything
     else is refused with the allowed vocabulary named, before anything is
     written (no KU, no event). Returns the stored KU dict.
+
+    ``tier`` defaults to ``raw`` (bulk/structural ingest). The confirmation path
+    passes ``silver``: a confirmed proposal is reviewed-by-something but not
+    human-verified, and only a human promotion makes it ``gold``. See
+    ``promotion.CHAIN`` and change ``add-agent-autonomous-iteration``.
     """
     domain = _load_domain(conn, domain_key=domain_key)
     return _create_unit(
@@ -386,6 +393,7 @@ def authoring_create_unit(
         tags=tags,
         attrs=attrs,
         vocab_key="entity_types",
+        tier=tier,
     )
 
 
@@ -607,7 +615,12 @@ def authoring_delete_unit(
     """Soft-delete one existing unit (keeps the row, flags it deleted).
 
     Returns the updated KU dict (``tags["deleted"] is True``).
+
+    删除是硬停动作之一：机器身份不得执行（硬停清单的落点，见 ``hard_stops``）。
     """
+    from . import hard_stops
+
+    hard_stops.check(operator, "delete_unit")
     domain = _load_domain(conn, domain_key=domain_key)
     return _soft_delete_unit(
         conn, domain=domain, kind=kind, external_key=external_key, operator=operator

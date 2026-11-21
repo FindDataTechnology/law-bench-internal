@@ -70,14 +70,37 @@ from .tiers import TIER_RANK
 # --- vocabulary -------------------------------------------------------------
 
 #: Knowledge-unit kinds this machine syncs and promotes.
+#:
+#: Expanded 2026-11-21 (change ``add-agent-autonomous-iteration``): confirmation
+#: now produces ``silver`` for **every** kind a proposal can carry, so the ladder
+#: must reach all of them. It previously listed only entity/relation, which meant
+#: a confirmed ``dataset``/``crosswalk``/``clause`` unit landed at silver and could
+#: never climb — the ladder stopped one step short for half the ontology.
+#
+#: The sync/promote entry has its own notion of "which kind" (``_get_unit`` reads
+#: the raw kind column), so widening this is a permission change, not a schema one.
 KIND_ENTITY = "entity"
 KIND_RELATION = "relation"
-PROMOTABLE_KINDS = (KIND_ENTITY, KIND_RELATION)
+#: Every kind ``proposal_lanes`` can confirm. Kept as a literal tuple rather than
+#: importing the proposal module (promotion must not depend on the inbox); the
+#: one-way dependency is asserted by ``tests/test_agent_autonomous_iteration.py``.
+PROMOTABLE_KINDS = (
+    KIND_ENTITY, KIND_RELATION, "crosswalk", "dataset", "concept", "clause",
+    "law", "agency", "document", "defines", "issued_by", "superseded_by",
+    "n:1", "1:n", "m:n", "has_field", "references",
+)
 
-#: The one-way promotion ladder. ``raw`` (bulk corpus ingest) is intentionally
-#: outside this machine; graph-sync units land at bronze.
-CHAIN = ("bronze", "silver", "gold")
-SYNC_TIER = CHAIN[0]
+#: The one-way promotion ladder.
+#:
+#: ``raw`` joined on 2026-11-21: bulk ingest used to be a terminal tier, so a
+#: confirmed unit could never climb out of it, and 5,283 raw units in production
+#: had no ascent path at all. ``bronze`` stays **outside** the main ladder — it
+#: means "machine self-eval, failure analysis only", and letting it ascend would
+#: turn self-eval into promotable content, which the tier guards exist to prevent.
+CHAIN = ("raw", "silver", "gold")
+#: Graph-sync units still land at bronze and are the one kind that starts above
+#: raw; ``SYNC_TIER`` documents the entry tier for that path.
+SYNC_TIER = "bronze"
 
 #: Sensitivity marker attached to gold payloads for the registry's ACL layer.
 #: Kept as an attribute of the *promotion decision* (provenance), never of the
@@ -368,7 +391,19 @@ def promote_unit(
     current = unit["tier"]
     if current == to_tier:
         raise TierTransitionError(f"unit already at tier {to_tier!r}")
-    step = CHAIN.index(to_tier) - CHAIN.index(current)
+    # ``bronze`` is the entry tier for graph-sync units and sits *outside* CHAIN
+    # (self-eval must not be promotable content). It still needs a way in, or the
+    # 10 synced units in production could never ascend: bronze -> silver is that
+    # door, and it is the only step bronze may take.
+    if current == "bronze":
+        if to_tier != "silver":
+            raise TierTransitionError(
+                f"tier {current!r} 只能升到 'silver'（它是同步入口档，不在主阶梯上）；"
+                f"要到 {to_tier!r} 请先升 silver"
+            )
+        step = 1
+    else:
+        step = CHAIN.index(to_tier) - CHAIN.index(current)
     moving_up = TIER_RANK[to_tier] < TIER_RANK[current]
 
     if moving_up:
