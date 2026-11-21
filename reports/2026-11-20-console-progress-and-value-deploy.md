@@ -166,3 +166,35 @@ totals   2 域 · 5,140 实体 · 43 关系
 
 **`data-ontology` 仍未解决**：它是空域，发布不了。要有内容才能上线——那是灌数据的事，
 不是发布的事。
+
+## 13. 界面问题收口（sha-a5df88e，2026-11-21 验证）
+
+登录取证，桌面 1440×900 与移动 390×844 各七个页面：
+
+| 页面 | 桌面溢出 | 移动溢出 | 修前 |
+|---|---|---|---|
+| `/d` | **0** | **0** | — |
+| `/d/legal` | **0** | **0** | — |
+| `/d/legal/ontology` | **0** | **0** | 2655px |
+| `/d/legal/inbox` | **0** | **0** | 1190px |
+| `/d/legal/publish` | **0** | **0** | 189px |
+| `/d/legal/team` | **0** | **0** | 68px |
+| `/d/legal/promotion` | **0** | **0** | — |
+
+账户名 `aloadtree`（短名），顶栏三段式：`知验台 │ 管理门 本体模板 领域工作区 语料库登记 │ EN 中文 aloadtree▾`
+
+### 表格溢出改了四轮 —— 记下每轮的漏点
+
+1. 只给 `.data-table td` 加 `overflow-wrap` → 漏 `.table` 类（值班页）。
+2. 补 `.table` + 单元格内 `.inline-form` flex-wrap → 漏 `colspan` 单元格。
+3. 补 `td[colspan]` → 但 `white-space: nowrap` 优先于任何 `overflow-wrap`，
+   而 nowrap 来自 `nth-child` 规则。
+4. 补块级子元素（`td > div`）→ 真根因：驳回理由 `<div class="hint">` 占 1553px，
+   块级子元素自成 min-content 上下文，`td` 上的规则约束不到它。
+
+**教训**：这类问题必须先枚举全部来源（表格类名 / nth-child nowrap / colspan /
+单元格内块级与 flex 组件），并用夹具一次性覆盖，而不是看一处改一处。
+已写入 memory `css-overflow-fix-needs-all-inheritance-paths`。
+
+移动端本体页最后 174px 是另一种性质的问题（四列表格在 390 宽下本就放不下），
+用分区内横向滚动解决——这是窄屏多列表格的标准做法，不是缺陷。
