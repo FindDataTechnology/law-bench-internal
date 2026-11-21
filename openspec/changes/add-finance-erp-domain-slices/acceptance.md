@@ -58,20 +58,46 @@ uv run python scripts/publish_domain_snapshot.py --domain erp --domain finance
 
 | 步 | 判据 | 结果 |
 |---|---|---|
-| 1 | `ontology_templates` 多 `external-world` 一个名字；既有 6 名版本数与 schema 字节不变 | 待填 |
-| 2a | `knowledge_units where namespace='erp' and kind='organization'` = 8 | 待填 |
-| 2b | 8 条 crosswalk 幂等命中；`crosswalk_gaps(erp).dangling` = 0、`stale` = 8 | 待填 |
-| 2c | `kind='crosswalk' and attrs->>'relation'='maps_to'` = 23 | 待填 |
-| 3a | `rubrics where domain_id=<erp>` = 1，criteria = 8 | 待填 |
-| 3b | `enterprise-base` 多 v3，`rubric_refs` 非空，v2 行不变 | 待填 |
-| 3c | `domains` erp 的 `template_version` = 3 | 待填 |
-| 4a | `domains` 多 `finance` 一行，控制台标「草稿」 | 待填 |
-| 4b | `rubrics where domain_id=<finance>` = 1，criteria = 8 | 待填 |
-| 4c | `finance-market` 多 v3；finance 锚 v3 | 待填 |
-| 4d | `knowledge_units where namespace='finance' and kind='fact' and tier='gold'` = 105 | 待填 |
-| 5a | `ontology_publications` 多两行，digest 非空 | 待填 |
-| 5b | `GET /api/public/overview` 的 `totals.domains` = 4，两新域 counts 与库内一致 | 待填 |
-| 5c | 24h 后 `distribution_pull_events` 里 `domain_key='erp'` 行数 | 待填（0 则如实记「已发布、消费方未接」） |
+| 1 | ✅ 模板名 6→7、版本 13→14；`external-world` v1 单独一行；既有 6 名版本数一字未变（legal3/gov3/data-ontology2/foundation1/enterprise-base2/finance-market2） | 2026-11-21 实跑 |
+| 2a | ✅ erp 域 organization = 8（8/8 provider 齐） | +8 new / 0 existing |
+| 2b | ✅ 8 条全部幂等命中、零 SKIP；dangling 8→**0**、stale 8、unconfirmed 8 | 修好本端后悬空清零，接通状态不变（如设计所期） |
+| 2c | ✅ account 实体 23（跨境 8/餐饮 7/供应链 8）+ maps_to 23；crosswalk 总数 31 | 目标全部落在内核 12 码预设内，越界 0 |
+| 3a | ✅ rubric id=90 `erp-ontology-consistency`，8 条判据，该域可见 | |
+| 3b | ✅ enterprise-base v3 (id=15) `rubric_refs=['erp-ontology-consistency']`；v1(id=10)/v2(id=12) 原样 | 首次升版记立基线 |
+| 3c | ✅ erp v2→v3；rollback 串 `template_id=12, template_version=2` | |
+| 4a | ✅ 域 `finance` (id=6) 锚 finance-market v2 | 草稿态在 4b 后转正式 |
+| 4b | ✅ rubric id=91 `finance-fact-quality`，8 条判据（前 7 条对齐 packs/finance-data 的 7 个 checker） | |
+| 4c | ✅ finance-market v3 (id=16)；finance v2→v3；rollback `template_id=13, template_version=2` | |
+| 4d | ✅ 105 条 `fact`/`gold` 落 finance namespace；落数 == 读入数（脚本内置不一致即失败） | `FD_SENTIMENT_REPO=/Users/chengsishi/finddata/fd-sentiment` |
+| 5a | ✅ **erp 本体** v1 `f1e3771d`（31 实体/0 关系）。finance 不走本体发布——见下方「执行中修正」 | |
+| 5b | ⚠️ `totals.domains` 2→**3**（legal/gov/erp）。finance 只发布了资产不发布本体，故不在概览——这是对的，不是漏 | 公开副本由 `law-bench-public-sync` CronJob 每 15 分钟灌一次；需等一轮 |
+| 5c | ⏸ 当前 0 次（`erp-connector` 已登记、已激活）。**如实记「已发布、消费方未接」**——它的调度在外部，不因我们发版自动拉 | 24h 后复查，>0 才改记「已接通」 |
+
+## 执行中修正：finance 的金标不走本体发布
+
+按 `tasks.md` 4.4 把 105 条 gold 落进 finance namespace 后，
+`publish_domain_snapshot --domain finance` 被拒：**"domain 'finance' has no
+content to publish"**。
+
+查因：`build_manifest` 只取锚定模板 `entity_types` 词表内的 kind，而 `fact`
+不在 `finance-market` 的 12 个类型里。台账自己报了这件事——
+`ledger.reconcile(finance)` 返回 `out_of_vocab_kinds => ['fact']`、
+`consistent => False`。
+
+**判断：不要把 `fact` 加进模板词表。** gold 是「对某条公告的人工标注断言」，
+不是业务本体里的实体；加进 `entity_types` 会让另外 12 个真实类型全被台账报成
+`unused`，并且对外说「这个域像理解 instrument 那样理解金标」。
+
+**改走 `add-typed-publications` 已建的机制**：
+- `packs/finance-data/asset_catalog.py`（新）登记 `fact` 的 shelf provider 与
+  publication provider；
+- `scripts/publish_domain_assets.py`（新）上架 + 按种类发布；
+- 实测结果：`finance/fact` **v1 digest `5edc37f7`**，105 条上架并冻结；
+  `asset_publications` 里多一行，`domain_assets` 从 0 行变成 105 行。
+
+这也顺带解释了为什么公开概览只多一个域：**概览只列本体发布**，finance 没有
+本体发布（它的内容是事实资产），所以 `totals.domains` 是 3 而不是 4。这不是
+漏，是两类资产的区别。
 
 ## 本轮实现中发现的既有缺陷（不在原计划内）
 
@@ -88,4 +114,10 @@ uv run python scripts/publish_domain_snapshot.py --domain erp --domain finance
 - `instrument ↔ stock/fund/bond/index` 的一对多对齐**未声明**：`aligned_with` 的
   `type_map` 是 str→str，一对多表达不出来。见 `design.md` D4。
 - `data-ontology` 域（7 条 pending、锚 v1 而模板已 v2）**未动**：疑似另一条线的在建工作。
-- `domain_assets` 表 0 行（C5 的 P1 归属表建了从未回填）：不在本变更范围。
+- `domain_assets` 表**已从 0 行变成 105 行**（finance 的 fact 上架）；法律线的六个
+  kind 仍未回填，那不在本变更范围。
+- finance 域的 `quality:evidence` 缺口**保留红、不洗绿**：gold 单元带的是指纹锚点
+  （`text_sha256` + `doc_id`），不是逐字引用；原文留在 fd-sentiment 的下载谱系里，
+  本平台看不到。这正是 `evidence()` 那条「有 attrs 不等于有依据」判据的真实命中。
+- erp 域的 `quality:crosswalk_unconfirmed` = 31、`stale` = 8 同样保留红：ERP 的
+  科目映射 pack 记录的是「对齐」，不是「谁看过」，硬填 confidence 就是在伪造复核。
