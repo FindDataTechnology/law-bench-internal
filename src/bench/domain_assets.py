@@ -85,7 +85,38 @@ def _validate_provider(kind: str, provider: Any) -> dict:
                 f"provider for {kind!r} needs a non-empty {field!r} string"
             )
         out[field] = value
+    # A bare `%` in the relation is never the pack's intent, and it cannot be
+    # escaped by the pack: this module inlines the relation into an outer
+    # parameterized query, so psycopg reads `%` as the start of a placeholder and
+    # raises "only '%s', '%b', '%t' are allowed as placeholders" — for **every**
+    # domain's shelf listing in the process, not just the offending kind's.
+    #
+    # Measured 2026-11-21: a `LIKE 'finance-%'` in a new pack provider took down
+    # list_for_domain platform-wide. Refusing it at registration turns a
+    # whole-platform runtime failure into an import-time error naming the kind.
+    # A genuine `LIKE` pattern is written with `%%`, which psycopg passes through.
+    relation = out["relation"]
+    if _bare_percent(relation):
+        raise ValueError(
+            f"provider for {kind!r}: 'relation' contains a bare '%'. The kernel "
+            "inlines it into a parameterized query, so it is read as a malformed "
+            "placeholder and breaks every shelf listing. Use a non-metacharacter "
+            "form (LEFT()/SUBSTR()) or write the literal as '%%'."
+        )
     return out
+
+
+def _bare_percent(relation: str) -> bool:
+    """``True`` if any ``%`` is not part of ``%%`` (where ``%%`` is a literal)."""
+    i = 0
+    while i < len(relation):
+        if relation[i] == "%":
+            if i + 1 < len(relation) and relation[i + 1] == "%":
+                i += 2
+                continue
+            return True
+        i += 1
+    return False
 
 
 def register_providers(providers: Mapping[str, Mapping[str, str]]) -> None:
