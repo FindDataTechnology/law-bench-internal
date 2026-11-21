@@ -120,6 +120,29 @@ def step3_probe_hard_stops(conn) -> int:
     agent = f"agent:probe@{DOMAIN}"
     checks: list[tuple[str, object]] = []
 
+    # A footprint snapshot, so "NOT REFUSED" is also caught as a real write
+    # rather than only reported. If a guard is missing, these entry points write
+    # for real — and a probe that damages production is worse than no probe.
+    def _footprint() -> tuple:
+        return (
+            conn.execute("SELECT count(*) AS n FROM domains").fetchone()["n"],
+            conn.execute(
+                "SELECT COALESCE(MAX(version), 0) AS v FROM ontology_templates "
+                "WHERE name = 'data-ontology'"
+            ).fetchone()["v"],
+            conn.execute(
+                "SELECT count(*) AS n FROM knowledge_units "
+                "WHERE namespace = %s AND external_key = 'securities_company_financials' "
+                "AND (tags->>'deleted') IS NULL",
+                (DOMAIN,),
+            ).fetchone()["n"],
+            conn.execute(
+                "SELECT count(*) AS n FROM domain_library_subscriptions"
+            ).fetchone()["n"],
+        )
+
+    before = _footprint()
+
     def _expect(action: str, fn) -> None:
         try:
             fn()
@@ -128,7 +151,7 @@ def step3_probe_hard_stops(conn) -> int:
         except Exception as exc:  # noqa: BLE001 — any other error is a finding
             checks.append((action, f"WRONG ERROR: {type(exc).__name__}: {str(exc)[:60]}"))
         else:
-            checks.append((action, "NOT REFUSED"))
+            checks.append((action, "NOT REFUSED — 闸缺失，写入已发生"))
 
     _expect("open_or_archive_domain", lambda: workspaces.instantiate_domain(
         conn, key="probe-domain", name="Probe", template_name="data-ontology",
@@ -147,7 +170,10 @@ def step3_probe_hard_stops(conn) -> int:
         conn, domain_id=domain["id"], library_key="law-library", created_by=agent,
     ))
 
+    after = _footprint()
     print("3. 硬停五动作实探（生产库）：")
+    if after != before:
+        print(f"   !! 足迹变化：before={before} after={after}", file=sys.stderr)
     ok = 0
     for action, result in checks:
         good = result.startswith("REFUSED")
@@ -155,7 +181,7 @@ def step3_probe_hard_stops(conn) -> int:
         print(f"   {'PASS' if good else 'FAIL'} {action:24s} {result}")
     print("   mint_credential 由 apikey.create_key 的 minted_by 承载，"
           "本进程无铸造身份可比，跳过（见 CI 的单测）")
-    return 0 if ok == len(checks) else 1
+    return 0 if ok == len(checks) and after == before else 1
 
 
 def main(argv: list[str] | None = None) -> int:
