@@ -305,6 +305,95 @@ def test_unrecognised_identity_prefix_is_not_treated_as_machine(db_conn):
     )["state"] == "pending"
 
 
+def test_machine_with_domain_lead_may_reject(db_conn):
+    """An agent team granted `lead` in a domain is a maintainer, not a queue filler.
+
+    Authority comes from the membership row — auditable, individually granted,
+    revocable — not from the identity's shape. That is the distinction the old
+    "machines may never sign" rule collapsed.
+    """
+    from src.bench import workspaces
+
+    make_domain(db_conn, "dom-agent-lead")
+    domain = workspaces.get_domain(db_conn, domain_key="dom-agent-lead")
+    workspaces.add_member(
+        db_conn, domain_id=domain["id"], user_id="agent:warden@dom-agent-lead",
+        role="lead", added_by="lead-1",
+    )
+    proposal = submit_company(db_conn, "dom-agent-lead")
+
+    rejected = proposals.reject(
+        db_conn,
+        domain_key="dom-agent-lead",
+        proposal_id=proposal["id"],
+        actor="agent:warden@dom-agent-lead",
+        note="依据不足，退回",
+    )
+    assert rejected["state"] == "rejected"
+    assert rejected["decided_by"] == "agent:warden@dom-agent-lead"
+
+
+def test_machine_without_domain_lead_may_not_reject(db_conn):
+    """Same identity, no membership: refused. The row is the permission."""
+    make_domain(db_conn, "dom-agent-expert")
+    proposal = submit_company(db_conn, "dom-agent-expert")
+    with pytest.raises(PermissionError, match="除非它在该域持有 lead"):
+        proposals.reject(
+            db_conn,
+            domain_key="dom-agent-expert",
+            proposal_id=proposal["id"],
+            actor="agent:warden@dom-agent-expert",
+            note="我想撤了它",
+        )
+
+
+def test_a_lead_may_not_reject_its_own_submission(db_conn):
+    """Separation of duties survives the agent exception.
+
+    Rejection ends the claim and blocks the same evidence from returning, so a
+    submitter withdrawing its own proposal would shut the review unilaterally.
+    """
+    make_domain(db_conn, "dom-self-reject")
+    proposal = submit_company(db_conn, "dom-self-reject", submitted_by="lead-1")
+    with pytest.raises(PermissionError, match="不得驳回自己提交的提案"):
+        proposals.reject(
+            db_conn,
+            domain_key="dom-self-reject",
+            proposal_id=proposal["id"],
+            actor="lead-1",
+            note="撤回",
+        )
+
+
+def test_machine_lead_may_confirm(db_conn):
+    """The same grant applies to confirm: an agent lead can land ontology writes."""
+    from src.bench import workspaces
+
+    make_domain(db_conn, "dom-agent-confirm")
+    domain = workspaces.get_domain(db_conn, domain_key="dom-agent-confirm")
+    workspaces.add_member(
+        db_conn, domain_id=domain["id"], user_id="agent:builder@dom-agent-confirm",
+        role="lead", added_by="lead-1",
+    )
+    proposal = submit_company(db_conn, "dom-agent-confirm", submitted_by="expert-1")
+
+    confirmed = proposals.confirm(
+        db_conn, domain_key="dom-agent-confirm", proposal_id=proposal["id"],
+        actor="agent:builder@dom-agent-confirm",
+    )
+    assert confirmed["state"] == "confirmed"
+
+
+def test_machine_without_lead_may_not_confirm(db_conn):
+    make_domain(db_conn, "dom-agent-noconfirm")
+    proposal = submit_company(db_conn, "dom-agent-noconfirm", submitted_by="expert-1")
+    with pytest.raises(PermissionError, match="除非它在该域持有 lead"):
+        proposals.confirm(
+            db_conn, domain_key="dom-agent-noconfirm", proposal_id=proposal["id"],
+            actor="agent:builder@dom-agent-noconfirm",
+        )
+
+
 def test_operational_identity_may_reject(db_conn):
     """An ops decision carries who and why, so it is reviewable afterwards.
 

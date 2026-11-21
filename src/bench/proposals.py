@@ -283,6 +283,31 @@ def _is_human_or_user_actor(actor: str) -> bool:
     return True
 
 
+def _machine_may_sign(conn: Any, *, domain: dict, actor: str) -> bool:
+    """Whether a machine identity holds authority to sign **in this domain**.
+
+    Authority comes from one auditable fact: an active ``lead`` membership row in
+    this domain. Not from the identity's shape, not from a global flag.
+
+    This is what lets an agent team be a maintainer rather than a proposal
+    generator. The alternative — "machines may never sign" — means every
+    maintainer agent needs a human behind it, which turns review into a queue
+    whose only job is clicking confirm.
+
+    Two things it deliberately does **not** do:
+
+    - it does not look at the submitter's identity, so an agent cannot widen its
+      own reach by submitting under another name;
+    - it does not touch ``admin_override``: the platform-admin waiver stays
+      human-only, because it is a global, declarative power and letting it back a
+      machine would be the self-signed pass ``confirm`` already refuses.
+    """
+    from . import workspaces
+
+    role = workspaces.get_active_role(conn, domain_id=domain["id"], user_id=actor)
+    return role == "lead"
+
+
 def _load_domain(conn: Any, *, domain_key: str) -> dict:
     """Resolve the domain or refuse the operation (fail-closed isolation)."""
     domain = workspaces.get_domain(conn, domain_key=domain_key)
@@ -928,8 +953,23 @@ def confirm(
     # 2026-11-14 这里只判 `is_agent`（只认 `agent:` 前缀），于是 `fleet:` 形状的字符串
     # 能签字——产库上 `actor="fleet:probe"` 一次就通过了，写出了一条单元并留下那条
     # operator。机器身份的类别前缀现在集中在 `agent_ids.MACHINE_PREFIXES`。
-    if agent_ids.is_machine(actor):
-        raise PermissionError("机器身份不得确认提案；确认是人类 lead 的职责")
+    #
+    # **例外（2026-11-21）：机器身份持有所在域的 `lead` 角色时可以签字。**
+    # 判据从「像不像机器」换成「有没有被授予这个权力」——后者是一条可审计的成员
+    # 记录，前者只是一段字符串。这条把 agent / agent team 放进维护者行列：一个团队
+    # 被加进域当 lead，它的提案就不必再等人点确认；没被加进去的，照旧签不了。
+    #
+    # 为什么这不削弱第二道：`admin_override` 是**声明式**权限（任何人拿到 admin
+    # scope 就能用），而域内 lead 是**逐个授予**的（要有成员行、要有 `added_by`、
+    # 可随时 remove）。前者能替机器背书等于自签通行证；后者只是「这台机器在这个域
+    # 里被授予了和人类 lead 相同的权力」——那正是把 agent 当维护者的意思。
+    if agent_ids.is_machine(actor) and not _machine_may_sign(
+        conn, domain=domain, actor=actor
+    ):
+        raise PermissionError(
+            "机器身份不得确认提案，除非它在该域持有 lead 角色"
+            "（维护者身份必须来自可审计的成员记录，而不是身份字符串的形状）"
+        )
     # 第二道堵 admin 豁免：豁免的存在是给人救火用的，一旦它能替机器提交的提案背书，
     # `admin` scope 就等于一张自签通行证。所以只要提交方是机器身份，豁免一律不生效
     # ——人工 lead 正常确认（submitted_by != actor）仍然可以。
@@ -1014,8 +1054,17 @@ def reject(
     # 创建、唯一成员是 ``fleet:ontology-builder``，域内没有任何人类 lead。在这种域里
     # 「谁能驳回」实际只由身份字符串的形状决定，而形状恰恰是最容易伪造的部分。
     # 加固后人工 lead 正常驳回（``user:``/邮箱）不受任何影响。
-    if agent_ids.is_machine(actor):
-        raise PermissionError("机器身份不得驳回提案；驳回是人类 lead 的职责")
+    #
+    # **与 confirm 同一条例外（2026-11-21）**：机器身份持有本域 ``lead`` 时可驳回。
+    # 一个被授予 lead 的 agent team 在维护上就该能做这件事，否则它只能提、不能裁，
+    # 队列里全是等人点按钮的条目。例外不延伸到「推翻自己的提交」——见下面的自提闸。
+    if agent_ids.is_machine(actor) and not _machine_may_sign(
+        conn, domain=domain, actor=actor
+    ):
+        raise PermissionError(
+            "机器身份不得驳回提案，除非它在该域持有 lead 角色"
+            "（维护者身份必须来自可审计的成员记录）"
+        )
     # 运维裁决是**带依据的、由人代表的批量处置**，不是机器动作。它放行的前提是
     # 身份本身已经声明了「谁 + 为什么」（`ops:<operator>/<reason-slug>`），
     # 所以审计里读得出这是一次运维处置而非一次业务裁决。
@@ -1027,10 +1076,20 @@ def reject(
     #
     # 这一道补的是 2026-11-21 实测到的洞：`system:import` 既不是机器类（`is_machine`
     # 只认三个前缀）也不是人，却能驳回。形状决定权限，正是要消灭的东西。
-    if not agent_ids.is_ops(actor) and not _is_human_or_user_actor(actor):
+    if not agent_ids.is_ops(actor) and not _is_human_or_user_actor(actor) \
+            and not (agent_ids.is_machine(actor)
+                     and _machine_may_sign(conn, domain=domain, actor=actor)):
         raise PermissionError(
             f"身份 {actor!r} 不得驳回提案：驳回要么由人类 lead 执行，"
             "要么用运维裁决身份 ops:<operator>/<reason>（两个分量必填）。"
+        )
+    # 自提自驳回：与 confirm 的自提自确认同一条道理。驳回终止了一条主张并让同
+    # digest 的再提交被拒，所以「我提交、我自己撤」等于让提交方单方面关掉评审。
+    # confirm 早就有这道闸，reject 一直没有——补上之后，被授予 lead 的 agent 也
+    # 不能靠自己提交、再自己撤销把一条主张悄悄抹掉。
+    if proposal["submitted_by"] == actor:
+        raise PermissionError(
+            "不得驳回自己提交的提案；撤回请由同域另一位 lead 或运维裁决身份执行"
         )
 
     cur = conn.execute(
