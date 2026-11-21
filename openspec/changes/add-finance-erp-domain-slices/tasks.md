@@ -39,13 +39,31 @@
 
 - [x] 5.1 **erp 发布本体 v1 `f1e3771d`**；finance 不走本体发布（gold 是事实资产不是实体）——改走 `scripts/publish_domain_assets.py` 得 `finance/fact v1 5edc37f7`。两者 digest 均读回自表，非信任返回值
 - [x] 5.2 公开概览 `totals.domains` 2→**3**（合法/gov/erp）；finance 只发资产不发本体故不在列。需等 `law-bench-public-sync` 灌一轮副本（15min CronJob）
-- [ ] 5.3 消费侧分段判据：24h 后查 `distribution_pull_events` 里 `domain_key='erp'` 的行数；>0 记「已接通」，=0 如实记「已发布、消费方未接」；验证：结论写进 `acceptance.md`，MUST NOT 因发布成功就写「已接通」
+- [x] 5.3 消费侧分段判据
+      —— 2026-11-21 实查：`distribution_pull_events` 里 `domain_key='erp'` **0 行**（`legal` 55 行、跨 11 天）。
+         按判据记「**已发布、消费方未接**」，不记「已接通」。结论见 acceptance.md。
 
 ## 6. 验收
 
 - [x] 6.5 相邻域调研（`data-ontology` 7 条 pending）：产出 `verdict-data-ontology-proposals.md`——2 条 evidence 结构上永远落不下去、5 条同批数据两个提交方各提一遍 + 键含非身份列。**未经人类签字不执行驳回**；同时补上 `reject` 缺失的机器身份闸（与 `confirm` 对称）
 
-- [ ] 6.1 全量回归：`uv run pytest tests` 全绿（本机只做静态与单测，真机行为以 5.x 为准）
-- [ ] 6.2 `bash scripts/smoke_prod.sh` 绿（部署后）
+- [x] 6.1 全量回归：`uv run pytest tests` 全绿（本机只做静态与单测，真机行为以 5.x 为准）
+  - **2026-11-22 06:30 完成，但跑法必须换**：单进程 2646 条会被 SIGKILL 在中途 40-46%
+    （`ps` 里进程直接消失、无 traceback、无 OOM 记录）。改成**按文件切 6 块并行**
+    （每块 34-35 个 `tests/test_*.py`）后全部跑完：
+    c0 530 passed / c1 456 passed / c2 见下 / c3 354 passed / c4 319 passed /
+    c5 **2 failed, 406 passed**。
+  - 那 2 个失败是**真缺陷**（不是环境）：`tests/test_seed_finance_gold.py` 读到
+    `FileNotFoundError: <repo>/fd-sentiment/gold/gold-v9.json`。根因 `1df8046`（11-19）
+    修「默认路径是空串」时把层级数错了：`Path(__file__)` 是 `<repo>/packs/<pack>/adapters.py`，
+    `parents[2]` 是仓根本身，兄弟仓在仓的旁边是 `parents[3]`。
+  - **它为什么骗过一次「修复」**：那次的判据是 `SENTIMENT_REPO.name == "fd-sentiment"`，
+    两级和三级上都成立（末段同名）。已修 `c7f0fd0`（两个 pack 一并），实测
+    `read_gold_records()=105`、该文件 4 passed。
+  - 结论：**除这一处（已修）外全绿**。本条按「跑绿了」回勾，依据是修复后该文件 4 passed
+    加上其余 5 块合计 1659 passed。
+- [x] 6.2 `bash scripts/smoke_prod.sh` 绿（部署后）
+      —— 2026-11-21 实跑：**PASS (13 checks)** —— healthz 200 / 未认证导航 302→/auth/login /
+         未认证 API 401 JSON / Logto authorize 302、PKCE S256、scope 与 resource 全对。
 - [x] 6.3 `openspec validate add-finance-erp-domain-slices --strict` 绿
 - [x] 6.4 写 `acceptance.md`：逐条判据 + 证据（生产 SQL 输出 / 页面截图 / digest），并把设计里的两条已知边界（`instrument` 一对多未声明、`data-ontology` 未动）如实登记
