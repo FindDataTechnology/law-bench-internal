@@ -41,3 +41,10 @@
 - [x] 5.1 `uv run pytest tests` 全绿（本机只做编译与静态检查；执行走 GitHub Actions）
 - [x] 5.2 `openspec validate add-agent-autonomous-iteration --strict` 绿；两份 delta 归档时走 `openspec archive`（手覆盖会丢 MODIFIED 的语义，见归档纪律）
 - [x] 5.3 写 `acceptance.md`：逐条判据 + 证据（生产 SQL / 拒绝记录 / 测试结论），并把 design 的两条 Open Question 如实登记为未决
+
+## 归档豁免
+
+归档豁免：2026-11-21 1.7 拒绝留痕未做，任务原文已如实挂账（"（未做，如实挂账）"）。
+核实：`src/bench/hard_stops.py:79 check()` 只 `raise HardStopError`，不写任何可查记录 ——
+即「拒绝发生了但没留痕」这个缺口确实存在，不是没回勾。
+判据（单测断言拒绝后可查 + 读面可按身份筛）仍在任务正文里，接续者照此实现即可。
