@@ -1,8 +1,8 @@
 # 裁决单：data-ontology 域 7 条 pending 提案
 
-> 状态：**未执行，等待人类 lead 签字**。域内唯一成员是 `fleet:ontology-builder`
-> （机器身份，`reject` 的机器闸会拦它），域内没有任何 `lead`/`admin` 成员——
-> 见文末「为什么不自动执行」。
+> 状态：**2026-11-21 已处置 5 条，剩 2 条待人类确认**（执行记录见文末）。
+> 处置用的身份是新增的运维裁决类 `ops:<operator>/<reason>`，不是 `system:*`
+> 那种靠字符串形状过闸的口子——见 `agent_ids.is_ops` 与该轮 commit。
 > 调研时间：2026-11-21。数据来源：`wire_datasets` 真行聚合 + `law_bench` 提案表。
 
 ## 结论
@@ -108,3 +108,44 @@ curl -X POST .../d/data-ontology/inbox/<id>/reject -d "note=<下表理由>"
 3. 关系提案的 `evidence` 必须是**对象**并带 `from_key`/`to_key`——这是 11-16 之后提交闸
    已经强制的事，重建时自然满足；
 4. 若两个方向都想留，只留基数正确的那一条（`financials → monitor`）。
+
+## 执行记录（2026-11-21）
+
+工具 `scripts/reject_unlandable_proposals.py`，身份 `ops:chengsishi/<reason>`。
+
+| # | 结果 | 依据 | 身份 reason |
+|---|---|---|---|
+| 90 | **已驳回** | evidence 是 JSON 数组而非对象，关系确认路径要求 `from_key`/`to_key` | `duplicate-submissions` |
+| 94 | **已驳回** | 同上 | `duplicate-submissions` |
+| 91 | **已驳回** | `entity:` 前缀不被归名剥离，会成为同数据集第二份单元 | `duplicate-submissions` |
+| 92 | **已驳回** | 同上 | `duplicate-submissions` |
+| 89 | **已驳回** | 与 #93 同一主张但证据弱（一句话 vs 三组逐列实测） | `redundant-period-key` |
+| 88 | **待确认** | `(code,item,period)` 键，本数据集唯一代表 | — |
+| 93 | **待确认** | `(code,metric,period)` 键，本数据集唯一代表 | — |
+
+剩 2 条的确认需要**人类签字**：`confirm` 的两道闸分别是「机器身份不得签字」和
+「admin 豁免对机器提交的提案不生效」，而这两条都由 `fleet:` 提交。这不是缺口，
+是分工——确认会把内容写进本体，那是业务裁决。
+
+**这两条确认得下去**：`data-ontology` 模板的 `entity_types` 含 `dataset`，kind 在词表内。
+
+### 实测佐证（本轮真行聚合）
+
+`period` 在两个数据集上都不是身份列：
+
+```
+financials  90 行  period 取值 1 个（2026-09-30）
+            code+item => 90 组唯一；code+item+period => 也是 90 组
+monitor     49 行  period 取值 3 个
+            code+metric => 49 组唯一；每个 (code,metric) 分组内 period 唯一（0 例外）
+```
+
+所以确认时建议把 `period` 记进 `attrs.observed_at`/概念结构，**不进主键**——
+否则下一次快照同步会把全部实体换掉一遍身份。这条建议不影响「确认哪条提案」，
+只影响确认后怎么写。
+
+## 这个域仍然缺的东西
+
+`data-ontology` 的唯一成员是 `fleet:ontology-builder`（`expert`），没有任何人类
+`lead`/`admin`。后果是**任何提案都无法在该域被确认**，只能由运维身份驳回。
+补一个人类 lead 是运维动作（`workspaces.add_member`），不是代码改动，本轮未做。
