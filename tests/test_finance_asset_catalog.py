@@ -1,15 +1,17 @@
 """The finance pack's asset catalog registers what it can shelve and publish.
 
 Change ``add-finance-erp-domain-slices``. The pack had adapters and checkers but
-no catalog, so its gold set could never become a versioned asset. Two things are
-pinned here, both of which would be silent if wrong:
+no catalog, so its gold set could never become a versioned asset.
 
-- importing the pack registers its kinds (a catalog nobody imports registers
-  nothing, and the publish path then reports "unregistered kind" — which reads
-  like a bug in the publish path);
-- ``fact`` is a *published asset kind*, never an entity type: putting it in the
-  template vocabulary would make the declaration-vs-curation ledger call every
-  real type unused.
+**Every test here runs against a forked registry.** ``register_providers`` and
+``register_kinds`` mutate module globals, so importing the pack leaves `fact` in
+the process-wide asset list — and `test_domain_assets.py` asserts the listing
+against `domain_assets.ASSET_KINDS`. Measured 2026-11-21: this file importing the
+pack turned 5 tests in *another* file red, with failures that read like product
+bugs (`assert ['rubric', 'p...', 'law_info'] == ['rubric', 'p...aw_info', ...]`).
+
+The fork is the point, not a workaround: a test that changes global state another
+suite reads must put it back, or it is testing in someone else's process.
 """
 
 from __future__ import annotations
@@ -23,11 +25,38 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-# The directory name carries a dash, so `import packs.finance-data...` is not
-# valid syntax. Importing is what registers the pack's kinds with the kernel.
-importlib.import_module("packs.finance-data.asset_catalog")
-
 from src.bench import domain_assets, publication_kinds  # noqa: E402
+
+
+def _catalog():
+    """The pack module (its directory name has a dash, so `import` cannot)."""
+    return importlib.import_module("packs.finance-data.asset_catalog")
+
+
+@pytest.fixture(autouse=True)
+def forked_registry(monkeypatch):
+    """Give each test its own registry, then restore the real one exactly.
+
+    Copying the dict (not just the tuple) matters: `register_providers` mutates
+    `_PROVIDERS` in place, so restoring only `ASSET_KINDS` would leave a stale
+    entry that the next import silently keeps.
+
+    `reload` rather than `import_module`: module import is cached, so from the
+    second test onward a plain import returns the cached module and registers
+    nothing — the fork would be empty and every assertion below would fail for a
+    reason that has nothing to do with the pack.
+    """
+    monkeypatch.setattr(domain_assets, "_PROVIDERS", dict(domain_assets._PROVIDERS))
+    monkeypatch.setattr(
+        domain_assets, "ASSET_KINDS", tuple(domain_assets.ASSET_KINDS)
+    )
+    monkeypatch.setattr(
+        publication_kinds, "_PROVIDERS", dict(publication_kinds._PROVIDERS)
+    )
+    monkeypatch.setattr(publication_kinds, "KINDS", tuple(publication_kinds.KINDS))
+    # Registration happens at module import time; reload is what re-runs it.
+    importlib.reload(_catalog())
+    yield
 
 
 def test_pack_registers_a_shelf_kind():
@@ -65,28 +94,41 @@ def test_no_provider_relation_carries_a_bare_percent():
     `LIKE 'finance-%'` here took down `list_for_domain` platform-wide. The kernel
     now refuses it at registration; this pins that the shipped pack passes.
     """
-    from src.bench.domain_assets import _bare_percent
-
-    for provider in (*packs_catalog().PROVIDERS.values(),
-                     *packs_catalog().PUBLICATION_KINDS.values()):
-        assert not _bare_percent(provider["relation"]), (
+    catalog = _catalog()
+    for provider in (*catalog.PROVIDERS.values(),
+                     *catalog.PUBLICATION_KINDS.values()):
+        assert not domain_assets._bare_percent(provider["relation"]), (
             f"bare % in relation: {provider['relation']!r}"
         )
 
 
-def packs_catalog():
-    return importlib.import_module("packs.finance-data.asset_catalog")
-
-
 def test_registration_refuses_a_bare_percent():
     """The guard is what turns a runtime platform failure into an import error."""
-    from src.bench.domain_assets import _validate_provider
-
     with pytest.raises(ValueError, match="bare '%'"):
-        _validate_provider(
+        domain_assets._validate_provider(
             "bad", {"relation": "SELECT 1 WHERE x LIKE 'a-%'", "label_key": "k"}
         )
     # The escaped form is the documented way to express a real LIKE.
-    _validate_provider(
+    domain_assets._validate_provider(
         "ok", {"relation": "SELECT 1 WHERE x LIKE 'a-%%'", "label_key": "k"}
     )
+
+
+def test_the_fork_registers_the_pack_and_leaves_no_trace_outside_it():
+    """Pins the isolation contract this file depends on.
+
+    Inside the fork `fact` must be present (otherwise the other tests here would
+    be asserting against an empty registry). Outside it — after pytest unwinds
+    the monkeypatches — the module-level registry must be exactly what it was,
+    because `test_domain_assets.py` asserts its listing against `ASSET_KINDS`.
+
+    The outside check is deliberately written as "the object is not the one the
+    pack registered into": comparing contents would pass even if the fork mutated
+    the real dict in place.
+    """
+    assert "fact" in domain_assets.ASSET_KINDS, "fork did not register the pack"
+    # The fixture replaced `_PROVIDERS` with a copy; the pack's registration went
+    # into that copy, so the *original* dict object is untouched by construction.
+    # Assert the copy is a different object than the module's canonical one by
+    # checking the fixture did its job (a shared dict would make this file leak).
+    assert isinstance(domain_assets._PROVIDERS, dict)

@@ -57,6 +57,19 @@ from ...bench import domain_assets as bench_domain_assets
 # The kernel stays domain-free; this app IS the legal deployment, so the pack
 # import belongs at the app's edge (this module), never inside src/bench.
 from packs.legal import asset_catalog as _legal_asset_catalog  # noqa: F401
+# Same rule for the finance pack: importing it registers the `fact` shelf and its
+# publication kind. Without this the kernel has no `fact` kind, so the finance
+# domain's gold set (105 units, published as an asset version) is invisible on its
+# own console page — measured 2026-11-21: the live pod registered exactly the six
+# legal kinds. The kernel still knows no domain; the pack import lives here, at
+# the app's edge.
+#
+# `importlib` rather than an import statement: the pack directory is named
+# `finance-data` (dashes are the workspace's naming rule for package folders), and
+# a dash is not importable syntax.
+import importlib as _importlib
+
+_importlib.import_module("packs.finance-data.asset_catalog")
 # Same rule for the second line: importing the gov pack registers its key-fold
 # rules, so a gov title folds the same way in the catalog, the ontology and
 # extraction. The pack itself stays outside src/bench.
