@@ -383,14 +383,18 @@ def promote_unit(
     """
     if kind not in PROMOTABLE_KINDS:
         raise ValueError(f"kind {kind!r} is not promotable by this machine")
-    if to_tier not in CHAIN:
-        raise TierTransitionError(
-            f"tier {to_tier!r} is outside the promotion ladder {CHAIN}"
-        )
+    # Order matters: resolve the unit first so "already at that tier" wins over
+    # "that tier is not on the ladder". Asking to stay put at `bronze` is the
+    # former — and it must say so, or a caller reads "outside the ladder" as
+    # "bronze units are unreachable" when they are reachable (bronze→silver).
     unit = _get_unit(conn, kind=kind, external_key=external_key, namespace=namespace)
     current = unit["tier"]
     if current == to_tier:
         raise TierTransitionError(f"unit already at tier {to_tier!r}")
+    if to_tier not in CHAIN:
+        raise TierTransitionError(
+            f"tier {to_tier!r} is outside the promotion ladder {CHAIN}"
+        )
     # ``bronze`` is the entry tier for graph-sync units and sits *outside* CHAIN
     # (self-eval must not be promotable content). It still needs a way in, or the
     # 10 synced units in production could never ascend: bronze -> silver is that

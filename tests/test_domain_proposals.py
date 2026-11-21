@@ -677,6 +677,8 @@ def test_a_fleet_identity_cannot_sign_a_confirmation(db_conn):
     """
     domain = make_domain(db_conn, "dom-machine-sign")
     _ = domain
+    # 提交方是一个 fleet，确认方是**另一个** fleet —— 自提自确认对所有身份都禁，
+    # 所以两者必须不同，否则测的是自提闸而不是档位闸。
     proposal = submit_company(
         db_conn, "dom-machine-sign",
         submitted_by="fleet:fleet_1794335712751_wfa3ww/post_x",
@@ -689,7 +691,7 @@ def test_a_fleet_identity_cannot_sign_a_confirmation(db_conn):
         db_conn,
         domain_key="dom-machine-sign",
         proposal_id=proposal["id"],
-        actor="fleet:fleet_1794335712751_wfa3ww/post_x",
+        actor="fleet:fleet_other_identity/post_y",
     )
     assert confirmed_by_fleet["state"] == "confirmed"
     tier = db_conn.execute(
