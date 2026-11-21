@@ -36,6 +36,18 @@ from src.bench.publication_kinds import register_kinds
 #: One provider per kind, in the console's listing order. ``relation`` is a
 #: self-contained SELECT of (asset_key, name); ``label_key`` names the kind in
 #: the i18n catalog.
+#:
+#: **Only `fact`, deliberately.** `register_providers` keys by kind name and does
+#: an in-place `update`, so two packs declaring the same kind silently make the
+#: last import win. This pack first also declared `rubric` (filtered to
+#: `finance-*`), which overwrote the legal pack's `rubric` provider — every rubric
+#: outside this line then resolved as "missing" wherever the catalog was read.
+#: Measured 2026-11-21: five `test_domain_assets` cases failed with
+#: `missing: ['r1','r2','ghost']` for keys that plainly existed.
+#:
+#: A kind is a process-global name. If finance ever needs finance-only rulers in
+#: the catalog, that is a distinct kind (`finance-rubric`) or a kernel feature for
+#: scoping a provider — not a second `rubric`.
 PROVIDERS: dict[str, dict] = {
     "fact": {
         "relation": (
@@ -46,19 +58,6 @@ PROVIDERS: dict[str, dict] = {
             "WHERE kind = 'fact' AND (tags->>'deleted') IS NULL"
         ),
         "label_key": "bench_catalog.kind.fact",
-    },
-    "rubric": {
-        # No literal `%` anywhere in a provider relation: the kernel inlines it
-        # into an outer parameterized query, so a bare `%` reaches psycopg as a
-        # malformed placeholder and blows up every domain's shelf listing, not
-        # just this one (measured 2026-11-21 — a `LIKE 'finance-%'` here broke
-        # `list_for_domain` for the whole platform). Filter by prefix through
-        # LEFT() instead, which is equivalent and has no metacharacter.
-        "relation": (
-            "SELECT DISTINCT name AS asset_key, name AS name FROM rubrics "
-            "WHERE LEFT(name, 8) = 'finance-'"
-        ),
-        "label_key": "bench_catalog.kind.rubric",
     },
 }
 

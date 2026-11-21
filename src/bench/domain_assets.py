@@ -125,6 +125,17 @@ def register_providers(providers: Mapping[str, Mapping[str, str]]) -> None:
     Called by a domain pack at import time. Registration is idempotent per kind:
     importing a pack twice does not duplicate anything. The pack owns the SQL and
     the label keys; this module never inspects their content.
+
+    **A kind name is process-global.** Re-registering the same kind with the same
+    relation is the idempotent replay above. Re-registering it with a *different*
+    relation is two packs disagreeing about one name, and it is refused: `update`
+    would otherwise let the last import silently win, and every reader of that
+    kind would then resolve a different set of assets depending on import order.
+
+    Measured 2026-11-21: the finance pack declared its own `rubric` provider
+    (filtered to `finance-*`), which overwrote the legal pack's. Every rubric
+    outside that prefix then read as "missing" — five tests failed on keys that
+    plainly existed, with nothing in the message pointing at the pack.
     """
     if not isinstance(providers, Mapping) or not providers:
         raise ValueError("providers must be a non-empty mapping of kind -> provider")
@@ -132,6 +143,18 @@ def register_providers(providers: Mapping[str, Mapping[str, str]]) -> None:
         kind: _validate_provider(kind, provider)
         for kind, provider in providers.items()
     }
+    clashes = {
+        kind: _PROVIDERS[kind]
+        for kind, provider in validated.items()
+        if kind in _PROVIDERS and _PROVIDERS[kind] != provider
+    }
+    if clashes:
+        raise ValueError(
+            "asset kind(s) already registered by another pack with a different "
+            f"relation: {', '.join(sorted(clashes))}. A kind name is process-"
+            "global; give this pack's kind its own name instead of redefining "
+            "someone else's."
+        )
     global ASSET_KINDS
     _PROVIDERS.update(validated)
     ASSET_KINDS = tuple(_PROVIDERS)

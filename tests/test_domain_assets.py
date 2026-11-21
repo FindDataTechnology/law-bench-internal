@@ -360,12 +360,38 @@ def test_each_kind_resolves_its_own_identity_column(db_conn):
         )
 
     listing = domain_assets.list_for_domain(db_conn, domain_key="dom-a")
-    assert [g["kind"] for g in listing["groups"]] == list(domain_assets.ASSET_KINDS)
-    assert listing["total"] == len(domain_assets.ASSET_KINDS)
+    # `list_for_domain` documents "only kinds with at least one item appear", so
+    # the group list equals the kinds that actually have rows here — not the whole
+    # registered catalog. `== list(ASSET_KINDS)` only ever held while every
+    # registered kind happened to have a row in this fixture; it broke the moment a
+    # pack registered a kind this database has no rows for (`fact`, 2026-11-21).
+    # The contract under test is "each assigned kind shows up with its own
+    # identity column", so assert that.
+    assert set(g["kind"] for g in listing["groups"]) == set(keys)
+    assert listing["total"] == len(keys)
     for kind, key in keys.items():
         assert item_keys(group_of(listing, kind)) == [key]
         assert group_of(listing, kind)["items"][0]["exists"] is True
     assert group_of(listing, "compare")["items"][0]["name"] == "cmp-1"
+
+
+def test_a_registered_kind_with_no_rows_does_not_appear(db_conn):
+    """The other half of the contract above, pinned explicitly.
+
+    A kind registered by a pack but holding no rows in this database must be
+    absent from the listing rather than an empty group — the page renders groups,
+    and an empty one would be a row of nothing. This is what makes
+    `== list(ASSET_KINDS)` the wrong assertion.
+    """
+    make_domain(db_conn, "dom-a")
+    make_rubric(db_conn, "r1")
+    domain_assets.assign(
+        db_conn, domain_key="dom-a", asset_kind="rubric",
+        asset_key="r1", added_by="lead-1",
+    )
+    listing = domain_assets.list_for_domain(db_conn, domain_key="dom-a")
+    assert [g["kind"] for g in listing["groups"]] == ["rubric"]
+    assert "fact" not in [g["kind"] for g in listing["groups"]]
 
 
 # ------------------------------------------------------------------ 行形状

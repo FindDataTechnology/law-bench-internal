@@ -94,6 +94,13 @@ def register_kinds(providers: Mapping[str, Mapping[str, Any]]) -> None:
 
     Called by a domain pack at import time; idempotent per kind, so importing a
     pack twice duplicates nothing. The pack owns the SQL and the label keys.
+
+    Like the asset catalog, **a kind name is process-global**: re-registering the
+    same kind with the same projection is the idempotent replay; re-registering it
+    with a different one is two packs disagreeing and is refused. Without this the
+    last import silently wins and a publisher's digest would depend on import
+    order. (Found while fixing the sibling hazard in ``domain_assets`` on
+    2026-11-21 — same mechanism, same failure shape.)
     """
     if not isinstance(providers, Mapping) or not providers:
         raise ValueError("providers must be a non-empty mapping of kind -> provider")
@@ -101,6 +108,16 @@ def register_kinds(providers: Mapping[str, Mapping[str, Any]]) -> None:
         kind: _validate_provider(kind, provider)
         for kind, provider in providers.items()
     }
+    clashes = sorted(
+        kind for kind, provider in validated.items()
+        if kind in _PROVIDERS and _PROVIDERS[kind] != provider
+    )
+    if clashes:
+        raise ValueError(
+            "publication kind(s) already registered by another pack with a "
+            f"different projection: {', '.join(clashes)}. A kind name is "
+            "process-global; give this pack's kind its own name."
+        )
     global KINDS
     _PROVIDERS.update(validated)
     KINDS = tuple(_PROVIDERS)

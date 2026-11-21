@@ -114,6 +114,41 @@ def test_registration_refuses_a_bare_percent():
     )
 
 
+def test_registration_refuses_a_kind_another_pack_owns():
+    """A kind name is process-global; redefining one silently changes all readers.
+
+    Measured 2026-11-21: this pack declared its own `rubric` provider, which
+    overwrote the legal pack's — every rubric outside the finance prefix then read
+    as "missing" and five tests failed on keys that existed.
+    """
+    domain_assets.register_providers({
+        "owned-by-one-pack": {"relation": "SELECT 1 AS asset_key, 1 AS name",
+                              "label_key": "k"},
+    })
+    with pytest.raises(ValueError, match="already registered by another pack"):
+        domain_assets.register_providers({
+            "owned-by-one-pack": {"relation": "SELECT 2 AS asset_key, 2 AS name",
+                                  "label_key": "k"},
+        })
+
+
+def test_reregistering_the_same_kind_identically_is_idempotent():
+    """Re-importing a pack must stay a no-op, not a conflict."""
+    provider = {"relation": "SELECT 9 AS asset_key, 9 AS name", "label_key": "k"}
+    domain_assets.register_providers({"stable": provider})
+    domain_assets.register_providers({"stable": dict(provider)})
+    assert domain_assets.providers()["stable"] == provider
+
+
+def test_finance_pack_does_not_redefine_rubric():
+    """`rubric` belongs to the legal pack; this pack must not touch it."""
+    legal_rubrics_before = domain_assets.providers().get("rubric")
+    importlib.reload(_catalog())
+    assert domain_assets.providers().get("rubric") == legal_rubrics_before, (
+        "the finance pack redefined the legal pack's `rubric` provider"
+    )
+
+
 def test_the_fork_registers_the_pack_and_leaves_no_trace_outside_it():
     """Pins the isolation contract this file depends on.
 
