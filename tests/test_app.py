@@ -95,3 +95,24 @@ def test_no_call_site_passes_platform_admin_as_override():
         "these files pass platform-admin as the override flag; use "
         f"_admin_confirming_own(): {offenders}"
     )
+
+
+def test_startup_survives_cleanup_failure(monkeypatch):
+    """启动期清理失败时必须降级，不能把应用打掉。
+
+    2026-11-21 实证：`_reap_stale_generation_jobs` 的 except 分支引用了**未定义**的
+    `logger`，于是「清理失败」升级成 `NameError` → `Application startup failed`。
+    正常启动与 CI 都是绿的——那段代码只在异常分支执行。
+
+    这条用例同时钉两件事：logger 已定义；清理抛异常时 create_app() 仍返回 FastAPI。
+    """
+    from src.web import app as app_mod
+
+    assert hasattr(app_mod, "logger"), "app.py 必须定义模块级 logger（异常分支会用到）"
+
+    monkeypatch.setattr(
+        app_mod, "reap_stale_generation_jobs",
+        lambda: (_ for _ in ()).throw(RuntimeError("db down")), raising=False,
+    )
+    app = app_mod.create_app()
+    assert app is not None

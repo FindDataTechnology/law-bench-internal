@@ -397,6 +397,7 @@ table.matrix td.cell.rate { color: var(--accent); background: #eff6ff; }
   .filter-form .filter-group { min-width: 0; }
 }
 
+/* dl-cell = 操作按钮组：按钮文字不能折行，否则一个按钮被劈成两行。 */
 table.data-table td.dl-cell { white-space: nowrap; }
 
 /* 质量比摘要（运营台行内）：八项小标签，三态可辨——达标默认、低于阈值 ambr、
@@ -410,12 +411,16 @@ table.data-table td.dl-cell { white-space: nowrap; }
 .panel table.data-table th:nth-child(5) { white-space: nowrap; }
 /* 表头一律不折行：加了质量比列之后「待确认提案」在 1440 宽下曾被挤成一字一行。
    表格需要的最小平宽由内容决定，面板负责横向滚动，不靠压缩列宽。 */
+/* 表头一律不折行：中文表头折成一字一行（「待确认提案」曾竖排）比溢出更难读。
+   td 不跟随——只有表头，因为数据单元格可能含长文本。 */
 .panel table.data-table th { white-space: nowrap; }
 /* 域名本身不折行，但缺口徽标允许换行——否则一排徽标会把域名列撑到 400px+，
    把质量比与操作列挤出可视区（1440 宽下实测过）。 */
 .panel table.data-table td:first-child { white-space: normal; }
+/* 域名与域键本身不折行（「ERP probe」曾折成两行），但同列徽标允许折行。 */
 .panel table.data-table td:first-child > a,
 .panel table.data-table td:first-child > code { white-space: nowrap; }
+/* 操作列：按钮组不能折行，否则一个按钮被劈成两行。 */
 .panel table.data-table td:last-child { white-space: nowrap; }
 .quality-cell .q {
   display: inline-block;

@@ -41,3 +41,24 @@
 | 4 | `td > div` 块级子元素 | （真根因：驳回理由 div 占 1553px） |
 
 夹具红证（长文本 + 两种容器形态）：旧规则 tableW=6396 / 溢出 4977px；新规则 1398 / 0。
+
+## 判据自身的假绿（写脚本时实撞，留作证据）
+
+第一版用 `a[href^="/d/"]` 选域链接，**取到 0 个域**，判据只测了 1 页还报「通过」。
+生产实测：域链接是**绝对 URL**（`https://host/d/legal`）。改为按 `/d/` 片段解析，
+并加守卫：解析不出任何域 → 退出码 2「未判定」，不是通过。
+
+这是本 change 要防的那类问题本身：**判据在没真正覆盖时看起来是绿的。**
+
+## 断行规则契约（tasks 2.1/2.2）
+
+每条 `white-space: nowrap` 都补了注释说明「为什么这一列不能折行」：表头（中文折成一字
+一行更难读）、域名/域键（曾折成两行）、操作列（按钮不能被劈开）、dl-cell（按钮组）。
+两组关键规则带注释说明两个坑：`nowrap` 优先级高于 `overflow-wrap`；块级子元素自成
+min-content 上下文。
+
+## 启动健壮性（tasks 3.1/3.2）
+
+`tests/test_app.py::test_startup_survives_cleanup_failure` 同时钉两件事：
+`app.py` 有模块级 `logger`；清理抛异常时 `create_app()` 仍返回 FastAPI。
+红证：移除 `logger = logging.getLogger(...)` 那行，`hasattr` 断言即失败。
