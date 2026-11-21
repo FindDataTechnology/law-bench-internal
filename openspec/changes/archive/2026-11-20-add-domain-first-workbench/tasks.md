@@ -73,14 +73,43 @@
 
 - [x] 7.1 本仓：`POST /api/d/{key}/proposals` 契约文档化（字段、幂等键、错误码、鉴权与关系类端点要求）
   → `docs/domain-proposal-contract.md`；`tests/test_domain_proposal_contract_doc.py` 双向校验文档与代码不漂
-- [ ] 7.2 伴随 change（`fd-wire`/`paas` 根，另立）：舰队提案岗提交目标从柏讯审批队列切到域提案箱；柏讯审批队列不再新增该类提案
-- [ ] 7.3 判据：舰队一轮真跑 → 域提案箱出现 pending；柏讯审批队列零新增；同键重复提交幂等
+- [x] 7.2 伴随 change（`fd-wire`/`paas` 根，另立）：舰队提案岗提交目标从柏讯审批队列切到域提案箱；柏讯审批队列不再新增该类提案
+      → 伴随 change = `paas/openspec/changes/switch-fleet-proposals-to-domain-inbox`（2026-11-21 已做完全部实现项，只剩 5.3 的那一次人工确认）
+- [x] 7.3 判据：舰队一轮真跑 → 域提案箱出现 pending；柏讯审批队列零新增；同键重复提交幂等
+      —— **2026-11-21 三件实测达成**（证据逐条记在伴随 change 的 5.2 项下）：柏讯侧
+         `wire_platform.domain_action_instances` 11 条全 executed、与切换前基线逐位相同（零新增）；
+         legal 域提案箱自 11-08 起 95 条；#97 来自真在册舰队 `fleet:fleet_1793422472811_i28xac`
+         （`kind=clause`、pending），经机器面提交。**幂等**由伴随机 change 3.1 的实证给出：
+         `tools/call` → `{"id":1,"created":false,"result":"幂等命中"}`。
+      → 唯一未验的一半是「负责人在控制台真点一次确认」，那属伴随 change 的 5.3，不在本条。
 
 ## 8. 挂账（本 change 不处理，仅登记）
 
-- [ ] 8.1 `cadence.turnTimeoutMs` 被 `task-engine.js:683` 硬编码 600s 覆盖 —— paas 发布时修
-- [ ] 8.2 星妍→柏讯供给面摄取停在 2026-11-02 —— 独立处理
-- [ ] 8.3 客户登录 UI / 消费者反向写回 —— 按蓝图 D9 明确不做
+- [x] 8.1 ~~`cadence.turnTimeoutMs` 被 `task-engine.js:683` 硬编码 600s 覆盖 —— paas 发布时修~~
+      → **已修，2026-11-21 核实**：`task-engine.js` 的 `TURN_TIMEOUT_MS = 10min` 现在只是
+        「宿主不注入时的兜底」（fix-fleet-turn-budget D1，`resolveBudgetFor()` 先问注入的
+        `resolveTurnBudgetFn`）；`cron.js:47` 注入 `resolveTurnBudgetMs`，后者读
+        `executionPolicy.timeoutMinutes` → `member.cadence.turnTimeoutMs`，夹在 [2min,30min]。
+        legacy `origin.fleet.*` 形状也在 215a7444f（2026-11-15）补上了——111 个旧任务的
+        声明预算已复活。行号已变（683 → `TURN_TIMEOUT_MS` 常量 + `resolveBudgetFor`），
+        本条不写死行号。
+- [x] 8.2 星妍→柏讯供给面摄取停在 2026-11-02 —— 独立处理
+  - **2026-11-22 02:20 查清：这条挂账的前提已经不成立**。`wire_platform.xingyan_sync_state`
+    实测 `status=ok`、`last_success_at=2026-11-21T17:08:30Z`（本地 01:08）、
+    `items_total=19 / claims_total=5`、`last_error=null`；公开读面
+    `/api/v1/xingyan/stats` 同源返回 `stale:false`。
+  - 「停在 11-02」的真因不是摄取坏了，而是**上游内容从没变过**：`content-manifest.json`
+    的三区 (items, sha) 归一后 sha256 前 16 位 = `fe9d6e758554613c`，与库里记的
+    `source_sha` **逐位相同** ⇒ 每轮都走 `status=skipped`（同指纹零写入），
+    而 `skipped` 分支**不更新 `last_success_at`**——于是「最近一次成功」一直停在
+    最后一次真的写入那天。这是「同指纹短路」的正常形态，不是停摆。
+  - 顺带修掉一个口径混淆：`rail` 也验证了强制补跑
+    （`POST /internal/xingyan/sync?force=true`，注意路径**没有** `/api/v1` 前缀，
+    带前缀是 404）⇒ `status=ok`、`zones={briefings:4, academy:11, research:4}`、
+    `withdrawn_items/claims=0`，并把 `last_success_at` 推进到 17:08。
+  - 剩下的是内容侧：官网三区自 11-20 15:05 起没有新条目。那属于官网内容排期，
+    不需要本 change 跟。
+- [x] 8.3 客户登录 UI / 消费者反向写回 —— 按蓝图 D9 明确不做（挂账项，判据是「决定不做」本身已落档）
 
 ## 9. 上产（2026-11-08 真机滚版发现并修）
 
@@ -98,7 +127,3 @@
 - [x] 9.4 线上补账：pod 内对生产库执行一次 `ensure_schema`，复验六表 + `last_opened_at` 就位
 - [x] 9.5 线上验收（登录态真请求）：`/d` 200「我的域」空态；`/d/legal` 及本体/评测/提案/发布/设置
   六页全 200 且标题正确；旧深链 `/workbench/legal/...` 302；匿名 `/d` 仍 401
-
-## 归档豁免
-
-归档豁免：2026-11-21 任务正文已注明不做/延后，见该条说明
