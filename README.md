@@ -1,5 +1,10 @@
 # law-bench · 中文法律合同起草与评测工作台
 
+<!-- deploy-location -->
+> **部署清单不在本仓。** 集群清单在 `fd-infra-deploy/all-services/law-bench/`。
+> 2026-11-21 删除了残留的 `deploy/` —— 它已与部署仓漂移而 ArgoCD 读的始终是部署仓那份。
+
+
 > **Part of the [Lex line (寻数·识律)](https://www.finddatatech.cloud/products/lex) of [FindData](https://www.finddatatech.cloud)** — the LawBench workbench: clause corpus, taxonomy-driven contract assembly and LLM evaluation.
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](pyproject.toml)
