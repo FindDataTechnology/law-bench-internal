@@ -58,3 +58,36 @@ def test_is_agent_stays_narrow():
     """``is_agent`` 仍只认 ``agent:``：铸凭据那道闸的语义没变。"""
     assert agent_ids.is_agent("agent:x@y") is True
     assert agent_ids.is_agent("fleet:probe") is False
+
+
+# ------------------------------------------------------------ 运维裁决身份
+
+
+def test_ops_identity_is_not_a_machine_identity():
+    """Ops decisions are made by people; classifying them as machine would
+    forbid the very action they exist to authorise."""
+    assert agent_ids.is_ops("ops:chengsishi/dup-keys") is True
+    assert agent_ids.is_machine("ops:chengsishi/dup-keys") is False
+
+
+@pytest.mark.parametrize(
+    "identity",
+    ["ops:", "ops:chengsishi", "ops:/reason", "ops:a/b/c", "ops:has space/x",
+     "ops:x/y\tz", "", None, "system:import", "fleet:probe", "user:alice"],
+)
+def test_ops_identity_shape_is_enforced(identity):
+    """`<operator>/<reason>` with both parts non-empty and no extra separator."""
+    assert agent_ids.is_ops(identity) is False
+
+
+def test_ops_identity_builder_round_trips():
+    built = agent_ids.ops_identity("chengsishi", "duplicate-submissions")
+    assert built == "ops:chengsishi/duplicate-submissions"
+    assert agent_ids.is_ops(built) is True
+
+
+@pytest.mark.parametrize("operator,reason", [("", "r"), ("o", ""), ("a b", "r"),
+                                             ("o", "a/b")])
+def test_ops_identity_builder_refuses_incomplete_parts(operator, reason):
+    with pytest.raises(ValueError):
+        agent_ids.ops_identity(operator, reason)

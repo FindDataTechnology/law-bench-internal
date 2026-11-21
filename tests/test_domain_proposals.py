@@ -272,39 +272,76 @@ def test_machine_identity_cannot_reject(db_conn):
 
 
 def test_unrecognised_identity_prefix_is_not_treated_as_machine(db_conn):
-    """Pins a known gap rather than pretending it is covered.
+    """`system:*` is not a machine class — and now it may not reject either.
 
     `agent_ids.is_machine` recognises the three prefixes the platform mints
-    (`agent:` / `fleet:` / `extract:`). `system:*` is **not** one of them, so an
-    actor of `system:anything` passes this gate and can reject.
+    (`agent:` / `fleet:` / `extract:`). `system:*` is not one of them, so before
+    2026-11-21 an actor of `system:anything` passed the machine gate and could
+    reject. That is the same defect `is_machine` exists to remove: permission
+    decided by the shape of a string.
 
-    This is asserted, not fixed: `system:*` is also absent from
-    `submitters.classify_source`, so it is an unrecognised identity class rather
-    than a machine one — several scripts do use it as an operator label
-    (`operator="system:import"`). Whether the platform should mint a `system:`
-    class is a separate decision from whether rejection is human-only; folding
-    them together here would change `confirm`'s behaviour too.
-
-    What this test buys: if someone later adds `system:` to MACHINE_PREFIXES,
-    this fails and forces that change to be deliberate.
+    The fix is a **namespace rule**, not another prefix: a colon-carrying actor
+    must belong to a registered class (`user:` / `ops:`; machine classes are
+    refused above). `system:*` belongs to none, so it is refused here.
     """
     make_domain(db_conn, "dom-system-prefix")
     proposal = submit_company(db_conn, "dom-system-prefix")
 
-    # Today: not classified as machine, so the gate does not stop it.
     from src.bench.agent_ids import MACHINE_PREFIXES, is_machine
 
     assert not any(p.startswith("system") for p in MACHINE_PREFIXES)
     assert is_machine("system:import") is False
 
+    with pytest.raises(PermissionError, match="不得驳回提案"):
+        proposals.reject(
+            db_conn,
+            domain_key="dom-system-prefix",
+            proposal_id=proposal["id"],
+            actor="system:import",
+            note="脚本清理",
+        )
+    assert proposals.get(
+        db_conn, domain_key="dom-system-prefix", proposal_id=proposal["id"]
+    )["state"] == "pending"
+
+
+def test_operational_identity_may_reject(db_conn):
+    """An ops decision carries who and why, so it is reviewable afterwards.
+
+    `ops:<operator>/<reason>` is a distinct class from a machine (a person made
+    this call) and from a plain user (the action is a batch disposition, not a
+    per-item judgement). It exists because a domain with no human lead still
+    needs a way to dispose of proposals, and the alternative — letting any
+    `system:*` string through — was the defect.
+    """
+    make_domain(db_conn, "dom-ops-reject")
+    proposal = submit_company(db_conn, "dom-ops-reject")
+
     rejected = proposals.reject(
         db_conn,
-        domain_key="dom-system-prefix",
+        domain_key="dom-ops-reject",
         proposal_id=proposal["id"],
-        actor="system:import",
-        note="脚本清理",
+        actor="ops:chengsishi/duplicate-submissions",
+        note="同一数据集被两个提交方各提一遍",
     )
     assert rejected["state"] == "rejected"
+    assert rejected["decided_by"] == "ops:chengsishi/duplicate-submissions"
+
+
+@pytest.mark.parametrize("bad", ["ops:", "ops:chengsishi", "ops:/reason",
+                                 "ops:a/b/c", "ops:has space/x"])
+def test_malformed_operational_identity_is_refused(db_conn, bad):
+    """A malformed ops identity names nobody or gives no reason."""
+    make_domain(db_conn, "dom-ops-bad")
+    proposal = submit_company(db_conn, "dom-ops-bad")
+    with pytest.raises(PermissionError):
+        proposals.reject(
+            db_conn,
+            domain_key="dom-ops-bad",
+            proposal_id=proposal["id"],
+            actor=bad,
+            note="清理",
+        )
 
 
 def test_reject_then_resubmit_needs_new_evidence(db_conn):

@@ -44,6 +44,60 @@ def is_agent(identity: Optional[str]) -> bool:
     return bool((identity or "").strip().startswith(AGENT_PREFIX))
 
 
+#: 「运维裁决」身份的前缀：人类操作者代表平台执行的一次批量处置。
+#:
+#: 为什么它必须是独立一类，而不是 ``system:*`` 的自由字符串：
+#:
+#: 2026-11-21 给 ``reject`` 补机器身份闸时发现，闸只能按前缀拦——
+#: ``fleet:``/``agent:``/``extract:`` 被拦，而任何 ``system:`` 都能过。
+#: 于是「谁能裁决」实际由一串调用方自己拼的字符决定，这是 ``is_machine`` 当初
+#: 要消灭的同一个问题（见上方 2026-11-14 那段）。
+#:
+#: 这一类的定义把「运维动作」变成**可识别、可统计、可审计**的身份：
+#: ``ops:<operator>/<reason-slug>``。两个分量都必填——操作者是谁、依据是什么，
+#: 缺一个就不成立。它不是机器身份（决定是人做的），也不是普通用户身份
+#: （动作是批量处置而非逐条业务裁决），所以三个判定各自独立：
+#:
+#:   is_machine("ops:alice/dup-keys")  -> False   （人做的决定）
+#:   is_ops("ops:alice/dup-keys")      -> True
+#:   is_ops("system:import")           -> False   （没人、没依据）
+OPS_PREFIX = "ops:"
+
+
+def is_ops(identity: Optional[str]) -> bool:
+    """``True`` for a well-formed operational-decision identity.
+
+    Shape is enforced, not just the prefix: ``ops:<operator>/<reason>`` with both
+    parts non-empty and no whitespace. A bare ``ops:`` or ``ops:x`` is not an
+    operational identity — it names nobody or gives no reason, and both are what
+    makes the decision reviewable afterwards.
+    """
+    text = (identity or "").strip()
+    if not text.startswith(OPS_PREFIX):
+        return False
+    operator, sep, reason = text[len(OPS_PREFIX):].partition("/")
+    if not sep or not operator.strip() or not reason.strip():
+        return False
+    # Exactly one separator: a second `/` would make "which part is the reason"
+    # ambiguous, and the whole point is that the reason is a stable, greppable
+    # token (`ops:alice/duplicate-keys` groups by slug).
+    if "/" in reason:
+        return False
+    return not any(ch.isspace() for ch in text)
+
+
+def ops_identity(operator: str, reason_slug: str) -> str:
+    """Build ``ops:<operator>/<reason-slug>``; both parts are required."""
+    operator = (operator or "").strip()
+    reason_slug = (reason_slug or "").strip()
+    if not operator or not reason_slug:
+        raise ValueError("运维裁决身份需要 operator 与 reason")
+    for name, value in (("operator", operator), ("reason", reason_slug)):
+        if any(ch.isspace() for ch in value) or "/" in value:
+            raise ValueError(f"{name} 不得含空白或斜杠：{value!r}")
+    return f"{OPS_PREFIX}{operator}/{reason_slug}"
+
+
 def is_machine(identity: Optional[str]) -> bool:
     """``True`` when ``identity`` is any machine-shaped identity, not just an agent.
 

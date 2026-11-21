@@ -261,6 +261,28 @@ def _event_to_dict(row: Any) -> dict:
 # ------------------------------------------------------------------- helpers
 
 
+def _is_human_or_user_actor(actor: str) -> bool:
+    """Whether ``actor`` may act as a person: a bare name/email, or ``user:``.
+
+    The judgement is about **namespaces, not plausibility**: this codebase records
+    people as bare strings (`lead-1`), emails (`dev@local`, `alice@example.com`)
+    and `user:<identity>`. Anything carrying a colon prefix must belong to a
+    registered namespace — `agent:`/`fleet:`/`extract:` are refused before this
+    runs, `ops:` is recognised as operational, `user:` is accepted here. An
+    unregistered namespace (the `system:*` that slipped through on 2026-11-21) is
+    refused, because "the shape of the string decides the permission" is exactly
+    the defect `is_machine` exists to remove.
+    """
+    text = (actor or "").strip()
+    if not text:
+        return False
+    if text.startswith(submitters.PREFIX_USER):
+        return True
+    if ":" in text:
+        return False
+    return True
+
+
 def _load_domain(conn: Any, *, domain_key: str) -> dict:
     """Resolve the domain or refuse the operation (fail-closed isolation)."""
     domain = workspaces.get_domain(conn, domain_key=domain_key)
@@ -994,6 +1016,22 @@ def reject(
     # 加固后人工 lead 正常驳回（``user:``/邮箱）不受任何影响。
     if agent_ids.is_machine(actor):
         raise PermissionError("机器身份不得驳回提案；驳回是人类 lead 的职责")
+    # 运维裁决是**带依据的、由人代表的批量处置**，不是机器动作。它放行的前提是
+    # 身份本身已经声明了「谁 + 为什么」（`ops:<operator>/<reason-slug>`），
+    # 所以审计里读得出这是一次运维处置而非一次业务裁决。
+    #
+    # 判据按「命名空间」而不是「像不像人」：带冒号前缀的身份必须属于某个已登记的
+    # 类别（机器类上面已拒、`ops:` 放行、`user:` 放行），未登记的命名空间一律拒。
+    # 裸串与邮箱（`lead-1` / `dev@local`）照旧放行——这个代码库里人就是这么记的，
+    # 而且它们本来就被接受，收紧它们不是这次要解决的问题。
+    #
+    # 这一道补的是 2026-11-21 实测到的洞：`system:import` 既不是机器类（`is_machine`
+    # 只认三个前缀）也不是人，却能驳回。形状决定权限，正是要消灭的东西。
+    if not agent_ids.is_ops(actor) and not _is_human_or_user_actor(actor):
+        raise PermissionError(
+            f"身份 {actor!r} 不得驳回提案：驳回要么由人类 lead 执行，"
+            "要么用运维裁决身份 ops:<operator>/<reason>（两个分量必填）。"
+        )
 
     cur = conn.execute(
         f"UPDATE domain_proposals SET state = 'rejected', decided_by = %s, "
