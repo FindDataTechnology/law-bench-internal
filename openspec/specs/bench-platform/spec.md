@@ -53,11 +53,17 @@
 
 ### Requirement: 溯源四层与真值守卫
 
-知识单元与物料 SHALL 标注互斥四层 tier：gold（人工核验，可作 ground truth/reward）、silver（机器草稿或**未经人工核验的确认产出**，仅暖启）、bronze（机器自评，仅失败分析）、raw（无标签语义）；分层语义由加载器单点实现，过滤语义（如「silver 及以上」） SHALL 与现行 finetune 飞轮一致。bronze 与 silver SHALL 永不作 ground truth 或 reward——守卫 SHALL 在导出器单点实现，任何按真值用途取 bronze/silver 的请求即报错拒绝，绕过导出器直读原表 SHALL 被登记为已知风险并纳入文档与代码评审检查项。
+知识单元与物料 SHALL 标注互斥四层 tier：gold（人工核验，可作 ground truth/reward）、silver（机器草稿或**未经人工核验的确认产出**，仅暖启）、bronze（机器自评，仅失败分析）、raw（无标签语义）；分层语义由加载器单点实现，过滤语义（如「silver 及以上」） SHALL 与现行 finetune 飞轮一致。bronze 与 silver SHALL 永不作 ground truth 或 reward——守卫 SHALL 在导出器单点实现，任何按真值用途取 bronze/silver 的请求即报错拒绝。
 
 **确认产出落在 `silver`**（2026-11-21 修订）：域内提案被确认后写入的知识单元 SHALL 为 `silver`，不论确认者是智能体还是人；`raw` 保留给无标签的批量摄入，MUST NOT 作为确认产出的档位。一条单元从 `silver` 升到 `gold` SHALL 走升档阶梯并携带 reviewer 身份，MUST NOT 由确认动作直接产出 `gold`。
 
-这条把「人签」落在**升档**而不是**确认**上：判断仍然须人，但人判断的对象是「这条事实够不够格当真值」，不是「这条提案能不能进本体」。
+#### Scenario: 人签落在升档而非确认
+- **WHEN** 检查一条提案从确认到成为真值的路径
+- **THEN** 确认动作只产出 `silver`，人判断发生在升档到 `gold` 时并携带 reviewer 身份；人判断的对象是「这条事实够不够格当真值」，不是「这条提案能不能进本体」
+
+#### Scenario: 绕过导出器属已知风险
+- **WHEN** 有代码不经导出器直读原表取 bronze/silver 作真值
+- **THEN** 该做法被登记为已知风险，并纳入文档与代码评审检查项
 
 #### Scenario: 真值守卫拒绝 bronze
 - **WHEN** 下游脚本经导出器按 ground-truth/reward 用途请求 bronze 物料
@@ -108,73 +114,53 @@
 - **WHEN** 对同一 wire 图谱连续导入两次，随后 wire 一周无变化
 - **THEN** 第二次导入零新增行；平台创作、评审与发布流程在该周内照常进行，不报同步停滞
 
-#### Scenario: gold 回写带档
-- **WHEN** gold 实体/关系回写 wire
-- **THEN** 回写载荷含 sensitivity/tier 标记，wire 侧 ACL 与舰队可直接消费；回写失败如实报错且知验台侧状态不误标「已回写」
-
 #### Scenario: 草稿不触发回写
 - **WHEN** 一条单元仍是 bronze（机器预标注）或尚未经人工核验
 - **THEN** 不产生任何指向 wire 的写请求
 
+### Requirement: seed 导入是一次性操作
+
+seed 导入 SHALL 是**一次性**操作：重复导入幂等（零新增行、不 bump 更新时间），但平台 MUST NOT 以定时任务或常驻通道持续镜像 wire 的变化——平台的工作 MUST NOT 因为 wire 停止变化而停止。
+
+#### Scenario: wire 停止变化不影响平台
+- **WHEN** wire 一周没有新声明
+- **THEN** 平台的创作、评审、发布流程照常推进，不出现「同步停滞」告警，也不因此重建任何单元
+
+### Requirement: 已发布本体的权威源是平台
+
+**wire 是 seed 原料源，已发布本体的权威源是平台**（蓝图 §六）。平台发布面 SHALL 是全部消费者的唯一权威分发路径；wire 侧本地存储与平台发布版本的分歧 SHALL 按消费者侧本地版本化处理，MUST NOT 形成第二权威。
+
 #### Scenario: 发布权威源
 - **WHEN** 消费者（含 wire）经分发面拉取平台已发布本体
-- **THEN** 快照以平台发布版本为权威（digest 锚定），消费者本地处理不构成第二权威源；wire 本地存储与平台发布版本的分歧按消费者侧本地版本化处理（对账依 pull 面）
+- **THEN** 快照以平台发布版本为权威（digest 锚定），消费者本地处理不构成第二权威源
 
-### Requirement: 是**一次性**操作：重复导入幂等（零新增行、不 bump 更新时间），但平台 MUST NOT 以定时任务或常驻通道持续镜像 … (#1)
+#### Scenario: 分歧不升级为第二权威
+- **WHEN** wire 本地存储与平台发布版本不一致
+- **THEN** 按消费者侧本地版本化处理（对账依 pull 面），不把 wire 侧副本当成并列的权威
 
-seed 导入 SHALL 是**一次性**操作：重复导入幂等（零新增行、不 bump 更新时间），但平台 MUST NOT 以定时任务或常驻通道持续镜像 wire 的变化——平台的工作 MUST NOT 因为 wire 停止变化而停止。 **wire 是 seed 原料源，已发布本体的权威源是平台**（蓝图 §六）。 平台发布面是全部消费者的唯一权威分发路径；
+### Requirement: 升格与回写的引用、对齐与留痕
 
-#### Scenario: split-out behaviour 1
-- **WHEN** this behaviour is exercised
-- **THEN** the requirement above holds
+升格流水线 SHALL 保证：seed 阶段 wire 是原料身份的参照键（平台 KU 以 wire 源引用与 `external_key` 回指 seed）；两层之间的语义同一性只经 crosswalk 表达；gold 回写 wire 附带 `sensitivity`/`tier` 标记；回写方向单向；升格与回写全程可追溯。
 
-### Requirement: 形成第二权威 (#2)
+#### Scenario: seed 身份可回指
+- **WHEN** 检视一条由 wire 声明升格而来的知识单元
+- **THEN** 其 `external_key` 与 wire 源引用共同构成回指 seed 的参照键
 
-wire 侧本地存储与平台发布版本的分歧按消费者侧本地版本化处理，MUST NOT 形成第二权威。
+#### Scenario: 语义同一性只经 crosswalk
+- **WHEN** 需要在平台与 wire 两层之间对齐同一语义
+- **THEN** 只经 crosswalk 表达（见 `bench-wire-seam`），MUST NOT 靠复制词表或以 wire 键作为平台主键来「实现对齐」
 
-#### Scenario: split-out behaviour 4
-- **WHEN** this behaviour is exercised
-- **THEN** the requirement above holds
+#### Scenario: gold 回写带档
+- **WHEN** gold 实体/关系回写 wire
+- **THEN** 回写载荷含 sensitivity/tier 标记，wire 侧 ACL 与舰队可直接消费；回写失败如实报错且知验台侧状态不误标「已回写」
 
-### Requirement: 保证： - seed 阶段 wire 为原料身份的参照键（平台 … (#3)
+#### Scenario: 回写单向
+- **WHEN** 回写 payload 里出现 wire 实体的结构性变更，或来源是尚未核验的草稿
+- **THEN** 该内容不进入回写——方向单向，只承载平台已确认的标注
 
-升格流水线 SHALL 保证： - seed 阶段 wire 为原料身份的参照键（平台 KU 以 wire 源引用与 `external_key` 回指 seed）；
-
-#### Scenario: split-out behaviour 5
-- **WHEN** this behaviour is exercised
-- **THEN** the requirement above holds
-
-### Requirement: 只经 crosswalk 表达（见 `bench-wire-seam`），MUST NOT 靠复制词表或以 … (#4)
-
-- 两层之间的语义同一性 SHALL 只经 crosswalk 表达（见 `bench-wire-seam`），MUST NOT 靠复制词表或以 wire 键作为平台主键来「实现对齐」；
-
-#### Scenario: split-out behaviour 6
-- **WHEN** this behaviour is exercised
-- **THEN** the requirement above holds
-
-### Requirement: 附带 `sensitivity`/`tier` 标记（面向 seed 源的档位回写，供其 ACL … (#5)
-
-- gold 回写 wire 时 SHALL 附带 `sensitivity`/`tier` 标记（面向 seed 源的档位回写，供其 ACL 与舰队消费）；
-
-#### Scenario: split-out behaviour 7
-- **WHEN** this behaviour is exercised
-- **THEN** the requirement above holds
-
-### Requirement: 单向——只承载平台已确认的标注，MUST NOT 承载 wire 实体的结构性变更，且机器草稿 MUST … (#6)
-
-回写方向 SHALL 单向——只承载平台已确认的标注，MUST NOT 承载 wire 实体的结构性变更，且机器草稿 MUST NOT 触发回写；
-
-#### Scenario: split-out behaviour 8
-- **WHEN** this behaviour is exercised
-- **THEN** the requirement above holds
-
-### Requirement: 可追溯（每条 gold 可回指 wire 源声明与审核人） (#7)
-
-- 升格与回写全程 SHALL 可追溯（每条 gold 可回指 wire 源声明与审核人）； 发布契约见 `knowledge-distribution`。
-
-#### Scenario: split-out behaviour 9
-- **WHEN** this behaviour is exercised
-- **THEN** the requirement above holds
+#### Scenario: 全程可追溯
+- **WHEN** 查询任一 gold 单元的来源链
+- **THEN** 可回指 wire 源声明与审核人；发布契约见 `knowledge-distribution`
 
 ### Requirement: 开源切分边界
 
