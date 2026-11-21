@@ -157,6 +157,9 @@ def step3_probe_hard_stops(conn) -> int:
         conn, key="probe-domain", name="Probe", template_name="data-ontology",
         template_version=None, created_by=agent,
     ))
+    # gate-probe: change_template_version —— 这次调用**要被拒**。
+    # 它带着 agent 身份调模板写入口，硬停判据必须拦住；`test_bench_template_gate_bypass`
+    # 认出这个标记，所以它不会被当成第二扇门（那一类要进 ALLOWED，语义不同）。
     _expect("change_template_version", lambda: templates.update_template(
         conn, name="data-ontology", schema={"entity_types": ["dataset"]},
         created_by=agent,

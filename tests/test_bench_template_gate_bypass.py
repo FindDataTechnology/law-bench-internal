@@ -36,6 +36,27 @@ ALLOWED = {
 
 _CALL = re.compile(r"\b(?:templates|bench_templates)\.update_template\s*\(")
 
+#: A call site that exists **to be refused**: it invokes the writer with a machine
+#: identity precisely so the hard-stop guard fires. Adding such a file to ALLOWED
+#: would be wrong — that dict means "may promote without the gate", while this
+#: means "may try and must be stopped". The marker is explicit so a real second
+#: door cannot get in by looking vaguely like a probe.
+_REFUSAL_PROBE = re.compile(r"#\s*gate-probe:\s*\S+")
+_PROBE_CALL = re.compile(
+    r"update_template\([^)]*created_by\s*=\s*(?:agent|fleet|extract)", re.S
+)
+
+
+def _is_refusal_probe(text: str) -> bool:
+    """The file says it probes the gate **and** passes a machine identity to it.
+
+    Both halves are required: the comment alone would let anyone opt out with a
+    one-line marker, and the machine-identity argument alone could be a typo in a
+    real promotion. Together they describe exactly one thing — an attempt the
+    hard-stop guard must refuse.
+    """
+    return bool(_REFUSAL_PROBE.search(text)) and bool(_PROBE_CALL.search(text))
+
 
 def test_no_unmarked_update_template_call_sites():
     offenders: list[str] = []
@@ -45,7 +66,7 @@ def test_no_unmarked_update_template_call_sites():
             if rel in ALLOWED:
                 continue
             text = path.read_text(encoding="utf-8", errors="ignore")
-            if _CALL.search(text):
+            if _CALL.search(text) and not _is_refusal_probe(text):
                 offenders.append(rel)
     assert not offenders, (
         "these call sites write a new template version without passing the "
@@ -58,3 +79,25 @@ def test_every_allowlisted_file_still_exists():
     """A stale allowlist entry is a guard that quietly stopped covering anything."""
     missing = [rel for rel in ALLOWED if not (REPO_ROOT / rel).exists()]
     assert not missing, f"allowlist names files that no longer exist: {missing}"
+
+
+def test_a_comment_alone_cannot_opt_out():
+    """The marker without a machine-identity call is not a probe.
+
+    Otherwise anyone could add `# gate-probe: x` to a real second door and this
+    guard would wave it through — the comment is the cheap half to fake.
+    """
+    text = (
+        "# gate-probe: whatever\n"
+        "templates.update_template(conn, name='t', schema={}, created_by='lead-1')\n"
+    )
+    assert not _is_refusal_probe(text)
+
+
+def test_the_real_probe_shape_is_recognised():
+    text = (
+        "# gate-probe: change_template_version\n"
+        "templates.update_template(conn, name='t', schema={},\n"
+        "                          created_by=agent)\n"
+    )
+    assert _is_refusal_probe(text)
