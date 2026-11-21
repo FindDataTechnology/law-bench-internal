@@ -9,14 +9,6 @@
 
 每条评测结论 SHALL 是一条可查询记录，至少包含：**被评对象地址**（`subject`：种类 + 键 + 版本）、**尺子地址**（`ruler`：种类 + 键 + digest）、通道、门、结局、逐条证据、判官身份（若走判官通道）、产生时间与产生者。
 
-被评对象地址的版本 SHALL 能区分同一对象的不同代（同一份 pack 的 v3 与 v4 不是同一对象）；对象无内生版本时 SHALL 以其内容指纹或不可变快照标识充任，MUST NOT 留空或以「最新」代替。尺子地址 SHALL 携带与发布面同一份实现算出的 digest，MUST NOT 由本能力另写一份 digest 逻辑。
-
-一条结论缺少对象地址或尺子地址时 SHALL 被拒绝写入，错误 SHALL 指明缺哪一项；MUST NOT 以空值落库后再由读面猜测。
-
-被评对象的种类 SHALL 可取 `template`，用于本体模板作为被评对象。本能力 SHALL 导出该种类标识为常量，使「模板升版门」不必在代码里散落字符串字面量。
-
-种类的取值集合 MUST NOT 收窄为闭集：既有 `docs/evaluation-system.md` 将其定义为「任意」，且生产里已有 `judge`（判官校准）与 `knowledge-units`（数据检查）两种取值；关集合会打死既有写入路径，而收益只是让一个字符串早一点报错。
-
 #### Scenario: 缺对象地址拒绝写入
 - **WHEN** 评测调用方未提供被评对象地址或版本为空
 - **THEN** 写入被拒并指明缺项，台账不产生该行
@@ -37,6 +29,69 @@
 - **WHEN** 对 `enterprise-base` v1 跑一次覆盖度评估并写入结论
 - **THEN** 台账出现一行 `subject_kind=template`、`subject_key=enterprise-base`、`subject_version=v1`，其尺子地址由该模板 `rubric_refs` 解析结果派生
 
+### Requirement: 能区分同一对象的不同代（同一份 pack 的 v3 与 v4 … (#1)
+
+被评对象地址的版本 SHALL 能区分同一对象的不同代（同一份 pack 的 v3 与 v4 不是同一对象）；
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 以其内容指纹或不可变快照标识充任，MUST NOT 留空或以「最新」代替 (#2)
+
+对象无内生版本时 SHALL 以其内容指纹或不可变快照标识充任，MUST NOT 留空或以「最新」代替。
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 携带与发布面同一份实现算出的 digest，MUST NOT 由本能力另写一份 digest 逻辑 (#3)
+
+尺子地址 SHALL 携带与发布面同一份实现算出的 digest，MUST NOT 由本能力另写一份 digest 逻辑。
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 被拒绝写入，错误 SHALL 指明缺哪一项 (#4)
+
+一条结论缺少对象地址或尺子地址时 SHALL 被拒绝写入，错误 SHALL 指明缺哪一项；
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 以空值落库后再由读面猜测 (#5)
+
+MUST NOT 以空值落库后再由读面猜测。
+
+#### Scenario: split-out behaviour 5
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 可取 `template`，用于本体模板作为被评对象 (#6)
+
+被评对象的种类 SHALL 可取 `template`，用于本体模板作为被评对象。
+
+#### Scenario: split-out behaviour 6
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 导出该种类标识为常量，使「模板升版门」不必在代码里散落字符串字面量 (#7)
+
+本能力 SHALL 导出该种类标识为常量，使「模板升版门」不必在代码里散落字符串字面量。
+
+#### Scenario: split-out behaviour 7
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 收窄为闭集：既有 `docs/evaluation-system.md` 将其定义为「任意」，且生产里已有 `judge`（判官校准）与 `knowledge-units`（数据检查）两种取值 (#8)
+
+种类的取值集合 MUST NOT 收窄为闭集：既有 `docs/evaluation-system.md` 将其定义为「任意」，且生产里已有 `judge`（判官校准）与 `knowledge-units`（数据检查）两种取值； 关集合会打死既有写入路径，而收益只是让一个字符串早一点报错。
+
+#### Scenario: split-out behaviour 8
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: 四道门是闭集，门不可自创
 
 每条结论的门 SHALL 是以下之一：`no-worse`（候选不劣于对照）、`regression`（相对基线降幅超阈值即拦）、`all-pass`（逐条全过）、`calibrated`（尺子或判官自身可信）。写入未知门值 SHALL 被拒绝并列出闭集成员，MUST NOT 静默收下或映射到一个「差不多」的门。

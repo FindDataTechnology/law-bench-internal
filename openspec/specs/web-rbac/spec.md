@@ -104,17 +104,7 @@ cookie.
 
 ### Requirement: Permission-aware navigation
 
-The workbench UI SHALL hide the navigation entries and actions that the current identity is
-not permitted to use, and SHALL show them to identities that are permitted. Navigation
-filtering SHALL be a usability layer only; it MUST NOT replace server-side enforcement.
-
-Navigation SHALL be rendered for the **current context** rather than as a single global list:
-on the domain list the navigation SHALL carry the brand (pointing at the domain list), the
-language switch, the identity block, and the platform gate (only for the `admin` platform
-scope); on any domain page it SHALL carry the current-domain indicator, the domain switcher
-(only domains in which the identity holds an active membership), the language switch, the
-identity block, and the platform gate (only for `admin`). Global asset entries that are not
-scoped to the current domain SHALL NOT be rendered on every page.
+The workbench UI SHALL hide the navigation entries and actions that the current identity is not permitted to use, and SHALL show them to identities that are permitted.
 
 #### Scenario: Navigation is filtered for a read-only identity
 
@@ -131,6 +121,45 @@ scoped to the current domain SHALL NOT be rendered on every page.
 - **WHEN** an identity opens any domain page
 - **THEN** the header does not render the full global asset link list; those entries are reached through the domain's own areas and the global asset pool instead
 
+### Requirement: be a usability layer only (#1)
+
+Navigation filtering SHALL be a usability layer only;
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: replace server-side enforcement (#2)
+
+it MUST NOT replace server-side enforcement.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be rendered for the **current context** … (#3)
+
+Navigation SHALL be rendered for the **current context** rather than as a single global list: on the domain list the navigation SHALL carry the brand (pointing at the domain list), the language switch, the identity block, and the platform gate (only for the `admin` platform scope);
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: carry the current-domain indicator, the domain … (#4)
+
+on any domain page it SHALL carry the current-domain indicator, the domain switcher (only domains in which the identity holds an active membership), the language switch, the identity block, and the platform gate (only for `admin`).
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be rendered on every page (#5)
+
+Global asset entries that are not scoped to the current domain SHALL NOT be rendered on every page.
+
+#### Scenario: split-out behaviour 5
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: Fail-closed authorization
 
 Absent, empty, or unrecognized scopes MUST deny access rather than admit it. The system
@@ -197,18 +226,7 @@ An authenticated identity without membership in the target domain SHALL be denie
 
 ### Requirement: Permission-aware navigation covers the domain surface
 
-The workbench navigation SHALL render domain entries by effective permission: an identity
-SHALL see only domains where it holds an active membership; the platform administration
-gate (templates, all-domain membership, invitations) SHALL render only for identities
-holding the `admin` platform scope. Unauthorized entries SHALL NOT be rendered rather than
-rendered and denied.
-
-Domain entries SHALL be presented domain-first: the domain list (`/d`) SHALL be the primary
-navigation surface for choosing a domain, and inside a domain the navigation SHALL expose only
-that domain's areas, filtered by the identity's role **in that domain**. The current domain
-SHALL be resolved server-side from the path and re-validated against membership on every
-request; a client-supplied domain indicator MUST NOT be trusted. Platform-level entries SHALL
-NOT appear inside any domain's area navigation.
+The workbench navigation SHALL render domain entries by effective permission: an identity SHALL see only domains where it holds an active membership;
 
 #### Scenario: Navigation is filtered by domain membership
 
@@ -224,3 +242,51 @@ NOT appear inside any domain's area navigation.
 
 - **WHEN** an identity holding the `admin` platform scope opens a domain page
 - **THEN** template management, opening a domain, and cross-domain invitations appear only under the platform gate, not inside the domain's area navigation
+
+### Requirement: render only for identities holding the … (#6)
+
+the platform administration gate (templates, all-domain membership, invitations) SHALL render only for identities holding the `admin` platform scope.
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be rendered rather than rendered and … (#7)
+
+Unauthorized entries SHALL NOT be rendered rather than rendered and denied.
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be presented domain-first: the domain list … (#8)
+
+Domain entries SHALL be presented domain-first: the domain list (`/d`) SHALL be the primary navigation surface for choosing a domain, and inside a domain the navigation SHALL expose only that domain's areas, filtered by the identity's role **in that domain**.
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be resolved server-side from the path … (#9)
+
+The current domain SHALL be resolved server-side from the path and re-validated against membership on every request;
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: be trusted (#10)
+
+a client-supplied domain indicator MUST NOT be trusted.
+
+#### Scenario: split-out behaviour 5
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: appear inside any domain's area navigation (#11)
+
+Platform-level entries SHALL NOT appear inside any domain's area navigation.
+
+#### Scenario: split-out behaviour 6
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds

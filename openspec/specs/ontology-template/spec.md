@@ -8,11 +8,7 @@
 
 ### Requirement: 模板三件套与 schema 完整性
 
-平台 SHALL 以结构化记录承载领域本体模板，模板 SHALL 包含三件套：本体 schema（实体类型词表、概念结构定义、关系种类词表、知识档位 tier 与 sensitivity 词表）、语料模板声明（语料源类型与组织约定，声明级，不含语料本身）、审核 rubric 引用（可指向既有 rubric 库条目）。本体 schema 的四类词表 SHALL 为必填；缺失任一必填项的模板 SHALL NOT 可被实例化。
-
-**继承约束**：模板 SHALL 可声明 `extends`（指向另一模板的某个具体版本），继承其四类词表与概念结构。继承后子模板 SHALL 只能**增补**词表项，SHALL NOT 删除或重命名父模板的项；同一词表项在父子冲突时 SHALL 以子模板为准并在模板详情中标注覆盖来源。实例化前 SHALL 校验**继承后的有效词表**完整（而非仅校验子模板自身的增量）。
-
-**分层约束**：模板 SHALL 另声明 `layer`（闭集见 `ontology-template-layering`）与 `authority`（`platform` 或 `external`）。`extends` 两端 SHALL 同层，跨层继承 SHALL 被拒绝；跨层语义关联 SHALL 只能以 `aligned_with` 声明且不合并词表。`authority: external` 的模板 SHALL NOT 接受词表就地修改。
+平台 SHALL 以结构化记录承载领域本体模板，模板 SHALL 包含三件套：本体 schema（实体类型词表、概念结构定义、关系种类词表、知识档位 tier 与 sensitivity 词表）、语料模板声明（语料源类型与组织约定，声明级，不含语料本身）、审核 rubric 引用（可指向既有 rubric 库条目）。
 
 #### Scenario: 合法模板可保存并展示
 - **WHEN** 平台管理员提交含完整四类词表与语料声明的模板
@@ -34,6 +30,85 @@
 - **WHEN** 提交一份没有 `layer` 的模板
 - **THEN** 保存被拒绝并报明缺失的层声明
 
+### Requirement: 为必填 (#1)
+
+本体 schema 的四类词表 SHALL 为必填；
+
+#### Scenario: split-out behaviour 1
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 可被实例化 (#2)
+
+缺失任一必填项的模板 SHALL NOT 可被实例化。
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 可声明 `extends`（指向另一模板的某个具体版本），继承其四类词表与概念结构 (#3)
+
+**继承约束**：模板 SHALL 可声明 `extends`（指向另一模板的某个具体版本），继承其四类词表与概念结构。
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 只能**增补**词表项，SHALL NOT 删除或重命名父模板的项 (#4)
+
+继承后子模板 SHALL 只能**增补**词表项，SHALL NOT 删除或重命名父模板的项；
+
+#### Scenario: split-out behaviour 4
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 以子模板为准并在模板详情中标注覆盖来源 (#5)
+
+同一词表项在父子冲突时 SHALL 以子模板为准并在模板详情中标注覆盖来源。
+
+#### Scenario: split-out behaviour 5
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 校验**继承后的有效词表**完整（而非仅校验子模板自身的增量） (#6)
+
+实例化前 SHALL 校验**继承后的有效词表**完整（而非仅校验子模板自身的增量）。
+
+#### Scenario: split-out behaviour 6
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 另声明 `layer`（闭集见 `ontology-template-layering`）与 `authority`（`platform` 或 `external`） (#7)
+
+**分层约束**：模板 SHALL 另声明 `layer`（闭集见 `ontology-template-layering`）与 `authority`（`platform` 或 `external`）。
+
+#### Scenario: split-out behaviour 7
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 同层，跨层继承 SHALL 被拒绝 (#8)
+
+`extends` 两端 SHALL 同层，跨层继承 SHALL 被拒绝；
+
+#### Scenario: split-out behaviour 8
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 只能以 `aligned_with` 声明且不合并词表 (#9)
+
+跨层语义关联 SHALL 只能以 `aligned_with` 声明且不合并词表。
+
+#### Scenario: split-out behaviour 9
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 接受词表就地修改 (#10)
+
+`authority: external` 的模板 SHALL NOT 接受词表就地修改。
+
+#### Scenario: split-out behaviour 10
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: 模板版本化
 
 模板 SHALL 带单调递增版本号；已存在实例的模板 SHALL 不可就地改写历史版本（改字段即出新版本）；实例 SHALL 记录其据以创建的模板版本，且 SHALL NOT 因模板后续出新版本而自动变化。

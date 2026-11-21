@@ -25,13 +25,7 @@
 
 ### Requirement: 层内可继承，跨层不可继承
 
-模板 SHALL 允许 `extends` 指向另一模板的具体版本，继承其词表并按既有的「只增不删」规则合并。
-
-**继承的判据是权威，不是层号。** `extends` 两端 SHALL 同属一种 `authority.kind`（`platform` / `external` / 未声明层的 `legacy` 伪权威）才允许合并；权威不同时 SHALL 拒绝，错误 SHALL 指明两端各自的层与权威，并指出正确做法。
-
-这条按权威而非层号判定，是因为两者回答不同的问题：**层**排的是「多具体」（foundation → industry → domain），**权威**答的是「谁能发版」。foundation 层喂给 industry 层正是它存在的意义；真正不能合并的是「平台自有词表」与「外部包自有词表」——两者有各自的发布节奏，合并会强迫一侧接受另一侧的生命周期。
-
-跨权威的语义关联 SHALL 以 `aligned_with` 声明表达，而不是继承。`aligned_with` SHALL 只声明「某类型与另一权威的某类型是同一概念」，MUST NOT 合并两侧词表，也 MUST NOT 使任一侧获得对方的类型。
+模板 SHALL 允许 `extends` 指向另一模板的具体版本，继承其词表并按既有的「只增不删」规则合并。 **继承的判据是权威，不是层号。
 
 #### Scenario: foundation 喂给 industry 是正常关系
 - **WHEN** 一份 `platform` 权威的 `industry` 模板 `extends` 同样 `platform` 权威的 `foundation` 模板
@@ -49,6 +43,37 @@
 - **WHEN** 观测层模板声明 `aligned_with: {target: foundation-v1, type_map: {company: organization}}`
 - **THEN** 观测层模板的有效实体类型仍只有它自己的集合，`organization` 不出现在其词表中，别名映射可被读面查到
 
+### Requirement: 同属一种 `authority.kind`（`platform` / `external` / 未声明层的 … (#1)
+
+** `extends` 两端 SHALL 同属一种 `authority.kind`（`platform` / `external` / 未声明层的 `legacy` 伪权威）才允许合并；
+
+#### Scenario: split-out behaviour 2
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 拒绝，错误 SHALL 指明两端各自的层与权威，并指出正确做法 (#2)
+
+权威不同时 SHALL 拒绝，错误 SHALL 指明两端各自的层与权威，并指出正确做法。 这条按权威而非层号判定，是因为两者回答不同的问题：**层**排的是「多具体」（foundation → industry → domain），**权威**答的是「谁能发版」。 foundation 层喂给 industry 层正是它存在的意义； 真正不能合并的是「平台自有词表」与「外部包自有词表」——两者有各自的发布节奏，合并会强迫一侧接受另一侧的生命周期。
+
+#### Scenario: split-out behaviour 3
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 以 `aligned_with` 声明表达，而不是继承 (#3)
+
+跨权威的语义关联 SHALL 以 `aligned_with` 声明表达，而不是继承。
+
+#### Scenario: split-out behaviour 7
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
+
+### Requirement: 只声明「某类型与另一权威的某类型是同一概念」，MUST NOT 合并两侧词表，也 MUST NOT 使任一侧获得对方的类型 (#4)
+
+`aligned_with` SHALL 只声明「某类型与另一权威的某类型是同一概念」，MUST NOT 合并两侧词表，也 MUST NOT 使任一侧获得对方的类型。
+
+#### Scenario: split-out behaviour 8
+- **WHEN** this behaviour is exercised
+- **THEN** the requirement above holds
 ### Requirement: 模板必须声明词表权威出处
 
 每份模板 SHALL 携带 `authority` 声明，指明其词表的权威源：`platform`（知验台自有，可在此编辑）或 `external`（外部包/协议持有，本平台只读）。`external` 权威 SHALL 携带来源标识与版本。
