@@ -6,6 +6,7 @@ requires-python = ">=3.12,<3.14"
 dependencies = [
     "openai>=1.40",
     "pyjwt[crypto]>=2.8",
+    "python-multipart>=0.0.9",
     "deepeval>=3.9.6",
     "python-dotenv>=1.2.2",
     "fastapi>=0.115",
