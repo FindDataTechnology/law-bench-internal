@@ -92,6 +92,7 @@ MUST NOT 以空值落库后再由读面猜测。
 #### Scenario: split-out behaviour 8
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: 四道门是闭集，门不可自创
 
 每条结论的门 SHALL 是以下之一：`no-worse`（候选不劣于对照）、`regression`（相对基线降幅超阈值即拦）、`all-pass`（逐条全过）、`calibrated`（尺子或判官自身可信）。写入未知门值 SHALL 被拒绝并列出闭集成员，MUST NOT 静默收下或映射到一个「差不多」的门。
@@ -160,11 +161,21 @@ MUST NOT 以空值落库后再由读面猜测。
 
 任一晋升或发版动作 SHALL 产生一条待复测项，指名被改动的对象地址与其改动前的基线结论；复测结论 SHALL 引用该基线。
 
-晋升动作本身 MUST NOT 因缺少复测而被拒绝，也 MUST NOT 自动触发复测执行——本要求只保证复测项被登记、可被读到、且不被静默丢弃。
+**「任一晋升或发版动作」SHALL 包含本平台的两类生产写入**：提案被确认、内容写入本体；以及本体模板被升到新版本。这两类动作完成之后 SHALL 各登记一条待复测项，MUST NOT 停在「机制存在但无人调用」。
+
+晋升动作本身 MUST NOT 因缺少复测而被拒绝，也 MUST NOT 自动触发复测执行——本要求只保证复测项被登记、可被读到、且不被静默丢弃。复测登记的失败 MUST NOT 回滚晋升或发版本身。
 
 #### Scenario: 晋升后出现待复测项
 - **WHEN** 某候选被晋升为新版本
 - **THEN** 台账中出现一条待复测项，指向新版本地址与晋升前的基线结论
+
+#### Scenario: 确认提案登记复测项
+- **WHEN** 一条提案被确认并写入一条知识单位
+- **THEN** 出现一条指向该单位的待复测项，带该域改动前最近一条结论为其基线，或标记「立基线」
+
+#### Scenario: 升版登记复测项
+- **WHEN** 一个本体模板被升到新版本
+- **THEN** 出现一条指向该模板新版本的待复测项
 
 #### Scenario: 复测引用晋升前基线
 - **WHEN** 对某已晋升版本执行复测
@@ -259,3 +270,17 @@ MUST NOT 以空值落库后再由读面猜测。
 #### Scenario: split-out behaviour 7
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
+### Requirement: 数据通道评测结论必须带域归属
+
+由**数据通道**产出的评测结论 SHALL 带上其尺子所属的域（`rubric_domain_id`），使域作用域读面（域矩阵评测柱、域运行列表、域级机器读面）能读到它。
+
+尺子名在尺子表里**唯一**解析到一个归属非空的域时 SHALL 回填该域；零命中或多命中时 MUST 留空，MUST NOT 猜测或任选其一。
+
+#### Scenario: 数据通道结论在域内可见
+- **WHEN** 一个数据通道结论以其 `rubric_name` 唯一对应某域
+- **THEN** 该结论的 `rubric_domain_id` 被回填，域的评测柱与运行列表能读到它
+
+#### Scenario: 归属不唯一时留空
+- **WHEN** 一个数据通道结论的 `rubric_name` 对应多个域或无对应域
+- **THEN** 其 `rubric_domain_id` 为空，不伪造归属
