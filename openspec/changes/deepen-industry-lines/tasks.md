@@ -19,7 +19,7 @@
       活跃单位 → `run_data_eval`；空集 inconclusive；返回 run id + 三态 + 通过比
 - [ ] 1.4 新 `packs/erp/`：`__init__.py`（`from . import checks`）、`checks.py`（D3 四条）、
       `pack.yaml`（kinds=[account,crosswalk]、eval_suites=[erp-ontology-consistency]）
-- [ ] 1.5 `packs/gov/__init__.py` 补 `from packs.gov import checks`
+- [ ] 1.5 ~~`packs/gov/__init__.py` 补 `from packs.gov import checks`~~ **不做，理由如下**：gov 生产单位是 `document`（公文本体），而 `packs/gov/checks.py` 评的是 `gov-fact`（registry 事实），两者不相交 ⇒ 即便导入，gov 域的可评 kind 仍为空、写一条 inconclusive。导入只会在进程里注册一批匹配不到任何单位的 checker，是「看起来接上了、实际永远判不出来」。gov 的真实 registry 单位接生产另立（见挂账 6.2）。gov 域因此如实报「暂无确定性判据」，这正是 domain-data-eval 要的诚实空态。
 - [ ] 1.6 `src/web/routes/console.py`：`POST /d/{key}/eval-runs/data-eval`（`_LEAD_GATES` +
       `content:write`），调 `run_domain_data_eval`，flash 三态 + 通过比；`domain_console_bench.html`
       增按钮（仅 `cap.can_write` 且该域有 pack/checker 时）
