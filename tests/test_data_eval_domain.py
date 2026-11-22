@@ -58,6 +58,13 @@ def _make_domain(conn, key):
 
 
 def _rubric(conn, *, name, domain_id):
+    # `rubrics` is created by harbor_seed, not ensure_schema; create it here so
+    # the attribution probe has a table to read.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS rubrics ("
+        "id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, name text, "
+        "context text, source text, created_at text, domain_id bigint)"
+    )
     return conn.execute(
         "INSERT INTO rubrics (name, context, source, created_at, domain_id) "
         "VALUES (%s, 'check', 'platform-seed', 'now', %s) RETURNING id",
@@ -119,8 +126,8 @@ def test_store_result_leaves_null_when_rubric_owned_by_two_domains(db_conn):
 
 def test_run_domain_data_eval_attributes_and_counts(db_conn, registry, monkeypatch):
     dom = _make_domain(db_conn, "dom-de")
-    # one kind declared by the (faked) pack, with a checker
-    monkeypatch.setattr(data_eval.packs, "load_pack", lambda key: {"kinds": [KIND]})
+    # The evaluable kinds are derived from the domain's live unit kinds ∩
+    # registered checkers (domain-name-agnostic), not from a pack-name lookup.
     registry.register_checker(KIND, "nonempty", lambda u: bool(u.get("body")))
     for i in range(2):
         authoring.authoring_create_unit(
@@ -147,14 +154,25 @@ def test_run_domain_data_eval_attributes_and_counts(db_conn, registry, monkeypat
     assert row["rubric_domain_id"] == dom["id"]
 
 
-def test_run_domain_data_eval_inconclusive_without_units(db_conn, registry, monkeypatch):
+def test_run_domain_data_eval_inconclusive_without_units(db_conn, registry):
     _make_domain(db_conn, "dom-empty-eval")
-    monkeypatch.setattr(data_eval.packs, "load_pack", lambda key: {"kinds": [KIND]})
     registry.register_checker(KIND, "nonempty", lambda u: True)
+    # no live units of any evaluable kind → nothing evaluable
 
     out = data_eval.run_domain_data_eval(db_conn, domain_key="dom-empty-eval", db_path=db_conn)
     assert out["outcome"] == "inconclusive"
     assert out["run_ids"] == []
+
+
+def test_evaluable_kinds_ignores_kinds_without_registered_checker(db_conn, registry):
+    """A live kind with no registered checker is not evaluable (honest, not zero)."""
+    _make_domain(db_conn, "dom-nochk")
+    authoring.authoring_create_unit(
+        db_conn, domain_key="dom-nochk", kind=KIND,
+        external_key="e-1", body="x", operator="expert-1",
+    )
+    # KIND has no checker registered in this test (registry fixture is pristine)
+    assert data_eval.evaluable_kinds(db_conn, domain_key="dom-nochk") == []
 
 
 def test_run_domain_data_eval_raises_on_unknown_domain(db_conn):
