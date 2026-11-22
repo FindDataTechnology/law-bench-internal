@@ -57,7 +57,8 @@ def _retest_rows(conn, domain_id):
 
 def _submit(conn, domain_key, *, external_key="acme"):
     # `user:` needs no fleet registration (only `fleet:` is gated on a live
-    # registration), so the test can submit without wiring a fleet.
+    # registration), but a human identity may only submit as itself — so the
+    # authenticated identity must equal the `user:` source's identity.
     return proposals.submit(
         conn,
         domain_key=domain_key,
@@ -67,6 +68,7 @@ def _submit(conn, domain_key, *, external_key="acme"):
         body="Acme GmbH",
         evidence={"quote": "Acme", "source_path": "x"},
         submitted_by="expert@x",
+        authenticated_as="expert@x",
     )
 
 
