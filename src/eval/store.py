@@ -650,6 +650,38 @@ def ensure_schema(db_path=DEFAULT_DB) -> None:
         _retry_on_deadlock(_do_ensure)
 
 
+def _resolve_rubric_domain_id(
+    *, rubric_name: Optional[str], db_path=DEFAULT_DB
+) -> Optional[int]:
+    """The single domain that owns ``rubric_name``, or ``None`` when not unique.
+
+    Uses the same ``rubrics.domain_id`` column that
+    ``src.bench.domain_rubrics.effective_rubrics`` reads for domain visibility, so
+    attribution stays on one authority. Returns ``None`` for a missing name, zero
+    matches, or more than one distinct owning domain — the caller must not guess
+    (D1: a fabricated attribution is worse than a missing one). Best-effort: any
+    DB error yields ``None`` rather than failing the whole write.
+    """
+    if not rubric_name:
+        return None
+    try:
+        conn = connect(db_path)
+        try:
+            rows = conn.execute(
+                "SELECT DISTINCT domain_id FROM rubrics "
+                "WHERE name = %s AND domain_id IS NOT NULL",
+                (rubric_name,),
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 - attribution is best-effort, never fatal
+        return None
+    if len(rows) != 1:
+        return None
+    row = rows[0]
+    return row["domain_id"] if isinstance(row, dict) else row[0]
+
+
 def store_result(
     result: dict,
     contract_path: Optional[str] = None,
@@ -673,6 +705,7 @@ def store_result(
     outcome: Optional[str] = None,
     baseline_run_id: Optional[int] = None,
     provisional: bool = False,
+    rubric_domain_id: Optional[int] = None,
 ) -> int:
     """Insert an evaluation run + its per-criterion verdicts. Returns the run id.
 
@@ -705,6 +738,17 @@ def store_result(
         "pass" if result["all_pass"] else "fail"
     )
 
+    # Domain attribution (change deepen-industry-lines D1): a data-channel
+    # conclusion is attributed to the domain that owns its ruler, so the domain
+    # matrix / run list (which join on ``rubric_domain_id``) can see it. Only
+    # filled when the caller passes it explicitly or when the rubric name
+    # resolves to exactly one owning domain — never guessed (a fabricated
+    # attribution is worse than a missing one). Legacy rows keep NULL.
+    if rubric_domain_id is None:
+        rubric_domain_id = _resolve_rubric_domain_id(
+            rubric_name=result.get("rubric"), db_path=db_path
+        )
+
     def _do_insert():
         conn = connect(db_path)
         try:
@@ -716,9 +760,9 @@ def store_result(
                 " channel, unit_kind, "
                 " subject_kind, subject_key, subject_version, "
                 " ruler_kind, ruler_key, ruler_digest, "
-                " gate, outcome, baseline_run_id, provisional) "
+                " gate, outcome, baseline_run_id, provisional, rubric_domain_id) "
                 "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
-                " %s,%s,%s, %s,%s,%s, %s,%s,%s,%s) "
+                " %s,%s,%s, %s,%s,%s, %s,%s,%s,%s,%s) "
                 "RETURNING id",
                 (
                     result["rubric"],
@@ -750,6 +794,7 @@ def store_result(
                     effective_outcome,
                     baseline_run_id,
                     bool(provisional),
+                    rubric_domain_id,
                 ),
             )
             run_id = cur.fetchone()["id"]

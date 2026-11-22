@@ -71,6 +71,13 @@ _TIER_ORDER = ("raw", "bronze", "silver", "gold")
 SUMMARY_CONSISTENT = "ledger.reconcile.consistent"
 SUMMARY_GAPS = "ledger.reconcile.gaps"
 
+#: Kinds the kernel itself writes that belong to no template vocabulary. A
+#: ``crosswalk`` is a seam between two ontologies (``proposals._write_through_kernel``
+#: writes it), not a missing entity type — so it must not be reported as an
+#: out-of-vocabulary anomaly, or every domain that maps to an external system
+#: reads as broken. Reconciliation splits these from genuine out-of-vocab kinds.
+SEAM_KINDS: frozenset[str] = frozenset({"crosswalk"})
+
 
 # ------------------------------------------------------------------ helpers
 
@@ -582,10 +589,16 @@ def reconcile(conn: Any, *, domain: dict) -> dict:
         latest_version is not None and anchored_version < latest_version
     )
 
-    consistent = not unused_kinds and not out_of_vocab_kinds and not template_outdated
+    # Kernel seams (e.g. `crosswalk`) are written by the kernel and belong to no
+    # template vocabulary — they must not be reported as out-of-vocab anomalies.
+    # Split them out and judge consistency on the genuine remainder.
+    seam_kinds = sorted(k for k in out_of_vocab_kinds if k in SEAM_KINDS)
+    genuine_out_of_vocab = [k for k in out_of_vocab_kinds if k not in SEAM_KINDS]
+    consistent = not unused_kinds and not genuine_out_of_vocab and not template_outdated
     return {
         "unused_kinds": unused_kinds,
-        "out_of_vocab_kinds": out_of_vocab_kinds,
+        "out_of_vocab_kinds": genuine_out_of_vocab,
+        "seam_kinds": seam_kinds,
         "template_outdated": template_outdated,
         "consistent": consistent,
         "summary_key": SUMMARY_CONSISTENT if consistent else SUMMARY_GAPS,

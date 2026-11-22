@@ -253,6 +253,13 @@
       <div class="hint">{{ t.console.ontology.reconcile_out_of_vocab_fix }}</div>
       {% else %}<span class="muted">{{ t.console.ontology.reconcile_none }}</span>{% endif %}
     </dd>
+    <dt>{{ t.console.ontology.reconcile_seam }}</dt>
+    <dd>
+      {% if reconcile.seam_kinds %}
+      {% for kind in reconcile.seam_kinds %}<code>{{ kind }}</code> {% endfor %}
+      <div class="hint">{{ t.console.ontology.reconcile_seam_hint }}</div>
+      {% else %}<span class="muted">{{ t.console.ontology.reconcile_none }}</span>{% endif %}
+    </dd>
   </dl>
 </div>
 

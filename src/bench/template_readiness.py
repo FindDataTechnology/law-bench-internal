@@ -181,6 +181,61 @@ def promote_template_via_gate(
     )
     if problem:
         raise ValueError(problem)
-    return templates.update_template(
+    promoted = templates.update_template(
         conn, name=name, schema=schema, created_by=created_by
     )
+    _book_retests_for_promoted_template(
+        conn, name=name, version=int(promoted["version"]), created_by=created_by
+    )
+    return promoted
+
+
+def _book_retests_for_promoted_template(
+    conn: Any, *, name: str, version: int, created_by: str
+) -> None:
+    """Book a retest for each domain anchored to this template (change C2).
+
+    A template is not owned by one domain — it is anchored by domains — so the
+    obligation is booked per anchoring domain (the domain whose eval the new
+    version bears on). Fail-open: a booking error is logged and swallowed; the
+    promotion already succeeded and must not be unwound for it.
+    """
+    import logging
+
+    from . import verdicts
+
+    log = logging.getLogger(__name__)
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT d.key AS domain_key, d.id AS domain_id "
+            "FROM domains d JOIN ontology_templates t ON t.id = d.template_id "
+            "WHERE t.name = %s AND d.archived_at IS NULL",
+            (name,),
+        ).fetchall()
+    except Exception:  # noqa: BLE001
+        log.warning("retest: could not list anchoring domains for %s", name, exc_info=True)
+        return
+    for row in rows:
+        domain_key = row["domain_key"] if isinstance(row, dict) else row[0]
+        domain_id = row["domain_id"] if isinstance(row, dict) else row[1]
+        try:
+            base = conn.execute(
+                "SELECT id FROM eval_runs WHERE rubric_domain_id = %s "
+                "ORDER BY id DESC LIMIT 1",
+                (domain_id,),
+            ).fetchone()
+            baseline_run_id = base["id"] if base else None
+            verdicts.register_retest(
+                conn,
+                domain_key=domain_key,
+                subject_kind="template",
+                subject_key=name,
+                subject_version=f"v{version}",
+                baseline_run_id=baseline_run_id,
+                created_by=created_by,
+            )
+        except Exception:  # noqa: BLE001 - one domain failing must not stop the rest
+            log.warning(
+                "retest booking failed for template %s@v%s domain %s",
+                name, version, domain_key, exc_info=True,
+            )

@@ -78,6 +78,7 @@ def run_data_eval(
     kind: str,
     unit_ids: Optional[list[str]] = None,
     db_path: Any = DEFAULT_DB,
+    rubric_domain_id: Optional[int] = None,
 ) -> int:
     """Run every checker registered for ``kind`` over the kind's units.
 
@@ -193,4 +194,5 @@ def run_data_eval(
         ruler_digest=checker_ruler["digest"],
         gate="regression",
         outcome=data_outcome,
+        rubric_domain_id=rubric_domain_id,
     )

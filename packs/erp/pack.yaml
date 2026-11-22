@@ -1,0 +1,10 @@
+name: erp
+version: 0.1.0
+description: ERP 域包（账本体线）：行业科目映射的确定性校验——映射目标必须落在内核通用科目闭集内、科目必须带 evidence 锚点（可回源）。零 LLM、零网络、零跨表联查。kind 与 src/bench 无关；判据属本包，内核域无涉。
+kinds:
+  - account
+components:
+  - type: module
+    path: packs/erp/checks.py
+eval_suites:
+  - erp-ontology-consistency

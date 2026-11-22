@@ -74,6 +74,11 @@ _importlib.import_module("packs.finance-data.asset_catalog")
 # rules, so a gov title folds the same way in the catalog, the ontology and
 # extraction. The pack itself stays outside src/bench.
 from packs import gov as _gov_pack  # noqa: F401
+# The ERP pack registers its account checkers (kind='account'), so a domain-data
+# eval of the erp domain can find them. Same rule as above: the pack stays
+# outside src/bench; the import lives at the app's edge.
+from packs import erp as _erp_pack  # noqa: F401
+from ...bench import data_eval as bench_data_eval
 from ...bench import ledger as bench_ledger
 from ...bench import quality
 from ...bench import domain_rubrics
@@ -242,6 +247,48 @@ async def console_lane_probe(
     return _flash(
         f"/d/{quote(domain_key)}/eval-runs", "flash.lane_probe", err=not result["ok"],
         detail=summary,
+    )
+
+
+@write_router.post(
+    "/d/{domain_key}/eval-runs/data-eval", include_in_schema=False,
+    name="console_data_eval",
+    dependencies=[Depends(require_scope("content:write"))],
+)
+async def console_data_eval(
+    request: Request,
+    domain_key: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Run one deterministic data evaluation over the domain's live units.
+
+    Manual and a POST for the same reason the lane probe is: a data eval can walk
+    thousands of units, so probing on page load would make every view slow. The
+    conclusion is written with the domain attribution (change
+    deepen-industry-lines C1), so it lands on this domain's run list and matrix
+    immediately. Report three-state honestly — never present "nothing to
+    evaluate" as a pass.
+    """
+    domain = resolve_domain(db, domain_key)
+    require_domain_role("lead")(request, user=user, conn=db)
+    kinds = bench_data_eval.evaluable_kinds(domain_key)
+    if not kinds:
+        return _flash(
+            f"/d/{quote(domain_key)}/eval-runs", "console.flash.data_eval_none",
+            err=True,
+        )
+    try:
+        summary = bench_data_eval.run_domain_data_eval(db, domain_key=domain_key)
+    except ValueError as exc:
+        return _flash(
+            f"/d/{quote(domain_key)}/eval-runs", "console.flash.data_eval_failed",
+            err=True, detail=str(exc),
+        )
+    return _flash(
+        f"/d/{quote(domain_key)}/eval-runs", "console.flash.data_eval_done",
+        n_passed=summary["n_passed"], n_criteria=summary["n_criteria"],
+        outcome=summary["outcome"],
     )
 
 
@@ -1358,8 +1405,16 @@ def console_eval_runs(
         for item in group["items"]
     )
     from ...bench import lane as bench_lane
+    from ...bench import verdicts as bench_verdicts
 
     lane_state = bench_lane.describe()
+    # Open retest obligations (change deepen-industry-lines C2): confirmations and
+    # template promotions book these. Read-only here — the page lists what is
+    # owed, a human/scheduler decides when to actually re-measure.
+    open_retests = bench_verdicts.list_open_retests(db, domain_key=domain_key)
+    # Whether a deterministic data evaluation can run here (a pack declares a kind
+    # with a checker registered in this process). Read-only capability probe.
+    evaluable_kinds = bench_data_eval.evaluable_kinds(domain_key)
     return _templates.TemplateResponse(
         request,
         "domain_console_bench.html",
@@ -1375,6 +1430,8 @@ def console_eval_runs(
             # on 2026-11-09 was false in the worst way: the lane was dead and no
             # run had ever succeeded.
             "lane": lane_state,
+            "open_retests": open_retests,
+            "data_eval_kinds": evaluable_kinds,
         },
     )
 

@@ -1009,7 +1009,52 @@ def confirm(
         note=note or None,
     )
     conn.commit()
+    # A confirmed proposal wrote content into the ontology; book the retest
+    # obligation so the change can later be shown to have helped or not
+    # (change deepen-industry-lines C2). The obligation only registers — it never
+    # runs an evaluation — and a booking failure must NOT unwind the confirmation
+    # (register_retest's own discipline: a promotion is not rejected for lack of a
+    # retest). Booked after the commit so a failed booking can never roll it back.
+    if proposal["kind"] not in (CROSSWALK_KIND, ADOPTION_KIND):
+        _book_retest_after_confirm(conn, domain=domain, proposal=proposal, actor=actor)
     return _proposal_to_dict(updated)
+
+
+def _book_retest_after_confirm(
+    conn: Any, *, domain: dict, proposal: dict, actor: str
+) -> None:
+    """Register a retest obligation for a unit a confirmation just wrote.
+
+    Fail-open: any error is logged and swallowed — a booking problem must not
+    surface as a confirmation failure the caller cannot act on. Baseline = the
+    domain's most recent attributed conclusion (may be ``None`` → "establish
+    baseline").
+    """
+    import logging
+
+    from . import verdicts
+
+    try:
+        row = conn.execute(
+            "SELECT id FROM eval_runs WHERE rubric_domain_id = %s "
+            "ORDER BY id DESC LIMIT 1",
+            (domain["id"],),
+        ).fetchone()
+        baseline_run_id = (row["id"] if row else None)
+        verdicts.register_retest(
+            conn,
+            domain_key=domain["key"],
+            subject_kind="knowledge-unit",
+            subject_key=f"{proposal['kind']}:{proposal['external_key']}",
+            subject_version="silver",
+            baseline_run_id=baseline_run_id,
+            created_by=actor,
+        )
+    except Exception:  # noqa: BLE001 - booking is best-effort, never fatal
+        logging.getLogger(__name__).warning(
+            "retest booking failed for confirmed proposal %s in domain %s",
+            proposal.get("id"), domain.get("key"), exc_info=True,
+        )
 
 
 def reject(

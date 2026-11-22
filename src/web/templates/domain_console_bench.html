@@ -112,4 +112,48 @@
   <p class="hint">{{ t.console.bench.lane_probe_hint }}</p>
   {% endif %}
 </div>
+
+<div class="panel">
+  <h2>{{ t.console.bench.data_eval_h2 }}</h2>
+  <p class="hint">{{ t.console.bench.data_eval_intro }}</p>
+  {% if data_eval_kinds %}
+  <p class="hint">{{ t.console.bench.data_eval_kinds }}<code>{{ data_eval_kinds|join(', ') }}</code></p>
+  {% if cap.can_assign %}
+  <form method="POST" action="{{ url_for('console_data_eval', domain_key=domain.key) }}">
+    <button type="submit" class="btn btn-sm">{{ t.console.bench.data_eval_btn }}</button>
+  </form>
+  {% endif %}
+  {% else %}
+  <p class="hint"><span class="badge badge-warn">{{ t.console.bench.data_eval_unavailable }}</span></p>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h2>{{ t.console.bench.retest_h2 }}</h2>
+  <p class="hint">{{ t.console.bench.retest_intro }}</p>
+  {% if open_retests %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>{{ t.console.bench.retest_col_target }}</th>
+        <th>{{ t.console.bench.retest_col_baseline }}</th>
+        <th>{{ t.console.bench.retest_col_status }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in open_retests %}
+      <tr>
+        <td>{{ r.title }}<div class="muted"><code>{{ r.target_key }}</code></div></td>
+        <td class="muted">{{ r.detail }}</td>
+        <td><span class="badge">{{ r.status }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  {% with message=t.console.bench.retest_none %}
+    {% include '_empty_state.html' %}
+  {% endwith %}
+  {% endif %}
+</div>
 {% endblock %}

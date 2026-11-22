@@ -204,6 +204,42 @@ def test_out_of_vocabulary_unit_is_flagged(db_conn):
     assert rec["summary_key"] == "ledger.reconcile.gaps"
 
 
+def test_kernel_seam_is_not_reported_as_out_of_vocab(db_conn):
+    """`crosswalk` is a kernel seam, not a missing entity type: it must be split
+    into ``seam_kinds`` and must NOT make a domain inconsistent (change
+    deepen-industry-lines C3)."""
+    domain = make_domain(db_conn, "dom-seam")
+    store.upsert_knowledge_unit(
+        db_conn,
+        kind="crosswalk",
+        external_key="c-1",
+        body="maps to something",
+        namespace="dom-seam",
+    )
+
+    rec = ledger.reconcile(db_conn, domain=domain)
+    assert rec["seam_kinds"] == ["crosswalk"]
+    assert rec["out_of_vocab_kinds"] == []
+    # A domain with only a kernel seam and no real out-of-vocab kind is
+    # consistent w.r.t. vocabulary (unused_kinds is still reported separately).
+    assert "crosswalk" not in rec["out_of_vocab_kinds"]
+
+
+def test_seam_and_genuine_out_of_vocab_are_separated(db_conn):
+    """A seam kind and a genuinely unknown kind are reported in different lists."""
+    domain = make_domain(db_conn, "dom-seam-mix")
+    for kind in ("crosswalk", "gadget"):
+        store.upsert_knowledge_unit(
+            db_conn, kind=kind, external_key=f"{kind}-1",
+            body=f"{kind} body", namespace="dom-seam-mix",
+        )
+
+    rec = ledger.reconcile(db_conn, domain=domain)
+    assert rec["seam_kinds"] == ["crosswalk"]
+    assert rec["out_of_vocab_kinds"] == ["gadget"]
+    assert rec["consistent"] is False
+
+
 # ------------------------------------------------------- 发布层 digest 单源
 
 

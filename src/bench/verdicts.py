@@ -453,6 +453,29 @@ def find_open_retest(
     return dict(row) if row else None
 
 
+def list_open_retests(conn: Any, *, domain_key: str) -> list[dict]:
+    """All open retest obligations for a domain, newest first.
+
+    Pure read for the domain page's "待复测" panel. An obligation is open while
+    its work order is ``pending``/``in_progress``; done/cancelled ones are
+    history. Returns the columns the page renders (object address, target
+    version, baseline, status) — no content is copied.
+    """
+    domain = conn.execute(
+        "SELECT id FROM domains WHERE key = %s", (domain_key,)
+    ).fetchone()
+    if domain is None:
+        return []
+    rows = conn.execute(
+        "SELECT id, assignee, title, detail, target_kind, target_key, status "
+        "FROM authoring_tasks WHERE domain_id = %s AND target_kind = %s "
+        "  AND status IN ('pending','in_progress') "
+        "ORDER BY id DESC",
+        (domain["id"], RETEST_TARGET_KIND),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def baseline_for_retest(
     conn: Any, *, domain_key: str, subject_kind: str, subject_key: str
 ) -> Optional[int]:
