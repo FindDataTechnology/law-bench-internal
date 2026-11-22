@@ -278,7 +278,7 @@ async def console_data_eval(
     """
     domain = resolve_domain(db, domain_key)
     require_domain_role("lead")(request, user=user, conn=db)
-    kinds = bench_data_eval.evaluable_kinds(domain_key)
+    kinds = bench_data_eval.evaluable_kinds(db, domain_key=domain_key)
     if not kinds:
         return _flash(
             f"/d/{quote(domain_key)}/eval-runs", "console.flash.data_eval_none",

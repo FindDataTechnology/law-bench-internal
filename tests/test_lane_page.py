@@ -129,3 +129,37 @@ def test_probe_is_lead_only(conn, monkeypatch):
         ok = c.post("/d/legal/eval-runs/lane-probe", follow_redirects=False)
     assert ok.status_code == 303
     assert "lane_probe" in ok.headers["location"]
+
+
+def test_data_eval_button_runs_and_writes_an_attributed_run(conn, monkeypatch):
+    """The data-eval POST must not 500 and must write a domain-attributed run.
+
+    This exercises the *route* (``console_data_eval``), which the pure-function
+    unit tests in ``test_data_eval_domain.py`` do not: a signature mismatch at
+    the call site (``evaluable_kinds(domain_key)`` missing the connection) shipped
+    once as an HTTP 500 that CI's unit tests could not see. Seed a unit of a kind
+    that has a checker, POST, and assert the run exists with the domain id.
+    """
+    from src.bench import authoring, data_checks, store
+
+    data_checks.register_checker("clause", "nonempty", lambda u: bool(u.get("body")))
+    authoring.authoring_create_unit(
+        conn, domain_key="legal", kind="clause", external_key="c-1",
+        body="条款正文", operator="expert-1",
+    )
+    conn.commit()
+
+    with _client(conn, "u-lead") as c:
+        r = c.post("/d/legal/eval-runs/data-eval", follow_redirects=False)
+
+    assert r.status_code == 303, r.text
+    assert "data_eval" in r.headers["location"]
+    domains = conn.execute("SELECT id FROM domains WHERE key = 'legal'").fetchone()
+    runs = conn.execute(
+        "SELECT id, rubric_domain_id, channel FROM eval_runs "
+        "WHERE rubric_domain_id = %s ORDER BY id DESC", (domains["id"],)
+    ).fetchall()
+    assert runs, "no attributed run written by the data-eval POST"
+    assert runs[0]["channel"] == "data"
+    # cleanup the global registration so it does not leak into other tests
+    data_checks._CHECKERS.get("clause", {}).pop("nonempty", None)
