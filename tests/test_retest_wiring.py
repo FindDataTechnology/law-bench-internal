@@ -56,15 +56,17 @@ def _retest_rows(conn, domain_id):
 
 
 def _submit(conn, domain_key, *, external_key="acme"):
+    # `user:` needs no fleet registration (only `fleet:` is gated on a live
+    # registration), so the test can submit without wiring a fleet.
     return proposals.submit(
         conn,
         domain_key=domain_key,
-        source="fleet:f1/m1",
+        source="user:expert@x",
         kind="company",
         external_key=external_key,
         body="Acme GmbH",
         evidence={"quote": "Acme", "source_path": "x"},
-        submitted_by="fleet:f1/m1",
+        submitted_by="expert@x",
     )
 
 
