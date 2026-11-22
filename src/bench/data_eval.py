@@ -43,17 +43,20 @@ def evaluable_kinds(conn: Any, *, domain_key: str) -> list[str]:
     from its pack directory (``finance`` vs ``finance-data``) is still covered.
     Returns ``[]`` for an unknown domain (the caller reports inconclusive), and
     never raises on a domain that simply has nothing evaluable yet.
+
+    One ``SELECT DISTINCT kind`` per render — not a full fetch of the domain's
+    units (the legal domain holds thousands of clauses; listing them just to learn
+    which kinds exist would make every page view slow).
     """
     domain = workspaces.get_domain(conn, domain_key=domain_key)
     if domain is None:
         return []
-    kinds = {
-        u["kind"]
-        for u in store.list_knowledge_units(
-            conn, namespace=domain["key"], include_deleted=False,
-            limit=store.MAX_LIST_UNITS,
-        )
-    }
+    rows = conn.execute(
+        "SELECT DISTINCT kind FROM knowledge_units "
+        "WHERE namespace = %s AND COALESCE(tags->>'deleted', 'false') <> 'true'",
+        (domain["key"],),
+    ).fetchall()
+    kinds = {r["kind"] if isinstance(r, dict) else r[0] for r in rows}
     return sorted(k for k in kinds if data_checks.checkers_for(k))
 
 
