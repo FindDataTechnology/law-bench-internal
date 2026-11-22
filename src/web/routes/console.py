@@ -281,20 +281,21 @@ async def console_data_eval(
     kinds = bench_data_eval.evaluable_kinds(db, domain_key=domain_key)
     if not kinds:
         return _flash(
-            f"/d/{quote(domain_key)}/eval-runs", "console.flash.data_eval_none",
+            f"/d/{quote(domain_key)}/eval-runs", "flash.data_eval_none",
             err=True,
         )
     try:
         summary = bench_data_eval.run_domain_data_eval(db, domain_key=domain_key)
     except ValueError as exc:
         return _flash(
-            f"/d/{quote(domain_key)}/eval-runs", "console.flash.data_eval_failed",
+            f"/d/{quote(domain_key)}/eval-runs", "flash.data_eval_failed",
             err=True, detail=str(exc),
         )
+    # The ratio is composed into `detail` because the flash renderer interpolates
+    # only `name`/`detail` (see base.html), not arbitrary keys.
     return _flash(
-        f"/d/{quote(domain_key)}/eval-runs", "console.flash.data_eval_done",
-        n_passed=summary["n_passed"], n_criteria=summary["n_criteria"],
-        outcome=summary["outcome"],
+        f"/d/{quote(domain_key)}/eval-runs", "flash.data_eval_done",
+        detail=f"{summary['n_passed']}/{summary['n_criteria']} · {summary['outcome']}",
     )
 
 

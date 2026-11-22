@@ -153,7 +153,14 @@ def test_data_eval_button_runs_and_writes_an_attributed_run(conn, monkeypatch):
         r = c.post("/d/legal/eval-runs/data-eval", follow_redirects=False)
 
     assert r.status_code == 303, r.text
-    assert "data_eval" in r.headers["location"]
+    # The flash key must be the top-level `flash.*` one (not `console.flash.*`),
+    # or `translate` passthrough renders the raw key instead of the message.
+    assert "flash.data_eval_done" in r.headers["location"]
+    # And the followed page must show the translated text, not the raw key.
+    with _client(conn, "u-lead") as c:
+        page = _rendered(c.get(r.headers["location"]).text)
+    assert "数据评测完成" in page
+    assert "flash.data_eval_done" not in page
     domains = conn.execute("SELECT id FROM domains WHERE key = 'legal'").fetchone()
     runs = conn.execute(
         "SELECT id, rubric_domain_id, channel FROM eval_runs "
