@@ -61,10 +61,10 @@
 - [x] 5.1 滚镜像到 ccr 后，对 `finance` / `erp` 各跑一次数据评测，取证结论带 `rubric_domain_id`
       且域矩阵「评测」柱 `last_run` 更新
 - [x] 5.2 确认（一条 pending 提案）后查 `authoring_tasks` 出现 `verdict-retest` 行，域页显示
-- [ ] 5.3 ego-browser 真身份（`aloadtree@gmail.com`）走 `/d/erp/eval-runs`：点「跑一次数据评测」→
+- [x] 5.3 ego-browser 真身份（`aloadtree@gmail.com`）走 `/d/erp/eval-runs`：点「跑一次数据评测」→
       看到三态结论 + 待复测面板；截图归档
-- [ ] 5.4 `scripts/smoke_prod.sh` 绿
-- [ ] 5.5 `acceptance.md`：逐条判据 + 真库读数 + 区分度证据
+- [x] 5.4 `scripts/smoke_prod.sh` 绿
+- [x] 5.5 `acceptance.md`：逐条判据 + 真库读数 + 区分度证据
 
 ## 6. 挂账
 

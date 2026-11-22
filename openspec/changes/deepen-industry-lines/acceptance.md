@@ -66,11 +66,25 @@
 - [x] 登录 `lawbench.finddatatech.cloud` → `/d/erp/eval-runs`（会话复用）
 - [x] 页面渲染「数据评测」面板：可评 kind=`account` + 按钮「跑一次数据评测」
 - [x] 「待复测项」面板渲染，erp 无义务明说「没有待复测项」
-- [~] 点按钮跑一次 → **首次暴露 500**（见 §4）；修复后重滚再点（见 §6）
-- [ ] 截图归档（修复后补）
+- [x] 点按钮 → **不再 500**；flash 显示翻译文本「数据评测完成：通过 46/46 · pass」（`sha-9cc0bd4` 修复后），新 run #24 落库（46/46，22:05:08）
+- [x] 截图归档 `/tmp/lawbench-erp-eval-final.png`
+
+> 过程中 e2e 抓到两个只有真浏览器才发现、单测全绿的缺陷：① POST 路由按旧签名调
+> `evaluable_kinds` → 500；② flash 用 `console.flash.*`（目录在 `flash.*`）+ `%(x)s`
+> printf（translate 用 brace `.format`）→ 渲染原始键。均已修并补路由级断言。
 
 ## 6. 出片与滚版
 
-- [x] `sha-983aa03` 进 ccr（skopeo digest `de1d1a85` 与 hkccr 一致）→ 滚 prod，digest 在役
+- [x] `sha-983aa03` 进 ccr（digest `de1d1a85`）→ 首滚 prod（含 C1/C2/C3，但按钮 500）
 - [x] pod 内实证：`erp` evaluable=[account]、`finance` evaluable=[fact]；C1/C2/C3 生产读数（见上）
-- [ ] `sha-425c150`（500 修复）出片 → ccr → 重滚 → 按钮 e2e 通过 + 截图
+- [x] `sha-425c150`（500 修复）→ ccr `1ba68b33` → 滚 prod
+- [x] `sha-9cc0bd4`（flash 修复）→ ccr `e96a71c6` → 滚 prod；按钮 e2e 通过（flash 译文 + run #24）
+- [x] `scripts/smoke_prod.sh` PASS（13 checks）
+
+## 7. 终态
+
+生产在役 `sha-9cc0bd4`（digest `e96a71c6`）。三条行业线自检：
+- `erp`：可评（account），run #21/#23/#24 均 46/46 带域归属
+- `finance`：可评（fact），run #22 735/735 带域归属
+- `gov`/`legal`/`data-ontology`：如实报无可评确定性判据（诚实空态）
+- 复测义务：确认提案即铸 `verdict-retest`，域页可见；台账把 `crosswalk` 单列为内核缝
