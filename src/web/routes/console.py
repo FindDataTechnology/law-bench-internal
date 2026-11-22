@@ -70,6 +70,12 @@ from packs.legal import asset_catalog as _legal_asset_catalog  # noqa: F401
 import importlib as _importlib
 
 _importlib.import_module("packs.finance-data.asset_catalog")
+# Its deterministic checkers (kind='fact') live in a separate module and register
+# on import; without this the finance domain's ruler can never run (measured
+# 2026-11-23: `checkers_for('fact')` was empty in the app process even though the
+# gold set and the ruler were in the DB). Importing it here, at the app's edge,
+# is what lets a domain-data eval of the finance domain find them.
+_importlib.import_module("packs.finance-data.checks")
 # Same rule for the second line: importing the gov pack registers its key-fold
 # rules, so a gov title folds the same way in the catalog, the ontology and
 # extraction. The pack itself stays outside src/bench.
@@ -1414,7 +1420,7 @@ def console_eval_runs(
     open_retests = bench_verdicts.list_open_retests(db, domain_key=domain_key)
     # Whether a deterministic data evaluation can run here (a pack declares a kind
     # with a checker registered in this process). Read-only capability probe.
-    evaluable_kinds = bench_data_eval.evaluable_kinds(domain_key)
+    evaluable_kinds = bench_data_eval.evaluable_kinds(db, domain_key=domain_key)
     return _templates.TemplateResponse(
         request,
         "domain_console_bench.html",

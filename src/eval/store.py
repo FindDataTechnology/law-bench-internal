@@ -664,18 +664,29 @@ def _resolve_rubric_domain_id(
     """
     if not rubric_name:
         return None
+    conn = connect(db_path)
     try:
-        conn = connect(db_path)
-        try:
+        # Run inside a savepoint: a probe that raises must roll back only this
+        # statement, never poison the caller's transaction (without it a swallowed
+        # error leaves the shared connection INERROR and the real INSERT that
+        # follows dies with "current transaction is aborted"). `rubrics` is
+        # created by harbor_seed, not ensure_schema, so on a DB that only ran
+        # ensure_schema the table may be absent — that is "no attribution", not
+        # an error.
+        with conn.transaction():
+            if conn.execute(
+                "SELECT to_regclass('rubrics') AS t"
+            ).fetchone()["t"] is None:
+                return None
             rows = conn.execute(
                 "SELECT DISTINCT domain_id FROM rubrics "
                 "WHERE name = %s AND domain_id IS NOT NULL",
                 (rubric_name,),
             ).fetchall()
-        finally:
-            conn.close()
     except Exception:  # noqa: BLE001 - attribution is best-effort, never fatal
         return None
+    finally:
+        conn.close()
     if len(rows) != 1:
         return None
     row = rows[0]

@@ -10,13 +10,18 @@ evaluation" (change deepen-industry-lines D2).
 Scope of a run, for a domain:
 
 - the domain's namespace is its ``key`` (``authoring`` writes every unit there);
-- the kinds are the ones the domain's **pack** declares *and* for which a
-  checker is registered in this process (``data_checks.checkers_for(kind)``).
-  A pack that declares a kind with no checker simply contributes nothing — that
-  is an honest "not evaluable yet", not a silent zero. This process must have
-  imported the pack (``packs.<line>``) for its checkers to exist; the web app
-  imports them at its edge (``src/web/routes/console.py``), like the kernel-
-  purity gate requires.
+- the kinds are the domain's **live unit kinds for which a checker is registered
+  in this process** (``data_checks.checkers_for(kind)``). This is deliberately
+  derived from the units that actually exist, not from a pack-name lookup:
+  a domain key need not equal its pack directory (the ``finance`` domain is fed
+  by the ``finance-data`` pack), so "call the pack after the domain" would miss
+  the richest industry domain. "What can this domain actually be measured on" is
+  answered by "which of its live kinds have a checker here".
+
+A kind whose pack declares it but for which no checker is registered is simply
+not evaluable — an honest "not measurable yet", not a silent zero. The process
+must have imported the pack for its checkers to exist; the web app imports them
+at its edge (``src/web/routes/console.py``), as the kernel-purity gate requires.
 
 An empty selection (no live units of any evaluable kind) yields an
 ``inconclusive`` conclusion per ``run_data_eval`` — never a fabricated pass.
@@ -28,22 +33,28 @@ from typing import Any, Optional
 
 from src.settings import DEFAULT_DB
 
-from . import data_checks, packs, store, workspaces
+from . import data_checks, store, workspaces
 
 
-def evaluable_kinds(domain_key: str) -> list[str]:
-    """Kinds the domain's pack declares that have a checker registered here.
+def evaluable_kinds(conn: Any, *, domain_key: str) -> list[str]:
+    """The domain's live unit kinds that have a checker registered here.
 
-    No pack (or a pack file that will not load) means "no declared kinds" — the
-    caller reports inconclusive rather than raising, because a domain without a
-    pack is a legitimate state (it simply has no deterministic channel yet).
+    Derived from stored units, not from a pack name, so a domain key that differs
+    from its pack directory (``finance`` vs ``finance-data``) is still covered.
+    Returns ``[]`` for an unknown domain (the caller reports inconclusive), and
+    never raises on a domain that simply has nothing evaluable yet.
     """
-    try:
-        manifest = packs.load_pack(domain_key)
-    except (FileNotFoundError, ValueError):
+    domain = workspaces.get_domain(conn, domain_key=domain_key)
+    if domain is None:
         return []
-    declared = manifest.get("kinds") or []
-    return [k for k in declared if data_checks.checkers_for(k)]
+    kinds = {
+        u["kind"]
+        for u in store.list_knowledge_units(
+            conn, namespace=domain["key"], include_deleted=False,
+            limit=store.MAX_LIST_UNITS,
+        )
+    }
+    return sorted(k for k in kinds if data_checks.checkers_for(k))
 
 
 def run_domain_data_eval(
@@ -66,7 +77,7 @@ def run_domain_data_eval(
     if domain is None:
         raise ValueError(f"domain {domain_key!r} not found")
 
-    evaluable = evaluable_kinds(domain_key)
+    evaluable = evaluable_kinds(conn, domain_key=domain_key)
     if kind is not None:
         if kind not in evaluable:
             raise ValueError(
