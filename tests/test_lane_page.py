@@ -140,7 +140,7 @@ def test_data_eval_button_runs_and_writes_an_attributed_run(conn, monkeypatch):
     once as an HTTP 500 that CI's unit tests could not see. Seed a unit of a kind
     that has a checker, POST, and assert the run exists with the domain id.
     """
-    from src.bench import authoring, data_checks, store
+    from src.bench import authoring, data_checks
 
     data_checks.register_checker("clause", "nonempty", lambda u: bool(u.get("body")))
     authoring.authoring_create_unit(

@@ -16,11 +16,13 @@
 
 ## 1. C1 数据评测可归属 + 可跑
 
-判据见 `specs/domain-data-eval/spec.md`。真库读数（改后，出片上产后补）：
+判据见 `specs/domain-data-eval/spec.md`。真库读数（改后，生产在役 pod 实测）：
 
-- [ ] `finance` 域跑一次数据评测 → 结论 `rubric_domain_id` = finance 域 id，`channel='data'`
-- [ ] `erp` 域跑一次数据评测 → 结论带域归属
-- [ ] 空域（无 checker 的 gov）→ `outcome='inconclusive'`，页面显示「暂无可评」而非「全过」
+- [x] `finance` 域跑一次数据评测 → run #22 `rubric_domain_id=6(finance)`、`channel='data'`、`outcome=pass`、735/735
+- [x] `erp` 域跑一次数据评测 → run #21 `rubric_domain_id=5(erp)`、`channel='data'`、`outcome=pass`、46/46
+- [x] 两域 `eval_runs` 的 `last_run` 从「从未 / 陈旧」变为 `2026-11-22T21:05`（域矩阵评测柱更新）
+- [x] 空域（`gov`/`legal`/`data-ontology` 无匹配 checker）→ `evaluable_kinds=[]`；页面显示「暂无可评」空态而非「全过」
+- [x] 归属探针不毒化事务：pod 内 throwaway DB 验「无 rubrics 表→NULL 不 500」「唯一→回填」
 
 **区分度证据（`criterion-must-fire-on-real-data`）**
 
@@ -36,34 +38,39 @@
 
 ## 2. C2 复测义务接上调用方
 
-判据见 `specs/domain-retest-loop/spec.md`。真库读数（出片后补）：
+判据见 `specs/domain-retest-loop/spec.md`。真库读数（生产实弹）：
 
-- [ ] 确认一条 pending 提案 → `authoring_tasks` 出现一条 `target_kind='verdict-retest'`、`target_key` 含该单位
-- [ ] 模板升版 → 每个锚定域出现一条 `template:<name>@v<N>` 复测义务
-- [ ] 域 `eval-runs` 页「待复测项」面板列出未结义务；无则明说「没有待复测项」
-- [ ] 复测登记抛异常时确认/升版仍成功（单测 `test_confirm_survives_retest_booking_failure` 已覆盖）
+- [x] 确认 pending 提案 #97（`acceptance-20261115-machine-face`）→ `authoring_tasks` 出现 `target_kind='verdict-retest'`、`target_key='knowledge-unit:clause:acceptance-20261115-machine-face@silver'`、`status=pending`；确认前 retests=0，确认后=1
+- [x] 确认同时写出单位（`knowledge_units` 出现 `acceptance-20261115-machine-face`、`tier=silver`），且 proposal `state=confirmed`、`decided_by=ops:finddata-80/night-acceptance`
+- [ ] 模板升版 → 每个锚定域出现一条 `template:<name>@v<N>` 复测义务（单测 `test_template_promotion_books_retest_per_anchoring_domain` 已覆盖；生产未另立模板升版）
+- [x] 域 `eval-runs` 页「待复测项」面板渲染（erp 无义务→明说「没有待复测项」；legal 有 1 条）
+- [x] 复测登记抛异常时确认仍成功（单测 `test_confirm_survives_retest_booking_failure`）
 
 ## 3. C3 台账不误报内核缝
 
-判据见 `specs/domain-ontology-ledger/spec.md`。真库读数（出片后补）：
+判据见 `specs/domain-ontology-ledger/spec.md`。真库读数（生产在役 pod 实测）：
 
-- [ ] `erp` / `finance` / `legal` 的 `reconcile`：`out_of_vocab_kinds` 不再含 `crosswalk`
-- [ ] `seam_kinds == ['crosswalk']`，且 `consistent` 不再因它而 false（若本无其它越界）
+- [x] `erp`：`out_of_vocab_kinds=[]`，`seam_kinds=['crosswalk']`
+- [x] `legal`：`out_of_vocab_kinds=[]`，`seam_kinds=['crosswalk']`
+- [x] `finance`：`seam_kinds=[]`（无 crosswalk），`out_of_vocab_kinds=['fact']`（`fact` 确属词表外的金标 kind，如实报；非缝）
+- 说明：`consistent=False` 对 erp/legal 由既有覆盖缺口/模板陈旧造成，**不再由 crosswalk 造成**——这正是要分离的两件事。
 
 ## 4. CI
 
-- image.yml（internal Actions，postgres:14 service）：见 runs 结论
-- Knowledge Surface Integrity：retrieval-integrity + ontology-conformance
+- image.yml（internal Actions，postgres:14 service）：`sha-983aa03`、`sha-425c150` 均 test 绿
+- Knowledge Surface Integrity：retrieval-integrity + ontology-conformance 绿
+- **e2e 抓到、单测漏掉的 500**：数据评测 POST 路由仍按旧签名调 `evaluable_kinds(domain_key)` → HTTP 500。已修（`425c150`）并补路由级测试 `test_data_eval_button_runs_and_writes_an_attributed_run`。
 
 ## 5. ego 真身份走查（`aloadtree@gmail.com`）
 
-- [ ] 登录 `lawbench.finddatatech.cloud` → `/d/erp/eval-runs`
-- [ ] 点「跑一次数据评测」→ 三态结论 + 通过比
-- [ ] 「待复测项」面板可见
-- [ ] 截图归档
+- [x] 登录 `lawbench.finddatatech.cloud` → `/d/erp/eval-runs`（会话复用）
+- [x] 页面渲染「数据评测」面板：可评 kind=`account` + 按钮「跑一次数据评测」
+- [x] 「待复测项」面板渲染，erp 无义务明说「没有待复测项」
+- [~] 点按钮跑一次 → **首次暴露 500**（见 §4）；修复后重滚再点（见 §6）
+- [ ] 截图归档（修复后补）
 
 ## 6. 出片与滚版
 
-- [ ] 镜像进 ccr（`skopeo --override-arch amd64` 核）
-- [ ] fd-infra-deploy `all-services/law-bench/deployment.yaml` 滚 tag → push gitee（ArgoCD 读 gitee）
-- [ ] pod 内实证：新代码在役（`evaluable_kinds` 非空 / 新面板存在）
+- [x] `sha-983aa03` 进 ccr（skopeo digest `de1d1a85` 与 hkccr 一致）→ 滚 prod，digest 在役
+- [x] pod 内实证：`erp` evaluable=[account]、`finance` evaluable=[fact]；C1/C2/C3 生产读数（见上）
+- [ ] `sha-425c150`（500 修复）出片 → ccr → 重滚 → 按钮 e2e 通过 + 截图
