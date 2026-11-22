@@ -4,7 +4,7 @@
 
 | 域 | 已建内容 | 尺子 | 真跑过的评测 | 复测义务 |
 |---|---|---|---|---|
-| `legal` | 5,386 clause + 92 law + 42 concept | 88 | 16 条全 legacy（合同文本通道） | 无 |
+| `legal` | 5,386 clause + 92 law + 42 concept | 88 | 16 条全 legacy（合同文本通道；其中 7 条有域归属、0 条带 verdict 身份、0 条数据通道） | 无 |
 | `gov` | 45 document + 4 agency + 3 concept | 1（`gov-document-quality`） | 1（104/104，11-10） | 无 |
 | `erp` | 23 account + 31 crosswalk + 8 org | 1（`erp-ontology-consistency`，8 判据） | **0** | 无 |
 | `finance` | 105 fact（gold） | 1（`finance-fact-quality`，8 判据） | **0** | 无 |

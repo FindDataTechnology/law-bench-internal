@@ -8,7 +8,7 @@
 | 读数 | 值 | 来源 |
 |---|---|---|
 | 生产 `eval_runs` 带 verdict 身份（subject_key 非空）的行 | **0 / 16** | `select count(*) filter (where subject_key is not null)` |
-| 生产 `eval_runs` 带域归属（rubric_domain_id 非空）的行 | **9 / 16**（均是 legacy 文本通道；数据通道 0） | 同上 |
+| 生产 `eval_runs` 带域归属（rubric_domain_id 非空）的行 | **7 / 16**（均是 legacy 文本通道；数据通道 0） | 同上 |
 | `data_checks.run_data_eval` 生产调用方 | **0** | grep（仅 tests/） |
 | `erp` / `finance` 域跑过的数据评测 | **0 / 0** | eval_runs 无对应行 |
 | `verdicts.register_retest` 生产调用方 | **0** | grep（仅 tests/） |
