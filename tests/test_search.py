@@ -97,7 +97,7 @@ def test_rag_tool_returns_context(monkeypatch):
 
     monkeypatch.setattr(rag_tool, "search", _fake_results)
     tool = rag_tool.ContractSearchTool()
-    out = tool._run("保密义务")
+    out = tool.run_contract_search("保密义务")
     assert "contracts/templates/x.md" in out
     assert "clause about 保密义务" in out
 
@@ -107,7 +107,7 @@ def test_rag_tool_empty_when_no_results(monkeypatch):
 
     monkeypatch.setattr(rag_tool, "search", lambda q, top_k=5: [])
     tool = rag_tool.ContractSearchTool()
-    assert tool._run("anything") == ""
+    assert tool.run_contract_search("anything") == ""
 
 
 def test_rag_tool_degrades_gracefully_on_backend_failure(monkeypatch):
@@ -118,4 +118,4 @@ def test_rag_tool_degrades_gracefully_on_backend_failure(monkeypatch):
     monkeypatch.setattr(rag_tool, "search", _boom)
     tool = rag_tool.ContractSearchTool()
     # Must not raise - the drafter proceeds without retrieval.
-    assert tool._run("anything") == ""
+    assert tool.run_contract_search("anything") == ""

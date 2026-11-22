@@ -1,9 +1,12 @@
-"""CrewAI retrieval tool: the drafter grounds generation in retrieved precedent.
+"""Retrieval helper: the drafter grounds generation in retrieved precedent.
 
-The tool is optional (``RAG_TOOL_ENABLED``) and degrades gracefully - on any
-backend failure (Elasticsearch / OpenRouter / MinIO unreachable) it returns an
-empty string so the drafter proceeds without retrieval, never propagating an
-exception to the crew.
+Optional (``RAG_TOOL_ENABLED``) and degrades gracefully - on any backend failure
+(Elasticsearch / OpenRouter / MinIO unreachable) it returns an empty string so the
+drafter proceeds without retrieval, never propagating an exception.
+
+Formerly a CrewAI ``BaseTool`` attached to the drafter agent (model decided when
+to retrieve). Now a plain helper the orchestrator calls up-front
+(openspec: replace-crewai-with-litellm-orchestration, design D3 option B).
 
 **但「优雅降级」不等于「静默降级」**（审计 03 §11）。本模块原来有两处沉默：
 
@@ -15,15 +18,13 @@ exception to the crew.
     无法区分。
 
 现在两条都有痕：低于 `_MIN_RELEVANCE_SCORE` 的片段被丢弃；检索异常、以及
-「检索到了但全都不达标」都会打 warning 并计入 `_retrieval_failures` / 
+「检索到了但全都不达标」都会打 warning 并计入 `_retrieval_failures` /
 `_retrieval_denied` 两个模块级计数器（进程内，供健康检查/日志读）。
 """
 
 from __future__ import annotations
 
 import logging
-
-from crewai.tools import BaseTool
 
 from src.settings import RAG_TOOL_ENABLED
 
@@ -47,7 +48,7 @@ def retrieval_stats() -> dict[str, int]:
     return {"failures": _retrieval_failures, "denied": _retrieval_denied}
 
 
-class ContractSearchTool(BaseTool):
+class ContractSearchTool:
     name: str = "contract_search"
     description: str = (
         "检索与起草需求相关的历史合同模板与已生成草案条款。"
@@ -58,7 +59,7 @@ class ContractSearchTool(BaseTool):
         "Returns formatted context chunks with their source path, or empty."
     )
 
-    def _run(self, query: str) -> str:
+    def run_contract_search(self, query: str) -> str:
         global _retrieval_failures, _retrieval_denied
         try:
             results = search(query, top_k=5)

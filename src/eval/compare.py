@@ -61,7 +61,7 @@ def _default_draft_fn(task_desc: str, prompt_content: str, templates_ref: str) -
     reference is the user message - the same shape the production drafter task
     assembles. Returns the raw draft text.
     """
-    from src.llm import get_llm  # local import: avoid crewai init at module import
+    from src.llm import get_llm  # local import keeps module import light
 
     llm = get_llm("DRAFTER")
     user = task_desc

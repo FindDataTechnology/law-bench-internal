@@ -1,19 +1,18 @@
-"""CrewAI retrieval tool: grounds the drafter in the 法规库 corpus via law-api.
+"""Retrieval helper: grounds the drafter in the 法规库 corpus via law-api.
 
 Gated by ``LAW_SEARCH_ENABLED`` + ``LAW_API_KEY`` (see ``client.enabled``).
 Every failure inside ``search`` already degrades to ``[]`` (client contract),
-so the tool returns an empty string and the drafter proceeds — identical to
-``src.search.rag_tool.ContractSearchTool``.
+so the helper returns an empty string and the drafter proceeds — identical to
+``src.search.rag_tool``. Formerly a CrewAI ``BaseTool``; now a plain helper the
+orchestrator calls up-front (openspec: replace-crewai-with-litellm-orchestration).
 """
 
 from __future__ import annotations
 
-from crewai.tools import BaseTool
-
 from src.law_api import client
 
 
-class LawSearchTool(BaseTool):
+class LawSearchTool:
     name: str = "law_search"
     description: str = (
         "检索中国法律法规原文片段（法规库语义检索），用于起草时引用现行有效的法律依据。"
@@ -24,7 +23,7 @@ class LawSearchTool(BaseTool):
         "Input: a natural-language query. Returns empty when nothing matches."
     )
 
-    def _run(self, query: str) -> str:
+    def run_law_search(self, query: str) -> str:
         if not client.enabled():
             return ""
         if not client.first_use_smoke():

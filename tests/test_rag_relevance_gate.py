@@ -36,7 +36,7 @@ def test_low_score_chunks_are_not_injected(monkeypatch):
     monkeypatch.setattr(rag, "search", lambda q, top_k=5: [
         _node(0.01, "无关A"), _node(0.02, "无关B"),
     ])
-    out = rag.ContractSearchTool()._run("某问题")
+    out = rag.ContractSearchTool().run_contract_search("某问题")
     assert "无关A" not in out and "无关B" not in out, (
         "接近 0 分的片段被注入起草上下文 —— 模型被递上无关判例却被告知是判例"
     )
@@ -47,7 +47,7 @@ def test_relevant_chunks_still_pass(monkeypatch):
     monkeypatch.setattr(rag, "search", lambda q, top_k=5: [
         _node(0.88, "相关片段"),
     ])
-    out = rag.ContractSearchTool()._run("某问题")
+    out = rag.ContractSearchTool().run_contract_search("某问题")
     assert "相关片段" in out
 
 
@@ -56,7 +56,7 @@ def test_mixed_scores_keep_only_the_relevant_ones(monkeypatch):
     monkeypatch.setattr(rag, "search", lambda q, top_k=5: [
         _node(0.90, "高分片段"), _node(0.02, "低分片段"),
     ])
-    out = rag.ContractSearchTool()._run("某问题")
+    out = rag.ContractSearchTool().run_contract_search("某问题")
     assert "高分片段" in out
     assert "低分片段" not in out
 
@@ -68,7 +68,7 @@ def test_search_failure_is_logged_not_silent(monkeypatch, caplog):
 
     monkeypatch.setattr(rag, "search", boom)
     with caplog.at_level(logging.WARNING):
-        out = rag.ContractSearchTool()._run("某问题")
+        out = rag.ContractSearchTool().run_contract_search("某问题")
     assert out == ""  # 降级策略不变：起草照常进行
     assert any("retriev" in r.message.lower() or "检索" in r.message for r in caplog.records), (
         "检索失败被静默吞掉 —— 没有任何日志/计数，产物里无法区分「零检索」与「有检索」"
@@ -79,7 +79,7 @@ def test_all_filtered_out_is_logged(monkeypatch, caplog):
     """全都低于阈值时也要留痕：那是「检索到了但都不相关」，同样是信息。"""
     monkeypatch.setattr(rag, "search", lambda q, top_k=5: [_node(0.01, "无关")])
     with caplog.at_level(logging.WARNING):
-        rag.ContractSearchTool()._run("某问题")
+        rag.ContractSearchTool().run_contract_search("某问题")
     assert caplog.records, "全部低于阈值时完全静默 —— 与「没检索」不可区分"
 
 

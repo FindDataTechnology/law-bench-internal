@@ -64,12 +64,12 @@ def _build_prompt(body: str, contract_type: str, vocab: list[str]) -> str:
 
 
 def _call_llm(prompt: str) -> str:
-    import litellm
+    from src.llm import completion
 
     model = os.environ.get("DRAFTER_MODEL")
     if not model:
         raise RuntimeError("DRAFTER_MODEL is not set")
-    resp = litellm.completion(
+    resp = completion(
         model=model,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.0,

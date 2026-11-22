@@ -1,12 +1,34 @@
 """
-Crew assembly: loads agents and tasks from YAML config, uses env-configured LLMs.
+Contract drafting orchestration: clarify → draft → audit → revise.
+
+Replaces the former CrewAI ``@CrewBase`` crew (openspec:
+replace-crewai-with-litellm-orchestration). CrewAI's ``Crew(process=sequential)``
+injected each task's output into the next task's context implicitly; this module
+makes that passing **explicit** (spec: llm-orchestration — explicit input
+provenance). Prompt text still comes verbatim from ``config/agents.yaml`` and
+``config/tasks.yaml``.
+
+Retrieval: the old crew attached ``contract_search`` / ``law_search`` as
+LLM-callable tools and let the model decide when to retrieve. Here the orchestrator
+pre-retrieves once with the user request and injects the results as reference
+material into the draft step (design D3, option B). Degradation is unchanged: a
+retrieval tool that is unavailable or fails yields "", and drafting proceeds.
 """
 
-from crewai import Agent, Crew, Process, Task
-from crewai.project import CrewBase, agent, crew, task
+from __future__ import annotations
 
-from src.settings import TEMPLATES_DIR
+from pathlib import Path
+
+import yaml
+
+from src.settings import TEMPLATES_DIR, ConfigError
 from .llm import get_llm
+
+_CONFIG_DIR = Path(__file__).resolve().parent / "config"
+
+
+def _load_yaml(name: str) -> dict:
+    return yaml.safe_load((_CONFIG_DIR / name).read_text(encoding="utf-8"))
 
 
 def _templates_reference() -> str:
@@ -23,102 +45,116 @@ def _templates_reference() -> str:
     return "\n".join(parts)
 
 
-@CrewBase
+def _system_prompt(agent_cfg: dict) -> str:
+    """Compose the system prompt from an agents.yaml entry (role/goal/backstory)."""
+    return (
+        f"角色：{agent_cfg.get('role', '').strip()}\n"
+        f"目标：{agent_cfg.get('goal', '').strip()}\n"
+        f"背景：{agent_cfg.get('backstory', '').strip()}"
+    )
+
+
+def _pre_retrieve(user_request: str) -> str:
+    """Run contract + law retrieval once with the user request; return reference text.
+
+    Both tools degrade silently: disabled/unavailable/failed → empty contribution.
+    This mirrors the old crew's "attach a tool that returns '' on failure" contract
+    while removing the model's discretion over whether/when to retrieve.
+    """
+    blocks: list[str] = []
+    try:
+        from src.search.rag_tool import get_rag_tool
+
+        tool = get_rag_tool()
+        if tool is not None:
+            text = tool.run_contract_search(user_request)
+            if text:
+                blocks.append("【历史合同/模板检索】\n" + text)
+    except Exception:  # noqa: BLE001 - degradation: retrieval unavailable -> proceed
+        pass
+    try:
+        from src.law_api.tool import get_law_search_tool
+
+        tool = get_law_search_tool()
+        if tool is not None:
+            text = tool.run_law_search(user_request)
+            if text:
+                blocks.append("【法律法规检索】\n" + text)
+    except Exception:  # noqa: BLE001 - degradation: retrieval unavailable -> proceed
+        pass
+    return "\n\n".join(blocks)
+
+
+class DraftingResult:
+    """Minimal result object mirroring the old ``CrewOutput`` usage (``.raw``)."""
+
+    def __init__(self, raw: str) -> None:
+        self.raw = raw
+
+
 class ContractDraftingCrew:
-    """Chinese Contract Drafting Crew with specialized agents."""
+    """Sequential four-step drafting orchestrator (replaces the CrewAI crew).
 
-    # Paths to YAML configs — relative to this file (src/crew.py), so src/config/
-    agents_config = "config/agents.yaml"
-    tasks_config = "config/tasks.yaml"
+    Kept as a class with a ``.crew()`` facade so ``main.py`` and the existing
+    call pattern stay unchanged; ``.crew()`` returns an object exposing
+    ``kickoff(inputs={"user_request": ...}) -> DraftingResult``.
+    """
 
-    @agent
-    def intake_clarifier(self) -> Agent:
-        return Agent(
-            config=self.agents_config["intake_clarifier"],
-            llm=get_llm("INTAKE"),
-            verbose=True,
-            max_iter=5,
-            allow_delegation=False,
+    def __init__(self) -> None:
+        self.agents_config = _load_yaml("agents.yaml")
+        self.tasks_config = _load_yaml("tasks.yaml")
+
+    def _step(self, role: str, agent_key: str, task_key: str, user: str) -> str:
+        system = _system_prompt(self.agents_config[agent_key])
+        llm = get_llm(role)
+        return llm.call(
+            [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ]
         )
 
-    @agent
-    def drafter(self) -> Agent:
-        tools = []
-        try:
-            from src.search.rag_tool import get_rag_tool
-
-            rag_tool = get_rag_tool()
-            if rag_tool is not None:
-                tools.append(rag_tool)
-        except Exception:
-            # Search deps unavailable or RAG disabled -> drafter proceeds
-            # without retrieval (graceful degradation).
-            pass
-        try:
-            from src.law_api.tool import get_law_search_tool
-
-            law_tool = get_law_search_tool()
-            if law_tool is not None:
-                tools.append(law_tool)
-        except Exception:
-            # law-api deps/config unavailable -> drafting proceeds without
-            # statute retrieval (same degradation contract).
-            pass
-        return Agent(
-            config=self.agents_config["drafter"],
-            llm=get_llm("DRAFTER"),
-            tools=tools or None,
-            verbose=True,
-            max_iter=10,
-            allow_delegation=False,
+    def run(self, user_request: str) -> str:
+        """clarify → draft → audit → revise; return the final contract text."""
+        # 1) clarify
+        clarify_desc = self.tasks_config["clarify_requirements"]["description"].format(
+            user_request=user_request
         )
+        clarify_out = self._step("INTAKE", "intake_clarifier", "clarify_requirements", clarify_desc)
 
-    @agent
-    def auditor(self) -> Agent:
-        return Agent(
-            config=self.agents_config["auditor"],
-            llm=get_llm("AUDITOR"),
-            verbose=True,
-            max_iter=8,
-            allow_delegation=False,
-        )
-
-    @task
-    def clarify_requirements(self) -> Task:
-        return Task(
-            config=self.tasks_config["clarify_requirements"],
-        )
-
-    @task
-    def draft_contract(self) -> Task:
-        task = Task(config=self.tasks_config["draft_contract"])
+        # 2) draft (user = task desc + clarify output + pre-retrieved reference + templates)
+        draft_desc = self.tasks_config["draft_contract"]["description"]
+        draft_user = f"{draft_desc}\n\n【结构化需求】\n{clarify_out}"
+        retrieval = _pre_retrieve(user_request)
+        if retrieval:
+            draft_user += f"\n\n【参考检索材料】\n{retrieval}"
         reference = _templates_reference()
         if reference:
-            task.description = (
-                f"{task.description}\n\n"
-                "以下为参考模板，请参考其结构与标准条款，按本次需求选用并调整：\n\n"
+            draft_user += (
+                "\n\n以下为参考模板，请参考其结构与标准条款，按本次需求选用并调整：\n\n"
                 f"{reference}"
             )
-        return task
+        draft_out = self._step("DRAFTER", "drafter", "draft_contract", draft_user)
 
-    @task
-    def audit_contract(self) -> Task:
-        return Task(
-            config=self.tasks_config["audit_contract"],
+        # 3) audit (user = task desc + the draft itself)
+        audit_desc = self.tasks_config["audit_contract"]["description"]
+        audit_user = f"{audit_desc}\n\n【待审合同草案】\n{draft_out}"
+        audit_out = self._step("AUDITOR", "auditor", "audit_contract", audit_user)
+
+        # 4) revise (user = task desc + original draft + audit report)
+        revise_desc = self.tasks_config["revise_contract"]["description"]
+        revise_user = (
+            f"{revise_desc}\n\n【原合同草案】\n{draft_out}\n\n【审核意见】\n{audit_out}"
         )
+        return self._step("DRAFTER", "drafter", "revise_contract", revise_user)
 
-    @task
-    def revise_contract(self) -> Task:
-        return Task(
-            config=self.tasks_config["revise_contract"],
-        )
+    def crew(self) -> "ContractDraftingCrew":
+        """Facade for the old ``.crew()`` call site; returns self."""
+        return self
 
-    @crew
-    def crew(self) -> Crew:
-        return Crew(
-            agents=self.agents,
-            tasks=self.tasks,
-            process=Process.sequential,
-            verbose=True,
-        )
-
+    def kickoff(self, inputs: dict) -> DraftingResult:
+        """Facade for the old ``crew.kickoff(inputs=...)`` call site."""
+        user_request = inputs.get("user_request")
+        if not user_request:
+            raise ConfigError("kickoff requires inputs={'user_request': ...}")
+        return DraftingResult(self.run(user_request))

@@ -4,11 +4,11 @@ version = "0.1.0"
 description = "FastMCP server exposing law-bench contract generation, rubric evaluation, and RAG search as MCP tools."
 requires-python = ">=3.12,<3.14"
 # This project wraps the law-bench `src.*` modules in place. It runs in the
-# shared law-bench venv (which already provides crewai, deepeval, llama-index,
+# shared law-bench venv (which already provides litellm, deepeval, llama-index,
 # psycopg, python-docx, ...). Only FastMCP + dotenv are declared here; the rest
 # are resolved from the shared environment, NOT re-declared.
 dependencies = [
-    "fastmcp>=3.2,<4",
+    "fastmcp>=4.2.4,<5",
     "python-dotenv>=1.2",
     "langgraph>=0.2",
     "langchain-core>=0.3",

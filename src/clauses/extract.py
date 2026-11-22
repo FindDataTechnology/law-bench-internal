@@ -26,7 +26,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
-# Avoid litellm's remote model-cost-map fetch (network-dependent); local fallback.
+# (vestigial) litellm used to fetch a remote model-cost map here; LLM calls now
+# go through the openai SDK (src.llm), which does not. The env var is harmless.
 os.environ.setdefault("LITELLM_MODEL_COST_MAP_URL", "")
 
 from src.generator import SLOT_PATTERN
@@ -117,12 +118,12 @@ def _build_prompt(text: str) -> str:
 
 
 def _call_llm(prompt: str) -> str:
-    import litellm
+    from src.llm import completion
 
     model = os.environ.get("DRAFTER_MODEL")
     if not model:
         raise RuntimeError("DRAFTER_MODEL is not set")
-    resp = litellm.completion(
+    resp = completion(
         model=model,
         messages=[{"role": "user", "content": prompt}],
         temperature=float(os.environ.get("DRAFTER_TEMPERATURE", "0.2")),

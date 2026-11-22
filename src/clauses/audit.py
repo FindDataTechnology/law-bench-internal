@@ -159,13 +159,13 @@ def _call_llm_with_retry(
     Mirrors ``generate_combined_clause``: 3 attempts, backoff 15*(attempt+1)s,
     triggers on ``RateLimit`` or ``ServiceUnavailable`` in the exception string.
     """
-    import litellm
+    from src.llm import completion
 
     if max_tokens is None:
         max_tokens = int(os.environ.get("GEN_MAX_TOKENS", "800"))
     for attempt in range(3):
         try:
-            resp = litellm.completion(
+            resp = completion(
                 model=model,
                 messages=messages,
                 temperature=temperature,
