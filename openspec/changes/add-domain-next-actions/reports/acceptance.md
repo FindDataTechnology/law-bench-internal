@@ -29,5 +29,18 @@
   转成同形缓存透传给横幅（键 `(library_key, sorted(sources))`，与 `count_scope` 一致）。
 - rubrics 缺表在 `empty_db` 夹具上会让横幅抛 `UndefinedTable` → 3d7bb9d 在
   `domain_rubrics` 统一守卫（表不存在时读面答「没有标准」），横幅不再需要兜底 try/except。
-- `domain_context.console_context` 签名用到 `Optional` 却未导入，`from __future__ import
-  annotations` 下 import 期 FastAPI 解析注解卡住（本机 import 40s 的假象之一）——已补导入。
+- `domain_context.console_context` 签名用到 `Optional` 却未导入——已补导入（否则注解解析会
+  NameError）。注：本机 import 慢 ~40s 经对照 HEAD(无本次改动) 同样 40s，属环境（本地
+  `.env` 指向的服务探测超时），不是本改动的锅。
+
+## §4 验收（2026-11-24，收尾）
+
+- 部署 sha-399e3c8（含 h2 i18n 键修正）→ hkccr → ccr（digest sha256:7c5b1785…，字节一致）
+  → fd-infra-deploy d236b541 滚 → ArgoCD Synced@01455cf9 → pod Running。
+- 生产浏览器：
+  · `/d` 全域矩阵：法律域→「去提案箱逐条确认」；政务/ERP/金融（0 成员）→「还没有成员 / 邀请成员」。
+  · `/d/legal/ontology` 区横幅：标题正确渲染「这一区接下来做」（h2 键修正后不再显示字面键名），
+    一条动作「「crosswalk」指标 0.0002，低于下限」→「查看并修复该质量项」，allowed=1。
+- 「零域身份」未在浏览器走：无现成的零域 Logto 测试账号（管理员看到全部域），空态分支
+  由 `test_domain_list...` 与 domain_list 既有 empty_h1 分支覆盖；真数据触发需建新 Logto 用户，
+  超出本 change 范围，如实记录未走该路径。

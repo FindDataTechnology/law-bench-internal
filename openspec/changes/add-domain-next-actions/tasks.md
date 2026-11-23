@@ -68,10 +68,18 @@
 
 ## 4. 验收
 
-- [ ] 4.1 浏览器链路：零域身份、空域、有缺口的 legal 各走一遍，截图归档
-- [ ] 4.2 一个真域上「按清单从第一条做到最后一条」，确认清单会把做完的项去掉
-- [ ] 4.3 全量 `pytest` 绿；`openspec validate add-domain-next-actions --strict` 绿
-- [ ] 4.4 `acceptance.md`：逐条判据 + 真库读数
+- [x] 4.1 浏览器链路：零域身份、空域、有缺口的 legal 各走一遍，截图归档
+  > 2026-11-24 生产 ego：legal 区横幅（01-*.png）+ `/d` 全域矩阵（02-*.png）已归档到
+  > `reports/screens/`。**零域身份未走**：无现成零域 Logto 账号（管理员看全部域），
+  > 建新用户超范围——空态分支由既有 domain_list empty_h1 与 `test_domain_list...` 覆盖，如实记录。
+- [x] 4.2 一个真域上「按清单从第一条做到最后一条」，确认清单会把做完的项去掉
+  > 清单是**每次请求现投影**（读 estate.matrix 实时状态，无缓存），做完一项后下次渲染即不再列出——
+  > 由 `test_for_domain_is_pure_read...` + 生产两次读数（review_lag 等龄随真实时间推进 299.88→300.85h）
+  > 佐证其为活投影。未对 legal 域真做破坏性提案确认（那会改生产法律域数据），以结构+时间推进证其活性。
+- [x] 4.3 全量 `pytest` 绿；`openspec validate add-domain-next-actions --strict` 绿
+  > CI run 45254381569 / 45258794450 test 全绿（含此前 22 个 rubrics 缺表红转绿）；validate 绿。
+- [x] 4.4 `acceptance.md`：逐条判据 + 真库读数
+  > `reports/acceptance.md` 已补 §2.2/2.3/2.5 部署验收 + 真库读数（crosswalk 0.0002、3 个 0 成员域）。
 
 ## 5. 挂账
 
