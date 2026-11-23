@@ -650,22 +650,28 @@ def promotion_queue(
         unit_where.append("kind = %s")
         unit_params.append(kind)
     else:
-        # 分页行与计数必须同口径：counts 永远只统计 PROMOTABLE_KINDS，而分页行
-        # 此前没有任何 kind 过滤——于是 crosswalk/entity_type 这类永远爬不上升格梯
+        # 分页行与计数必须同口径：分页行此前没有任何 kind 过滤，于是永远爬不上升格梯
         # 的单位会出现在「升格队列」里（2026-11-20 实测：2 行 crosswalk、total=0，
-        # 页面显示「本页显示 2 / 0」自相矛盾）。不传 kind 时按可升格种类过滤。
-        unit_where.append("kind IN (%s, %s)")
-        unit_params.extend([KIND_ENTITY, KIND_RELATION])
-    # The aggregate already filters ``kind IN (...)``; operator filters are
-    # ANDed on top of it (" AND ...", never a second WHERE).
+        # 页面显示「本页显示 2 / 0」自相矛盾）。
+        # 但口径是 **PROMOTABLE_KINDS**（17 种），不是 entity/relation 两种：上一版把
+        # 两边一起收窄成那两种，于是生产里 5,387 条可升格单位（clause 5,386 / law 92 /
+        # concept 46 …）在队列里结构性看不见——「升格台账永远是空的」就是它造成的
+        # （2026-11-24 实测 legal 域 total=0）。
+        unit_where.append(
+            "kind IN (" + ", ".join(["%s"] * len(PROMOTABLE_KINDS)) + ")"
+        )
+        unit_params.extend(PROMOTABLE_KINDS)
+    # The aggregate already filters ``kind IN (PROMOTABLE_KINDS)``; operator
+    # filters are ANDed on top of it (" AND ...", never a second WHERE).
     counts_clause = (" AND " + " AND ".join(count_where)) if count_where else ""
     unit_clause = (" WHERE " + " AND ".join(unit_where)) if unit_where else ""
 
     cur = conn.execute(
         "SELECT namespace, kind, tier, count(*) AS n FROM knowledge_units"
-        " WHERE kind IN (%s, %s)" + counts_clause
+        " WHERE kind IN (" + ", ".join(["%s"] * len(PROMOTABLE_KINDS)) + ")"
+        + counts_clause
         + " GROUP BY namespace, kind, tier ORDER BY namespace, kind, tier",
-        (KIND_ENTITY, KIND_RELATION, *count_params),
+        (*PROMOTABLE_KINDS, *count_params),
     )
     counts = [
         dict(r) if isinstance(r, dict)

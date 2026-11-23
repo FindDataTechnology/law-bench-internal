@@ -357,18 +357,19 @@ def test_queue_rows_are_filtered_to_promotable_kinds(db_conn):
     """分页行与计数必须同口径。
 
     2026-11-20 实测到的缺陷：``promotion_queue`` 的 ``counts`` 只统计
-    PROMOTABLE_KINDS，而分页 ``units`` 没有任何 kind 过滤——于是一个
-    ``crosswalk`` 单位会出现在「升格队列」里、却永远爬不上阶梯，同时
-    ``total`` 仍是 0，页面显示「本页显示 2 / 0」自相矛盾（控制台真机实测）。
+    PROMOTABLE_KINDS，而分页 ``units`` 没有任何 kind 过滤——于是一个不可升格的
+    单位会出现在「升格队列」里、却永远爬不上阶梯，同时 ``total`` 仍是 0，
+    页面显示「本页显示 2 / 0」自相矛盾（控制台真机实测）。
 
-    这条用例在修复前必须红：它插一个不可升格的 kind，断言它不出现在
-    ``units`` 里、也不影响 ``total``。
+    **本用例的夹具换过一次**：原本拿 ``crosswalk`` 当「不可升格」的例子，
+    而 2026-11-21（5b318c9）把 ``crosswalk`` 补进了 PROMOTABLE_KINDS —— 从那
+    天起这条断言恒真，测试照样绿、却不再测任何东西（判据失效不报警）。
+    现在用 ``entity_type``：它不在 17 种里，且是语料目录真实存在的 kind。
     """
     _sync(db_conn)
-    # 一个永远不可升格的 kind：它属于语料目录，不在 PROMOTABLE_KINDS 里。
     store.upsert_knowledge_unit(
-        db_conn, kind="crosswalk", external_key="erp:acme->wire:acme",
-        namespace=NAMESPACE, body='{"note": "cross-layer mapping"}',
+        db_conn, kind="entity_type", external_key="erp:account",
+        namespace=NAMESPACE, body='{"note": "an entity type, not a unit to promote"}',
         tags={}, attrs={}, tier="raw",
     )
     q = promotion.promotion_queue(db_conn, namespace=NAMESPACE)
@@ -378,6 +379,31 @@ def test_queue_rows_are_filtered_to_promotable_kinds(db_conn):
     )
     # 计数与分页行必须说同一件事
     assert q["total"] == len(q["units"]) == 3
+
+
+def test_queue_counts_every_promotable_kind_not_just_entities(db_conn):
+    """口径是 PROMOTABLE_KINDS 全集，不是 entity/relation 两种。
+
+    2026-11-24 生产实测：修「本页显示 2 / 0」时把分页行和计数一起收窄成
+    ``kind IN (entity, relation)``，于是 legal 域的升格台账 ``total=0``——
+    而库里躺着 5,387 条可升格单位（clause 5,386 / law 92 / concept 46 …）。
+    页面上「升格梯」永远空着，看起来像「没有待升格的东西」。
+
+    这条在修复前必须红：插一条 clause（在 PROMOTABLE_KINDS 里、但不是
+    entity/relation），断言它出现在队列里且计入 total。
+    """
+    _sync(db_conn)
+    store.upsert_knowledge_unit(
+        db_conn, kind="clause", external_key="civil-code#585",
+        namespace=NAMESPACE, body='{"text": "当事人依法享有自愿订立合同的权利"}',
+        tags={}, attrs={}, tier="raw",
+    )
+    q = promotion.promotion_queue(db_conn, namespace=NAMESPACE)
+    keys = {u["external_key"] for u in q["units"]}
+    assert "civil-code#585" in keys, (
+        f"clause 不可见——队列只认 entity/relation：{sorted(keys)}"
+    )
+    assert q["total"] == len(q["units"]) == 4
 
 
 def test_queue_view_200_viewer_cannot_promote_403(db_conn, monkeypatch):
