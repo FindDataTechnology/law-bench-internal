@@ -919,6 +919,7 @@ def list_verdicts(
                 "       channel, unit_kind, "
                 "       subject_kind, subject_key, subject_version, "
                 "       ruler_kind, ruler_key, ruler_digest, "
+                "       ruling_domain_path, ruler_derived_from, "
                 "       gate, outcome, baseline_run_id, provisional "
                 f"FROM eval_runs {clause}ORDER BY id DESC LIMIT %s",
                 (*args, limit),
