@@ -182,3 +182,24 @@ def test_run_attribution_and_domain_history(conn):
     assert [r["rubric_name"] for r in child_runs] == ["quality"], (
         "a child inherits the parent's run history, not the sibling's"
     )
+
+
+def test_absent_rubrics_table_reads_as_no_standards(empty_db):
+    """只跑过 ``ensure_schema`` 的库没有 rubrics 表，读面必须答「没有标准」。
+
+    ``rubrics``/``criteria`` 由 ``harbor_seed.create_schema`` 建，boot 的
+    ``ensure_schema`` 不建它们（那条注释是刻意的）。所以任何只跑过启动步骤的库
+    上，域页一读就炸 ``UndefinedTable: relation "rubrics" does not exist``。
+
+    2026-11-23 CI 实测：22 个用例（每个域页都有）红在这一条上，而同一份套件在
+    手工 seed 过的本机库上全绿 —— 环境差异掩盖了真实缺陷。
+
+    判据：三个读面各自给出「没有」，不抛异常。
+    """
+    ensure_schema(db_path=empty_db)
+    assert empty_db.execute("SELECT to_regclass('rubrics') AS t").fetchone()["t"] is None
+
+    assert domain_rubrics.effective_rubrics(empty_db, domain_path="legal") == []
+    assert domain_rubrics.runs_for_domain(empty_db, domain_path="legal") == []
+    with pytest.raises(ValueError):
+        domain_rubrics.get_by_id(empty_db, rubric_id=1)

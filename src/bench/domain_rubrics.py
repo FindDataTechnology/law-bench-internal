@@ -35,6 +35,21 @@ class ForkError(ValueError):
     """A fork was requested without the difference summary that makes it auditable."""
 
 
+def _rubrics_table_absent(conn: Any) -> bool:
+    """Whether this database has no ``rubrics`` table yet.
+
+    ``rubrics`` / ``criteria`` are created by ``harbor_seed.create_schema``, not
+    by ``eval.store.ensure_schema`` (that comment is deliberate — the seeded
+    fixture owns those tables). A database that only ever ran the boot step
+    therefore has no ``rubrics``, and a read must answer "no standards" rather
+    than raise ``UndefinedTable``. Measured 2026-11-23 on CI: 22 tests across
+    every domain page failed with exactly that error, while the same suite was
+    green locally against a DB that had been seeded by hand.
+    """
+    row = conn.execute("SELECT to_regclass('rubrics') AS t").fetchone()
+    return (row["t"] if isinstance(row, dict) else row[0]) is None
+
+
 def create_for_domain(
     conn: Any,
     *,
@@ -87,6 +102,8 @@ def create_for_domain(
 
 
 def get_by_id(conn: Any, *, rubric_id: int) -> dict:
+    if _rubrics_table_absent(conn):
+        raise ValueError(f"rubric {rubric_id} not found")
     row = conn.execute(
         f"SELECT {_COLS} FROM rubrics r WHERE r.id = %s", (rubric_id,)
     ).fetchone()
@@ -112,6 +129,8 @@ def effective_rubrics(conn: Any, *, domain_path: str) -> list[dict]:
     ``domain_id`` so the caller can see where the definition lives.
     """
     chain = inheritance.ancestors(domain_path)
+    if _rubrics_table_absent(conn):
+        return []
     rows = conn.execute(
         f"SELECT {_COLS} FROM rubrics r WHERE r.domain_id IN ("
         "  SELECT id FROM domains WHERE path = ANY(%s))",
@@ -187,7 +206,7 @@ def attribute_run(
     domain for them would be inventing provenance.
     """
     domain_id = None
-    if rubric_id is not None:
+    if rubric_id is not None and not _rubrics_table_absent(conn):
         row = conn.execute(
             "SELECT domain_id FROM rubrics WHERE id = %s", (rubric_id,)
         ).fetchone()
