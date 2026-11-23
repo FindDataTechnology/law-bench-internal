@@ -70,10 +70,14 @@ def test_area_page_renders_its_own_next_action(_client_alice):
     r = _client_alice.get(f"/d/{A_KEY}/ontology")
     assert r.status_code == 200
     assert 'data-testid="area-next-action"' in r.text
+    # i18n 键真解析成文案，不是原样吐出 key（曾误写 console.area_next.h2 而键在
+    # console.overview.area_next_h2，页面上直接显示 key）。
+    assert "console.area_next" not in r.text
     # 空态页也要明说「这一区没有待办」，不能静默缺席（§2.3 的区级形态）
     r2 = _client_alice.get(f"/d/{A_KEY}/inbox")
     assert r2.status_code == 200
     assert 'data-testid="area-next-action"' in r2.text
+    assert "console.area_next" not in r2.text
 
 
 def test_domain_list_zero_member_state_shows_invite(seeded_db, monkeypatch):

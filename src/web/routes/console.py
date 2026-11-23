@@ -132,8 +132,8 @@ def _decorate_area_action(request, db, domain, area: str, cap: dict,
     t = _content_t(request)
     if result["action"] is not None:
         _decorate_action(result["action"], t, cap)
-    result["h2"] = _translate(t, "console.area_next.h2")
-    result["empty"] = _translate(t, "console.area_next.empty")
+    result["h2"] = _translate(t, "console.overview.area_next_h2")
+    result["empty"] = _translate(t, "console.overview.area_next_empty")
     result["more_tpl"] = _translate(t, "console.overview.next_actions_more", n="{n}")
     return result
 
