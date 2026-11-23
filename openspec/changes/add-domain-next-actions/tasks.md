@@ -22,12 +22,12 @@
 
 ## 1. 动作投影
 
-- [ ] 1.1 `src/bench/next_actions.py`：`for_domain(conn, domain)` → `{area: {reason, action, entry, priority_key, requires_role} | None}`；九个区各一条判定，全部复用既有查询（`estate` / `quality` / `proposals` / `ledger` / `domain_assets` / 发布）
-- [ ] 1.2 判定优先级规则写成显式表 `PRIORITY`（`priority_key` → 名与顺序），顺序须与理由里的严重程度一致；MUST NOT 引入不可解释的加权分数
-- [ ] 1.3 同一目标去重：以 `(target_kind, target_key)` 为键去重，两条都指向同一目标时保留优先级高的一条
-- [ ] 1.4 `requires_role` 由既有 `_capability()` / 区角色判定给出，不另写权限逻辑
-- [ ] 1.5 纯读断言：`for_domain` 内部零写（单测用只读连接跑一遍，断言没有 INSERT/UPDATE 语句被执行）
-- [ ] 1.6 `rank(actions)` → 前 5 条 + 其余计数；排序稳定（同优先级按 `priority_key` 字典序，保证两次打开顺序一致）
+- [x] 1.1 `src/bench/next_actions.py`：`for_domain(conn, domain)` → `{area: {reason, action, entry, priority_key, requires_role} | None}`；九个区各一条判定，全部复用既有查询（`estate` / `quality` / `proposals` / `ledger` / `domain_assets` / 发布）
+- [x] 1.2 判定优先级规则写成显式表 `PRIORITY`（`priority_key` → 名与顺序），顺序须与理由里的严重程度一致；MUST NOT 引入不可解释的加权分数
+- [x] 1.3 同一目标去重：以 `(target_kind, target_key)` 为键去重，两条都指向同一目标时保留优先级高的一条
+- [x] 1.4 `requires_role` 由既有 `_capability()` / 区角色判定给出，不另写权限逻辑
+- [x] 1.5 纯读断言：`for_domain` 内部零写（单测用只读连接跑一遍，断言没有 INSERT/UPDATE 语句被执行）
+- [x] 1.6 `rank(actions)` → 前 5 条 + 其余计数；排序稳定（同优先级按 `priority_key` 字典序，保证两次打开顺序一致）
 
 ## 2. 页面
 
