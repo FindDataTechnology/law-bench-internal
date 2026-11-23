@@ -90,8 +90,12 @@ def _decorate_next_actions(request, db, domain, cap: dict) -> dict:
     for a in result["ranked"]["top"]:
         suffix = _GAP_TEXT_KEY.get(a["gap"], "quality")
         rd = dict(a.get("reason_data") or {})
-        if "value" not in rd and a["gap"].startswith("quality:"):
-            rd.setdefault("metric", a["gap"].split(":", 1)[1])
+        # na_reason_quality 模板需要 {metric}；任何走 quality 后缀的 gap 都补上指标名。
+        if suffix == "quality" and a["gap"].startswith("quality:"):
+            rd["metric"] = a["gap"].split(":", 1)[1]
+        # 模板里可能引用 {value}，但某些 gap（如 crosswalk 细分）reason_data 无 value，
+        # 统一补 None → 渲染为 "None" 不合适，改补空串以免 KeyError。
+        rd.setdefault("value", "—")
         a["reason_text"] = _translate(t, f"console.overview.na_reason_{suffix}", **rd)
         a["action_text"] = _translate(t, f"console.overview.na_action_{suffix}")
         a["role_text"] = _translate(t, f"console.overview.na_role_{a['requires_role']}")
