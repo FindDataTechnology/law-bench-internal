@@ -52,3 +52,10 @@ def test_next_actions_section_absent_only_when_no_gaps(_client_alice):
     """本世界（空本体/知识库/评测）必有缺口，故清单块应在。这保证渲染路径被执行。"""
     r = _client_alice.get(f"/d/{A_KEY}")
     assert 'data-testid="next-actions"' in r.text
+
+
+def test_domain_list_shows_next_action_column(_client_alice):
+    """全域矩阵（domain_list）有「下一动作」列，且有事可做的域带非空摘要（2.6）。"""
+    r = _client_alice.get("/d")
+    assert r.status_code == 200
+    assert "next-action-cell" in r.text  # 列在

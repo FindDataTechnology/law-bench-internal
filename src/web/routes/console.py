@@ -260,6 +260,16 @@ def console_domain_list(
     # (a second external count per domain; /d measured 1465ms warm), which is
     # also a second chance for the chips and the rows to disagree.
     all_rows = estate.matrix(db, domains=domains)
+    # 全域矩阵的下一动作摘要：复用同一个 all_rows（不重跑 matrix）。每行首位待办。
+    from ...bench import next_actions as _na
+    from ..i18n import translate as _tr
+    _t = getattr(request.state, "t", None) or {}
+    for r in all_rows:
+        _top = _na.for_row(r)["ranked"]["top"]
+        a = _top[0] if _top else None
+        if a is not None and _t:
+            a["action_text"] = _tr(_t, f"console.overview.na_action_{_GAP_TEXT_KEY.get(a['gap'], 'quality')}")
+        r["next_action"] = a
     rows = estate.filter_rows(all_rows, gap)
     return _templates.TemplateResponse(
         request,

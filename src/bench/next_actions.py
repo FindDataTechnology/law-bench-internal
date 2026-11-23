@@ -191,21 +191,13 @@ def rank(actions: list[dict], *, cap: int = CAP) -> dict:
     }
 
 
-def for_domain(conn: Any, domain: dict, *, probed: Optional[dict] = None) -> dict:
-    """一个域的下一动作（投影，不计算）。
+def for_row(row: dict) -> dict:
+    """从**已算好的** estate.matrix 一行投影下一动作（design D1：不重跑 matrix）。
 
-    读 ``estate.matrix`` 对该域产出的一行，把它 ``row["gaps"]`` 里的每个缺口翻译成一条
-    动作，dedup + rank。纯读：本函数不写任何表（``touch_last_opened`` 是渲染层的事，不在这里）。
-
-    返回 ``{"ranked": {top, more, total}, "unknown_gaps": [...]}``。``unknown_gaps`` 非空
-    表示有人加了 gap 却没在 ``_GAP_RULES`` 里登记——调用方（和测试）必须点名，不能吞。
+    域列表/矩阵已有一整批 ``all_rows``；对每个域调 ``for_domain`` 会重新跑 matrix
+    （每个域一次外部计数）——这里直接吃现成的 row，避免重复查询，也保证列表摘要与
+    总览清单同源同值。
     """
-    from . import estate as _estate
-
-    rows = _estate.matrix(conn, domains=[domain], probed=probed)
-    if not rows:
-        return {"ranked": {"top": [], "more": 0, "total": 0}, "unknown_gaps": []}
-    row = rows[0]
     actions: list[dict] = []
     unknown: list[str] = []
     for gap in row.get("gaps") or []:
@@ -215,3 +207,18 @@ def for_domain(conn: Any, domain: dict, *, probed: Optional[dict] = None) -> dic
         else:
             actions.append(a)
     return {"ranked": rank(actions), "unknown_gaps": unknown}
+
+
+def for_domain(conn: Any, domain: dict, *, probed: Optional[dict] = None) -> dict:
+    """一个域的下一动作（投影，不计算）。
+
+    读 ``estate.matrix`` 对该域产出的一行，交给 :func:`for_row` 投影。纯读。
+
+    返回 ``{"ranked": {top, more, total}, "unknown_gaps": [...]}``。
+    """
+    from . import estate as _estate
+
+    rows = _estate.matrix(conn, domains=[domain], probed=probed)
+    if not rows:
+        return {"ranked": {"top": [], "more": 0, "total": 0}, "unknown_gaps": []}
+    return for_row(rows[0])
