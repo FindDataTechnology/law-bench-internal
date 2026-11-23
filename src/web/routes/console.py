@@ -1467,8 +1467,14 @@ def console_promotion(
     Why a page and not just the JSON API: ``/promotion/queue`` has existed since
     the kernel landed but had **no link anywhere in the console** — the site's
     front page sells "gold/silver/bronze quality tiers" while the workbench had
-    no reachable place to act on them. The queue is read-only here; promote
-    itself stays a POST on the existing route, so this page adds no write face.
+    no reachable place to act on them.
+
+    The page used to say the promote action "lives on the unit detail page".
+    That was false: no template anywhere posted to ``/promotion/units/...``, so
+    the queue showed 5,547 promotable units with no way to move one (measured
+    2026-11-24 — the ladder had in fact never been used in production). The
+    per-row form below is the write face; it posts to the existing kernel route
+    and adds no new action surface.
     """
     from ...bench import promotion as bench_promotion
 
@@ -1485,6 +1491,10 @@ def console_promotion(
     for c in queue["counts"]:
         if c["tier"] in by_tier:
             by_tier[c["tier"]] += c["n"]
+    # 每行给出它的下一步（内核规则：bronze 只能到 silver，raw/silver 只能相邻上行；
+    # gold 只从 silver 来）。由内核常量派生，页面不自己发明阶梯。
+    for u in units:
+        u["next_tier"] = _next_tier(bench_promotion, u.get("tier"))
     ctx = console_context(db, domain, user)
     return _templates.TemplateResponse(
         request,
@@ -1498,6 +1508,70 @@ def console_promotion(
             "can_promote": bool(ctx["cap"].get("can_write")),
         },
     )
+
+
+def _next_tier(bench_promotion, tier: str | None) -> str | None:
+    """The one tier this unit may legally move to, or ``None``.
+
+    ``bronze`` is the graph-sync entry tier and sits outside ``CHAIN``; its only
+    door is ``silver``. Anything not on the ladder (a tier the kernel does not
+    know) gets no action rather than a guessed one.
+    """
+    chain = bench_promotion.CHAIN          # ("raw", "silver", "gold")
+    if tier == bench_promotion.SYNC_TIER:  # "bronze"
+        return "silver"
+    if tier not in chain:
+        return None
+    i = chain.index(tier)
+    return chain[i + 1] if i + 1 < len(chain) else None
+
+
+@write_router.post(
+    "/d/{domain_key}/promotion/{kind}/{external_key}/promote", include_in_schema=False,
+    name="console_promotion_promote", dependencies=_WRITE_GATES,
+)
+def console_promotion_promote(
+    domain_key: str,
+    kind: str,
+    external_key: str,
+    db: DbConn = Depends(get_db),
+    user: User = Depends(require_scope("review:annotate")),
+):
+    """Move one unit one step up its ladder, stamped with the session identity.
+
+    Two gates on purpose: the domain must admit this person as expert+ (the
+    page's own gate) and the account must hold ``review:annotate`` — the same
+    bundle the JSON route requires for a human verification stamp. Domain
+    membership alone must not mint a reviewer stamp.
+    """
+    from ...bench import promotion as bench_promotion
+    from ...bench.promotion import TierTransitionError, UnitNotFoundError
+
+    back = f"/d/{quote(domain_key, safe='')}/promotion"
+    domain = resolve_domain(db, domain_key)
+    namespace = domain.get("path") or domain["key"]
+    try:
+        unit = bench_promotion._get_unit(
+            db, kind=kind, external_key=external_key, namespace=namespace
+        )
+    except UnitNotFoundError as exc:
+        return _flash(back, "console.flash.promote_failed", err=True, detail=str(exc))
+    to_tier = _next_tier(bench_promotion, unit["tier"])
+    if to_tier is None:
+        return _flash(back, "console.flash.promote_failed", err=True,
+                      detail=f"{unit['tier']} 已在阶梯顶端")
+    try:
+        bench_promotion.promote_unit(
+            db, kind=kind, external_key=external_key, namespace=namespace,
+            to_tier=to_tier, reviewer=_operator_of(user), note="",
+        )
+    except TierTransitionError as exc:
+        return _flash(back, "console.flash.promote_failed", err=True, detail=str(exc))
+    except UnitNotFoundError as exc:
+        return _flash(back, "console.flash.promote_failed", err=True, detail=str(exc))
+    except ValueError as exc:
+        return _flash(back, "console.flash.promote_failed", err=True, detail=str(exc))
+    return _flash(back, "console.flash.promoted", tier=to_tier, key=external_key)
 
 
 # -------------------------------------------------------------------- bench #

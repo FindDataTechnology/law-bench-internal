@@ -1083,3 +1083,59 @@ def test_promotion_ladder_counts_come_from_the_aggregate_not_the_page(seeded_db)
         "阶梯统计按分页行算了：应报 501（聚合），不是 500（一页）"
     )
     assert '<div class="stat-value">503</div>' in body  # ladder_total
+
+
+def test_promotion_page_offers_the_one_legal_step_and_takes_it(seeded_db):
+    """升格页必须能真的把人往上走一步。
+
+    本页此前写着「升格动作走既有的单位详情页」，而全仓没有任何模板向
+    ``/promotion/units/...`` 提交过 —— 5,547 条可升格单位摆在页面上，一条也动
+    不了（2026-11-24 生产实测：升格梯从未被使用过）。
+
+    判据：raw 行给出「升格至 silver」（不给跳级到 gold）；提交后该单位真的到了
+    silver、且确认人是会话身份（不是表单里的字段）。
+    """
+    _seed_world(seeded_db)
+    store.upsert_knowledge_unit(
+        seeded_db, kind="clause", external_key="promo-1",
+        namespace=A_KEY, body='{"text": "x"}', tags={}, attrs={}, tier="raw",
+    )
+    with _client(seeded_db, _user("lara", [*_READ_WRITE, "review:annotate"])) as c:
+        page = c.get(f"/d/{A_KEY}/promotion")
+        assert page.status_code == 200, page.text
+        body = _rendered(page.text)
+        # 每一步只给相邻的一档，页面不给跳级按钮
+        assert "升格至 silver" in body
+        assert "升格至 gold" not in body
+        r = c.post(
+            f"/d/{A_KEY}/promotion/clause/promo-1/promote", follow_redirects=False
+        )
+    assert r.status_code == 303, r.text
+    unit = store.get_knowledge_unit(
+        seeded_db, kind="clause", external_key="promo-1", namespace=A_KEY
+    )
+    assert unit["tier"] == "silver"
+    assert unit["provenance"]["silver_by"] == "lara@example.com"
+
+
+def test_promotion_without_review_scope_cannot_stamp_gold(seeded_db):
+    """域内专家身份不等于复核身份。
+
+    升格动作兜两个闸：域内 expert+（本页门）与账号持有 ``review:annotate``
+    （内核给人工复核打的 bundle）。只有前者的人必须被挡在写路由之外，否则
+    「域成员」就足以铸出一枚复核戳。
+    """
+    _seed_world(seeded_db)
+    store.upsert_knowledge_unit(
+        seeded_db, kind="clause", external_key="promo-2",
+        namespace=A_KEY, body='{"text": "x"}', tags={}, attrs={}, tier="silver",
+    )
+    with _client(seeded_db, _user("alice", _READ_WRITE)) as c:  # expert, no review:annotate
+        r = c.post(
+            f"/d/{A_KEY}/promotion/clause/promo-2/promote", follow_redirects=False
+        )
+        assert r.status_code in (401, 403), r.text
+    unit = store.get_knowledge_unit(
+        seeded_db, kind="clause", external_key="promo-2", namespace=A_KEY
+    )
+    assert unit["tier"] == "silver", "没有复核权限却把单位推到了 gold"
