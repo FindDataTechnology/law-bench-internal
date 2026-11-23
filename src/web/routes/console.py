@@ -1571,7 +1571,10 @@ def console_promotion_promote(
         return _flash(back, "console.flash.promote_failed", err=True, detail=str(exc))
     except ValueError as exc:
         return _flash(back, "console.flash.promote_failed", err=True, detail=str(exc))
-    return _flash(back, "console.flash.promoted", tier=to_tier, key=external_key)
+    # 回执只带一句话，不带 tier/key 占位符：base.html 的 tr 只转发 name/detail，
+    # 其它占位符会让 translate 在渲染回跳页时抛 KeyError，写成功了页面却 500
+    # （2026-11-24 生产真按一次实测）。
+    return _flash(back, "console.flash.promoted")
 
 
 # -------------------------------------------------------------------- bench #

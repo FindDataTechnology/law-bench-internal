@@ -1110,6 +1110,12 @@ def test_promotion_page_offers_the_one_legal_step_and_takes_it(seeded_db):
         r = c.post(
             f"/d/{A_KEY}/promotion/clause/promo-1/promote", follow_redirects=False
         )
+        # 回跳页必须能渲染：flash 文案若带 base.html 不转发的占位符，
+        # translate 会在渲染时抛 KeyError，写成功而页面 500（生产实测）。
+        follow = c.get(r.headers["location"])
+        assert follow.status_code == 200, follow.text
+        assert "已升格一档" in follow.text
+        assert "console.flash." not in follow.text
     assert r.status_code == 303, r.text
     unit = store.get_knowledge_unit(
         seeded_db, kind="clause", external_key="promo-1", namespace=A_KEY
