@@ -35,6 +35,7 @@ from fastapi.testclient import TestClient
 
 from src.bench import authoring as bench_authoring
 from src.bench import distribution as bench_distribution
+from src.bench import store
 from src.bench import templates as bench_templates
 from src.bench import workspaces
 from src.web.app import create_app
@@ -1044,3 +1045,41 @@ def test_team_reports_no_open_orders_honestly(seeded_db):
     with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
         page = c.get(f"/d/{A_KEY}/team")
     assert "没有未完成的工单" in _rendered(page.text)
+
+
+# =========================================================================== #
+# 升格台账                                                                    #
+# =========================================================================== #
+
+
+def test_promotion_ladder_counts_come_from_the_aggregate_not_the_page(seeded_db):
+    """阶梯统计必须来自聚合 counts，不能来自分页行。
+
+    2026-11-24 生产实测：legal 域 5,547 条可升格单位，页面只取 500 行；
+    按分页算的阶梯统计会把域讲小一个数量级（写「raw 500」），而同一页顶上的
+    合计写的是 ``ladder_total=5547`` —— 两个数字自相矛盾。
+
+    夹具必须跨过那条界线：501 条 raw + 2 条 silver，其中 silver 两条按
+    ``updated_at DESC`` 排在最前，所以「按分页算」会得到 silver=2/raw=500，
+    「按聚合算」才是 raw=501/silver=2。
+    """
+    _seed_world(seeded_db)
+    for i in range(501):
+        store.upsert_knowledge_unit(
+            seeded_db, kind="clause", external_key=f"c-{i}",
+            namespace=A_KEY, body='{"text": "x"}', tags={}, attrs={}, tier="raw",
+        )
+    for i in range(2):
+        store.upsert_knowledge_unit(
+            seeded_db, kind="clause", external_key=f"s-{i}",
+            namespace=A_KEY, body='{"text": "x"}', tags={}, attrs={}, tier="silver",
+        )
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        page = c.get(f"/d/{A_KEY}/promotion")
+    assert page.status_code == 200, page.text
+    body = _rendered(page.text)
+    assert '<div class="stat-label">raw</div>' in body
+    assert '<div class="stat-value">501</div>' in body, (
+        "阶梯统计按分页行算了：应报 501（聚合），不是 500（一页）"
+    )
+    assert '<div class="stat-value">503</div>' in body  # ladder_total

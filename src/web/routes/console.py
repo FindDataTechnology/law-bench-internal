@@ -1472,10 +1472,13 @@ def console_promotion(
     # 那个不一致已在内核修掉（2026-11-20），这里不再二次筛选。
     queue = bench_promotion.promotion_queue(db, namespace=namespace, limit=500)
     units = queue["units"]
+    # 阶梯统计必须来自聚合 counts，不能来自这 500 行分页：
+    # legal 域 5,547 条里 5,001 条排在第二页之后，按分页算会报「raw 500」，
+    # 而同一页顶上的「合计」写的是 total=5547 —— 两个数字自相矛盾。
     by_tier: dict[str, int] = {t: 0 for t in bench_promotion.CHAIN}
-    for u in units:
-        if u.get("tier") in by_tier:
-            by_tier[u["tier"]] += 1
+    for c in queue["counts"]:
+        if c["tier"] in by_tier:
+            by_tier[c["tier"]] += c["n"]
     ctx = console_context(db, domain, user)
     return _templates.TemplateResponse(
         request,
