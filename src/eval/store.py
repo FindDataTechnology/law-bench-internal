@@ -339,6 +339,13 @@ _ADDITIVE_COLUMNS = (
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS ruler_kind TEXT; "
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS ruler_key TEXT; "
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS ruler_digest TEXT; "
+    # Which LAYER the ruler belongs to (openspec bind-verdict-write-to-domain-
+    # admission). Without it, "judged by the platform template standard" and
+    # "judged by this domain's own fork" look the same except for a digest — and
+    # a misattributed layer is harder to notice than a missing one. Nullable:
+    # historical rows read as "no layer recorded", never "unknown".
+    "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS ruling_domain_path TEXT; "
+    "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS ruler_derived_from BIGINT; "
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS gate TEXT; "
     "ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS outcome TEXT; "
     # The production table predates the IDENTITY-PK DDL and has no primary key
@@ -712,6 +719,8 @@ def store_result(
     ruler_kind: Optional[str] = None,
     ruler_key: Optional[str] = None,
     ruler_digest: Optional[str] = None,
+    ruling_domain_path: Optional[str] = None,
+    ruler_derived_from: Optional[int] = None,
     gate: Optional[str] = None,
     outcome: Optional[str] = None,
     baseline_run_id: Optional[int] = None,
@@ -770,10 +779,10 @@ def store_result(
                 " compare_run_id, prompt_name, prompt_type, variant_label, draft_text, "
                 " channel, unit_kind, "
                 " subject_kind, subject_key, subject_version, "
-                " ruler_kind, ruler_key, ruler_digest, "
+                " ruler_kind, ruler_key, ruler_digest, ruling_domain_path, ruler_derived_from, "
                 " gate, outcome, baseline_run_id, provisional, rubric_domain_id) "
                 "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
-                " %s,%s,%s, %s,%s,%s, %s,%s,%s,%s,%s) "
+                " %s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s,%s,%s) "
                 "RETURNING id",
                 (
                     result["rubric"],
@@ -801,6 +810,8 @@ def store_result(
                     ruler_kind,
                     ruler_key,
                     ruler_digest,
+                    ruling_domain_path,
+                    ruler_derived_from,
                     gate,
                     effective_outcome,
                     baseline_run_id,
@@ -848,6 +859,7 @@ def list_runs(limit: int = 20, db_path=DEFAULT_DB) -> list[dict]:
                 "       channel, unit_kind, "
                 "       subject_kind, subject_key, subject_version, "
                 "       ruler_kind, ruler_key, ruler_digest, "
+                "       ruling_domain_path, ruler_derived_from, "
                 "       gate, outcome, baseline_run_id, provisional "
                 "FROM eval_runs ORDER BY id DESC LIMIT %s",
                 (limit,),
@@ -934,6 +946,7 @@ def get_run(run_id: int, db_path=DEFAULT_DB) -> dict:
                 "       channel, unit_kind, "
                 "       subject_kind, subject_key, subject_version, "
                 "       ruler_kind, ruler_key, ruler_digest, "
+                "       ruling_domain_path, ruler_derived_from, "
                 "       gate, outcome, baseline_run_id, provisional "
                 "FROM eval_runs WHERE id = %s",
                 (run_id,),

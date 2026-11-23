@@ -469,6 +469,93 @@ def remove_member(
     conn.commit()
 
 
+# ------------------------------------------------------- admission (principal)
+# openspec bind-verdict-write-to-domain-admission. "Add an agent or a customer to
+# a domain of the same kind" used to be three doors with three different rules:
+# `domain_members` (people + agent:<role>@<domain>), `distribution_consumers`
+# (fleets, bound by their `domains` list), and a bare prefix string on a user_id.
+# A verdict write face must answer "who is in this domain, and what may they do"
+# — asking it to read three tables is how the fourth door gets added. So these
+# are ONE read face and ONE write entry, over the SAME tables: no new membership
+# store, no migration of existing rows.
+
+#: Principal kinds. `kind` is DATA (a column on the read face), never a branch on
+#: a prefix string. `ops:` is deliberately absent — agent_ids treats the ops
+#: identity as an operator verdict, not a member, and opening/archiving a domain
+#: is already a hard stop for machines.
+PRINCIPAL_KINDS: tuple[str, ...] = ("user", "agent", "fleet")
+
+#: A fleet holds no domain role: its authority comes from the `domains` list on
+#: its registration, not from a role in `domain_members`.
+FLEET_ROLE = None
+
+
+def _kind_of_user_id(user_id: str) -> str:
+    """A user_id carrying the agent prefix is an `agent`, everything else a
+    `user`. agent_ids.is_agent is the canonical test; this only names the column
+    value, so the read face and any writer agree on the boundary."""
+    return "agent" if agent_ids.is_agent(user_id) else "user"
+
+
+def list_principals(
+    conn: Any, *, domain_id: int, a2a_consumers: Optional[list[dict]] = None
+) -> list[dict]:
+    """Everyone in this domain, one answer: people, agents, and fleets.
+
+    Each row carries ``kind`` / ``ref`` / ``role``. A fleet's role is ``None``
+    (not a default string): it has no domain role, and inventing one would read
+    as "a fleet was promoted". ``a2a_consumers`` is the registration list bound
+    to this domain's key — passed in by the caller that already read it, so this
+    function does not reach into the distribution module.
+    """
+    rows = []
+    for m in list_members(conn, domain_id=domain_id):
+        uid = m.get("user_id") or ""
+        rows.append({"kind": _kind_of_user_id(uid), "ref": uid, "role": m.get("role")})
+    for c in a2a_consumers or []:
+        ref = str(c.get("fleet_ref") or c.get("name") or "").strip()
+        if not ref:
+            continue
+        rows.append({"kind": "fleet", "ref": ref, "role": FLEET_ROLE})
+    return rows
+
+
+def admit_principal(
+    conn: Any,
+    *,
+    domain_id: int,
+    kind: str,
+    ref: str,
+    role: Optional[str],
+    added_by: str,
+) -> dict:
+    """Add a principal of ``kind`` to the domain, the one write entry.
+
+    ``kind`` is validated against the closed set. For ``user``/``agent`` it
+    delegates to :func:`add_member` (which already enforces the closed ROLE set
+    AND the machine <= expert ceiling — that guard is NOT re-implemented here).
+    ``fleet`` is refused here on purpose: a fleet's domain binding lives on its
+    registration (``distribution_consumers.domains``), and changing it is an
+    admin action on that record, not a membership insert. Pointing the caller
+    there, rather than silently doing nothing, is the honest refusal.
+    """
+    if kind not in PRINCIPAL_KINDS:
+        raise ValueError(
+            f"kind 必须是闭集 {list(PRINCIPAL_KINDS)} 之一；got {kind!r}"
+        )
+    if not ref:
+        raise ValueError("ref is required")
+    if kind == "fleet":
+        raise ValueError(
+            f"舰队 {ref!r} 的域绑定登记在 consumer 登记行（domains 列表），"
+            "不在域成员表里；加入/移出舰队改的是那条登记（管理员动作），"
+            "不是成员写入。"
+        )
+    return add_member(
+        conn, domain_id=domain_id, user_id=ref, role=str(role or ""), added_by=added_by
+    )
+
+
 # --------------------------------------------------------------- invitations
 
 

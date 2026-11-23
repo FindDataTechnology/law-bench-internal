@@ -623,6 +623,190 @@ async def record_run(
     return {"run": run, "created": created}
 
 
+# --------------------------------------------------- verdict write face #
+# add-bench-verdict-ledger built the ledger and a READ face for it. No route
+# CREATED a verdict, so a fleet in another process could evaluate its output and
+# have nowhere to put the result — the paas client built a verdict identity that
+# this module dropped on the floor. This route is the missing write half.
+#
+# It is a TRUST BOUNDARY, so the gates go in together, not "wire it, then add
+# auth". Identity comes from the credential, never the body (submitters.py); a
+# refusal names which gate said no, because the remedies point at different
+# layers (credential / registration domain / ruler).
+
+
+def _ruler_digests_in_scope(db: Any, domain_path: str) -> dict[str, dict]:
+    """ruler digest -> ruler identity, for every ruler visible in this domain.
+
+    Same source the READ face uses (``domain_rubrics.effective_rubrics`` +
+    ``verdicts.rubric_ruler``), so a verdict this route accepts names a ruler the
+    read face will show — the two cannot disagree about what "visible here" means.
+    A rubric whose criteria cannot be read is skipped, not fatal.
+    """
+    from ...bench import domain_rubrics, verdicts as bench_verdicts
+
+    out: dict[str, dict] = {}
+    for rubric in domain_rubrics.effective_rubrics(db, domain_path=domain_path):
+        try:
+            ruler = bench_verdicts.rubric_ruler(rubric["name"], db_path=db)
+        except (KeyError, ValueError):
+            continue
+        if ruler.get("digest"):
+            out[ruler["digest"]] = {**ruler, "domain_id": rubric.get("domain_id")}
+    return out
+
+
+@write_router.post(
+    "/api/v1/distribution/{domain_key}/verdicts", name="distribution_record_verdict",
+)
+async def record_verdict(
+    domain_key: str,
+    request: Request,
+    db: DbConn = Depends(get_db),
+):
+    """A fleet writes one evaluation verdict for a subject in this domain.
+
+    Three gates, each with a DISTINCT refusal:
+
+    1. **Identity** — the caller is the fleet the token authenticates. The body
+       may name a ``source``/``submitted_by`` but it is never trusted. A
+       mismatching claim is 403 naming the identity gate.
+    2. **Ruler visibility** — the ruler ``digest`` must resolve to a rubric
+       effective in this domain. An unknown digest is 422 naming the ruler gate;
+       accepting it would store a score nobody can reproduce.
+    3. **Layer** — a fleet writes verdicts only; the route has NO update path,
+       which is the structural half of "cannot edit a standard or an existing
+       verdict".
+
+    Append-only: every accepted call inserts a new row; there is no UPDATE, so
+    "change your standard" makes a new digest and a new verdict, never a rewrite.
+    """
+    from ...bench import submitters, verdicts as bench_verdicts
+    from ...eval import store as verdict_store
+
+    consumer = _fleet_consumer(request, db, domain_key)
+    fleet_ref = consumer["fleet_ref"]
+
+    try:
+        payload = await request.json()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=422, detail="请求体必须是 JSON 对象") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="请求体必须是 JSON 对象")
+
+    # -- Gate 1: identity comes from the credential, not the body -------------
+    claimed = str(payload.get("source") or payload.get("submitted_by") or "").strip()
+    if claimed and not submitters.may_submit_as_source(claimed, fleet_ref=fleet_ref):
+        raise HTTPException(
+            status_code=403,
+            detail=f"身份门：source 只能替自己的登记说话（fleet:{fleet_ref}/…），got {claimed!r}",
+        )
+
+    domain = db.execute(
+        "SELECT id, path FROM domains WHERE key = %s", (domain_key,)
+    ).fetchone()
+    if domain is None:
+        raise HTTPException(status_code=404, detail=f"域不存在：{domain_key}")
+
+    subject_kind = str(payload.get("subject_kind") or "").strip()
+    subject_key = str(payload.get("subject_key") or "").strip()
+    subject_version = str(payload.get("subject_version") or "").strip() or None
+    ruler_kind = str(payload.get("ruler_kind") or "").strip()
+    ruler_key = str(payload.get("ruler_key") or "").strip()
+    ruler_digest = str(payload.get("ruler_digest") or "").strip()
+    ruling_domain_path = str(payload.get("ruling_domain_path") or "").strip()
+    ruler_derived_from = payload.get("ruler_derived_from")
+    gate = payload.get("gate")
+    outcome = payload.get("outcome")
+
+    problem = bench_verdicts.verdict_problem(
+        subject_kind=subject_kind, subject_key=subject_key,
+        subject_version=subject_version, ruler_kind=ruler_kind,
+        ruler_key=ruler_key, ruler_digest=ruler_digest,
+        gate=gate, outcome=outcome,
+    )
+    if problem:
+        raise HTTPException(status_code=422, detail=problem)
+    if not ruling_domain_path:
+        raise HTTPException(
+            status_code=422,
+            detail="身份门：缺少 ruling_domain_path（判定必须记明所依据标准的层级）",
+        )
+    baseline = payload.get("baseline_run_id")
+    if baseline is not None:
+        try:
+            baseline = int(baseline)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="baseline_run_id 必须是整数") from exc
+
+    # -- Gate 2: the ruler must be visible in this domain --------------------
+    visible = _ruler_digests_in_scope(db, domain["path"])
+    if ruler_digest not in visible:
+        raise HTTPException(
+            status_code=422,
+            detail=f"尺子门：digest {ruler_digest[:16]}… 在该域有效标准里不可见"
+                   "（先 GET /rulers 取合法 digest，不要自造）",
+        )
+    known = visible[ruler_digest]
+    if known.get("key") and ruler_key and known["key"] != ruler_key:
+        raise HTTPException(
+            status_code=422,
+            detail=f"尺子门：ruler_key {ruler_key!r} 与该 digest 的 ruler {known['key']!r} 不符",
+        )
+
+    # Layer attribution: the ruler's owning domain's path, looked up (not taken
+    # from the body) — a fleet cannot claim a template ruler is a fork by sending
+    # a different path.
+    owner_domain_id = known.get("domain_id")
+    owner_path = ruling_domain_path
+    if owner_domain_id is not None:
+        row = db.execute("SELECT path FROM domains WHERE id = %s", (owner_domain_id,)).fetchone()
+        if row:
+            owner_path = row["path"]
+
+    provisional = bool(known.get("provisional", False))
+
+    # -- Append-only write (gate 3 is structural: no UPDATE exists) ----------
+    # The ledger row needs run-level score columns a fleet does not supply; they
+    # mirror the OUTCOME (pass -> 1/1/1, else 0/1/0) rather than inventing a
+    # number. The authoritative fields are the verdict identity + gate + outcome.
+    try:
+        verdict_run_id = verdict_store.store_result(
+            {
+                "rubric": ruler_key or subject_key,
+                "score": 1.0 if outcome == "pass" else 0.0,
+                "max_score": 1.0,
+                "all_pass": 1 if outcome == "pass" else 0,
+                "n_criteria": 0,
+                "n_passed": 0,
+                "summary": f"fleet verdict via {fleet_ref}",
+                "criteria_results": [],
+            },
+            channel="verdict",
+            unit_kind=subject_kind,
+            subject_kind=subject_kind,
+            subject_key=subject_key,
+            subject_version=subject_version,
+            ruler_kind=ruler_kind,
+            ruler_key=ruler_key,
+            ruler_digest=ruler_digest,
+            ruling_domain_path=owner_path,
+            ruler_derived_from=(int(ruler_derived_from) if ruler_derived_from not in (None, "") else None),
+            gate=gate,
+            outcome=outcome,
+            baseline_run_id=baseline,
+            provisional=provisional,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return {
+        "verdict": {"run_id": verdict_run_id},
+        "verdict_state": "landed",
+        "created": True,
+    }
+
+
 @write_router.post(
     "/api/v1/distribution/{domain_key}/proposals", name="distribution_submit_proposal",
 )
