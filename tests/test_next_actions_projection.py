@@ -95,3 +95,34 @@ def test_pillar_empty_reason_carries_zero_count():
     a = na._action_for("ontology", row)
     assert a["reason_data"]["curated_units"] == 0
     assert a["priority_key"] == "pillar_empty"
+
+
+def test_for_area_row_returns_only_that_areas_action():
+    """区页取本区一条：跨区缺口不串台（§2.2）。"""
+    row = _row(["ontology", "quality:review_lag"])  # 本体区 + 复核（inbox 区）
+    onto = na.for_area_row(row, "ontology")
+    assert onto["action"] is not None
+    assert onto["action"]["area"] == "ontology"
+    inbox = na.for_area_row(row, "inbox")
+    assert inbox["action"]["area"] == "inbox"
+    assert inbox["action"]["gap"] == "quality:review_lag"
+
+
+def test_for_area_row_returns_none_when_area_has_no_gap():
+    """本区无缺口 → action=None（区页据此明说「这一区没有待办」，不静默缺席）。"""
+    row = _row(["ontology"])
+    res = na.for_area_row(row, "knowledge")
+    assert res["action"] is None
+    assert res["more"] == 0
+
+
+def test_every_entry_targets_a_real_area_endpoint():
+    """入口可达（§3.5）：每条动作的 area 必须是已挂路由的区 id，否则点进去 404。
+
+    area 集合取 _GAP_RULES 用到的全部；与 ``domain_context.AREAS``（路由区 id）
+    对齐。这条测试在区改名/加区时报警。"""
+    from src.web.domain_context import AREAS
+
+    real = {a["id"] for a in AREAS}
+    used = {rule["area"] for rule in na._GAP_RULES.values()}
+    assert used <= real, used - real

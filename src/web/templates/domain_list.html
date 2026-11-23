@@ -132,7 +132,17 @@
           {% endif %}
           {% endfor %}
         </td>
-        <td class="next-action-cell">{% if r.next_action %}<span class="na-mini">{{ r.next_action.action_text }}</span>{% else %}<span class="hint">{{ t.console.list.col_none_action }}</span>{% endif %}</td>
+        <td class="next-action-cell">
+          {% if member_counts is defined and member_counts.get(r.domain.id, 0) == 0 %}
+          {#- 无成员空态（§2.3）：下一步是「邀请人」，不是填空柱——0 成员的域谁也做不了事。
+              管理员给真实入口（成员管理页），非管理员如实说「负责人待邀请」。 -#}
+          <span class="na-mini">{{ t.console.list.no_members_short }}</span>
+          {% if platform_admin %}
+          <div><a class="btn btn-sm" href="{{ url_for('admin_domain_detail', domain_key=r.domain.key) }}">{{ t.console.list.no_members_action }}</a></div>
+          {% endif %}
+          {% elif r.next_action %}<span class="na-mini">{{ r.next_action.action_text }}</span>
+          {% else %}<span class="hint">{{ t.console.list.col_none_action }}</span>{% endif %}
+        </td>
         <td><span class="badge">{{ t.console.role[r.domain.role] }}</span></td>
         <td class="nowrap">
           <a class="btn btn-sm" href="{{ url_for('console_overview', domain_key=r.domain.key) }}">{{ t.console.list.open }}</a>

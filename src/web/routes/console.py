@@ -74,37 +74,63 @@ _GAP_TEXT_KEY = {
 }
 
 
-def _decorate_next_actions(request, db, domain, cap: dict) -> dict:
-    """给 for_domain 的 top 动作配上可渲染的文案与可达性（design D1/D4）。
+def _decorate_action(a: dict, t: dict, cap: dict) -> None:
+    """给单个动作补可渲染文案与可达性（design D1/D4）。
 
     reason 的数字来自 next_actions 的 reason_data（已逐字取自来源模块），这里只把
-    结构化数字塞进 i18n 模板，不再做任何算术/格式化。
+    结构化数字塞进 i18n 模板，不再做任何算术/格式化。总览清单与区页单条共用此函数，
+    保证两处文案同源。
     """
-    from ...bench import next_actions as _na
+    suffix = _GAP_TEXT_KEY.get(a["gap"], "quality")
+    rd = dict(a.get("reason_data") or {})
+    # na_reason_quality 模板需要 {metric}；任何走 quality 后缀的 gap 都补上指标名。
+    if suffix == "quality" and a["gap"].startswith("quality:"):
+        rd["metric"] = a["gap"].split(":", 1)[1]
+    # 模板里可能引用 {value}，但某些 gap（如 crosswalk 细分）reason_data 无 value，
+    # 统一补 None → 渲染为 "None" 不合适，改补空串以免 KeyError。
+    rd.setdefault("value", "—")
+    a["reason_text"] = _translate(t, f"console.overview.na_reason_{suffix}", **rd)
+    a["action_text"] = _translate(t, f"console.overview.na_action_{suffix}")
+    a["role_text"] = _translate(t, f"console.overview.na_role_{a['requires_role']}")
+    # 可达性：cap[can_*] 为真则可点，否则显示「需要〈角色〉」（design D4）。
+    a["allowed"] = bool(cap.get(a["requires_role"]))
 
-    result = _na.for_domain(db, domain)
+
+def _content_t(request):
     t = getattr(request.state, "t", None)
     if t is None:
         from ..i18n import LOCALES, DEFAULT
         t = LOCALES[DEFAULT]
+    return t
+
+
+def _decorate_next_actions(request, db, domain, cap: dict) -> dict:
+    """给 for_domain 的 top 动作配上可渲染的文案与可达性（design D1/D4）。"""
+    from ...bench import next_actions as _na
+
+    result = _na.for_domain(db, domain)
+    t = _content_t(request)
     for a in result["ranked"]["top"]:
-        suffix = _GAP_TEXT_KEY.get(a["gap"], "quality")
-        rd = dict(a.get("reason_data") or {})
-        # na_reason_quality 模板需要 {metric}；任何走 quality 后缀的 gap 都补上指标名。
-        if suffix == "quality" and a["gap"].startswith("quality:"):
-            rd["metric"] = a["gap"].split(":", 1)[1]
-        # 模板里可能引用 {value}，但某些 gap（如 crosswalk 细分）reason_data 无 value，
-        # 统一补 None → 渲染为 "None" 不合适，改补空串以免 KeyError。
-        rd.setdefault("value", "—")
-        a["reason_text"] = _translate(t, f"console.overview.na_reason_{suffix}", **rd)
-        a["action_text"] = _translate(t, f"console.overview.na_action_{suffix}")
-        a["role_text"] = _translate(t, f"console.overview.na_role_{a['requires_role']}")
-        # 可达性：cap[can_*] 为真则可点，否则显示「需要〈角色〉」（design D4）。
-        a["allowed"] = bool(cap.get(a["requires_role"]))
+        _decorate_action(a, t, cap)
     result["h2"] = _translate(t, "console.overview.next_actions_h2")
     result["empty"] = _translate(t, "console.overview.next_actions_empty")
     result["more_tpl"] = _translate(t, "console.overview.next_actions_more", n="{n}")
     return result
+
+
+def _decorate_area_action(request, db, domain, area: str, cap: dict) -> dict:
+    """本区自己的一条下一动作（§2.2），文案与总览清单同源。"""
+    from ...bench import next_actions as _na
+
+    result = _na.for_area(db, domain, area)
+    t = _content_t(request)
+    if result["action"] is not None:
+        _decorate_action(result["action"], t, cap)
+    result["h2"] = _translate(t, "console.area_next.h2")
+    result["empty"] = _translate(t, "console.area_next.empty")
+    result["more_tpl"] = _translate(t, "console.overview.next_actions_more", n="{n}")
+    return result
+
 
 # Importing the legal pack registers its asset kinds with the kernel catalog.
 # The kernel stays domain-free; this app IS the legal deployment, so the pack
@@ -270,7 +296,15 @@ def console_domain_list(
         if a is not None and _t:
             a["action_text"] = _tr(_t, f"console.overview.na_action_{_GAP_TEXT_KEY.get(a['gap'], 'quality')}")
         r["next_action"] = a
+    # 有事要做的域排在前（§2.5）。稳定排序：组内仍是 list_member_domains 的
+    # last_opened_at 顺序，不重算 matrix、不改「只列 active 成员域」的语义。
+    all_rows.sort(key=lambda r: 0 if r.get("next_action") else 1)
     rows = estate.filter_rows(all_rows, gap)
+    # 无成员是另一种空态（§2.3）：它的下一步是「邀请人」，不是填空柱。一个人在
+    # 0 成员的域里什么都做不了，所以这一格要给到真实的邀请入口（仅管理员可见）。
+    member_counts = workspaces.active_member_counts(
+        db, domain_ids=[r["domain"]["id"] for r in all_rows]
+    )
     return _templates.TemplateResponse(
         request,
         "domain_list.html",
@@ -279,6 +313,7 @@ def console_domain_list(
             "rows": rows,
             "gap": gap,
             "include_archived": include_archived,
+            "member_counts": member_counts,
             "pillars": estate.PILLARS,
             "gap_counts": {
                 key: len([r for r in all_rows if key in r["gaps"]])
@@ -915,7 +950,7 @@ def console_ontology(
         request,
         "domain_console_ontology.html",
         {
-            **console_context(db, domain, user),
+            **console_context(db, domain, user, request=request, area="ontology"),
             **ledger,
             "units": units,
             "live_entities": live_entities,
@@ -1244,7 +1279,7 @@ def console_inbox(
         request,
         "domain_console_inbox.html",
         {
-            **console_context(db, domain, user),
+            **console_context(db, domain, user, request=request, area="inbox"),
             "proposals": proposals,
             "source_views": source_views,
             "state_filter": state,
@@ -1586,7 +1621,7 @@ def console_team(
         request,
         "domain_console_team.html",
         {
-            **console_context(db, domain, user),
+            **console_context(db, domain, user, request=request, area="team"),
             "cap": cap,
             "metrics": metrics,
             "thresholds": thresholds,
@@ -1764,7 +1799,7 @@ def console_library(
         request,
         "domain_console_library.html",
         {
-            **console_context(db, domain, user),
+            **console_context(db, domain, user, request=request, area="library"),
             "catalog": catalog,
             "scope_error": scope_error,
             "lib_key": lib_key,
@@ -1955,7 +1990,7 @@ def console_knowledge(
         request,
         "domain_console_knowledge.html",
         {
-            **console_context(db, domain, user),
+            **console_context(db, domain, user, request=request, area="knowledge"),
             "scope": scope,
             "libraries": library_store.list_libraries(db),
             "q": q,
@@ -1986,7 +2021,7 @@ def console_eval_standards(
         request,
         "domain_console_eval_standards.html",
         {
-            **console_context(db, domain, user),
+            **console_context(db, domain, user, request=request, area="eval-standards"),
             "standards": standards,
             "own": [s for s in standards if s["origin"] == "own"],
             "inherited": [s for s in standards if s["origin"] == "inherited"],

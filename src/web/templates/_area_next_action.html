@@ -1,0 +1,29 @@
+{#- 区页顶部：本区自己的一条下一动作（add-domain-next-actions §2.2）。
+
+    由 `console_context(..., request=, area=)` 注入；页面没传时 `area_next` 未定义，
+    此处静默不渲染——总览页有自己的整套清单，不重复。措辞同总览清单（同一
+    `_decorate_action` 生成 reason/action/role 文案），只是范围收窄到本区。
+
+    无权者只显示「需要〈角色〉」，不给会 403 的链接（design D4）。 -#}
+{% if area_next is defined and area_next %}
+<div class="panel" data-testid="area-next-action">
+  <h2>{{ area_next.h2 }}</h2>
+  {% if area_next.action %}
+  <ul class="next-actions">
+    <li data-gap="{{ area_next.action.gap }}" data-allowed="{{ '1' if area_next.action.allowed else '0' }}">
+      <span class="na-reason">{{ area_next.action.reason_text }}</span>
+      {% if area_next.action.allowed %}
+      <a class="btn btn-sm" href="{{ area_next.action.entry }}">{{ area_next.action.action_text }}</a>
+      {% else %}
+      <span class="badge muted" title="{{ area_next.action.role_text }}">{{ area_next.action.role_text }}</span>
+      {% endif %}
+    </li>
+  </ul>
+  {% if area_next.more %}
+  <p class="hint">{{ area_next.more_tpl.replace('{n}', area_next.more|string) }}</p>
+  {% endif %}
+  {% else %}
+  <p class="hint">{{ area_next.empty }}</p>
+  {% endif %}
+</div>
+{% endif %}

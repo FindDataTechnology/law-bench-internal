@@ -59,3 +59,57 @@ def test_domain_list_shows_next_action_column(_client_alice):
     r = _client_alice.get("/d")
     assert r.status_code == 200
     assert "next-action-cell" in r.text  # 列在
+
+
+def test_area_page_renders_its_own_next_action(_client_alice):
+    """每个区页顶部有本区自己的一条下一动作（§2.2）。
+
+    本世界（空本体/知识库/评测）里 ontology 区必有缺口，所以该页面必出现
+    area-next-action 块。与总览清单不同，它只讲这一区。
+    """
+    r = _client_alice.get(f"/d/{A_KEY}/ontology")
+    assert r.status_code == 200
+    assert 'data-testid="area-next-action"' in r.text
+    # 空态页也要明说「这一区没有待办」，不能静默缺席（§2.3 的区级形态）
+    r2 = _client_alice.get(f"/d/{A_KEY}/inbox")
+    assert r2.status_code == 200
+    assert 'data-testid="area-next-action"' in r2.text
+
+
+def test_domain_list_zero_member_state_shows_invite(seeded_db, monkeypatch):
+    """无成员的域在列表里显示「邀请成员」空态，而不是空白柱缺口（§2.3 #3）。
+
+    真库有 0 成员的域（生产: erp/finance/gov），非虚构状态。管理员在这个域里
+    谁也做不了，所以下一步是邀请人。用平台管理员（scopes 含 admin）看 /d，
+    断言 memberless 域那一行出现 no_members 文案。
+    """
+    from fastapi import Request
+    from fastapi.testclient import TestClient
+    from src.web.app import create_app
+    from src.web.auth import logto
+    from src.web.deps import get_db
+    from src.web.auth.deps import get_current_user
+    from src.bench import workspaces
+    from tests.test_domain_console import _seed_world, _user
+
+    monkeypatch.setattr(logto, "verify_reachable", lambda: None)
+    _seed_world(seeded_db)
+    workspaces.instantiate_domain(
+        seeded_db, key="lone-key", name="Lone", template_name="console-template",
+        template_version=None, created_by="seed",
+    )
+    admin = _user("admin", ["admin", "content:read"])  # admin scope → is_platform_admin true
+
+    app = create_app()
+
+    def _cur(request: Request):
+        request.state.user = admin
+        return admin
+
+    app.dependency_overrides[get_db] = lambda: seeded_db
+    app.dependency_overrides[get_current_user] = _cur
+    with TestClient(app) as c:
+        r = c.get("/d")
+    assert r.status_code == 200
+    assert "lone-key" in r.text
+    assert ("还没有成员" in r.text) or ("No members yet" in r.text)

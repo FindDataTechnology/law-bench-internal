@@ -110,19 +110,26 @@ def resolve_domain(conn: Any, domain_key: str) -> dict:
 
 
 def console_context(
-    conn: Any, domain: dict, user: User, *, touch: bool = False
+    conn: Any, domain: dict, user: User, *, touch: bool = False,
+    request: Any = None, area: str = None,
 ) -> dict:
     """The chrome context every domain area page needs.
 
     ``touch`` stamps this user's recency marker for the domain list order; it is
     applied only on the landing areas (overview) so writing a page view never
     happens on a pure read of a deep area.
+
+    ``request`` + ``area``, when both given, add ``area_next`` — this area's own
+    single next action (add-domain-next-actions §2.2). It is a pure read; the
+    projection reuses estate.matrix, so a page that also renders the matrix would
+    pay for it twice. Only the six areas that can carry a gap pass these; pages
+    that pass nothing simply get no banner (the shared partial hides on absence).
     """
     if touch:
         workspaces.touch_last_opened(conn, domain_id=domain["id"], user_id=user.sub)
         conn.commit()
     cap = capability(conn, domain, user)
-    return {
+    ctx = {
         "domain": domain,
         "cap": cap,
         "areas": visible_areas(cap),
@@ -130,6 +137,10 @@ def console_context(
         # never derived from a client-supplied value.
         "switcher_domains": workspaces.list_member_domains(conn, user_id=user.sub),
     }
+    if request is not None and area:
+        from .routes.console import _decorate_area_action
+        ctx["area_next"] = _decorate_area_action(request, conn, domain, area, cap)
+    return ctx
 
 
 def member_domain_count(conn: Any, user_id: str) -> int:

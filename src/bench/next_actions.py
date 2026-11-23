@@ -110,6 +110,7 @@ def _action_for(gap: str, row: dict) -> Optional[dict]:
     reason = _reason_for(gap, row)
     return {
         "gap": gap,
+        "area": rule["area"],   # 属于哪个区（§2.2 区页只取本区一条）
         "priority_key": rule["priority"],
         "action": rule["action"],
         "entry": f"/d/{domain['key']}/{rule['area']}",
@@ -207,6 +208,40 @@ def for_row(row: dict) -> dict:
         else:
             actions.append(a)
     return {"ranked": rank(actions), "unknown_gaps": unknown}
+
+
+def for_area_row(row: dict, area: str) -> dict:
+    """本区**自己的**下一动作一条（§2.2）。
+
+    与 :func:`for_row` 的区别：先按 ``area`` 过滤再排序，所以一个低优先级的区
+    也能拿到它唯一的动作——区页回答的是「这一区该做什么」，不是「全局该做什么」。
+    同区多个缺口去重后取最高优先级一条；其余计数进 ``more``。
+    """
+    actions: list[dict] = []
+    unknown: list[str] = []
+    for gap in row.get("gaps") or []:
+        a = _action_for(gap, row)
+        if a is None:
+            unknown.append(gap)
+        elif a["area"] == area:
+            actions.append(a)
+    d = dedup(actions)
+    return {
+        "action": d[0] if d else None,
+        "more": max(0, len(d) - 1),
+        "unknown_gaps": unknown,
+    }
+
+
+def for_area(conn: Any, domain: dict, area: str, *, probed: Optional[dict] = None) -> dict:
+    """一个域某个区的下一动作（投影，不计算）。纯读。"""
+    from . import estate as _estate
+
+    rows = _estate.matrix(conn, domains=[domain], probed=probed)
+    if not rows:
+        return {"action": None, "more": 0, "unknown_gaps": []}
+    return for_area_row(rows[0], area)
+
 
 
 def for_domain(conn: Any, domain: dict, *, probed: Optional[dict] = None) -> dict:

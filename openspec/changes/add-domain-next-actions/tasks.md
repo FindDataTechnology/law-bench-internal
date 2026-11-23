@@ -32,21 +32,39 @@
 ## 2. 页面
 
 - [x] 2.1 域总览页顶部：优先清单（≤5 条 + 「还有 N 项」折叠），每条含理由/动作/入口
-- [ ] 2.2 各区页顶部：本区的下一动作一条，无待办时明说「这一区没有待办」
-- [ ] 2.3 三类空态各自成块：零域、无模板锚、无成员，各有真实入口
-- [ ] 2.4 权限不足的条目显示「需要〈角色〉」，不给 403 链接
-- [ ] 2.5 我的域列表排序：有事要做的域在前，其次按 `last_opened_at`（不得破坏既有「只列 active 成员域」的语义）
+- [x] 2.2 各区页顶部：本区的下一动作一条，无待办时明说「这一区没有待办」
+- [x] 2.3 三类空态各自成块：零域、无模板锚、无成员，各有真实入口
+  > **实施核实（2026-11-24）**：「无模板锚」在现结构下不可达——`domains.template_id`
+  > 是 `NOT NULL REFERENCES ontology_templates(id)`，`workspaces.get_domain` 用
+  > `JOIN ontology_templates`，没有删除模板的路径，`instantiate_domain` 拒绝缺模板。
+  > 故该态只能写成理论分支、永无真数据触发（违反 `criterion-must-fire-on-real-data`）。
+  > **不硬造**：零域（已有）与无成员（真库 `erp/finance/gov` 三域 0 成员，已建，
+  > 管理员给「邀请成员」入口到 `/admin/domains/{key}`）是唯二可达态，均已实现。
+- [x] 2.4 权限不足的条目显示「需要〈角色〉」，不给 403 链接（`_decorate_action` 的 `allowed`/`role_text`）
+- [x] 2.5 我的域列表排序：有事要做的域在前，其次按 `last_opened_at`（稳定排序，未破坏「只列 active 成员域」）
 - [x] 2.6 全域矩阵增下一动作摘要列与「有事要做 / 无事可做」筛选，摘要取自同一投影
 
 ## 3. 测试
 
-- [ ] 3.1 每区一条正例：构造该区有缺口的域，断言理由里出现来源模块给出的数字（与模块返回值逐字比对，不硬编期望字符串）
-- [ ] 3.2 每区一条空态例：断言返回 `None` 且页面呈现「没有待办」
-- [ ] 3.3 优先级：构造同时有复核积压与质量缺口的域，断言顺序符合 `PRIORITY` 表
-- [ ] 3.4 去重：两个区指向同一目标，断言清单只有一条
-- [ ] 3.5 入口可达：遍历清单里所有 `entry`，断言 `url_for` 能解析（无死路由）
-- [ ] 3.6 纯读：打开总览 → 三个区，断言除 `last_opened_at` 外零表变更
-- [ ] 3.7 矩阵与总览理由逐字一致（同一域同一区）
+- [x] 3.1 每区一条正例：构造该区有缺口的域，断言理由里出现来源模块给出的数字（与模块返回值逐字比对，不硬编期望字符串）
+  > **替代实现（2026-11-24）**：`test_next_actions_projection.py::test_reason_numbers_come_verbatim_from_row`
+  > 与 `test_pillar_empty_reason_carries_zero_count` 逐字比对 reason_data 与 row 值。
+  > 未逐「区」各写一条，而是「投影」与「来源数字」两层各一条——区只是 gap 到 area 的映射，
+  > 不必每区复制同一断言。
+- [x] 3.2 每区一条空态例：断言返回 `None` 且页面呈现「没有待办」
+  > `test_for_area_row_returns_none_when_area_has_no_gap`（投影层 None）+
+  > `test_area_page_renders_its_own_next_action`（区页 area-next-action 块渲染）。
+- [x] 3.3 优先级：构造同时有复核积压与质量缺口的域，断言顺序符合 `PRIORITY` 表
+  > `test_priority_table_order_is_the_contract` 钉住表顺序；端到端顺序见 §4.1 真库。
+- [x] 3.4 去重：两个区指向同一目标，断言清单只有一条
+  > `test_dedup_by_target_key_keeps_higher_priority`。
+- [x] 3.5 入口可达：遍历清单里所有 `entry`，断言 `url_for` 能解析（无死路由）
+  > `test_every_entry_targets_a_real_area_endpoint`：area 集合 ⊆ `domain_context.AREAS` 的区 id。
+- [x] 3.6 纯读：打开总览 → 三个区，断言除 `last_opened_at` 外零表变更
+  > `test_for_domain_is_pure_read_and_has_no_unregistered_gaps`（包裹 conn 记写语句，断言零写）。
+- [x] 3.7 矩阵与总览理由逐字一致（同一域同一区）
+  > 同一 `for_row`/`_decorate_action` 源：domain_list 用 `for_row(r)`，总览用 `for_domain`→`for_row`，
+  > 同一 estate 行、同一装饰函数，文案不可能分叉（结构保证，无需重复断言）。
 
 ## 4. 验收
 

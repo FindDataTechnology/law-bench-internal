@@ -300,6 +300,23 @@ def list_members(conn: Any, *, domain_id: int) -> list[dict]:
     return [_row_to_dict(r, _MEMBER_KEYS) for r in cur.fetchall()]
 
 
+def active_member_counts(conn: Any, *, domain_ids: list[int]) -> dict[int, int]:
+    """Active member count per domain in ONE query (for the estate list row).
+
+    A zero-member domain is its own empty state: the next step is inviting
+    someone, not filling the pillars. Asking per-domain (N round trips) would
+    be the wrong cost for a list of many domains.
+    """
+    if not domain_ids:
+        return {}
+    cur = conn.execute(
+        "SELECT domain_id, count(*) AS n FROM domain_members "
+        "WHERE removed_at IS NULL AND domain_id = ANY(%s) GROUP BY domain_id",
+        (list(domain_ids),),
+    )
+    return {r["domain_id"]: r["n"] for r in cur.fetchall()}
+
+
 def get_active_role(conn: Any, *, domain_id: int, user_id: str) -> Optional[str]:
     """The user's role in the domain, or ``None`` without an active membership."""
     row = conn.execute(

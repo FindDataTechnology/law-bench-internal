@@ -92,6 +92,7 @@
         {{ tr(request.query_params.get('msg'), name=request.query_params.get('name') or '', detail=request.query_params.get('detail') or '') }}
       </div>
     {% endif %}
+    {% include '_area_next_action.html' %}
     {% block content %}{% endblock %}
   </main>
   <script>window.__LOCALE__ = {{ t_json|safe }}; window.__LABELS__ = {{ labels_json|safe }}; window.__LANG__ = "{{ lang }}";</script>
