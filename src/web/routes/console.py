@@ -118,11 +118,17 @@ def _decorate_next_actions(request, db, domain, cap: dict) -> dict:
     return result
 
 
-def _decorate_area_action(request, db, domain, area: str, cap: dict) -> dict:
-    """本区自己的一条下一动作（§2.2），文案与总览清单同源。"""
+def _decorate_area_action(request, db, domain, area: str, cap: dict,
+                          *, scope_cache: Optional[dict] = None,
+                          probed: Optional[dict] = None) -> dict:
+    """本区自己的一条下一动作（§2.2），文案与总览清单同源。
+
+    ``scope_cache`` / ``probed`` 透传：区页若已量过外部库大小（knowledge 页），
+    把缓存传进来避免横幅二次扫描同一存储。
+    """
     from ...bench import next_actions as _na
 
-    result = _na.for_area(db, domain, area)
+    result = _na.for_area(db, domain, area, probed=probed, scope_cache=scope_cache)
     t = _content_t(request)
     if result["action"] is not None:
         _decorate_action(result["action"], t, cap)
@@ -1989,11 +1995,19 @@ def console_knowledge(
                         scope.setdefault("count_error", f"{lib['library_key']}: {exc}")
     except ValueError as exc:  # a stored subscription that would widen scope
         scope = {"domain_path": domain["path"], "libraries": [], "error": str(exc)}
+    # 本页已量过每个库的块数（上面循环里的 lib["chunks"]）。把它转成 count_scope
+    # 的缓存形交给 console_context，区横幅据此复用、不再对同一外部存储二次扫描
+    # （§「同一页不许把同一存储数两遍」）。键与 count_scope 一致。
+    kw_scope_cache: dict = {}
+    for lib in scope.get("libraries") or []:
+        if lib.get("chunks") is not None:
+            kw_scope_cache[(lib["library_key"], tuple(sorted(lib.get("sources") or [])))] = lib["chunks"]
     return _templates.TemplateResponse(
         request,
         "domain_console_knowledge.html",
         {
-            **console_context(db, domain, user, request=request, area="knowledge"),
+            **console_context(db, domain, user, request=request, area="knowledge",
+                              scope_cache=kw_scope_cache),
             "scope": scope,
             "libraries": library_store.list_libraries(db),
             "q": q,

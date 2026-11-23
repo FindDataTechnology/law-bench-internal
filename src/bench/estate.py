@@ -154,12 +154,21 @@ def _template_readiness(conn: Any, domain: dict) -> Optional[dict]:
 
 
 def matrix(conn: Any, *, domains: list[dict], probed: Optional[dict] = None,
-           with_quality: bool = True) -> list[dict]:
-    """One row per domain: identity + tree depth + the four pillar summaries."""
+           with_quality: bool = True, scope_cache: Optional[dict] = None) -> list[dict]:
+    """One row per domain: identity + tree depth + the four pillar summaries.
+
+    ``scope_cache`` lets a caller that has **already measured** an external
+    library's size hand those counts in, so the matrix reuses them instead of
+    scanning the store a second time (the knowledge area page measures the same
+    store for its own display; a banner reading the matrix must not re-count it).
+    Keys match ``library_index.count_scope``'s:
+    ``(library_key, tuple(sorted(granted_sources)))``.
+    """
     rows = []
     # One memo for the whole matrix: sub-domains inheriting the same grant must
     # not each re-count the same external store (ten rows, one round trip).
-    scope_cache: dict = {}
+    if scope_cache is None:
+        scope_cache = {}
     for domain in domains:
         # A domain row written before the tree existed may still have no path
         # (the backfill only touches rows present when it runs). A root's path

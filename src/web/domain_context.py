@@ -14,7 +14,7 @@ Role vocabulary is the workspace kernel's, not an invented one: ``annotator``
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import HTTPException
 
@@ -112,6 +112,7 @@ def resolve_domain(conn: Any, domain_key: str) -> dict:
 def console_context(
     conn: Any, domain: dict, user: User, *, touch: bool = False,
     request: Any = None, area: str = None,
+    scope_cache: Optional[dict] = None, probed: Optional[dict] = None,
 ) -> dict:
     """The chrome context every domain area page needs.
 
@@ -120,10 +121,11 @@ def console_context(
     happens on a pure read of a deep area.
 
     ``request`` + ``area``, when both given, add ``area_next`` — this area's own
-    single next action (add-domain-next-actions §2.2). It is a pure read; the
-    projection reuses estate.matrix, so a page that also renders the matrix would
-    pay for it twice. Only the six areas that can carry a gap pass these; pages
-    that pass nothing simply get no banner (the shared partial hides on absence).
+    single next action (add-domain-next-actions §2.2), built from
+    ``estate.matrix``. ``scope_cache`` lets a page that already measured an
+    external library's size (the knowledge page) hand those counts in so the
+    banner does not scan the same store twice. Only the six areas that can carry a
+    gap pass these; pages that pass nothing get no banner (the partial hides).
     """
     if touch:
         workspaces.touch_last_opened(conn, domain_id=domain["id"], user_id=user.sub)
@@ -139,7 +141,10 @@ def console_context(
     }
     if request is not None and area:
         from .routes.console import _decorate_area_action
-        ctx["area_next"] = _decorate_area_action(request, conn, domain, area, cap)
+        ctx["area_next"] = _decorate_area_action(
+            request, conn, domain, area, cap,
+            scope_cache=scope_cache, probed=probed,
+        )
     return ctx
 
 

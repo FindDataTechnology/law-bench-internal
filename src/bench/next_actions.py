@@ -233,11 +233,17 @@ def for_area_row(row: dict, area: str) -> dict:
     }
 
 
-def for_area(conn: Any, domain: dict, area: str, *, probed: Optional[dict] = None) -> dict:
-    """一个域某个区的下一动作（投影，不计算）。纯读。"""
+def for_area(conn: Any, domain: dict, area: str, *, probed: Optional[dict] = None,
+             scope_cache: Optional[dict] = None) -> dict:
+    """一个域某个区的下一动作（投影，不计算）。纯读。
+
+    ``scope_cache`` 透传给 ``estate.matrix``：调用它的区页若已自己量过外部库的
+    大小（knowledge 页会算 ``source_counts``），把同形的缓存传进来，横幅就不再
+    对同一存储二次扫描（§「同一页不许把同一存储数两遍」）。
+    """
     from . import estate as _estate
 
-    rows = _estate.matrix(conn, domains=[domain], probed=probed)
+    rows = _estate.matrix(conn, domains=[domain], probed=probed, scope_cache=scope_cache)
     if not rows:
         return {"action": None, "more": 0, "unknown_gaps": []}
     return for_area_row(rows[0], area)
