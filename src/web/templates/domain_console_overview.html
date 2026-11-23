@@ -39,9 +39,34 @@
   </div>
 </div>
 
+{#- 域下一动作：优先清单（≤5 条 + 还有 N 项）。排序可解释（PRIORITY 表），
+    每条给理由/动作/入口；无权者显示「需要〈角色〉」不给链接（design D4）。 -#}
+{% if next_actions and next_actions.ranked %}
+<div class="panel" data-testid="next-actions">
+  <h2>{{ next_actions.h2 }}</h2>
+  {% if next_actions.ranked.top %}
+  <ul class="next-actions">
+    {% for a in next_actions.ranked.top %}
+    <li data-gap="{{ a.gap }}" data-allowed="{{ '1' if a.allowed else '0' }}">
+      <span class="na-reason">{{ a.reason_text }}</span>
+      {% if a.allowed %}
+      <a class="btn btn-sm" href="{{ a.entry }}">{{ a.action_text }}</a>
+      {% else %}
+      <span class="badge muted" title="{{ a.role_text }}">{{ a.role_text }}</span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% if next_actions.ranked.more %}
+  <p class="hint">{{ next_actions.more_tpl.replace('{n}', next_actions.ranked.more|string) }}</p>
+  {% endif %}
+  {% else %}
+  <p class="hint">{{ next_actions.empty }}</p>
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="panel">
-  <div class="toolbar between">
-    <h2>{{ t.console.overview.my_tasks_h2 }}</h2>
     {% if cap.can_assign %}
     <a class="btn btn-sm" href="{{ url_for('workbench_task_new', domain_key=domain.key) }}">{{ t.console.overview.assign_new }}</a>
     {% endif %}

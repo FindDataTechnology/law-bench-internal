@@ -157,4 +157,5 @@ jobs:
         run: |
           export database_url="postgresql://app@localhost:5432/law_bench"
           pytest -q tests/test_next_actions_projection.py \
-                    tests/test_domain_next_actions.py
+                    tests/test_domain_next_actions.py \
+                    tests/test_domain_next_actions_ui.py

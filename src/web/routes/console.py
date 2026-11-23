@@ -53,6 +53,55 @@ from .authoring import sorted_tasks
 from ...bench import authoring as bench_authoring
 from ...bench import distribution as bench_distribution
 from ...bench import domain_assets as bench_domain_assets
+from ..i18n import translate as _translate
+
+#: gap 前缀 → reason / action i18n key 的后缀（console.overview.na_*）。
+#: console.overview 里成对存在 na_reason_<suffix> / na_action_<suffix>。
+_GAP_TEXT_KEY = {
+    "quality:review_lag": "review_lag",
+    "quality:crosswalk_dangling": "quality",
+    "quality:crosswalk_stale": "quality",
+    "quality:crosswalk_unconfirmed": "quality",
+    "quality:crosswalk": "quality",
+    "quality:template": "template",
+    "quality:evidence": "quality",
+    "quality:grounding": "quality",
+    "quality:referential": "quality",
+    "quality:key_hygiene": "quality",
+    "ontology": "ontology",
+    "knowledge": "knowledge",
+    "eval": "eval",
+}
+
+
+def _decorate_next_actions(request, db, domain, cap: dict) -> dict:
+    """给 for_domain 的 top 动作配上可渲染的文案与可达性（design D1/D4）。
+
+    reason 的数字来自 next_actions 的 reason_data（已逐字取自来源模块），这里只把
+    结构化数字塞进 i18n 模板，不再做任何算术/格式化。
+    """
+    from ...bench import next_actions as _na
+
+    result = _na.for_domain(db, domain)
+    t = getattr(request.state, "t", None)
+    if t is None:
+        from ..i18n import LOCALES, DEFAULT
+        t = LOCALES[DEFAULT]
+    for a in result["ranked"]["top"]:
+        suffix = _GAP_TEXT_KEY.get(a["gap"], "quality")
+        rd = dict(a.get("reason_data") or {})
+        if "value" not in rd and a["gap"].startswith("quality:"):
+            rd.setdefault("metric", a["gap"].split(":", 1)[1])
+        a["reason_text"] = _translate(t, f"console.overview.na_reason_{suffix}", **rd)
+        a["action_text"] = _translate(t, f"console.overview.na_action_{suffix}")
+        a["role_text"] = _translate(t, f"console.overview.na_role_{a['requires_role']}")
+        # 可达性：cap[can_*] 为真则可点，否则显示「需要〈角色〉」（design D4）。
+        a["allowed"] = bool(cap.get(a["requires_role"]))
+    result["h2"] = _translate(t, "console.overview.next_actions_h2")
+    result["empty"] = _translate(t, "console.overview.next_actions_empty")
+    result["more_tpl"] = _translate(t, "console.overview.next_actions_more", n="{n}")
+    return result
+
 # Importing the legal pack registers its asset kinds with the kernel catalog.
 # The kernel stays domain-free; this app IS the legal deployment, so the pack
 # import belongs at the app's edge (this module), never inside src/bench.
@@ -774,6 +823,9 @@ def console_overview(
     ctx = console_context(db, domain, user, touch=True)
     curation = bench_ledger.curation_layer(db, domain=domain, recent_limit=5)
     publication = bench_ledger.publication_layer(db, domain=domain, history_limit=1)
+    # 域下一动作：投影（读既有缺口矩阵，不新算）。渲染层据 requires_role 决定给链接还是「需要〈角色〉」。
+    from ...bench import next_actions as bench_next_actions
+    next_actions = _decorate_next_actions(request, db, domain, ctx["cap"])
     return _templates.TemplateResponse(
         request,
         "domain_console_overview.html",
@@ -798,6 +850,7 @@ def console_overview(
                 for origin in ("kernel", "fleet")
             },
             "recent_events": curation.get("recent_events") or [],
+            "next_actions": next_actions,
         },
     )
 
