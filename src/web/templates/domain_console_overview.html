@@ -67,6 +67,8 @@
 {% endif %}
 
 <div class="panel">
+  <div class="toolbar between">
+    <h2>{{ t.console.overview.my_tasks_h2 }}</h2>
     {% if cap.can_assign %}
     <a class="btn btn-sm" href="{{ url_for('workbench_task_new', domain_key=domain.key) }}">{{ t.console.overview.assign_new }}</a>
     {% endif %}
