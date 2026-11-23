@@ -80,6 +80,10 @@ _importlib.import_module("packs.finance-data.checks")
 # rules, so a gov title folds the same way in the catalog, the ontology and
 # extraction. The pack itself stays outside src/bench.
 from packs import gov as _gov_pack  # noqa: F401
+# Its deterministic checkers (kind='gov-fact') live in a separate module that
+# registers on import; without this a domain-data eval of the gov domain finds no
+# checker for gov-fact (the registry units it lands). Same edge-import rule.
+from packs.gov import checks as _gov_checks  # noqa: F401
 # The ERP pack registers its account checkers (kind='account'), so a domain-data
 # eval of the erp domain can find them. Same rule as above: the pack stays
 # outside src/bench; the import lives at the app's edge.
