@@ -88,3 +88,29 @@
 - `finance`：可评（fact），run #22 735/735 带域归属
 - `gov`/`legal`/`data-ontology`：如实报无可评确定性判据（诚实空态）
 - 复测义务：确认提案即铸 `verdict-retest`，域页可见；台账把 `crosswalk` 单列为内核缝
+
+## 8. 追加：gov 接真实 registry（6.2，用户授权后做）
+
+原 6.2 挂账「gov-fact registry 接生产」。用户 2026-11-23 授权「要做就继续做」后落地：
+
+- `scripts/load_gov_registry.py`（新）：幂等把 `fd-cn-gov` registry（11 源）落成 `gov-fact`
+  单位进 `namespace='gov'`（该 pack 的 namespace 已是域 key，无 finance 那种错位）；
+  `--dry-run`（不写）/ `--no-eval`（只落不评）；落库后自动跑一次带域归属的数据评测。
+- `src/web/routes/console.py`：console 边缘补 import `packs.gov.checks`（否则 app 进程
+  gov-fact 无 checker，`evaluable_kinds(gov)` 为空）。
+- 区分度（`criterion-must-fire-on-real-data`）：registry 干净 ⇒ 8 checker 11/11 全绿。
+  这是**数据本身对**的事实，规则作未来 registry 漂移的警报（非用来挑今天的错）。
+
+**生产实证**（pod 内 `FD_GOV_REPO=/tmp/govrepo python scripts/load_gov_registry.py`）：
+- gov namespace：document 45 / issued_by 38 / **gov-fact 11** / agency 4 / concept 3 / defines 3
+  （gov-fact 是新增 kind，不动既有本体）
+- 数据评测 run #25（脚本）/ #26（页面按钮）均 `data-checks:gov-fact` pass **88/88**、
+  `rubric_domain_id=gov`、`channel='data'`
+- ego 真身份：`/d/gov/eval-runs` 显示「可评 kind：gov-fact」+ 按钮；点后 flash
+  「数据评测完成：通过 88/88 · pass」（截图 /tmp/lawbench-gov-eval.png）
+
+**三维行业线终态**（全部带域归属的数据通道结论）：
+- gov：#25/#26 88/88（gov-fact）/ erp：#23/#24 46/46（account）/ finance：#22 735/735（fact）
+- legal / data-ontology：如实报无可评确定性判据（诚实空态）
+
+在役镜像：`sha-d7960ac`（digest `fb1339c2`）。

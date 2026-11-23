@@ -69,4 +69,4 @@
 ## 6. 挂账
 
 - [ ] 6.1（挂账 2026-11-23） 复测义务的自动执行（调度/CI 触发）——本 change 只登记与展示，不执行
-- [ ] 6.2（挂账 2026-11-23） gov-fact 真实 registry 单位接生产——需 sibling 仓 `fd-cn-gov` 的 registry 入库，另开
+- [x] 6.2 gov-fact 真实 registry 单位接生产——**已完成**（2026-11-23 追加）：`scripts/load_gov_registry.py` 幂等落 11 源进 gov 域，8 checker 88/88；生产 run #25/#26 带 gov 域归属。详见 acceptance §8
