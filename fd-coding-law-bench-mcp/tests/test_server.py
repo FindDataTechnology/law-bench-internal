@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 
 EXPECTED_TOOLS = {
+    "assistant_usage_record",
+    "assistant_usage_summary",
     "domain_proposal_confirm",
     "domain_unit_promote",
     "domain_context",

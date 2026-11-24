@@ -636,40 +636,18 @@
       "group": "domain",
       "level": "internal",
       "tools": [
-        {
-          "name": "domain_context",
-          "level": "commercial"
-        },
-        {
-          "name": "domain_list",
-          "level": "commercial"
-        },
+        "assistant_usage_record",
+        "assistant_usage_summary",
+        "domain_context",
+        "domain_list",
         "domain_proposal_confirm",
-        {
-          "name": "domain_proposal_get",
-          "level": "commercial"
-        },
-        {
-          "name": "domain_proposals",
-          "level": "commercial"
-        },
-        {
-          "name": "domain_unit_checks",
-          "level": "commercial"
-        },
+        "domain_proposal_get",
+        "domain_proposals",
+        "domain_unit_checks",
         "domain_unit_promote",
-        {
-          "name": "domain_units",
-          "level": "commercial"
-        },
-        {
-          "name": "ruler_criteria",
-          "level": "commercial"
-        },
-        {
-          "name": "ruler_list",
-          "level": "commercial"
-        }
+        "domain_units",
+        "ruler_criteria",
+        "ruler_list"
       ],
       "notes": "知验台平台面（change domain-first-mcp）：域/单位/尺子，读面全只读；写面是闭集：确认提案（幂等，产出 silver）与升一格（到 silver 为止，gold 要人签）。域是必填参数，跨域隔离由查询保证而不是提示词。组级 level=internal（原为契约外的 `platform`，change mcp-surface-truth-up 1.1 改正）：八个读工具逐条标 commercial，两个写工具留在 internal。"
     },
@@ -1195,6 +1173,18 @@
       "readOnlyHint": false,
       "destructiveHint": false,
       "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "assistant_usage_record": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "assistant_usage_summary": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
       "openWorldHint": false
     }
   },

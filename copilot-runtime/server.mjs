@@ -164,20 +164,36 @@ function promptForScope(domain, role, brief) {
 // 必须随请求变。缓存实例是让「每个作用域一份 prompt」同时成立的最轻做法。
 // 简报每次都不同（下一动作会变），所以缓存键包含它——否则助手会一直复述
 // 打开浮岛那一刻的旧现状。
+// 缓存策略：LRU，不是「满了全清」。
+//
+// 原实现超过上限就 `_agents.clear()`，而键里含简报——简报随「下一动作」变化，
+// 命中率极低，于是每 32 次请求就把整个缓存倒空一次，下一轮全部重建。
+// 改为 LRU 后，最久未用的那一个被淘汰，热作用域（同一个人在同一域连续提问）
+// 的实例留住。上限也放宽：一个实例就是一层包装对象，32 太小。
 const _agents = new Map();
-const _AGENT_CACHE_MAX = 32;
+const _AGENT_CACHE_MAX = 128;
 function agentFor(domain, role, brief) {
-  const key = `${domain}\u0000${role}\u0000${brief}`;
-  let made = _agents.get(key);
-  if (!made) {
-    made = new BuiltInAgent({
-      model: provider.chat(MODEL),
-      mcpClients: [lawbenchMcp],
-      prompt: promptForScope(domain, role, brief),
-      maxSteps: 10,
-    });
-    if (_agents.size >= _AGENT_CACHE_MAX) _agents.clear();
-    _agents.set(key, made);
+  // 键里用简报的长度+头尾做指纹，而不是整段中文：键更短，且 Map 比较的是字符串。
+  const fingerprint = brief ? `${brief.length}:${brief.slice(0, 24)}:${brief.slice(-24)}` : "";
+  const key = `${domain}\u0000${role}\u0000${fingerprint}`;
+  const hit = _agents.get(key);
+  if (hit) {
+    // 触碰一下：Map 的插入顺序即 LRU 顺序，重插把这项移到队尾。
+    _agents.delete(key);
+    _agents.set(key, hit);
+    return hit;
+  }
+  const made = new BuiltInAgent({
+    model: provider.chat(MODEL),
+    mcpClients: [lawbenchMcp],
+    prompt: promptForScope(domain, role, brief),
+    maxSteps: 10,
+  });
+  _agents.set(key, made);
+  while (_agents.size > _AGENT_CACHE_MAX) {
+    // 淘汰最久未用的一个（Map 迭代顺序 = 插入顺序）。
+    const oldest = _agents.keys().next().value;
+    _agents.delete(oldest);
   }
   return made;
 }
@@ -272,14 +288,55 @@ const provider = createOpenAI({
 // per request by `beforeRequestMiddleware` below — assigning into `agents`
 // before each run is the documented-safe way to vary the prompt, because
 // BuiltInAgent's `prompt` is a plain string with no per-run hook.
+// 每轮的开始时间。request 对象本身当键即可——它在这两个中间件之间是同一个。
+const _turnStartedAt = new WeakMap();
+
+/** 调 MCP 的 assistant_usage_record 落一行。失败只记日志，不影响对话。 */
+async function recordUsage({ domain, actor, role, tokens_in, tokens_out, elapsed_ms, outcome }) {
+  const client = await getMcpClient();
+  await client.callTool({
+    name: "assistant_usage_record",
+    arguments: {
+      domain, actor,
+      role: role || null,
+      model: MODEL,
+      tokens_in: tokens_in ?? null,
+      tokens_out: tokens_out ?? null,
+      elapsed_ms: elapsed_ms ?? null,
+      outcome: outcome || "ok",
+    },
+  });
+}
+
 const runtime = new CopilotRuntime({
   agents: {
     copilotkit: agentFor("", "", ""),
     default: agentFor("", "", ""),
   },
+  // 用量上报（2026-11-25）：助手此前完全没有计量，域成员放开后 token 从 0 变正。
+  // 记在请求进入时打点，响应时调 MCP 的 assistant_usage_record 落一行。
+  // 只有域与身份都在时才记——缺一个就是「不知道该记到谁名下」，那不是记录。
+  //
+  // **token 数是 NULL**：这个中间件只拿得到 request/response，拿不到模型用量。
+  // 表允许 NULL 正是为此——「这一轮跑了但没计数」和「这一轮花了 0」是两件事。
+  // 要真拿到 token 需要走 factory 模式自建 runner，那是另一个改动。
+  afterRequestMiddleware: ({ request, response }) => {
+    const domain = request.headers.get("x-lawbench-domain") || "";
+    const actor = request.headers.get("x-lawbench-actor") || "";
+    if (!domain || !actor) return response;
+    const started = _turnStartedAt.get(request);
+    _turnStartedAt.delete(request);
+    const elapsed = started ? Date.now() - started : null;
+    const outcome = response && response.ok ? "ok" : "error";
+    recordUsage({ domain, actor, elapsed_ms: elapsed, outcome }).catch((err) =>
+      console.error("[usage] record failed:", err.message),
+    );
+    return response;
+  },
   beforeRequestMiddleware: ({ request }) => {
     const domain = request.headers.get("x-lawbench-domain") || "";
     const role = request.headers.get("x-lawbench-role") || "";
+    _turnStartedAt.set(request, Date.now());
     let brief = "";
     const raw = request.headers.get("x-lawbench-context") || "";
     if (raw) {

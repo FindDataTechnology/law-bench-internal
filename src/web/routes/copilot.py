@@ -116,7 +116,8 @@ def _resolve_scope(request: Request, user: User, conn: DbConn) -> tuple[str, str
 
 
 #: Injected by the proxy, never trusted from the client.
-_SCOPE_HEADERS = ("x-lawbench-domain", "x-lawbench-role", "x-lawbench-context")
+_SCOPE_HEADERS = ("x-lawbench-domain", "x-lawbench-role", "x-lawbench-context",
+                  "x-lawbench-actor")
 
 
 def _domain_context(conn, domain: dict) -> str:
@@ -226,6 +227,9 @@ async def copilot_proxy(
             del headers[name]
     headers["X-Lawbench-Domain"] = domain_key
     headers["X-Lawbench-Role"] = role
+    # 用量归属：runtime 需要一个能记到名下的身份。取会话的 sub（不是邮箱——
+    # 成员表两种形状都有，但台账记的是「谁在用」，sub 是稳定的那个）。
+    headers["X-Lawbench-Actor"] = getattr(user, "sub", "") or getattr(user, "email", "")
     # ASCII-safe transport: the brief is Chinese, and an HTTP header cannot carry
     # raw non-ASCII. Base64 keeps the proxy contract simple (one header) and the
     # runtime decodes it back before injecting.

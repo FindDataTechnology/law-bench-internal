@@ -97,3 +97,23 @@ if (missingGroups.length) {
   console.log(`FAIL: 新组名缺失：${missingGroups.join(", ")}`);
   promptBad++;
 }
+
+
+// ---------------------------------------------------------------------------
+// agent 缓存必须是 LRU 而不是「满了全清」（2026-11-25）。
+//
+// 键里含域简报，而简报随「下一动作」变化 ⇒ 命中率低 ⇒ 原来的 clear() 会让
+// 每 32 次请求重建全部实例。这条判据只认源码里没有 clear()、且用 Map 顺序淘汰。
+// ---------------------------------------------------------------------------
+const cacheBlock = src.slice(
+  src.indexOf("const _agents = new Map()"),
+  src.indexOf("const lawbenchMcp = {"),
+);
+if (/_agents\.clear\(\)/.test(cacheBlock)) {
+  console.log("FAIL: agent 缓存仍在用 clear() 全清");
+  promptBad++;
+}
+if (!/while \(_agents\.size > _AGENT_CACHE_MAX\)/.test(cacheBlock)) {
+  console.log("FAIL: agent 缓存没有按条淘汰（LRU）");
+  promptBad++;
+}

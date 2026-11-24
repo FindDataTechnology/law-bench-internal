@@ -380,6 +380,32 @@ CREATE INDEX IF NOT EXISTS domain_agent_runs_domain_idx
 CREATE INDEX IF NOT EXISTS domain_agent_runs_outcome_idx
     ON domain_agent_runs (domain_key, outcome, started_at DESC);
 
+-- 助手用量（change domain-first-mcp §8.1 的持续缺口，2026-11-25 补）。
+--
+-- 为什么单独一张表而不是复用 domain_agent_runs：那张表的 `open` 明令只记
+-- **智能体的轮次**（`agent_ids.is_agent(role)`，人的操作留在 authoring_events）。
+-- 助手是人在用机器，语义不同——混进去会让「这轮是谁干的」变得不可回答。
+--
+-- 为什么没有外键：`sub` 是 Logto 的身份，可能属于一个还没进任何域的人；
+-- 外键会在那种情况下让记录写不进去，而「有人用了但记不上」正是要避免的。
+CREATE TABLE IF NOT EXISTS domain_assistant_turns (
+    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    domain_key    TEXT NOT NULL,
+    actor         TEXT NOT NULL,
+    role          TEXT,
+    model         TEXT,
+    tokens_in     BIGINT,
+    tokens_out    BIGINT,
+    elapsed_ms    BIGINT,
+    outcome       TEXT NOT NULL DEFAULT 'ok'
+                  CHECK (outcome IN ('ok','error','aborted')),
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS domain_assistant_turns_domain_idx
+    ON domain_assistant_turns (domain_key, created_at DESC);
+CREATE INDEX IF NOT EXISTS domain_assistant_turns_actor_idx
+    ON domain_assistant_turns (actor, created_at DESC);
+
 -- 名字必须带域前缀：这个库是**多产品共用**的，`agent_runs` 这个泛名已被另一个
 -- 产品线的同名表占用（字段是 thread/节点耗时/评分那一套，实测 23 行）。
 -- `CREATE TABLE IF NOT EXISTS` 遇到

@@ -27,6 +27,7 @@ wellknown.register(mcp)
 from .tools import domain as _domain  # noqa: E402,F401
 from .tools import rulers as _rulers  # noqa: E402,F401
 from .tools import domain_write as _domain_write  # noqa: E402,F401
+from .tools import usage as _usage  # noqa: E402,F401
 from .tools import compare as _compare  # noqa: E402,F401
 from .tools import clauses as _clauses  # noqa: E402,F401
 from .tools import evaluate as _evaluate  # noqa: E402,F401
