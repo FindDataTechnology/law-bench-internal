@@ -628,14 +628,16 @@
       "tools": [
         "domain_context",
         "domain_list",
+        "domain_proposal_confirm",
         "domain_proposal_get",
         "domain_proposals",
         "domain_unit_checks",
+        "domain_unit_promote",
         "domain_units",
         "ruler_criteria",
         "ruler_list"
       ],
-      "notes": "知验台平台面（change domain-first-mcp）：域/单位/尺子，全部只读。域是必填参数，跨域隔离由查询保证而不是提示词。"
+      "notes": "知验台平台面（change domain-first-mcp）：域/单位/尺子，读面全只读；写面是闭集：确认提案（幂等，产出 silver）与升一格（到 silver 为止，gold 要人签）。域是必填参数，跨域隔离由查询保证而不是提示词。"
     },
     {
       "group": "assembly",
@@ -1147,6 +1149,18 @@
       "readOnlyHint": true,
       "destructiveHint": false,
       "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "domain_proposal_confirm": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "domain_unit_promote": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
       "openWorldHint": false
     }
   },

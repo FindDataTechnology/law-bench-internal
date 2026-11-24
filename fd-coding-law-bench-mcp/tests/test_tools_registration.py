@@ -9,6 +9,8 @@ import asyncio
 # The canonical, expected tool set. Any drift (a mis-named or unregistered
 # ``@mcp.tool``, or a removed tool) fails this test.
 EXPECTED_TOOLS = {
+    "domain_proposal_confirm",
+    "domain_unit_promote",
     "domain_context",
     "domain_list",
     "domain_proposal_get",
@@ -88,6 +90,8 @@ EXPECTED_TOOLS = {
 # Each tool's concept group. Read from the registered tool component's
 # ``tags`` (protocol-level ``meta`` no longer carries them on fastmcp 3.4).
 EXPECTED_TAGS = {
+    "domain_proposal_confirm": "domain",
+    "domain_unit_promote": "domain",
     # 域面（change domain-first-mcp）：平台模型，只读
     "domain_list": "domain",
     "domain_context": "domain",

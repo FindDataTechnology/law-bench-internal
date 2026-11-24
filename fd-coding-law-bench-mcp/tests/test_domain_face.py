@@ -46,6 +46,8 @@ def _patch_kernel(monkeypatch, *, domain_row, units=None, actions=None,
     import src.bench as bench_pkg
 
     class FakeWS:
+        ROLE_RANK = {"annotator": 0, "expert": 1, "lead": 2}
+
         @staticmethod
         def get_domain(conn, *, domain_key=None, domain_id=None):
             return domain_row
@@ -192,17 +194,81 @@ async def test_ruler_list_is_domain_scoped(monkeypatch):
     assert out[0]["name"] == "r1"
 
 
-async def test_domain_face_has_no_write_tool():
-    """域面只读。这条是结构性约束：新增写工具会让它红。"""
+async def test_domain_face_write_surface_is_exactly_two_tools():
+    """域面写面是**闭集**：只有确认提案与升一格。
+
+    这条是结构性约束，不是语气：新增任何写工具都会让它红，从而逼人回来读一遍
+    「哪些动作机器可以合法做」。当前的两个都来自内核已有的裁决（2026-11-21：
+    权力来源是档位而非身份形状；机器确认产出 silver，gold 仍须人）。
+    """
     import sys
     sys.path.insert(0, "fd-coding-law-bench-mcp/src")
     import fd_coding_law_bench_mcp.server as server
 
     tools = await server.mcp._list_tools()
     domain_face = [t for t in tools if t.name.startswith(("domain_", "ruler_"))]
-    assert len(domain_face) >= 8, [t.name for t in domain_face]
-    # 名字里出现写动词的一律不许进域面
+    assert len(domain_face) >= 10, [t.name for t in domain_face]
     write_verbs = ("promote", "publish", "confirm", "reject", "create", "update",
                    "delete", "apply", "store", "submit")
-    offenders = [t.name for t in domain_face if any(v in t.name for v in write_verbs)]
-    assert not offenders, f"域面出现了写工具：{offenders}"
+    writers = sorted(t.name for t in domain_face if any(v in t.name for v in write_verbs))
+    assert writers == ["domain_proposal_confirm", "domain_unit_promote"], (
+        f"域面写面变了：{writers}。若这是有意的，先确认那个动作机器有权做，"
+        "再改这条断言。"
+    )
+
+async def test_write_tools_refuse_a_non_lead(monkeypatch):
+    """非 lead 不能签字。`actor` 是调用方自报的字符串，所以必须回库核一遍。"""
+    _patch_kernel(monkeypatch, domain_row=_DOMAIN, role="expert")
+    from fd_coding_law_bench_mcp.tools.domain_write import (
+        domain_proposal_confirm, domain_unit_promote,
+    )
+
+    with pytest.raises(PermissionError, match="requires 'lead'"):
+        await domain_proposal_confirm(domain="dt", proposal_id=1, actor="someone@x")
+    with pytest.raises(PermissionError, match="requires 'lead'"):
+        await domain_unit_promote(domain="dt", kind="clause",
+                                  external_key="k1", actor="someone@x")
+
+
+async def test_write_tools_refuse_a_non_member(monkeypatch):
+    """不在域里的人，连签字资格都没有。"""
+    _patch_kernel(monkeypatch, domain_row=_DOMAIN, role=None)
+    from fd_coding_law_bench_mcp.tools.domain_write import domain_proposal_confirm
+
+    with pytest.raises(PermissionError, match="no active membership"):
+        await domain_proposal_confirm(domain="dt", proposal_id=1, actor="stranger@x")
+
+
+async def test_write_tool_requires_an_actor(monkeypatch):
+    """签字必须带身份；空 actor 直接拒，不猜「当前用户」。"""
+    _patch_kernel(monkeypatch, domain_row=_DOMAIN)
+    from fd_coding_law_bench_mcp.tools.domain_write import domain_proposal_confirm
+
+    with pytest.raises(ValueError, match="actor is required"):
+        await domain_proposal_confirm(domain="dt", proposal_id=1, actor="  ")
+
+
+async def test_promote_stops_at_gold(monkeypatch):
+    """gold 这条路在域面被有意封死：机器没有人工复核身份可签。
+
+    内核要求 gold 必须带 reviewer；机器若拿自己的名字当 reviewer，就是在伪造
+    一条人工核验记录——那正是 tiers 守卫存在的理由。
+    """
+    _patch_kernel(monkeypatch, domain_row=_DOMAIN, role="lead")
+    import src.bench as bench_pkg
+
+    class P:
+        CHAIN = ("raw", "silver", "gold")
+        SYNC_TIER = "bronze"
+
+        @staticmethod
+        def _get_unit(conn, *, kind, external_key, namespace):
+            return {"kind": kind, "external_key": external_key,
+                    "tier": "silver", "tags": {}, "provenance": {}}
+
+    monkeypatch.setattr(bench_pkg, "promotion", P, raising=False)
+    from fd_coding_law_bench_mcp.tools.domain_write import domain_unit_promote
+
+    with pytest.raises(PermissionError, match="human reviewer"):
+        await domain_unit_promote(domain="dt", kind="clause",
+                                  external_key="k1", actor="lead@x")

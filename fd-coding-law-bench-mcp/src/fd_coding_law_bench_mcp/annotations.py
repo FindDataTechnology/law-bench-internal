@@ -82,6 +82,11 @@ TOOL_ANNOTATIONS: dict[str, dict[str, Any]] = {
     "domain_proposal_get": dict(READ_ONLY),
     "ruler_list": dict(READ_ONLY),
     "ruler_criteria": dict(READ_ONLY),
+    # 域面写工具（change domain-first-mcp §8.2）：只做机器能合法做的两件。
+    # 都不是 read-only；确认提案幂等（重复确认返回同一行），升格不幂等
+    # （同档再升会被内核拒）——按实际语义各自标注，不图省事统一填。
+    "domain_proposal_confirm": dict(WRITE_IDEMPOTENT),
+    "domain_unit_promote": dict(WRITE_APPEND),
     # --- agent metrics (DB reads + append-only instrumentation) ---
     "agent_run_get": dict(READ_ONLY),
     "agent_run_list": dict(READ_ONLY),

@@ -3,6 +3,11 @@
 Wraps generate_contract_assembled to return body_text, slots, instructions,
 law_refs directly without DOCX/PDF generation. Format enum: "markdown" (default),
 "docx", "pdf", "both". Content-first path enables real-time API consumption.
+
+线状态（change domain-first-mcp §8.4，2026-11-24）：**本组的合同装配/评测线已停**
+（生成任务 0 条、对比 0 条、提示词 0 条，产物停在 2026-11-11）。工具保持可用且行为
+未变——这是「不再作为平台主线」，不是「删除实现」。数据快照归档在工作区
+`attic/legal-contract-line-2026-11-24/`。
 """
 
 from __future__ import annotations

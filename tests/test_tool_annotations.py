@@ -42,6 +42,10 @@ MANIFEST = Path(__file__).resolve().parents[1] / "tool-surface.json"
 #: Tools that persist state. Hand-written expectation, not derived from the
 #: annotation table - that is the point.
 WRITES_STATE = {
+    # 域面写工具（change domain-first-mcp §8.2）：确认提案产出 silver 并落库；
+    # 升一格改档位。两者都不是只读，且**不是**幂等（升格同档会被内核拒）。
+    "domain_proposal_confirm",
+    "domain_unit_promote",
     "agent_run_store",
     "auto_reject_pipeline_run",
     "clause_delete",

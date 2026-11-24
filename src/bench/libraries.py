@@ -209,6 +209,11 @@ UPDATE knowledge_units SET namespace = (
 -- lives (domains).
 ALTER TABLE IF EXISTS eval_runs ADD COLUMN IF NOT EXISTS rubric_domain_id BIGINT;
 ALTER TABLE IF EXISTS rubrics ADD COLUMN IF NOT EXISTS domain_id BIGINT;
+-- `prompts` had no domain dimension at all (only `contract_type`, which is a
+-- contract-line concept, not a domain). Additive and nullable: NULL means
+-- "unowned", which is what every existing row is; a prompt is claimed by a
+-- domain the same way a rubric is (change domain-first-mcp §8.1).
+ALTER TABLE IF EXISTS prompts ADD COLUMN IF NOT EXISTS domain_id BIGINT;
 -- Soft reference, deliberately NOT a foreign key: the deployed `rubrics` table
 -- was created by a legacy script and carries no primary key at all (verified in
 -- production 2026-11-08), so `REFERENCES rubrics(id)` fails the unique-constraint
