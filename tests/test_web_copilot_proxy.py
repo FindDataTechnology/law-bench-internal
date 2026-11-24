@@ -421,3 +421,20 @@ def test_a_stranger_sub_matching_no_membership_is_still_denied(
     resp = _post(proxy_client)
     assert resp.status_code == 403
     assert not _RECORDS
+
+
+def test_the_my_domains_landing_page_has_no_island(proxy_client, monkeypatch):
+    """`/d`（我的域列表）没有具体域，故不渲染浮岛——design D4 的「不降级」。
+
+    与 `test_page_outside_a_domain_has_no_island` 的区别：那条测的是非域功能页
+    （/rubrics），这条测的是「域的地盘但不是某一个域」——最容易被人误判成
+    「该有浮岛」的地方。
+    """
+    monkeypatch.setattr(
+        "src.web.templating.COPILOT_RUNTIME_URL", "http://runtime.test:3111"
+    )
+    _seed_domain(proxy_client.app.dependency_overrides[get_db](), member_subs={"member-1": "expert"})
+    _login(proxy_client, "member-1", _READ_WRITE)
+    resp = proxy_client.get("/d")
+    assert resp.status_code == 200
+    assert "lawbench-assistant-root" not in resp.text

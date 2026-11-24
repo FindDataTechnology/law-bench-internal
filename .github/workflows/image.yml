@@ -87,6 +87,10 @@ jobs:
           python -m pytest tests -q -m external --collect-only || true
           echo "== 正式跑 =="
           python -m pytest tests -q -m "not external"
+      # 助手运行时的两条产品约束（角色工具面 + 提示词契约）。纯 Node、零依赖，
+      # 所以跑在最便宜的位置；不进这一步的话它写在那里永远没人执行。
+      - name: Assistant runtime contract (role face + prompt)
+        run: node copilot-runtime/test/role-filter.test.mjs
 
   law-template:
     needs: test

@@ -36,4 +36,42 @@ for (const [role,name,groups,want] of cases) {
   if (got !== want) { console.log(`FAIL ${role}/${name}: want ${want} got ${got}`); bad++; }
 }
 console.log(bad === 0 ? `ok ${cases.length} cases` : `${bad} failures`);
-process.exit(bad === 0 ? 0 : 1);
+
+// ---------------------------------------------------------------------------
+// 提示词契约（tasks 3.5 的后半）：助手必须被明确告知「超角色要说明、删除不可用、
+// 只在本域工作」，且域简报是独立可省略的一段。
+//
+// 只在源码上断言，不启动服务：提示词是 agent 实例构造时拼进去的字符串，跑起来
+// 也看不到最终形态；而这几句是产品约束，丢了就是「助手越权说话」。
+// ---------------------------------------------------------------------------
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const src = readFileSync(join(here, "..", "server.mjs"), "utf8");
+
+const promptChecks = [
+  ["域名/角色片段由函数生成", /function domainPrompt\(/],
+  ["声明只在本域工作", /只在本域范围内回答/],
+  ["声明删除对所有角色不可用", /删除类操作对任何角色都不可用/],
+  ["声明超角色要说清谁来操作", /超出你的角色/],
+  ["本域现状是独立一段", /\[本域现状\]/],
+  ["简报为空时不注入", /brief \? `\\n\\n\[本域现状\]/],
+];
+
+let promptBad = 0;
+for (const [name, re] of promptChecks) {
+  if (!re.test(src)) {
+    console.log(`FAIL prompt: ${name}`);
+    promptBad++;
+  }
+}
+if (promptBad) {
+  console.log(`${promptBad} prompt assertion(s) failed`);
+  process.exit(1);
+}
+console.log(`ok ${promptChecks.length} prompt checks`);
+
+if (bad + promptBad > 0) process.exit(1);
+console.log(`ok ${cases.length} role cases, ${promptChecks.length} prompt checks`);
