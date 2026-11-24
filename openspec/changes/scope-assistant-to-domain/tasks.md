@@ -26,12 +26,12 @@
 - [x] 3.2 读/写判定落表（来自 0.1），annotator 只保留读类与生成类中不落库的部分。  ← 已完成：读/写判定来自 0.1 的表，未用命名后缀作唯一依据。
 - [x] 3.3 system prompt 注入域片段：域名、我的角色、该域下一动作（若有）、可升格条目数、机器核对「有多少条未通过」。  ← 已完成：domainPrompt() 注入域名与角色。
 - [x] 3.4 注入内容与页面同源：`copilot.py::_domain_context` 直接调 `next_actions.for_domain` 与 `unit_checks`，runtime 只解码不重算。生产实测 data-ontology 返回「机器核对：本域还没有可机械核对的单位」（如实，未编造）。
-- [ ] 3.5 单测：同一份请求在不同角色下的工具面集合（三组各一条），以及「无判据时不编造」的提示词断言。
+- [x] 3.5 已完成：`copilot-runtime/test/role-filter.test.mjs`（11 条角色面 + 6 条提示词契约），并**接进 image.yml 的 test job**——写在仓里没人跑等于没有。
 
 ## 4. 浮岛：带上当前域
 
 - [x] 4.1 `assistant-ui/src/main.tsx`：从页面上下文取域 key 与角色传给 provider（随请求走，不硬编）。  ← 已完成：浮岛自 data-domain 取域，随请求头发出。
-- [ ] 4.2 浮岛在非域页（`/d` 我的域、全局资产池）不渲染，或渲染为「先选一个域」的空态；二选一在实现时定，但必须与 1.3 的矩阵一致。
+- [x] 4.2 已完成：非域功能页（/rubrics）与 `/d` 落地页各有一条判据，均断言无浮岛（implemented as「不渲染」，非空态）。
 - [x] 4.3 文案 zh/en 成对；不硬编单语。  ← 已完成：role 文案 zh/en 成对（ROLE_LABEL + 注入文案）。
 
 ## 5. 验收判据（必须在真数据上开火）
@@ -70,6 +70,7 @@
   `chat/completions`，12 次全 200；把诊断版 runtime 跑在同一 pod 的旁端口上，
   同一个 agent/run 请求也拿到 200 并**完整答出**（中文、按本域上下文）。
   结论：不是形状/体积/中文/源 IP，是上游侧间歇掐连。属词元网关行为。
+- [x] 8.10 **runtime 出片链路上产（2026-11-24）**：`copilot-runtime` 此前没有任何构建流水线，本 change 的 runtime 侧改动全部停在分支上。已在 image.yml 加 job（`context: copilot-runtime` + `dockerfile: copilot-runtime/Dockerfile`，两个都得写全：只给 context 会去仓根找 Dockerfile；context 写成 `.` 则 COPY package.json 落空）。生产已滚到 `sha-677bfe8`，端到端验收：问「我在哪个域、什么角色」→「你在「data-ontology」域，角色是 lead（负责人）」——域上下文注入确实生效。
 - [x] 8.9 助手端到端已跑通（2026-11-24）：`agent/run` → 工具面按角色收敛 →
   多轮 → 中文回答，例如问「这个域现在该做什么」得到「本域（data-ontology）
   现在该做的是把各合同类型的标签本体维护干净…」。
