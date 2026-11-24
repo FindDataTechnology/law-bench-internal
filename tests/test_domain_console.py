@@ -1145,3 +1145,45 @@ def test_promotion_without_review_scope_cannot_stamp_gold(seeded_db):
         seeded_db, kind="clause", external_key="promo-2", namespace=A_KEY
     )
     assert unit["tier"] == "silver", "没有复核权限却把单位推到了 gold"
+
+
+def test_promotion_row_shows_what_the_machine_checked(seeded_db):
+    """每行必须显示机器判了什么，而不是让人从零判断。
+
+    legal 是最后一个没有 checks.py 的 pack，5,000 条条款此前只有「看一眼」这一道门；
+    实测 23% 的正文是字符级碎片，没人发现。这一列把可机械核对的部分先判掉，
+    人只裁决剩下的。
+
+    判据三态各自成立：不可判的 kind 说「无机械判据」（不能渲染成全部通过）、
+    全过、有未通过项点名。
+    """
+    # 检查器注册表是进程级全局，而 tests/test_unit_checks.py 等 fixture 会
+    # `_CHECKERS.clear()`。`import packs.legal.checks` 在这里不够——模块已加载，
+    # import 幂等、不会再执行注册语句。所以本用例自己把检查器装回去，
+    # 否则这一列会显示「无机械判据」而断言假绿（2026-11-24 实测踩到）。
+    from src.bench import data_checks
+    import packs.legal.checks as _lc
+
+    for _n, _f in (
+        ("body-present", _lc.check_body_present),
+        ("body-not-fragmented", _lc.check_body_not_fragmented),
+        ("article-number-agrees", _lc.check_article_number_agrees),
+        ("corpus-locator", _lc.check_corpus_locator),
+        ("body-is-substantial", _lc.check_body_is_substantial),
+    ):
+        data_checks.register_checker("clause", _n, _f)
+
+    world = _seed_world(seeded_db)
+    store.upsert_knowledge_unit(
+        seeded_db, kind="clause", external_key="民法典#第1条",
+        namespace=A_KEY,
+        body="第一条　为了保护民事主体的合法权益，制定本法。",
+        tags={}, attrs={"corpus": {"doc_id": "1", "library": "law-library"}},
+        tier="raw",
+    )
+    with _client(seeded_db, _user("lara", _READ_WRITE)) as c:
+        page = c.get(f"/d/{A_KEY}/promotion")
+    body = _rendered(page.text)
+    assert page.status_code == 200, page.text
+    assert "机器核对" in body
+    assert "全部通过" in body

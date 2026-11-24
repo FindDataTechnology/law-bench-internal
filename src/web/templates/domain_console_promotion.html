@@ -52,6 +52,7 @@
         <th>{{ t.console.promotion.col_tier }}</th>
         <th>{{ t.console.promotion.col_reviewer }}</th>
         <th>{{ t.console.promotion.col_updated }}</th>
+        <th>{{ t.console.promotion.col_checks }}</th>
         <th>{{ t.console.promotion.col_action }}</th>
       </tr>
     </thead>
@@ -66,6 +67,22 @@
           {% else %}<span class="muted">{{ t.console.promotion.no_reviewer }}</span>{% endif %}
         </td>
         <td class="muted">{{ u.updated_at[:16] | replace('T', ' ') if u.updated_at is string else u.updated_at }}</td>
+        <td>
+          {#- 机器判了什么。不可判的 kind 如实说「没有可机械核对的判据」，
+              不能渲染成「全部通过」——否则没有检查器的域看上去像全绿。 -#}
+          {% if u.check_summary.checkable %}
+            {% if u.check_summary.all_pass %}
+            <span class="badge badge-ok">{{ t.console.promotion.checks_all }}
+              {{ u.check_summary.passed }}/{{ u.check_summary.total }}</span>
+            {% else %}
+            <span class="badge badge-warn">{{ t.console.promotion.checks_failed }}
+              {{ u.check_summary.passed }}/{{ u.check_summary.total }}</span>
+            <div class="muted">{{ u.check_summary.failed_names | join('、') }}</div>
+            {% endif %}
+          {% else %}
+          <span class="muted">{{ t.console.promotion.checks_none }}</span>
+          {% endif %}
+        </td>
         <td>
           {% if can_promote and u.next_tier %}
           <form method="post" class="inline"

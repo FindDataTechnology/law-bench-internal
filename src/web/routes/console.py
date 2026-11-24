@@ -142,6 +142,11 @@ def _decorate_area_action(request, db, domain, area: str, cap: dict,
 # The kernel stays domain-free; this app IS the legal deployment, so the pack
 # import belongs at the app's edge (this module), never inside src/bench.
 from packs.legal import asset_catalog as _legal_asset_catalog  # noqa: F401
+# …and its deterministic checkers. Same import-means-register rule as the other
+# packs: without this the legal domain's clause units have no machine verdicts,
+# so the promotion page can only say "a human should decide" — which is exactly
+# the state this closes (legal was the last pack with no checks.py).
+from packs.legal import checks as _legal_checks  # noqa: F401
 # Same rule for the finance pack: importing it registers the `fact` shelf and its
 # publication kind. Without this the kernel has no `fact` kind, so the finance
 # domain's gold set (105 units, published as an asset version) is invisible on its
@@ -1477,6 +1482,7 @@ def console_promotion(
     and adds no new action surface.
     """
     from ...bench import promotion as bench_promotion
+    from ...bench import unit_checks as bench_unit_checks
 
     domain = resolve_domain(db, domain_key)
     namespace = domain.get("path") or domain["key"]
@@ -1493,8 +1499,16 @@ def console_promotion(
             by_tier[c["tier"]] += c["n"]
     # 每行给出它的下一步（内核规则：bronze 只能到 silver，raw/silver 只能相邻上行；
     # gold 只从 silver 来）。由内核常量派生，页面不自己发明阶梯。
+    #
+    # 同时给出「机器判了什么」：跑本 kind 已注册的确定性检查器，逐条裁决这一行。
+    # 此前这一步完全在人脑里——legal 是最后一个没有 checks.py 的 pack，5,000 条
+    # 条款只能靠看一眼决定去留，而实测 23% 的正文字符级碎片化没人发现。
+    # 检查器只回答「机械层面有没有毛病」，不回答「这条法律对不对」。
     for u in units:
         u["next_tier"] = _next_tier(bench_promotion, u.get("tier"))
+        checks = bench_unit_checks.checks_for_unit(u)
+        u["checks"] = checks
+        u["check_summary"] = bench_unit_checks.summarise(checks)
     ctx = console_context(db, domain, user)
     return _templates.TemplateResponse(
         request,

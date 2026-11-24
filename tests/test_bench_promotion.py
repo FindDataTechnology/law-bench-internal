@@ -493,3 +493,24 @@ def test_soft_deleted_units_are_not_in_the_queue_and_cannot_climb(db_conn):
             namespace=NAMESPACE, to_tier="silver",
         )
     assert _unit(db_conn, "clause", "tombstone")["tier"] == "raw"
+
+
+def test_queue_rows_carry_attrs_so_checkers_can_read_them(db_conn):
+    """分页行必须带 attrs —— 检查器读 `attrs.corpus` 判断出处可否追溯。
+
+    2026-11-24 实测：SQL 早就 select 了 attrs，但返回的 dict 里没有它，
+    于是 `corpus-locator` 对一条 attrs 齐全的 clause 误报「缺出处」（页面上
+    显示 4/5）。检查器看不到数据时只会给出「没通过」，不会说「我看不到」，
+    所以这个缺口必须在数据形状这一层钉死。
+    """
+    _sync(db_conn)
+    store.upsert_knowledge_unit(
+        db_conn, kind="clause", external_key="has-attrs",
+        namespace=NAMESPACE, body='{"text": "x"}', tags={},
+        attrs={"corpus": {"doc_id": "42", "library": "law-library"}}, tier="raw",
+    )
+    q = promotion.promotion_queue(db_conn, namespace=NAMESPACE)
+    row = next(u for u in q["units"] if u["external_key"] == "has-attrs")
+    assert row["attrs"]["corpus"]["doc_id"] == "42", (
+        f"分页行丢了 attrs，检查器将误判缺出处：{row['attrs']!r}"
+    )

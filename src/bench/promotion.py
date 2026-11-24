@@ -720,6 +720,14 @@ def promotion_queue(
                     "external_key": r["external_key"],
                     "body": r["body"],
                     "tier": r["tier"],
+                    # attrs 必须带出来：确定性检查器（packs/<x>/checks.py）读
+                    # `attrs.corpus` 判「这条能不能追溯到出处文档」。SQL 早就
+                    # select 了 attrs，却没人把它放进返回的 dict —— 于是
+                    # corpus-locator 对每一条都误报「缺出处」（2026-11-24 实测
+                    # 一条 attrs 齐全的 clause 在页面上报 4/5）。
+                    "attrs": (json.loads(r["attrs"])
+                              if isinstance(r.get("attrs"), str)
+                              else (r.get("attrs") or {})),
                     "tags": json.loads(r["tags"]) if isinstance(r.get("tags"), str) else (r.get("tags") or {}),
                     "reviewer": (prov.get("review") or {}).get("reviewer"),
                     "review_at": (prov.get("review") or {}).get("at"),
@@ -740,6 +748,7 @@ def promotion_queue(
                     "external_key": row[3],
                     "body": row[4],
                     "tier": row[7],
+                    "attrs": json.loads(row[6] or "{}"),   # see the dict-row note
                     "tags": json.loads(row[5] or "{}"),
                     "reviewer": (prov.get("review") or {}).get("reviewer"),
                     "review_at": (prov.get("review") or {}).get("at"),
