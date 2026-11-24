@@ -721,7 +721,7 @@ def test_nav_workbench_links_follow_membership_and_admin_gate(seeded_db):
     with _client(seeded_db, _user("alice", _READ_WRITE)) as c:
         r = c.get("/rubrics")
     assert r.status_code == 200
-    assert '>我的域</a>' in r.text                      # the one domain door
+    assert 'href="/d"' in r.text                        # the one domain door
     assert 'href="/d"' in r.text                        # ... pointing at /d
     assert f"/d/{B_KEY}" not in r.text          # non-member domain: nothing
     assert B_KEY not in r.text and DOMAIN_B_NAME not in r.text

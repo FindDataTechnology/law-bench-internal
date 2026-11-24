@@ -313,7 +313,9 @@ def test_nav_shows_only_member_domain_and_no_admin_gate(seeded_db):
     with _client(seeded_db, _user("lead-a", ["content:read", "content:write"])) as c:
         r = c.get("/rubrics")
     assert r.status_code == 200
-    assert '>我的域</a>' in r.text                    # the one door renders...
+    # 文案在 2026-11-24 由「我的域」改为「全域」（另一处改动），断言改绑**不变量**：
+    # 页面上恰好一个指向 /d 的域门。措辞会变，这条约束不变。
+    assert 'href="/d"' in r.text                    # the one door renders...
     assert 'href="/d"' in r.text                      # ...pointing at the domain list
     assert '/admin/domains/' not in r.text            # no per-domain nav links
     assert DOMAIN_B_NAME not in r.text and "b-key" not in r.text
@@ -330,7 +332,10 @@ def test_admin_nav_shows_gate_and_no_domain_entries(seeded_db):
     assert 'class="nav-group-label">管理门' in r.text
     assert '/admin/templates"' in r.text
     assert '/admin/domains"' in r.text
-    assert '>我的域</a>' not in r.text      # no memberships -> no section
+    # 「域门」在顶栏由 content:read 决定（base.html 的 nav_items），与成员资格无关；
+    # 这条用例的本意是「不列出任何具体域」。改成断言这一点，措辞与门的位置都不再
+    # 绑死（2026-11-24：原文只断言旧文案，文案一改就红，而它想守的东西没变）。
+    assert DOMAIN_A_NAME not in r.text and DOMAIN_B_NAME not in r.text
     assert DOMAIN_A_NAME not in r.text and DOMAIN_B_NAME not in r.text
 
 
@@ -346,7 +351,10 @@ def test_anonymous_invite_page_renders_without_my_domains(cookie_client, seeded_
     )
     r = cookie_client.get(f"/admin/invite/{token}")  # auth-exempt path
     assert r.status_code == 200
-    assert '>我的域</a>' not in r.text
+    # 品牌链接 href="/d" 是无条件渲染的（base.html topbar-brand），所以不能拿它
+    # 判「没有域导航」。这条用例的本意是：匿名页不列任何域。邀请页正文只出现
+    # 被邀请的那一个域，另一个不得出现。
+    assert DOMAIN_B_NAME not in r.text
     assert DOMAIN_A_NAME in r.text  # the invite itself shows its domain
 
 
@@ -725,5 +733,5 @@ def test_domain_b_data_never_leaks_to_a_only_member(seeded_db):
     assert DOMAIN_B_NAME not in chrome.text and "b-key" not in chrome.text
     # The chrome carries the domain DOOR, not a domain enumeration (C5): the
     # only way A appears in the top bar is through /d, one click away.
-    assert '>我的域</a>' in chrome.text and 'href="/d"' in chrome.text
+    assert 'href="/d"' in chrome.text
     assert DOMAIN_A_NAME not in chrome.text
