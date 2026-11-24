@@ -25,7 +25,7 @@
 - [x] 3.1 `copilot-runtime/server.mjs`：把 `TOOL_DENYLIST` 扩展成「角色 → 允许的工具组」映射，denylist 保留为第二道闸。  ← 已完成：allowedFor() + READ_GROUPS/WRITE_TOOLS/LEAD_TOOLS。
 - [x] 3.2 读/写判定落表（来自 0.1），annotator 只保留读类与生成类中不落库的部分。  ← 已完成：读/写判定来自 0.1 的表，未用命名后缀作唯一依据。
 - [x] 3.3 system prompt 注入域片段：域名、我的角色、该域下一动作（若有）、可升格条目数、机器核对「有多少条未通过」。  ← 已完成：domainPrompt() 注入域名与角色。
-- [ ] 3.4 注入内容**与页面同源**：下一动作取 `src/bench/next_actions.py`、机器核对取 `src/bench/unit_checks.py`，不在 runtime 侧重算。
+- [x] 3.4 注入内容与页面同源：`copilot.py::_domain_context` 直接调 `next_actions.for_domain` 与 `unit_checks`，runtime 只解码不重算。生产实测 data-ontology 返回「机器核对：本域还没有可机械核对的单位」（如实，未编造）。
 - [ ] 3.5 单测：同一份请求在不同角色下的工具面集合（三组各一条），以及「无判据时不编造」的提示词断言。
 
 ## 4. 浮岛：带上当前域
@@ -40,7 +40,7 @@
 - [x] 5.2 「只读角色无写面」：已由 `copilot-runtime/test/role-filter.test.mjs` 的 `annotator/clause_update → false` 钉住（工具面层面不可达，故「库无变化」成立）。
 - [x] 5.3 「expert 不能发布」：同文件 `expert/self_heal_pipeline_run → false`、`lead/self_heal_pipeline_run → true` 钉住。
 - [x] 5.4 「删除对所有角色不可用」：同文件 `annotator|lead/clause_delete → false` 钉住。
-- [ ] 5.5 「注入的下一动作与页面逐字一致」：同一域同一时刻，助手回答里的动作与 `/d/{key}` 页面上的下一动作逐字相等。
+- [ ] 5.5 「注入的下一动作与页面逐字一致」：**结构上成立**（两者调同一个 `next_actions.for_domain`），但未做浏览器端逐字比对——data-ontology 当前无待办动作，无从对比。等有动作的域出现后补测。
 - [ ] 5.6 「零域身份与匿名看不到浮岛」：真实浏览器两种身份各走一遍，断言无浮岛标记。
 
 ## 6. 规格治理
