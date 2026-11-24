@@ -104,3 +104,18 @@ jobs:
       image: law-render
       namespace: law-bench
       dockerfile: Dockerfile.render
+
+  # The assistant runtime had NO build lane until 2026-11-24: every change to
+  # copilot-runtime/server.mjs (role-scoped tool face, domain brief injection)
+  # stayed on the branch while production kept running the old image, so the
+  # web side and the runtime side disagreed. Node-only, no test job needed —
+  # it earns its place by *existing*: an image nobody builds is a code change
+  # that never ships.
+  copilot-runtime:
+    uses: FindDataTechnology/fd-ci/.github/workflows/image-build.yml@main
+    secrets: inherit
+    with:
+      image: copilot-runtime
+      namespace: law-bench
+      dockerfile: Dockerfile
+      context: copilot-runtime

@@ -230,9 +230,13 @@ const lawbenchMcp = {
 
 // ---------------------------------------------------------------------------
 
-// 诊断：LLM 上游偶发 403 且响应体解析失败（AI SDK 只报 "Failed to process
-// error response"）。包一层 fetch，把非 2xx 的状态、关键头、响应体前 400 字
-// 打出来——否则只能靠猜。排查完连同 8.8 一并移除。
+// LLM 上游的错误观测。AI SDK 只报 "Failed to process error response"，把真正的
+// 状态码、content-type 和响应体丢掉 —— 2026-11-24 一次偶发 403 就是靠这层才定性
+// 成「中间层掐断连接」而不是「请求形状有问题」（见 change
+// scope-assistant-to-domain 的 tasks §8.8）。
+//
+// 只在非 2xx 时打一行，不碰成功路径，所以它作为长期观测留在代码里，不是一次性
+// 调试代码。
 const _origFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => {
   const res = await _origFetch(input, init);
@@ -244,9 +248,10 @@ globalThis.fetch = async (input, init) => {
     } catch (e) {
       body = `<unreadable: ${e.message}>`;
     }
+    const sent = init && init.headers ? Object.keys(init.headers) : [];
     console.error(
       `[llm] ${res.status} ${url} ct=${res.headers.get("content-type")} ` +
-        `body=${body}`,
+        `sent=${JSON.stringify(sent)} body=${body}`,
     );
   }
   return res;
