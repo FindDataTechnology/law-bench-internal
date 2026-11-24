@@ -60,7 +60,14 @@ def _my_domains(request: Request) -> list[dict]:
     admin routes stays authoritative).
     """
     try:
-        user = getattr(request.state, "user", None)
+        # Callers inside the template context pass the *same* ``user`` they
+        # already resolved; falling back to ``request.state`` keeps this usable
+        # from anywhere else. Passing it explicitly matters because
+        # ``BaseHTTPMiddleware``'s ``call_next`` hands the downstream app a new
+        # Request object, and relying on its ``state`` here made the island
+        # silently absent for every real page (2026-11-24, measured) while
+        # synthetic requests resolved fine.
+        user = user if user is not None else getattr(request.state, "user", None)
         sub = getattr(user, "sub", "") or ""
         if not sub:
             return []
@@ -77,7 +84,7 @@ def _my_domains(request: Request) -> list[dict]:
         return []
 
 
-def _assistant_domain_key(request: Request) -> str:
+def _assistant_domain_key(request: Request, user: object = None) -> str:
     """The domain the assistant is bound to for this render, or ``""``.
 
     The domain is the one in the URL (``/d/{key}/...``). That is the only place a
@@ -91,7 +98,14 @@ def _assistant_domain_key(request: Request) -> str:
     fail-closed behaviour this change requires.
     """
     try:
-        user = getattr(request.state, "user", None)
+        # Callers inside the template context pass the *same* ``user`` they
+        # already resolved; falling back to ``request.state`` keeps this usable
+        # from anywhere else. Passing it explicitly matters because
+        # ``BaseHTTPMiddleware``'s ``call_next`` hands the downstream app a new
+        # Request object, and relying on its ``state`` here made the island
+        # silently absent for every real page (2026-11-24, measured) while
+        # synthetic requests resolved fine.
+        user = user if user is not None else getattr(request.state, "user", None)
         sub = getattr(user, "sub", "") or ""
         if not sub:
             return ""
@@ -121,6 +135,15 @@ def _assistant_domain_key(request: Request) -> str:
         request.state.assistant_domain_key = domain_key
         return domain_key
     except Exception:  # noqa: BLE001 - the chrome must never take the page down
+        # Loud on failure: a silent "" here reads exactly like "this user has no
+        # domain", and that ambiguity is what cost a round of debugging on
+        # 2026-11-24 (the island simply did not appear, with nothing to go on).
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "assistant domain resolution failed for %s", request.url.path,
+            exc_info=True,
+        )
         return ""
 
 
@@ -176,11 +199,11 @@ def _locale_context(request: Request) -> dict:
         # "domain-less assistant" that would degrade back into the old global
         # admin helper this change exists to replace.
         "assistant_enabled": bool(COPILOT_RUNTIME_URL) and bool(
-            _assistant_domain_key(request)
+            _assistant_domain_key(request, user)
         ),
         # The domain the island is bound to; the template hands it to the island
         # bootstrap so every chat request carries it.
-        "assistant_domain_key": _assistant_domain_key(request),
+        "assistant_domain_key": _assistant_domain_key(request, user),
     }
 
 
