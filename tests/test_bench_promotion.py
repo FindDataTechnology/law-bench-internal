@@ -464,3 +464,32 @@ def test_promote_uses_session_identity_and_writeback_degrades_honestly(db_conn, 
     assert row["external_key"] == "1" and row["tier"] == "gold"
     assert row["reviewer"] == "annotator@example.com"
     assert row["written_back"] is False
+
+
+def test_soft_deleted_units_are_not_in_the_queue_and_cannot_climb(db_conn):
+    """软删单位不在可升格池里，也升不动。
+
+    2026-11-24 生产实测：legal 队列 total=5547，排除软删后 5145 —— 402 条
+    （401 clause + 1 law）已删单位被当成「可升格」，其中还有测试残留
+    ``smoke-clause-001``。一条墓碑被列进阶梯、随手一升就回到流通。
+
+    两半都测：队列不列它；直接调 ``promote_unit`` 也必须被拒（构造 URL /
+    旧页面表单绕不过去）。
+    """
+    _sync(db_conn)
+    store.upsert_knowledge_unit(
+        db_conn, kind="clause", external_key="tombstone",
+        namespace=NAMESPACE, body='{"text": "x"}',
+        tags={"deleted": True}, attrs={}, tier="raw",
+    )
+    q = promotion.promotion_queue(db_conn, namespace=NAMESPACE)
+    keys = {u["external_key"] for u in q["units"]}
+    assert "tombstone" not in keys, "软删单位出现在可升格队列里"
+    assert q["total"] == 3, f"软删单位被算进阶梯合计：total={q['total']}"
+
+    with pytest.raises(TierTransitionError, match="soft-deleted"):
+        promotion.promote_unit(
+            db_conn, kind="clause", external_key="tombstone",
+            namespace=NAMESPACE, to_tier="silver",
+        )
+    assert _unit(db_conn, "clause", "tombstone")["tier"] == "raw"

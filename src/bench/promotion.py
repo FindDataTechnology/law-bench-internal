@@ -388,6 +388,13 @@ def promote_unit(
     # former — and it must say so, or a caller reads "outside the ladder" as
     # "bronze units are unreachable" when they are reachable (bronze→silver).
     unit = _get_unit(conn, kind=kind, external_key=external_key, namespace=namespace)
+    if (unit.get("tags") or {}).get("deleted") is True:
+        # 软删单位不在阶梯上：队列已不列它（promotion_queue 同一条过滤），构造
+        # URL 或旧页面表单也不该能把一条墓碑升回流通。
+        raise TierTransitionError(
+            f"unit {namespace!r}/{external_key!r} is soft-deleted; "
+            "a tombstone cannot be promoted"
+        )
     current = unit["tier"]
     if current == to_tier:
         raise TierTransitionError(f"unit already at tier {to_tier!r}")
@@ -646,6 +653,13 @@ def promotion_queue(
         count_params.append(tier)
         unit_where.append("tier = %s")
         unit_params.append(tier)
+    # 软删的单位不在可升格池里：它们已经从内容面消失（store.list_knowledge_units
+    # 默认同样过滤），把它算进阶梯等于宣称有一批「可以升格」的东西，而实际它们
+    # 只剩一个墓碑。2026-11-24 生产实测：legal 队列 total=5547，排除软删后 5145
+    # —— 402 条（401 clause + 1 law）已删单位被当成可升格，其中包括测试残留
+    # `smoke-clause-001`，随手一升就会把它送回流通。
+    count_where.append("COALESCE(tags->>'deleted', 'false') <> 'true'")
+    unit_where.append("COALESCE(tags->>'deleted', 'false') <> 'true'")
     if kind is not None:
         unit_where.append("kind = %s")
         unit_params.append(kind)
