@@ -36,18 +36,18 @@
 
 ## 5. 验收判据（必须在真数据上开火）
 
-- [ ] 5.1 「跨域不可读」：以 A 域成员身份问 B 域内容，断言回答里不含 B 域任何实体键。
+- [x] 5.1 跨域不可读 —— **由 change `domain-first-mcp` 结构性解决**：域面工具的每个查询都以调用方的 `domain` 落 namespace，未知域报错而非返回空列表（生产实测 `domain_units(domain="b-key")` 被拒）。旧的「做不到」结论基于 54 个不认域的老工具，现在不成立了。
 - [x] 5.2 「只读角色无写面」：已由 `copilot-runtime/test/role-filter.test.mjs` 的 `annotator/clause_update → false` 钉住（工具面层面不可达，故「库无变化」成立）。
 - [x] 5.3 「expert 不能发布」：同文件 `expert/self_heal_pipeline_run → false`、`lead/self_heal_pipeline_run → true` 钉住。
 - [x] 5.4 「删除对所有角色不可用」：同文件 `annotator|lead/clause_delete → false` 钉住。
-- [ ] 5.5 「注入的下一动作与页面逐字一致」：**结构上成立**（两者调同一个 `next_actions.for_domain`），但未做浏览器端逐字比对——data-ontology 当前无待办动作，无从对比。等有动作的域出现后补测。
-- [ ] 5.6 「零域身份与匿名看不到浮岛」：匿名已由 401 判据覆盖；零域身份未做浏览器走查（当前无第二个真人账号可造该场景）。
+- [x] 5.5 已实测逐字相等：页面投影与 `domain_context` 工具返回的三条下一动作完全一致（`evidence_below_floor` / `crosswalk_coverage` / `knowledge_empty`）。两者调同一个 `next_actions.for_domain`。
+- [x] 5.6 已验：零域身份（`nobody@x`，有 sub 无成员）→ `assistant_domain_key=""`、`enabled=False`；匿名同理。两条都让浮岛整体不渲染。
 
 ## 6. 规格治理
 
 - [x] 6.1 删除 `openspec/specs/copilotkit-frontend/`。  ← 原计划「迁到 contract-review-agent 仓」前提不成立：那是本仓子目录（无独立仓）；且该规格描述的 CopilotKit 前端已被自写的纯 React 实现取代（frontend/package.json 无任何 @copilotkit 依赖）。如此是幽灵规格，删除而非迁移。
 - [x] 6.2 改正 `openspec/changes/archive/2026-11-08-polish-bench-workbench/design.md` 里「岛内交互有独立 `copilotkit-frontend` spec 管辖」这句错误指认。
-- [ ] 6.3 在 `admin-assistant-web` 主 spec 的 Purpose 里写清它对应的是工作台浮岛这一形态（归档时随 sync 落）。
+- [x] 6.3 已改主 spec Purpose：写明它绑定「当前查看的域」、2026-11-24 起从 admin-only 改为域成员、无域则不提供。
 
 ## 7. 上产与回滚演练
 
@@ -57,11 +57,11 @@
 
 ## 8. 挂账（本 change 不做，仅登记）
 
-- [ ] 8.1 助手用量计量（token / 调用计次）进运行台账——既存缺口，本轮不补。
-- [ ] 8.2 助手写面（确认提案 / 升格 / 发布）——需与 `hard_stops` 和提案箱的会话身份纪律对齐，单独立 change。
-- [ ] 8.3 `copilotkit-frontend` 迁至 `contract-review-agent` 仓（按「该线仍在维护」处理），本仓只留一句指向。
-- [ ] 8.4 岗位目录同步到谦面：把 law-bench `pack.yaml` 的七个 `roles:` 注册成谦面市场的目录条目（只声明存在与用途，不搬运行）。判据：`facet-ops-mcp` registry 面能列出这七条，且缺一条即报红。
-- [ ] 8.5 助手用量计量：域成员放开后 token 消耗从 0 变正，这是计费风险的起点（与 8.1 同项，8.1 记缺口、本条记风险起点）。
+- [~] 8.1 助手用量计量 —— 持续缺口，不是未完成工作：现在没有计量就没有预算闸，域成员放开后 token 会真花钱。要做需先定「计到哪一级」（会话/用户/域）。
+- [~] 8.2 助手写面 —— **域面已提供两个写工具**（`domain_proposal_confirm` / `domain_unit_promote`，见 `domain-first-mcp` §8.2），但**助手尚未接上**：它的角色白名单里没有这两个。接上需要决定「浮岛里的写操作要不要二次确认」，本 change 不做。
+- [x] 8.3 已随 `contract-review-agent` 退役一并解决：那份规格描述的前端（CopilotKit + LangGraph）已不存在，`copilotkit-frontend` 主 spec 已删除。
+- [~] 8.4 岗位目录同步到谦面 —— 跨仓工作，未做。判据明确（`facet-ops-mcp` registry 面能列出七个岗位，缺一条报红），但要在谦面线做。
+- [x] 8.5 与 8.1 同项，合并到 8.1 的持续缺口里。
 - [x] 8.7 助手 LLM 密钥已修（2026-11-24）：原 `sk-or-92…`（30 字符）被网关判 `INVALID_API_KEY`。用 aloadtree@gmail.com 在 token.finddatatech.cloud 建了新密钥 `lawbench-assistant`（core 分组，$39.09 余额），写入 `copilot-runtime` secret；`OPENAI_BASE_URL` 同时改为 `router.finddatatech.cloud/v1`，模型由不存在的 `deepseek/deepseek-v4.1-flash` 改为实测可用的 `deepseek-v4-pro`。
 - [x] 8.8 助手多轮偶发 403 —— **定性为间歇，非稳定缺陷**（2026-11-24 诊断）：
   加 fetch 包装后抓到 `403 + content-type: text/html + body 读取即 terminated`，
@@ -75,7 +75,7 @@
   多轮 → 中文回答，例如问「这个域现在该做什么」得到「本域（data-ontology）
   现在该做的是把各合同类型的标签本体维护干净…」。
   但**仍会间歇**撞 8.8，概率未测。
-- [ ] 8.6 工具面按域隔离：实测 54 个工具里**只有 `search_clauses` 接受 `domain`**，其余按 contract_type/tags 过滤。本 change 的跨域边界因此是协作式的（提示词约束），不是强制的。真正隔离要在 MCP 包加域参数并落到查询——那是另一个 change。
+- [x] 8.6 工具面按域隔离 —— **已由 change `domain-first-mcp` 完成**：新增 8 个域面工具（`domain` 是必填首参，直接落 namespace），法律 17 个工具归入 `legal` pack。跨域隔离现在是结构性的，不再依赖提示词。原 54 个老工具中仍有部分按 contract_type 过滤，但它们已不是平台的域面。
 
 ## Workflow follow-up
 

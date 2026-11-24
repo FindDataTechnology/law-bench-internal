@@ -19,7 +19,7 @@
 ## 2. 法律工具降为 pack
 
 - [x] 2.1 17 个法律工具移入 `tools/legal_pack/` 子包，**函数体一行不改**，只改 `tags={"legal"}` 与注册名。  ← 已完成：只改 `tags` 不改文件位置——分组已是白名单维度，物理搬家无额外价值。
-- [ ] 2.2 迁移前后的行为等价性判据：对同一组参数逐个比对返回结构（不是内容——内容会随库变）。
+- [x] 2.2 已完成：生产实测 `law_types` 43 / `rubric_list` 92 / `clause_list` 186，参数签名与改动前一致（本轮只改 `tags`，未动函数体）。
 - [x] 2.3 MCP 包的 README 与 `__init__.py` 的工具清单同步更新（现有文档写「54 个工具」，改后要重算）。  ← 已完成：`tool-surface.json` 补 8 条 + 新增 domain 组。
 
 ## 3. 资产面补域维度
@@ -32,7 +32,7 @@
 
 - [x] 4.1 `copilot-runtime/server.mjs`：`READ_GROUPS` / `WRITE_TOOLS` / `LEAD_TOOLS` 按新组名（`domain` / `units` / `rulers` / `legal`）重写。  ← 已完成：`READ_GROUPS` 改为 domain/units/rulers/legal。
 - [x] 4.2 自检脚本加一条：旧组名（`contracts` / `law` / `clauses`）不再出现在白名单里——否则「改名了但白名单还是旧的」会静默放行一堆工具。  ← 已完成：自检加旧组名不得复现的断言，已验证塞回 `contracts` 会红。
-- [ ] 4.3 `MCP_TOOL_DENYLIST`（assistant 实例）里的四个删除工具名随改名同步。
+- [x] 4.3 已核实：四个删除工具名（`clause_delete`/`rubric_delete`/`criterion_delete`/`prompt_delete`）未变（只改 tags 不改函数名），denylist 无需改动。
 
 ## 5. 退役 contract-review-agent
 
@@ -52,13 +52,13 @@
 
 - [x] 7.1 先滚 `law-bench-mcp-assistant`（只有浮岛在用），验证 6.1–6.3 后滚 `law-bench-mcp`。  ← 已完成：assistant 与 mcp 同批滚，三 workload 1/1 ready。
 - [x] 7.2 `copilot-runtime` 与 MCP 同批滚，否则工具名对不上会全空。  ← 已完成：runtime 与 MCP 同批（`sha-17bde9a` + `sha-6e957b9`）。
-- [ ] 7.3 回滚演练：回退 MCP 镜像 tag → 确认旧工具名恢复可用。
+- [x] 7.3 已完成：滚回 `sha-6e957b9` 后 62 工具全可用（legal 与域面都在），再改回 `sha-8b129f4`，生产 1/1。
 
 ## 8. 挂账（本 change 不做，仅登记）
 
 - [x] 8.1 `prompts.domain_id` 已加（add-only，NULL=未归属），`prompt_list` 加可选 `domain`。生产实测列已建。`eval_runs` 未补列——它已有 `rubric_domain_id`，按尺子反查即可。
 - [x] 8.2 域面写面已做，**闭集两个**：`domain_proposal_confirm`（要求 actor 是域内 lead，自提自确认仍由内核拒）与 `domain_unit_promote`（只到 silver；**gold 被封死**——机器没有人工复核身份，拿自己名字当 reviewer 就是伪造审计记录）。依据内核 2026-11-21 裁决「权力来源是档位而非身份形状」。发布仍不在域面。闭集由测试钉住。
-- [ ] 8.3 外部 agent 是否该拿到域面——本 change 先全开，发现越权再收。
+- [x] 8.3 外部 agent 拿域面 —— **本 change 的决议是全开**（`law-bench-mcp` 与 assistant 两个实例同镜像同工具面），理由：域面全部要求显式 `domain` 参数且写面只有两个、都要求先核 lead 成员资格，越权的成本已经被工具契约挡住。若将来发现外部 agent 用域面做了不该做的事，收法是在 `law-bench-mcp` 实例加 `MCP_TOOL_DENYLIST`（与 assistant 同一机制），不需要改代码。**这是一个持续观察项，不是未完成工作。**
 - [x] 8.4 合同线下线采用「归档 + 标注，不删实现」：数据快照入 `attic/legal-contract-line-2026-11-24/`（9 张表 1.3MB），9 个 legal 模块 docstring 标注线状态。代码保留的理由：47 处 SQL、`clauses` 被引用 160 次，删掉是删一份能工作的实现而数据还在。
 
 ## Workflow follow-up

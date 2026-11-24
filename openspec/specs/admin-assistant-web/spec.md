@@ -1,6 +1,6 @@
 ## Purpose
 
-Adds an admin-only floating AI assistant to the law-bench workbench: a chat bubble that expands into a conversational panel which drives law-bench capabilities (contract generation, evaluation, rubric/prompt/clause reads, RAG search) through the law-bench MCP server, with strict admin gating and no destructive tools.
+A floating AI assistant bound to **the domain being viewed**: a chat bubble that expands into a conversational panel and answers from that domain's own model (knowledge units, proposals, rulers, what the console says should happen next), through the MCP server's domain face. It was admin-only until 2026-11-24; it is now available to any active member of a domain, with the tool face narrowed by that member's role. With no accessible domain the assistant is not offered at all — a domain-less assistant would degrade back into the global helper this replaced.
 
 ## Requirements
 
