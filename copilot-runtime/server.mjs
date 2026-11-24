@@ -288,9 +288,6 @@ const provider = createOpenAI({
 // per request by `beforeRequestMiddleware` below — assigning into `agents`
 // before each run is the documented-safe way to vary the prompt, because
 // BuiltInAgent's `prompt` is a plain string with no per-run hook.
-// 每轮的开始时间。request 对象本身当键即可——它在这两个中间件之间是同一个。
-const _turnStartedAt = new WeakMap();
-
 /** 调 MCP 的 assistant_usage_record 落一行。失败只记日志，不影响对话。 */
 async function recordUsage({ domain, actor, role, tokens_in, tokens_out, elapsed_ms, outcome }) {
   const client = await getMcpClient();
@@ -320,23 +317,9 @@ const runtime = new CopilotRuntime({
   // **token 数是 NULL**：这个中间件只拿得到 request/response，拿不到模型用量。
   // 表允许 NULL 正是为此——「这一轮跑了但没计数」和「这一轮花了 0」是两件事。
   // 要真拿到 token 需要走 factory 模式自建 runner，那是另一个改动。
-  afterRequestMiddleware: ({ request, response }) => {
-    const domain = request.headers.get("x-lawbench-domain") || "";
-    const actor = request.headers.get("x-lawbench-actor") || "";
-    if (!domain || !actor) return response;
-    const started = _turnStartedAt.get(request);
-    _turnStartedAt.delete(request);
-    const elapsed = started ? Date.now() - started : null;
-    const outcome = response && response.ok ? "ok" : "error";
-    recordUsage({ domain, actor, elapsed_ms: elapsed, outcome }).catch((err) =>
-      console.error("[usage] record failed:", err.message),
-    );
-    return response;
-  },
   beforeRequestMiddleware: ({ request }) => {
     const domain = request.headers.get("x-lawbench-domain") || "";
     const role = request.headers.get("x-lawbench-role") || "";
-    _turnStartedAt.set(request, Date.now());
     let brief = "";
     const raw = request.headers.get("x-lawbench-context") || "";
     if (raw) {
@@ -368,6 +351,21 @@ createServer((req, res) => {
     res.end("ok");
     return;
   }
+  // 用量上报落在这里而不是 afterRequestMiddleware：后者拿不到 request（实测
+  // `request` 是 undefined，签名只给 response/path），而原始的 node `req` 有
+  // headers、`res` 有状态码——这两个正好是记一行所需的全部。
+  const turnStart = Date.now();
+  const domain = req.headers["x-lawbench-domain"] || "";
+  const actor = req.headers["x-lawbench-actor"] || "";
+  const role = req.headers["x-lawbench-role"] || "";
+  res.on("finish", () => {
+    if (!domain || !actor) return;      // 缺一个 = 不知道该记到谁名下
+    recordUsage({
+      domain, actor, role,
+      elapsed_ms: Date.now() - turnStart,
+      outcome: res.statusCode < 400 ? "ok" : "error",
+    }).catch((err) => console.error("[usage] record failed:", err.message));
+  });
   Promise.resolve(copilotHandler(req, res)).catch((err) => {
     console.error("copilot handler error:", err);
     if (!res.headersSent) {
