@@ -121,5 +121,8 @@ jobs:
     with:
       image: copilot-runtime
       namespace: law-bench
-      dockerfile: Dockerfile
-      context: copilot-runtime
+      # context + dockerfile 都写全：共享 workflow 的 `file` 是相对 context 的，
+      # 只传 context 而让 file 取默认值会让它去找仓根 Dockerfile（2026-11-24 实测
+      # 报 `/src not found`，用的是 web 那份）。
+      dockerfile: copilot-runtime/Dockerfile
+      context: .
