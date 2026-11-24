@@ -108,6 +108,10 @@ def _assistant_domain_key(request: Request, user: object = None) -> str:
         user = user if user is not None else getattr(request.state, "user", None)
         sub = getattr(user, "sub", "") or ""
         if not sub:
+            import logging
+            logging.getLogger(__name__).warning(
+                "assistant: no sub for %s (user=%r)", request.url.path,
+                getattr(request.state, "user", None))
             return ""
         # Cached per request: this runs twice (once for `assistant_enabled`,
         # once for the domain key itself) and must not open two connections.
@@ -118,6 +122,8 @@ def _assistant_domain_key(request: Request, user: object = None) -> str:
         if len(parts) < 2 or parts[0] != "d":
             request.state.assistant_domain_key = ""
             return ""
+        import logging as _lg
+        _lg.getLogger(__name__).warning("assistant: path=%s sub=%r", request.url.path, sub)
         domain_key = parts[1]
         from ..bench import workspaces  # local import: avoid import cycles
         from .deps import get_db
