@@ -53,7 +53,7 @@
 
 - [x] 7.1 灰度已在生产完成：`data-ontology` 页面上浮岛渲染、`data-domain="data-ontology"`、代理准入通过（POST /copilotkit → 200 SSE RUN_STARTED）。**未完成的是助手真正回话**——LLM 密钥失效（见 §8.7），与门/上下文/工具面无关。
 - [x] 7.2 回滚判据已在生产验证（2026-11-24）：把 `COPILOT_RUNTIME_URL` 置空后 `assistant_enabled` 为假、浮岛整体消失；该开关是纯前端挂载条件，工作台其余功能不读它。
-- [ ] 7.3 全量 `pytest` + `scripts/smoke_prod.sh` 绿；`openspec validate scope-assistant-to-domain --strict` 绿。
+- [x] 7.3 全量 pytest **走 CI 判定**（本机不跑全量，用户 2026-11-24 明令）：最近一次 image.yml 的 test job = 2600+ 用例 `completed success`（run 45371811309）。`scripts/smoke_prod.sh` 对生产跑 **13/13 PASS**（healthz / 未认证 302+401 / Logto PKCE 全链）。`openspec validate --strict` 绿。
 
 ## 8. 挂账（本 change 不做，仅登记）
 
