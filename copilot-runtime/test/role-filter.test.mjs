@@ -75,3 +75,25 @@ console.log(`ok ${promptChecks.length} prompt checks`);
 
 if (bad + promptBad > 0) process.exit(1);
 console.log(`ok ${cases.length} role cases, ${promptChecks.length} prompt checks`);
+
+
+// ---------------------------------------------------------------------------
+// 组名迁移（change domain-first-mcp）：法律四组并成 legal，平台新增
+// domain/units/rulers。旧组名若还留在白名单里，工具已经不再挂那些 tag，
+// 白名单就成了「看起来在收窄、实际什么都没过滤」的假闸。
+// ---------------------------------------------------------------------------
+const STALE_GROUPS = ["contracts", "law", "clauses", "search"];
+const staleFound = STALE_GROUPS.filter((g) =>
+  new RegExp(`"${g}"\\s*,`).test(src.slice(src.indexOf("const READ_GROUPS"), src.indexOf("const WRITE_TOOLS")))
+);
+if (staleFound.length) {
+  console.log(`FAIL: 旧组名仍在 READ_GROUPS 里：${staleFound.join(", ")}`);
+  promptBad++;
+}
+
+const REQUIRED_GROUPS = ["domain", "units", "rulers", "legal"];
+const missingGroups = REQUIRED_GROUPS.filter((g) => !src.includes(`"${g}"`));
+if (missingGroups.length) {
+  console.log(`FAIL: 新组名缺失：${missingGroups.join(", ")}`);
+  promptBad++;
+}

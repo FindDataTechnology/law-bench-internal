@@ -41,9 +41,14 @@ const MCP_TOKEN = process.env.COPILOT_MCP_TOKEN || "";
 // compare_run / contract_generate* / self_heal_pipeline_run /
 // auto_reject_pipeline_run / tag_iteration_apply 全部落库，而 pipeline 组里
 // pipeline_list/pipeline_get 只读、另两个是重写操作。
+// 组名随 change domain-first-mcp 变更：法律线的 contracts/law/clauses/search
+// 四组合并成 `legal`；平台自己的模型是新增的 `domain`/`units`/`rulers`。
+// 旧组名保留在 READ_GROUPS 里**没有意义且危险**——工具已不挂那些 tag，
+// 留着只会让「改名了但白名单还是旧的」这种错静默通过。
 const READ_GROUPS = new Set([
-  "clauses", "rubrics", "prompts", "eval", "law", "search", "tags",
-  "metrics", "validations", "contracts", "pipeline",
+  "domain", "units", "rulers",                                  // 平台主干
+  "rubrics", "prompts", "eval", "tags", "metrics", "validations",
+  "pipeline", "legal",                                          // 资产面 + 法律 pack
 ]);
 
 // 写/落库类工具（annotator 不可用）。取自 0.1 的副作用表。
