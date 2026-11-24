@@ -623,6 +623,21 @@
   },
   "tool_groups": [
     {
+      "group": "domain",
+      "level": "platform",
+      "tools": [
+        "domain_context",
+        "domain_list",
+        "domain_proposal_get",
+        "domain_proposals",
+        "domain_unit_checks",
+        "domain_units",
+        "ruler_criteria",
+        "ruler_list"
+      ],
+      "notes": "知验台平台面（change domain-first-mcp）：域/单位/尺子，全部只读。域是必填参数，跨域隔离由查询保证而不是提示词。"
+    },
+    {
       "group": "assembly",
       "level": "commercial",
       "tools": [
@@ -1081,6 +1096,54 @@
       "openWorldHint": false
     },
     "validation_list": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "domain_list": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "domain_context": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "domain_units": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "domain_unit_checks": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "domain_proposals": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "domain_proposal_get": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "ruler_list": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "ruler_criteria": {
       "readOnlyHint": true,
       "destructiveHint": false,
       "idempotentHint": true,
