@@ -10,7 +10,7 @@ law-bench — an internal workbench for drafting and benchmarking **Chinese lega
 
 1. **Root package + web UI** (`src/`, `main.py`, `scripts/`): the core. FastAPI + Jinja2 login-gated workbench (`src/web/app.py`), a public-API FastAPI app (`src/web/public_app.py`), eval/rubric/compare/pipeline logic (`src/eval/`), clause corpus + tag-driven assembly (`src/clauses/`), contract generation + DOCX/PDF rendering (`src/contracts/`, `src/generator/`, `src/docs/`), RAG search (`src/search/`), a legacy CrewAI drafting crew (`src/crew.py`, entry `main.py`), and finetune data scripts (`scripts/finetune/`).
 2. **`fd-coding-law-bench-mcp/`**: FastMCP server exposing 37 tools. It **wraps `src.*` modules in place** — nothing is copied or relocated. It runs in the root project's venv (imports crewai/deepeval/llama-index from there) and reads the root `.env`.
-3. **`contract-review-agent/`**: separate LangGraph review service (legal/commercial/completeness triple review) with its **own** `pyproject.toml`/venv and a `frontend/` (npm). Deployed independently.
+3. ~~`contract-review-agent/`~~ — **retired 2026-11-24** (never deployed, its frontend stopped using CopilotKit, no independent git/CI/spec). Moved to the workspace `attic/`. See change `domain-first-mcp`.
 
 Key docs: `docs/pipeline-architecture.md`, `docs/tag-driven-assembly.md`, `docs/evaluation-system.md`, `docs/contract-generation-logic.md`. `PRODUCT.md` describes the product; `DESIGN.md` is the UI design system (flat "evidence ledger" style — no shadows/gradients; keep UI text simplified Chinese with zh/en parity).
 
@@ -29,7 +29,7 @@ uv pip install -e ./fd-coding-law-bench-mcp  # editable-install MCP package into
 python -m fd_coding_law_bench_mcp          # run MCP stdio server (HTTP mode: see its README)
 ```
 
-`contract-review-agent/` has its own commands (see its README): `uv run uvicorn api.main:app --port 8000` plus `npm run dev` in `frontend/`.
+(`contract-review-agent/`'s commands are gone with the directory — retired, see above.)
 
 Tests must not hit real LLMs. Most root tests use fakes (`tests/_fakes.py`, `conftest.py`); Postgres-backed tests use a throwaway database.
 

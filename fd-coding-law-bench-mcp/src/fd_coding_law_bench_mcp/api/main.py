@@ -78,10 +78,11 @@ from .routes import contracts, tags  # noqa: E402
 app.include_router(contracts.router, prefix="/contracts", tags=["contracts"])
 app.include_router(tags.router, prefix="/tags", tags=["tags"])
 
-# Agent runs endpoints for contract-review-agent metrics
-from .routes import agent_runs  # noqa: E402
-
-app.include_router(agent_runs.router, prefix="/api", tags=["Agent Runs"])
+# Agent-runs endpoints were removed with `contract-review-agent` (retired
+# 2026-11-24, see change `domain-first-mcp`): they existed only for that service
+# to report LangGraph metrics, and had no other caller. The module and its
+# schemas are kept on disk so the shape is recoverable, but nothing mounts them —
+# a live endpoint with no consumer is a surface nobody audits.
 
 # Health check endpoint
 @app.get("/health", include_in_schema=False)

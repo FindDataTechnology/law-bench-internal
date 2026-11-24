@@ -109,9 +109,12 @@ uv run uvicorn src.web.app:app --port 8010
 uv run --project . python -m fd_coding_law_bench_mcp
 ```
 
-### 子项目：合同评审助手
+### 已退役的子项目
 
-[contract-review-agent/](contract-review-agent/)：基于 LangGraph 的多模型合同评审服务（法律准确性 × 商业公平性 × 完整性三重审查），独立部署，有自己的 README。
+`contract-review-agent/`（LangGraph 合同评审服务）已于 2026-11-24 移到工作区
+`attic/`。它从未部署、前端已不再使用 CopilotKit、且与平台的智能体团队是同一概念
+的两次发明；它的 `agent_runs` 表并入平台的运行台账概念。见 change
+`domain-first-mcp`。
 
 ## 目录结构
 
@@ -132,7 +135,7 @@ data/
   finetune/       微调数据管线 schema 与产物（见 微调说明.md）
 db/               内置种子（rubric/标准/提示词，含 Harbor v0.20.0 衍生规则）
 fd-coding-law-bench-mcp/   FastMCP server（37 工具，包装 src.* 原地实现）
-contract-review-agent/     LangGraph 合同评审子项目
+（contract-review-agent/ 已退役，移至工作区 attic/）
 paper/            law-bench 方法论文（初稿与实验数据）
 contracts/        软件服务合同空白模板样品（docx 生成脚本）
 docs/            设计与运维文档（评测体系、组装逻辑、管线架构、V4 结果…）
