@@ -222,7 +222,14 @@ class TestFactCheckers:
         names = list(checkers_for("fact"))
         assert "band-vocabulary" in names
         assert "no-such-kind" not in names
-        assert checkers_for("clause") == {}  # other kinds untouched
+        # 判据本意是「finance pack 只注册自己的 kind，不污染别的 kind」。
+        # 原来写成 `checkers_for("clause") == {}` —— 那依赖「legal 没有
+        # checks.py」这个当时的事实；2026-11-24 给 legal 补上检查器后这条就错了。
+        # 改成断言「clause 的检查器里没有 finance 的任何一个」，这才是不变量。
+        clause_checkers = set(checkers_for("clause"))
+        assert not (clause_checkers & set(names)), (
+            f"finance 的检查器漏进了 clause kind：{clause_checkers & set(names)}"
+        )
 
     def test_amount_anchor_accepts_none_and_numbers(self):
         _, checks = _mods()
