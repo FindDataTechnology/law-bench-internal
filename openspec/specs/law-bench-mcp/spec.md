@@ -2,22 +2,34 @@
 
 ## Purpose
 A FastMCP server exposing law-bench's tag/stance-filtered contract generation, contract rubric evaluation, and clause RAG search as MCP tools, wrapping existing `src` modules in place.
+
 ## Requirements
+
 ### Requirement: MCP Server Process
 
-The system SHALL provide a FastMCP server project at `fd-coding-law-bench-mcp/` (importable as `fd_coding_law_bench_mcp`) that exposes law-bench's contract generation, contract evaluation (including rubric/criterion/prompt management, compare orchestration, run inspection, and law-info/legal-refs reads), and clause RAG search as MCP tools.
+The system SHALL provide a FastMCP server project at `fd-coding-law-bench-mcp/` (importable as `fd_coding_law_bench_mcp`) that serves **知验台 (the knowledge-verification platform)**, not any single business line. Its tool face SHALL be organised by **domain** as the first dimension; legal contract drafting/evaluation SHALL be one installable pack rather than the server's organising unit.
+
+The server SHALL expose three tool groups:
+
+- **域面 (`domain_*` / `unit_*` / `ruler_*`)** — the platform's own model (`knowledge_units` / `domains` / `domain_proposals` / `authoring_*`), read-only.
+- **资产面 (`prompt_*` / `eval_*` / `compare_*`)** — evaluation assets, carrying a `domain` dimension.
+- **pack 面 (`legal_pack_*`)** — the legal line's tools (`contract_*` / `law_*` / `clause_*` / `search_clauses`), behaviour unchanged, grouping renamed.
 
 #### Scenario: Server starts and registers its tools
 - **WHEN** the server is launched with `python -m fd_coding_law_bench_mcp`
-- **THEN** a FastMCP stdio server starts and advertises the tools `contract_generate`, `contract_evaluate`, `rubric_list`, `run_list`, `search_clauses`, `rubric_get`, `rubric_create`, `rubric_update`, `rubric_delete`, `criterion_add`, `criterion_update`, `criterion_delete`, `criterion_reorder`, `prompt_list`, `prompt_get`, `prompt_create`, `prompt_update`, `prompt_delete`, `compare_run`, `compare_list`, `compare_get`, `compare_matrix`, `run_draft`, `run_get`, `law_types`, `law_info`, and `law_references`
+- **THEN** a FastMCP stdio server starts, and its advertised tools include at least one tool from each of the three groups
 
 #### Scenario: Server is wired into a client config
 - **WHEN** an `.mcp.json` entry points a client at `python -m fd_coding_law_bench_mcp`
 - **THEN** the client can invoke each advertised tool and receive a structured response
 
+#### Scenario: 组织维度是域不是合同类型
+- **WHEN** a caller enumerates the server's organising dimension
+- **THEN** the dimension is `domain`; `contract_type` survives only inside the legal pack as that pack's own concept
+
 ### Requirement: be runnable via `python -m fd_coding_law_bench_mcp` … (#1)
 
-The server SHALL be runnable via `python -m fd_coding_law_bench_mcp` and via `fastmcp run`, SHALL communicate over stdio by default, and SHALL import the existing `src.*` modules in place without relocating or copying them.
+The server SHALL be runnable via `python -m fd_coding_law_bench_mcp` and via `fastmcp run`, SHALL communicate over stdio by default, SHALL import the existing `src.*` modules in place without relocating or copying them, and SHALL additionally import the platform's kernel modules (`src.bench.*`) which serve the domain face.
 
 #### Scenario: split-out behaviour 1
 - **WHEN** this behaviour is exercised
@@ -25,11 +37,12 @@ The server SHALL be runnable via `python -m fd_coding_law_bench_mcp` and via `fa
 
 ### Requirement: be registered with a FastMCP `tags={"<concept>"}` … (#2)
 
-Each advertised tool SHALL be registered with a FastMCP `tags={"<concept>"}` kwarg assigning it to exactly one concept group (see the Concept Grouping requirement).
+Each advertised tool SHALL be registered with a FastMCP `tags={"<concept>"}` kwarg assigning it to exactly one concept group (see the Concept Grouping requirement). Concept groups SHALL name platform concepts (`domain`, `units`, `rulers`, `prompts`, `eval`, `metrics`) or, for pack tools, the pack they belong to (`legal`).
 
 #### Scenario: split-out behaviour 2
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: Generate Contract from Tags
 
 The `contract_generate` tool SHALL generate a contract deliverable for a given `contract_type` by delegating to `src.contracts.generate_contract`.
@@ -72,6 +85,7 @@ When `stance` and/or `scenario` are supplied (directly or via `tags["stance"]` /
 #### Scenario: split-out behaviour 1
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: contain exactly one clause body per … (#4)
 
 The assembled body SHALL contain exactly one clause body per section (no concatenation of multiple clause bodies within a section).
@@ -119,6 +133,7 @@ It SHALL be tagged `contracts`.
 #### Scenario: split-out behaviour 7
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: Current Custom Tag Discovery
 
 The `contract_generate` tool SHALL accept an `include_current_tags: bool` parameter.
@@ -158,6 +173,7 @@ The returned vocabulary SHALL reflect the state at call time, so a dimension reg
 #### Scenario: split-out behaviour 4
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: Evaluate Contract Tool
 
 The `contract_evaluate` tool SHALL evaluate a contract - supplied as either a file path or inline text - against a named rubric by delegating to `src.eval.scoring.evaluate_contract`.
@@ -281,6 +297,7 @@ an unknown `run_id` SHALL surface to the client as a tool error.
 #### Scenario: split-out behaviour 12
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: RAG Search Tool
 The `search_clauses` tool SHALL return ranked chunks for a natural-language query by delegating to `src.search.query.search(query, top_k)` (default `top_k=5`), returning a list of `{text, source_path, score}`. On any backend failure (Elasticsearch / embedding endpoint / MinIO unreachable), it SHALL return an empty list and SHALL NOT raise to the client. It SHALL be tagged `search`.
 
@@ -378,6 +395,7 @@ The `contracts` group SHALL contain `contract_generate` and `contract_evaluate`;
 #### Scenario: split-out behaviour 8
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: Tag Vocabulary Listing Tool
 
 The `tag_vocab_list` tool SHALL return the merged flat tag vocabulary for a contract type by delegating to `src.clauses.tags.tag_vocab_for_type(contract_type)`, returning `{dim: [allowed values]}` for every dimension valid for that type (universal starter dims merged with type-specific dims).
@@ -405,6 +423,7 @@ It SHALL be tagged `tags`.
 #### Scenario: split-out behaviour 3
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: Tag Validation Tool
 The `tag_validate` tool SHALL validate a tag dict against the controlled vocabulary by delegating to `src.clauses.tags.validate_tags(tags, contract_type)`. It SHALL return the cleaned dict (unknown keys dropped). For a controlled dim with an invalid value, it SHALL surface the `ValueError` raised by `validate_tags` to the client as a tool error. It SHALL be read-only and tagged `tags`.
 
@@ -415,7 +434,6 @@ The `tag_validate` tool SHALL validate a tag dict against the controlled vocabul
 #### Scenario: Invalid controlled value surfaces as an error
 - **WHEN** `tag_validate` is called with `tags={"stance": "pro_A"}`
 - **THEN** the tool returns an error to the client indicating the invalid value and the allowed set
-
 
 ### Requirement: Contract Pipeline Tools
 
@@ -492,6 +510,7 @@ Each tool SHALL import its `src` / pipeline dependencies at call time, and `NotF
 #### Scenario: split-out behaviour 6
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: Generate Contract Tool Extensions
 
 The `contract_generate` tool SHALL additionally accept an optional `custom_clause_ids: list[int] | None = None`, forwarded to `src.clauses.assemble.generate_contract_assembled(custom_clause_ids=...)` so a caller can select a specific custom-clause set (e.g. exclude a thin override).
@@ -523,6 +542,7 @@ The tool SHALL additionally return `body_text` - the assembled Markdown body wit
 #### Scenario: split-out behaviour 2
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: Evaluate Contract Tool Run Id
 The `contract_evaluate` tool SHALL additionally return `run_id` - the id of the stored `eval_runs` row (the value returned by `src.eval.store.store_result`) - when `no_store` is `False`. When `no_store` is `True`, `run_id` SHALL be `null`. All existing fields (`rubric`, `score`, `criteria_results`, ...) SHALL remain unchanged.
 
@@ -556,6 +576,7 @@ The MCP server SHALL expose the rubric and criterion management surface by wrapp
 #### Scenario: criterion_reorder with a mismatched id set surfaces an error
 - **WHEN** `criterion_reorder` is called with an id list that is not exactly the rubric's current criterion ids
 - **THEN** the tool returns a validation error to the client
+
 ### Requirement: import its `src.eval.rubric_crud` dependency at call … (#43)
 
 Each tool SHALL import its `src.eval.rubric_crud` dependency at call time.
@@ -587,6 +608,7 @@ The `rubric_*` and `criterion_*` tools SHALL be tagged `rubrics`.
 #### Scenario: split-out behaviour 4
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: Prompt Management Tools
 
 The MCP server SHALL expose the generation-prompt management surface by wrapping `src.eval.prompt_crud`: `prompt_list()`, `prompt_get(name)`, `prompt_create(name, contract_type, purpose, content, description?, prompt_type?)`, `prompt_update(prompt_id, name, contract_type, purpose, content, description?, prompt_type?)`, and `prompt_delete(prompt_id)`.
@@ -630,6 +652,7 @@ The `prompt_*` tools SHALL be tagged `prompts`.
 #### Scenario: split-out behaviour 4
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: Compare Tools
 
 The MCP server SHALL expose compare orchestration and reads by wrapping `src.eval.compare` and `src.eval.store`: `compare_run(contract_type, rubric_name, task_desc, prompt_names, n_drafts=1, label?, concurrency=1)`, `compare_list(limit=20)`, `compare_get(compare_id)`, `compare_matrix(compare_id)`, and `run_draft(compare_id, run_id)`.
@@ -706,6 +729,7 @@ The `compare_*` tools SHALL be tagged `eval`;
 #### Scenario: split-out behaviour 6
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: Law-Info and Legal-References Tools
 
 The MCP server SHALL expose read-only law-info and legal-references helpers by wrapping `src.eval.law_info` and `src.eval.legal_refs`: `law_types()`, `law_info(contract_type)`, and `law_references()`.
@@ -745,6 +769,7 @@ These tools SHALL be read-only and tagged `law`.
 #### Scenario: split-out behaviour 3
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: Tool Registration and Test Coverage
 The MCP server SHALL register, on startup, the eval-lifecycle tool set:
 
@@ -759,6 +784,7 @@ The MCP server SHALL register, on startup, the eval-lifecycle tool set:
 #### Scenario: Every tool has a passing hermetic test
 - **WHEN** the MCP test suite runs
 - **THEN** every advertised tool is exercised by at least one hermetic test with its `src.*` dependency monkeypatched, and the suite passes without a DB, LLM, or network
+
 ### Requirement: be covered by at least one … (#59)
 
 Every advertised tool SHALL be covered by at least one hermetic test that monkeypatches its `src.*` dependency so that no DB, LLM, judge endpoint, or network is required.
@@ -774,6 +800,7 @@ The test suite SHALL include a registration assertion that introspects the serve
 #### Scenario: split-out behaviour 2
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: Streamable HTTP Transport
 
 The MCP server SHALL support a streamable-HTTP transport selected by the `MCP_HTTP_TRANSPORT` environment variable.
@@ -838,6 +865,7 @@ Adding the HTTP transport SHALL NOT change any tool's name, signature, or behavi
 #### Scenario: split-out behaviour 5
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: Tool Denylist
 The MCP server SHALL support excluding a configured set of tools from advertisement via environment configuration (`MCP_TOOL_DENYLIST`, comma-separated tool names). Excluded tools SHALL NOT appear in tool listings and SHALL NOT be invocable. When the setting is unset or empty, all tools SHALL be advertised (behavior unchanged for existing clients). The setting SHALL apply on both stdio and streamable HTTP transports.
 
@@ -852,3 +880,28 @@ The MCP server SHALL support excluding a configured set of tools from advertisem
 #### Scenario: Default keeps the full toolset
 - **WHEN** the server starts without `MCP_TOOL_DENYLIST`
 - **THEN** all tools are advertised exactly as before this change
+
+### Requirement: 法律工具降为 pack 面
+
+The seventeen legal/contract tools that previously formed the server's main body SHALL keep their behaviour unchanged and SHALL be grouped and named as the legal pack's tools. They MUST NOT be presented as the server's general capabilities.
+
+#### Scenario: 那十七个工具是哪些
+
+- **WHEN** a reader asks which tools count as the legal pack
+- **THEN** the list is `contract_generate`, `contract_generate_stored`, `contract_generate_batch`, `contract_download`, `contract_content`, `contract_evaluate`, `contract_type_catalog`, `type_metadata`, `law_types`, `law_info`, `law_references`, `clause_list`, `clause_get`, `clause_update`, `clause_delete`, `clause_review`, `search_clauses`
+
+#### Scenario: 法律工具仍在，但归类不同
+- **WHEN** a caller enumerates the legal line's tools
+- **THEN** they are grouped under the legal pack and described as capabilities the legal pack installs, not as what the server is for
+
+#### Scenario: 行为不变
+- **WHEN** a previously documented legal tool is invoked with the same arguments
+- **THEN** it returns the same shaped result as before the regrouping
+
+### Requirement: 合同线停用不改其数据
+
+The legal line's stored data (the `clauses` table, contract artifacts, historical eval runs) SHALL be preserved as-is. This change MUST NOT delete or migrate it, and MUST NOT merge it with the platform's knowledge units.
+
+#### Scenario: 历史产物保留
+- **WHEN** the regrouping ships
+- **THEN** existing `clauses` rows, contract artifacts and historical eval runs remain queryable through the legal pack's tools
