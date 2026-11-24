@@ -21,7 +21,7 @@ critique + audit 清单固定七项：三态齐全 / 空态诚实 / 错误报因
 所有打磨走既有设计 token（间距/字号/状态色），缺的 token 先补 token 再用；不引 Tailwind/组件库。空态、错误卡、表单错误样式做成可复用的模板 partial，避免 15 组各写一套。
 
 ### D4. copilot 岛边界
-`assistant-ui`（CopilotKit 浮岛，admin-only）本轮只验收挂载呈现（不遮内容、移动端收起、加载态），岛内交互逻辑不动——它有独立的 `copilotkit-frontend` spec 管辖。
+`assistant-ui`（CopilotKit 浮岛，admin-only）本轮只验收挂载呈现（不遮内容、移动端收起、加载态），岛内交互逻辑不动——它由 `admin-assistant-web` spec 管辖。（原文写作「`copilotkit-frontend` spec」，那是错的：那份规格描述的是 `contract-review-agent` 的 Next.js 前端，与工作台浮岛无关，已于 2026-11-24 删除；见 change `scope-assistant-to-domain` §6。）
 
 ### D5. 有界纪律落到任务结构
 每组任务固定四步：检视截图 → 清单评分 → 批量修 → 确认轮（至多一次）。主代理汇总跨组报告，不做第四轮。

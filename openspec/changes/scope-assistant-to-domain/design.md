@@ -81,7 +81,15 @@ lead     (2)  + 发布/升格相关                                             
 
 **理由**：那份规格描述的是 Next.js 整站应用（`/api/copilotkit` 代理、`CopilotSidebar`、三处 `useHumanInTheLoop`），属 `contract-review-agent`。留着它，任何人都可能据此认为工作台助手是 Next.js 应用。
 
-**风险**：如果 `contract-review-agent` 仍在维护，它的规格需要落在那个仓（或跨仓引用）。本 design 记这条为 open question，不影响本 change 的落地。
+**实施时的更正（2026-11-24）**：原计划是「迁到 `contract-review-agent` 仓」。查证后两个前提都不成立：
+
+1. `contract-review-agent/` **不是独立仓**，它是本仓的一个子目录（无独立 `.git`，也无 openspec 根），没有「另一个仓」可迁。
+2. 更关键：**那份规格描述的代码已经不存在**。`contract-review-agent/frontend/package.json`
+   的依赖只有 `next/react/react-dom/zod`，全仓零处引用 `@copilotkit/*`；前端聊天是自己写的
+   纯 React 组件（`frontend/src/components/chat.tsx`）。
+
+所以它是**幽灵规格**——描述一个已被替换的实现。处理为**删除**，不是迁移：留着一份描述
+不存在代码的规格，比没有它更糟。
 
 ### D6. 副驾驶不迁谦面（agent 归口判断）
 
