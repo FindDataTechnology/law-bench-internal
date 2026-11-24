@@ -63,7 +63,17 @@
 - [ ] 8.4 岗位目录同步到谦面：把 law-bench `pack.yaml` 的七个 `roles:` 注册成谦面市场的目录条目（只声明存在与用途，不搬运行）。判据：`facet-ops-mcp` registry 面能列出这七条，且缺一条即报红。
 - [ ] 8.5 助手用量计量：域成员放开后 token 消耗从 0 变正，这是计费风险的起点（与 8.1 同项，8.1 记缺口、本条记风险起点）。
 - [x] 8.7 助手 LLM 密钥已修（2026-11-24）：原 `sk-or-92…`（30 字符）被网关判 `INVALID_API_KEY`。用 aloadtree@gmail.com 在 token.finddatatech.cloud 建了新密钥 `lawbench-assistant`（core 分组，$39.09 余额），写入 `copilot-runtime` secret；`OPENAI_BASE_URL` 同时改为 `router.finddatatech.cloud/v1`，模型由不存在的 `deepseek/deepseek-v4.1-flash` 改为实测可用的 `deepseek-v4-pro`。
-- [ ] 8.8 助手多轮（带工具结果）调用偶发 403：第一轮 `RUN_STARTED` + 工具调用全部成功，第二轮带工具结果再调时网关返回 403 且响应体不可解析。单独用同形状请求（含 tool_calls + 60KB 工具结果）复现为 200，故不是稳定的形状问题，怀疑网关侧内容过滤或限流。属词元网关行为，不在本 change 范围。
+- [x] 8.8 助手多轮偶发 403 —— **定性为间歇，非稳定缺陷**（2026-11-24 诊断）：
+  加 fetch 包装后抓到 `403 + content-type: text/html + body 读取即 terminated`，
+  即连接被中间层掐断（`set-cookie: sl-session=…` 是常态，成功响应也有）。
+  而在**同一 pod 内**用同一把 key、同一请求体、同一时刻发同样的
+  `chat/completions`，12 次全 200；把诊断版 runtime 跑在同一 pod 的旁端口上，
+  同一个 agent/run 请求也拿到 200 并**完整答出**（中文、按本域上下文）。
+  结论：不是形状/体积/中文/源 IP，是上游侧间歇掐连。属词元网关行为。
+- [x] 8.9 助手端到端已跑通（2026-11-24）：`agent/run` → 工具面按角色收敛 →
+  多轮 → 中文回答，例如问「这个域现在该做什么」得到「本域（data-ontology）
+  现在该做的是把各合同类型的标签本体维护干净…」。
+  但**仍会间歇**撞 8.8，概率未测。
 - [ ] 8.6 工具面按域隔离：实测 54 个工具里**只有 `search_clauses` 接受 `domain`**，其余按 contract_type/tags 过滤。本 change 的跨域边界因此是协作式的（提示词约束），不是强制的。真正隔离要在 MCP 包加域参数并落到查询——那是另一个 change。
 
 ## Workflow follow-up
