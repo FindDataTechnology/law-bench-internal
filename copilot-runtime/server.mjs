@@ -150,24 +150,28 @@ function allowedFor(role, toolName, groups) {
 let _currentScope = { domain: "", role: "" };
 function setRequestScope(domain, role) { _currentScope = { domain, role }; }
 
-/** 基座 prompt + 当前域/角色片段（agent 实例按 scope 缓存，所以这里是纯函数）。 */
-function promptForScope(domain, role) {
-  return BASE_PROMPT + domainPrompt(domain, role);
+/** 基座 prompt + 当前域/角色片段 + 代理给的事实简报（纯函数，按 scope 缓存）。 */
+function promptForScope(domain, role, brief) {
+  return BASE_PROMPT + domainPrompt(domain, role) + (brief ? `\n\n[本域现状] ${brief}` : "");
 }
 
 // agent 按 (domain, role) 缓存：BuiltInAgent 的 prompt 只能是字符串，而域片段
 // 必须随请求变。缓存实例是让「每个作用域一份 prompt」同时成立的最轻做法。
+// 简报每次都不同（下一动作会变），所以缓存键包含它——否则助手会一直复述
+// 打开浮岛那一刻的旧现状。
 const _agents = new Map();
-function agentFor(domain, role) {
-  const key = `${domain}\u0000${role}`;
+const _AGENT_CACHE_MAX = 32;
+function agentFor(domain, role, brief) {
+  const key = `${domain}\u0000${role}\u0000${brief}`;
   let made = _agents.get(key);
   if (!made) {
     made = new BuiltInAgent({
       model: provider.chat(MODEL),
       mcpClients: [lawbenchMcp],
-      prompt: promptForScope(domain, role),
+      prompt: promptForScope(domain, role, brief),
       maxSteps: 10,
     });
+    if (_agents.size >= _AGENT_CACHE_MAX) _agents.clear();
     _agents.set(key, made);
   }
   return made;
@@ -238,16 +242,21 @@ const provider = createOpenAI({
 // BuiltInAgent's `prompt` is a plain string with no per-run hook.
 const runtime = new CopilotRuntime({
   agents: {
-    copilotkit: agentFor("", ""),
-    default: agentFor("", ""),
+    copilotkit: agentFor("", "", ""),
+    default: agentFor("", "", ""),
   },
   beforeRequestMiddleware: ({ request }) => {
     const domain = request.headers.get("x-lawbench-domain") || "";
     const role = request.headers.get("x-lawbench-role") || "";
+    let brief = "";
+    const raw = request.headers.get("x-lawbench-context") || "";
+    if (raw) {
+      try { brief = Buffer.from(raw, "base64").toString("utf8"); } catch { brief = ""; }
+    }
     setRequestScope(domain, role);
     // Bind this run's agent to the scope. Done here (not via a getter) because
     // `agents` is a plain record the runtime reads at dispatch time.
-    const scoped = agentFor(domain, role);
+    const scoped = agentFor(domain, role, brief);
     runtime.agents.copilotkit = scoped;
     runtime.agents.default = scoped;
     return request;

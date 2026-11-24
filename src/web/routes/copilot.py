@@ -109,7 +109,63 @@ def _resolve_scope(request: Request, user: User, conn: DbConn) -> tuple[str, str
 
 
 #: Injected by the proxy, never trusted from the client.
-_SCOPE_HEADERS = ("x-lawbench-domain", "x-lawbench-role")
+_SCOPE_HEADERS = ("x-lawbench-domain", "x-lawbench-role", "x-lawbench-context")
+
+
+def _domain_context(conn, domain: dict) -> str:
+    """A one-line factual brief about the domain, for the model's system prompt.
+
+    Deliberately built from the SAME modules the pages use — ``next_actions`` for
+    "what should happen next" and ``unit_checks`` for "what the machine already
+    checked". If this recomputed either, the assistant could tell the operator
+    something the page in front of them contradicts (design D3).
+
+    Every failure degrades to omitting that clause, never to a made-up one: an
+    assistant that invents "3 items failed the checks" is worse than one that
+    says nothing about checks.
+    """
+    bits: list[str] = []
+    try:
+        from ...bench import next_actions
+
+        result = next_actions.for_domain(conn, domain)
+        top = (result.get("ranked") or {}).get("top") or []
+        if top:
+            first = top[0]
+            reason = first.get("reason") or ""
+            action = first.get("action") or ""
+            if reason and action:
+                bits.append(f"下一动作：{action}（理由：{reason}）")
+        else:
+            bits.append("本域当前没有待办动作")
+    except Exception:  # noqa: BLE001 - context is advisory, never load-bearing
+        pass
+    try:
+        from ...bench import data_checks, unit_checks
+        from ...bench.store import list_knowledge_units
+
+        namespace = domain.get("path") or domain.get("key")
+        totals = {"checkable": 0, "failed": 0, "uncheckable_kinds": set()}
+        for kind in data_checks._CHECKERS:  # kinds with a checker registered
+            units = list_knowledge_units(
+                conn, kind=kind, namespace=namespace, limit=200
+            )
+            for u in units:
+                s = unit_checks.summarise(unit_checks.checks_for_unit(u))
+                if not s["checkable"]:
+                    continue
+                totals["checkable"] += 1
+                if not s["all_pass"]:
+                    totals["failed"] += 1
+        if totals["checkable"]:
+            bits.append(
+                f"机器核对：已判 {totals['checkable']} 条，其中 {totals['failed']} 条有未通过项"
+            )
+        else:
+            bits.append("机器核对：本域还没有可机械核对的单位")
+    except Exception:  # noqa: BLE001
+        pass
+    return "；".join(bits)
 
 
 @router.api_route(
@@ -163,6 +219,22 @@ async def copilot_proxy(
             del headers[name]
     headers["X-Lawbench-Domain"] = domain_key
     headers["X-Lawbench-Role"] = role
+    # ASCII-safe transport: the brief is Chinese, and an HTTP header cannot carry
+    # raw non-ASCII. Base64 keeps the proxy contract simple (one header) and the
+    # runtime decodes it back before injecting.
+    try:
+        from ...bench import workspaces
+
+        domain_row = workspaces.get_domain(conn, domain_key=domain_key)
+        brief = _domain_context(conn, domain_row) if domain_row else ""
+    except Exception:  # noqa: BLE001 - a brief is advisory; never block the chat
+        brief = ""
+    if brief:
+        import base64
+
+        headers["X-Lawbench-Context"] = base64.b64encode(
+            brief.encode("utf-8")
+        ).decode("ascii")
 
     client = _build_client()
     upstream_request = client.build_request(
