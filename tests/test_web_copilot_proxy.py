@@ -89,9 +89,14 @@ def _cookie(payload: dict) -> str:
     return session._serializer().dumps(session._normalize(payload))
 
 
-def _login(client: TestClient, sub: str, scopes: list[str]) -> None:
+def _login(client: TestClient, sub: str, scopes: list[str], email: str = "") -> None:
+    """Sign in. Pass ``email`` when the test needs the real-world identity shape
+    (Logto ``sub`` + a separate email claim) — the two differ in production."""
     normalized = scopes_from_claims({"scope": " ".join(scopes)})
-    client.cookies.set(AUTH_COOKIE_NAME, _cookie({"sub": sub, "scopes": normalized}))
+    payload = {"sub": sub, "scopes": normalized}
+    if email:
+        payload["email"] = email
+    client.cookies.set(AUTH_COOKIE_NAME, _cookie(payload))
 
 
 # --- mock upstream --------------------------------------------------------- #
@@ -378,3 +383,41 @@ def test_client_supplied_brief_is_discarded(proxy_client, runtime_configured):
     assert forged not in base64.b64decode(raw).decode("utf-8"), (
         "客户端伪造的域现状被透传给了运行时"
     )
+
+
+def test_member_recorded_by_email_is_recognised_from_a_sub_session(
+    proxy_client, runtime_configured
+):
+    """生产真实形态：成员表存邮箱，会话身份是 Logto sub。
+
+    2026-11-24 实测：唯一有人的域里那条成员记录是 ``aloadtree@gmail.com``，
+    而会话的 ``sub`` 是 ``pih8r05mwh8w``。只按 sub 匹配 → 每个手工添加的成员
+    都被拒，浮岛永远不出现（这就是那个悬案的根因）。
+    """
+    import base64
+
+    _seed_domain(
+        proxy_client.app.dependency_overrides[get_db](),
+        member_subs={"aloadtree@gmail.com": "lead"},
+    )
+    _login(proxy_client, "pih8r05mwh8w", ["*"], email="aloadtree@gmail.com")
+    resp = _post(proxy_client)
+    assert resp.status_code == 200, (
+        f"以邮箱记录的成员在 sub 会话下被拒：{resp.status_code} {resp.text[:120]}"
+    )
+    assert _RECORDS["headers"]["x-lawbench-role"] == "lead"
+    assert base64.b64decode(_RECORDS["headers"]["x-lawbench-context"]).decode()
+
+
+def test_a_stranger_sub_matching_no_membership_is_still_denied(
+    proxy_client, runtime_configured
+):
+    """双标识不是放宽：两个标识都不匹配时照样拒。"""
+    _seed_domain(
+        proxy_client.app.dependency_overrides[get_db](),
+        member_subs={"aloadtree@gmail.com": "lead"},
+    )
+    _login(proxy_client, "someone-else", ["*"])
+    resp = _post(proxy_client)
+    assert resp.status_code == 403
+    assert not _RECORDS

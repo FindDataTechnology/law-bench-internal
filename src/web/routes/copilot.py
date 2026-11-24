@@ -102,10 +102,17 @@ def _resolve_scope(request: Request, user: User, conn: DbConn) -> tuple[str, str
     domain = workspaces.get_domain(conn, domain_key=domain_key)
     if domain is None:
         return None
-    role = workspaces.get_active_role(conn, domain_id=domain["id"], user_id=user.sub)
-    if role is None:
-        return None
-    return domain_key, role
+    # Same dual-identifier rule as the chrome's resolver: membership rows may
+    # carry either the Logto sub or the email (production has both shapes).
+    for candidate in (user.sub, getattr(user, "email", "") or ""):
+        if not candidate:
+            continue
+        role = workspaces.get_active_role(
+            conn, domain_id=domain["id"], user_id=candidate
+        )
+        if role is not None:
+            return domain_key, role
+    return None
 
 
 #: Injected by the proxy, never trusted from the client.

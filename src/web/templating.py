@@ -108,10 +108,6 @@ def _assistant_domain_key(request: Request, user: object = None) -> str:
         user = user if user is not None else getattr(request.state, "user", None)
         sub = getattr(user, "sub", "") or ""
         if not sub:
-            import logging
-            logging.getLogger(__name__).warning(
-                "assistant: no sub for %s (user=%r)", request.url.path,
-                getattr(request.state, "user", None))
             return ""
         # Cached per request: this runs twice (once for `assistant_enabled`,
         # once for the domain key itself) and must not open two connections.
@@ -122,8 +118,6 @@ def _assistant_domain_key(request: Request, user: object = None) -> str:
         if len(parts) < 2 or parts[0] != "d":
             request.state.assistant_domain_key = ""
             return ""
-        import logging as _lg
-        _lg.getLogger(__name__).warning("assistant: path=%s sub=%r", request.url.path, sub)
         domain_key = parts[1]
         from ..bench import workspaces  # local import: avoid import cycles
         from .deps import get_db
@@ -133,9 +127,21 @@ def _assistant_domain_key(request: Request, user: object = None) -> str:
         if domain is None:
             request.state.assistant_domain_key = ""
             return ""
-        if workspaces.get_active_role(
-            conn, domain_id=domain["id"], user_id=sub
-        ) is None:
+        # Membership rows carry whatever the admin typed. Production has both
+        # shapes: hand-added humans were recorded by **email**
+        # (``aloadtree@gmail.com``) while the session's identity is the Logto
+        # ``sub`` (``pih8r05mwh8w``). Matching only ``sub`` therefore denies
+        # every hand-added member (measured 2026-11-24: the island never
+        # rendered for the only human in any domain).
+        #
+        # Trying both identifiers keeps existing rows valid without a data
+        # migration. It deliberately does NOT fall back to "any membership":
+        # a caller must match one of the *session's own* identifiers.
+        candidates = [c for c in (sub, getattr(user, "email", "") or "") if c]
+        if not any(
+            workspaces.get_active_role(conn, domain_id=domain["id"], user_id=c)
+            for c in candidates
+        ):
             request.state.assistant_domain_key = ""
             return ""
         request.state.assistant_domain_key = domain_key
