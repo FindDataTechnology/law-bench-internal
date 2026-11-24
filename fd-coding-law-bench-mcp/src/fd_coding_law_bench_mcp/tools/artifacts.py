@@ -28,7 +28,7 @@ def _urls(artifact_id: int, row: dict) -> dict[str, str]:
     return out
 
 
-@mcp.tool(tags={"contracts"}, annotations=annotations_for("contract_generate_stored"))
+@mcp.tool(tags={"legal"}, annotations=annotations_for("contract_generate_stored"))
 async def contract_generate_stored(
     contract_type: str,
     format: str = "docx",
@@ -88,7 +88,7 @@ async def contract_generate_stored(
     return await anyio.to_thread.run_sync(_go)
 
 
-@mcp.tool(tags={"contracts"}, annotations=annotations_for("contract_download"))
+@mcp.tool(tags={"legal"}, annotations=annotations_for("contract_download"))
 async def contract_download(
     artifact_id: int, format: str | None = None, variant: str = "final"
 ) -> dict | None:

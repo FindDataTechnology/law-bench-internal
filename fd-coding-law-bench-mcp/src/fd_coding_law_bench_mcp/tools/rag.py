@@ -118,7 +118,7 @@ def _domain_path(conn, domain: str) -> str | None:
     return (path or "").strip() or None
 
 
-@mcp.tool(tags={"search"}, annotations=annotations_for("search_clauses"))
+@mcp.tool(tags={"legal"}, annotations=annotations_for("search_clauses"))
 async def search_clauses(
     query: str,
     top_k: int = 5,

@@ -14,7 +14,7 @@ from ..annotations import annotations_for
 from ..server import mcp
 
 
-@mcp.tool(tags={"contracts"}, annotations=annotations_for("contract_generate"))
+@mcp.tool(tags={"legal"}, annotations=annotations_for("contract_generate"))
 async def contract_generate(
     contract_type: str,
     format: str = "pdf",

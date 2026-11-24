@@ -5,6 +5,14 @@ from __future__ import annotations
 import asyncio
 
 EXPECTED_TOOLS = {
+    "domain_context",
+    "domain_list",
+    "domain_proposal_get",
+    "domain_proposals",
+    "domain_unit_checks",
+    "domain_units",
+    "ruler_criteria",
+    "ruler_list",
     "agent_run_get",
     "agent_run_list",
     "agent_run_store",

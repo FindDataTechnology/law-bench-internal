@@ -22,6 +22,10 @@ wellknown.register(mcp)
 
 # Importing the tool modules registers their @mcp.tool decorators. Order does
 # not matter; the names are re-exported for callers / tests that want them.
+# Domain face (change domain-first-mcp): the platform's own model. Imported
+# first so the tool list reads domain-first, matching the server's purpose.
+from .tools import domain as _domain  # noqa: E402,F401
+from .tools import rulers as _rulers  # noqa: E402,F401
 from .tools import compare as _compare  # noqa: E402,F401
 from .tools import clauses as _clauses  # noqa: E402,F401
 from .tools import evaluate as _evaluate  # noqa: E402,F401

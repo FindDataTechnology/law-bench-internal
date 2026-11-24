@@ -30,7 +30,7 @@ _catalog_cache: dict[bool, tuple[list[dict], datetime]] = {}
 _CACHE_TTL = timedelta(minutes=5)
 
 
-@mcp.tool(tags={"contracts"}, annotations=annotations_for("contract_type_catalog"))
+@mcp.tool(tags={"legal"}, annotations=annotations_for("contract_type_catalog"))
 async def contract_type_catalog(
     include_clause_counts: bool = True,
     refresh: bool = False,
@@ -115,7 +115,7 @@ async def contract_type_catalog(
     return await anyio.to_thread.run_sync(_go)
 
 
-@mcp.tool(tags={"contracts"}, annotations=annotations_for("type_metadata"))
+@mcp.tool(tags={"legal"}, annotations=annotations_for("type_metadata"))
 async def type_metadata(
     contract_type: str,
     include_scenario_details: bool = True,

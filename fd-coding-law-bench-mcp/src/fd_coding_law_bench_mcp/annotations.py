@@ -70,6 +70,18 @@ WRITE_DESTRUCTIVE: dict[str, Any] = {
 #: (even when the value equals a shared preset) so a new tool that forgets to
 #: register fails the gate instead of inheriting a plausible default.
 TOOL_ANNOTATIONS: dict[str, dict[str, Any]] = {
+    # --- domain face (change domain-first-mcp): platform reads, no writes ---
+    # Every one is a thin shell over a pure-read kernel function. The domain
+    # face deliberately has no write tool — promotion / publication / proposal
+    # confirmation carry a session identity a machine caller does not have.
+    "domain_list": dict(READ_ONLY),
+    "domain_context": dict(READ_ONLY),
+    "domain_units": dict(READ_ONLY),
+    "domain_unit_checks": dict(READ_ONLY),
+    "domain_proposals": dict(READ_ONLY),
+    "domain_proposal_get": dict(READ_ONLY),
+    "ruler_list": dict(READ_ONLY),
+    "ruler_criteria": dict(READ_ONLY),
     # --- agent metrics (DB reads + append-only instrumentation) ---
     "agent_run_get": dict(READ_ONLY),
     "agent_run_list": dict(READ_ONLY),

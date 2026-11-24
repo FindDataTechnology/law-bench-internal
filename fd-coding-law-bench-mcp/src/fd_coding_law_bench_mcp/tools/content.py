@@ -15,7 +15,7 @@ from ..annotations import annotations_for
 from ..server import mcp
 
 
-@mcp.tool(tags={"contracts"}, annotations=annotations_for("contract_content"))
+@mcp.tool(tags={"legal"}, annotations=annotations_for("contract_content"))
 async def contract_content(
     contract_type: str,
     tags: dict | None = None,
