@@ -230,6 +230,28 @@ const lawbenchMcp = {
 
 // ---------------------------------------------------------------------------
 
+// 诊断：LLM 上游偶发 403 且响应体解析失败（AI SDK 只报 "Failed to process
+// error response"）。包一层 fetch，把非 2xx 的状态、关键头、响应体前 400 字
+// 打出来——否则只能靠猜。排查完连同 8.8 一并移除。
+const _origFetch = globalThis.fetch;
+globalThis.fetch = async (input, init) => {
+  const res = await _origFetch(input, init);
+  const url = typeof input === "string" ? input : (input && input.url) || "";
+  if (!res.ok && url.includes("/chat/completions")) {
+    let body = "";
+    try {
+      body = (await res.clone().text()).slice(0, 400);
+    } catch (e) {
+      body = `<unreadable: ${e.message}>`;
+    }
+    console.error(
+      `[llm] ${res.status} ${url} ct=${res.headers.get("content-type")} ` +
+        `body=${body}`,
+    );
+  }
+  return res;
+};
+
 const provider = createOpenAI({
   apiKey: process.env.OPENAI_API_KEY,
   baseURL: LLM_BASE_URL,
