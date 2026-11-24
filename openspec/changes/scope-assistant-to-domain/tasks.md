@@ -41,7 +41,7 @@
 - [x] 5.3 「expert 不能发布」：同文件 `expert/self_heal_pipeline_run → false`、`lead/self_heal_pipeline_run → true` 钉住。
 - [x] 5.4 「删除对所有角色不可用」：同文件 `annotator|lead/clause_delete → false` 钉住。
 - [ ] 5.5 「注入的下一动作与页面逐字一致」：**结构上成立**（两者调同一个 `next_actions.for_domain`），但未做浏览器端逐字比对——data-ontology 当前无待办动作，无从对比。等有动作的域出现后补测。
-- [ ] 5.6 「零域身份与匿名看不到浮岛」：真实浏览器两种身份各走一遍，断言无浮岛标记。
+- [ ] 5.6 「零域身份与匿名看不到浮岛」：匿名已由 401 判据覆盖；零域身份未做浏览器走查（当前无第二个真人账号可造该场景）。
 
 ## 6. 规格治理
 
@@ -51,7 +51,7 @@
 
 ## 7. 上产与回滚演练
 
-- [ ] 7.1 灰度：**改从 `data-ontology` 开始**（§0.4 取证：全平台只有它有真人成员）。legal 域需先加人。
+- [x] 7.1 灰度已在生产完成：`data-ontology` 页面上浮岛渲染、`data-domain="data-ontology"`、代理准入通过（POST /copilotkit → 200 SSE RUN_STARTED）。**未完成的是助手真正回话**——LLM 密钥失效（见 §8.7），与门/上下文/工具面无关。
 - [x] 7.2 回滚判据已在生产验证（2026-11-24）：把 `COPILOT_RUNTIME_URL` 置空后 `assistant_enabled` 为假、浮岛整体消失；该开关是纯前端挂载条件，工作台其余功能不读它。
 - [ ] 7.3 全量 `pytest` + `scripts/smoke_prod.sh` 绿；`openspec validate scope-assistant-to-domain --strict` 绿。
 
@@ -62,6 +62,7 @@
 - [ ] 8.3 `copilotkit-frontend` 迁至 `contract-review-agent` 仓（按「该线仍在维护」处理），本仓只留一句指向。
 - [ ] 8.4 岗位目录同步到谦面：把 law-bench `pack.yaml` 的七个 `roles:` 注册成谦面市场的目录条目（只声明存在与用途，不搬运行）。判据：`facet-ops-mcp` registry 面能列出这七条，且缺一条即报红。
 - [ ] 8.5 助手用量计量：域成员放开后 token 消耗从 0 变正，这是计费风险的起点（与 8.1 同项，8.1 记缺口、本条记风险起点）。
+- [ ] 8.7 助手 LLM 密钥失效：`copilot-runtime` 的 `OPENAI_API_KEY`（`sk-or-92…`，30 字符）被 `token.finddatatech.cloud` 判 `INVALID_API_KEY`。链路已通（代理 200、SSE `RUN_STARTED` 已到），只差一把有效密钥。属词元网关的密钥管理，不在本 change 范围。
 - [ ] 8.6 工具面按域隔离：实测 54 个工具里**只有 `search_clauses` 接受 `domain`**，其余按 contract_type/tags 过滤。本 change 的跨域边界因此是协作式的（提示词约束），不是强制的。真正隔离要在 MCP 包加域参数并落到查询——那是另一个 change。
 
 ## Workflow follow-up
