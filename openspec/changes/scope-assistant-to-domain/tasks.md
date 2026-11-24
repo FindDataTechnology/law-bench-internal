@@ -62,7 +62,8 @@
 - [ ] 8.3 `copilotkit-frontend` 迁至 `contract-review-agent` 仓（按「该线仍在维护」处理），本仓只留一句指向。
 - [ ] 8.4 岗位目录同步到谦面：把 law-bench `pack.yaml` 的七个 `roles:` 注册成谦面市场的目录条目（只声明存在与用途，不搬运行）。判据：`facet-ops-mcp` registry 面能列出这七条，且缺一条即报红。
 - [ ] 8.5 助手用量计量：域成员放开后 token 消耗从 0 变正，这是计费风险的起点（与 8.1 同项，8.1 记缺口、本条记风险起点）。
-- [ ] 8.7 助手 LLM 密钥失效：`copilot-runtime` 的 `OPENAI_API_KEY`（`sk-or-92…`，30 字符）被 `token.finddatatech.cloud` 判 `INVALID_API_KEY`。链路已通（代理 200、SSE `RUN_STARTED` 已到），只差一把有效密钥。属词元网关的密钥管理，不在本 change 范围。
+- [x] 8.7 助手 LLM 密钥已修（2026-11-24）：原 `sk-or-92…`（30 字符）被网关判 `INVALID_API_KEY`。用 aloadtree@gmail.com 在 token.finddatatech.cloud 建了新密钥 `lawbench-assistant`（core 分组，$39.09 余额），写入 `copilot-runtime` secret；`OPENAI_BASE_URL` 同时改为 `router.finddatatech.cloud/v1`，模型由不存在的 `deepseek/deepseek-v4.1-flash` 改为实测可用的 `deepseek-v4-pro`。
+- [ ] 8.8 助手多轮（带工具结果）调用偶发 403：第一轮 `RUN_STARTED` + 工具调用全部成功，第二轮带工具结果再调时网关返回 403 且响应体不可解析。单独用同形状请求（含 tool_calls + 60KB 工具结果）复现为 200，故不是稳定的形状问题，怀疑网关侧内容过滤或限流。属词元网关行为，不在本 change 范围。
 - [ ] 8.6 工具面按域隔离：实测 54 个工具里**只有 `search_clauses` 接受 `domain`**，其余按 contract_type/tags 过滤。本 change 的跨域边界因此是协作式的（提示词约束），不是强制的。真正隔离要在 MCP 包加域参数并落到查询——那是另一个 change。
 
 ## Workflow follow-up
