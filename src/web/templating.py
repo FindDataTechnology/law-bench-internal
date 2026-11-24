@@ -77,6 +77,53 @@ def _my_domains(request: Request) -> list[dict]:
         return []
 
 
+def _assistant_domain_key(request: Request) -> str:
+    """The domain the assistant is bound to for this render, or ``""``.
+
+    The domain is the one in the URL (``/d/{key}/...``). That is the only place a
+    page states which domain it is about, so it is the only honest source — a
+    "current domain" cached on the session would keep pointing at a domain the
+    user has since navigated away from.
+
+    Returns ``""`` (not a guess) whenever: the path has no domain segment, the
+    identity is unknown, the domain does not exist, or the user holds no active
+    membership. Callers treat ``""`` as "assistant unavailable", which is the
+    fail-closed behaviour this change requires.
+    """
+    try:
+        user = getattr(request.state, "user", None)
+        sub = getattr(user, "sub", "") or ""
+        if not sub:
+            return ""
+        # Cached per request: this runs twice (once for `assistant_enabled`,
+        # once for the domain key itself) and must not open two connections.
+        cached = getattr(request.state, "assistant_domain_key", None)
+        if cached is not None:
+            return cached
+        parts = [p for p in request.url.path.split("/") if p]
+        if len(parts) < 2 or parts[0] != "d":
+            request.state.assistant_domain_key = ""
+            return ""
+        domain_key = parts[1]
+        from ..bench import workspaces  # local import: avoid import cycles
+        from .deps import get_db
+
+        conn = get_db()
+        domain = workspaces.get_domain(conn, domain_key=domain_key)
+        if domain is None:
+            request.state.assistant_domain_key = ""
+            return ""
+        if workspaces.get_active_role(
+            conn, domain_id=domain["id"], user_id=sub
+        ) is None:
+            request.state.assistant_domain_key = ""
+            return ""
+        request.state.assistant_domain_key = domain_key
+        return domain_key
+    except Exception:  # noqa: BLE001 - the chrome must never take the page down
+        return ""
+
+
 def _locale_context(request: Request) -> dict:
     """Per-request Jinja context: active locale + catalog + a bound translator.
 
@@ -120,10 +167,20 @@ def _locale_context(request: Request) -> dict:
         # link (and the denied-login page's way back out). External, so the
         # template renders it with target=_blank/rel=noopener.
         "official_bench_url": OFFICIAL_BENCH_URL,
-        # Admin assistant (change `add-admin-copilot-assistant`): the island is
-        # served only to admin sessions AND only when a runtime is configured;
-        # unset COPILOT_RUNTIME_URL means the assistant is disabled outright.
-        "assistant_enabled": bool(COPILOT_RUNTIME_URL) and _has_scope(user, "admin"),
+        # Domain assistant (change `scope-assistant-to-domain`): the island is
+        # served only to sessions that resolve to an accessible domain, and only
+        # when a runtime is configured. It used to be admin-only, which locked
+        # out the lead/expert/annotator roles who actually work in a domain.
+        #
+        # Fail closed: no domain (or an unreadable one) means no island — never a
+        # "domain-less assistant" that would degrade back into the old global
+        # admin helper this change exists to replace.
+        "assistant_enabled": bool(COPILOT_RUNTIME_URL) and bool(
+            _assistant_domain_key(request)
+        ),
+        # The domain the island is bound to; the template hands it to the island
+        # bootstrap so every chat request carries it.
+        "assistant_domain_key": _assistant_domain_key(request),
     }
 
 

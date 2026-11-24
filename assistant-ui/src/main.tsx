@@ -1,17 +1,22 @@
 /**
- * law-bench admin-assistant island (change add-admin-copilot-assistant).
+ * law-bench domain assistant island (change scope-assistant-to-domain).
  *
- * Self-mounting CopilotPopup: base.html includes the built bundle only for
- * sessions holding the admin scope, so this file never runs for anyone else.
- * All traffic goes to the same-origin /copilotkit route (session cookie),
- * which is the sole public path to the CopilotKit runtime and its MCP tools.
+ * Self-mounting CopilotPopup: base.html includes the built bundle only on a
+ * domain page whose viewer is an active member, so this file never runs
+ * otherwise. All traffic goes to the same-origin /copilotkit route (session
+ * cookie), which is the sole public path to the CopilotKit runtime and its MCP
+ * tools.
+ *
+ * The domain is read from the mount node's `data-domain` attribute and sent on
+ * every request. The proxy re-checks membership and overwrites the role header
+ * from the database — the values here are a claim, never the authority.
  */
 import { CopilotKit } from "@copilotkit/react-core";
 import { CopilotPopup } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css";
 import { createRoot } from "react-dom/client";
 
-function AssistantIsland() {
+function AssistantIsland({ domainKey }: { domainKey: string }) {
   return (
     // useSingleEndpoint pins the {method, params, body} envelope: the runtime
     // is mounted single-route, and the default "auto" transport negotiation
@@ -21,6 +26,7 @@ function AssistantIsland() {
     <CopilotKit
       runtimeUrl={new URL("/copilotkit", window.location.origin).href}
       useSingleEndpoint
+      headers={{ "X-Lawbench-Domain": domainKey }}
     >
       <CopilotPopup
         instructions={
@@ -45,6 +51,9 @@ function AssistantIsland() {
 }
 
 const mount = document.getElementById("lawbench-assistant-root");
-if (mount) {
-  createRoot(mount).render(<AssistantIsland />);
+const domainKey = mount?.getAttribute("data-domain") || "";
+// No domain means no assistant: the server would refuse every request anyway,
+// and offering a chat that cannot answer is worse than offering nothing.
+if (mount && domainKey) {
+  createRoot(mount).render(<AssistantIsland domainKey={domainKey} />);
 }

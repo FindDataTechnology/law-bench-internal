@@ -98,10 +98,12 @@
   <script>window.__LOCALE__ = {{ t_json|safe }}; window.__LABELS__ = {{ labels_json|safe }}; window.__LANG__ = "{{ lang }}";</script>
   <script src="{{ url_for('static', path='app.js') }}"></script>
   {% if assistant_enabled %}
-  {# Admin assistant (change add-admin-copilot-assistant): floating CopilotKit
-     chat island. The script self-mounts on #lawbench-assistant-root and talks
-     to the same-origin /copilotkit proxy (admin-scope enforced server-side —
-     this include is UX only, never the enforcement).
+  {# Domain assistant (change scope-assistant-to-domain): floating CopilotKit
+     chat island. The script self-mounts on #lawbench-assistant-root, reads the
+     domain from its data-domain attribute, and talks to the same-origin
+     /copilotkit proxy (domain-membership enforced server-side — this include is
+     UX only, never the enforcement). Rendered only on a domain page the viewer
+     is a member of; a domain-less assistant is deliberately not offered.
      Mount presentation (polish-bench-workbench): an in-flow status chip lives
      INSIDE the mount node — the island's createRoot().render() replaces the
      node's children on mount, so the chip can never overlap page content; if
@@ -132,7 +134,7 @@
     .assistant-mount-status.is-failed .assistant-mount-failed { display: inline; }
   </style>
   <link rel="stylesheet" href="{{ url_for('static', path='assistant/style.css') }}">
-  <div id="lawbench-assistant-root">{% if t.assistant and t.assistant.loading is defined %}<div class="assistant-mount-status" id="lawbench-assistant-status" role="status"><span class="assistant-mount-loading">{{ t.assistant.loading }}</span><span class="assistant-mount-failed">{{ t.assistant.failed }}</span></div>{% endif %}</div>
+  <div id="lawbench-assistant-root" data-domain="{{ assistant_domain_key }}">{% if t.assistant and t.assistant.loading is defined %}<div class="assistant-mount-status" id="lawbench-assistant-status" role="status"><span class="assistant-mount-loading">{{ t.assistant.loading }}</span><span class="assistant-mount-failed">{{ t.assistant.failed }}</span></div>{% endif %}</div>
   <script type="module" src="{{ url_for('static', path='assistant/assistant.js') }}" onerror="var s=document.getElementById('lawbench-assistant-status');if(s){s.classList.add('is-failed');}"></script>
   {% endif %}
   {% block scripts %}{% endblock %}
