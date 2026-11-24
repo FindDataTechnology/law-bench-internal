@@ -62,9 +62,22 @@ def manifest_tools(m: dict) -> dict[str, str]:
         if level not in ("commercial", "internal"):
             fail([f"tool_groups.{g.get('group')} 的 level 非法：{level!r}"])
         for t in g.get("tools", []):
-            if t in out and out[t] != level:
-                fail([f"工具 {t} 在多个 group 中级别冲突"])
-            out[t] = level
+            # A group may carry plain names (group-level `level`) or dicts with a
+            # per-tool override — the "可细化到工具级" shape that
+            # export_surface_commercial.commercial_tools already reads. Both must
+            # resolve here too, or the manifest shape the exporter accepts fails
+            # its own selfcheck (change mcp-surface-truth-up 1.1).
+            if isinstance(t, dict):
+                name, lvl = t.get("name"), t.get("level", level)
+            else:
+                name, lvl = t, level
+            if not name:
+                fail([f"tool_groups.{g.get('group')} 有工具项缺 name"])
+            if lvl not in ("commercial", "internal"):
+                fail([f"工具 {name} 的 level 非法：{lvl!r}"])
+            if name in out and out[name] != lvl:
+                fail([f"工具 {name} 在多个 group 中级别冲突"])
+            out[name] = lvl
     return out
 
 

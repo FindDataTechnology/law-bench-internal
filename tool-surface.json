@@ -65,6 +65,14 @@
       "criterion_delete",
       "criterion_reorder",
       "criterion_update",
+      "domain_context",
+      "domain_list",
+      "domain_proposal_confirm",
+      "domain_proposal_get",
+      "domain_proposals",
+      "domain_unit_checks",
+      "domain_unit_promote",
+      "domain_units",
       "pipeline_get",
       "pipeline_list",
       "prompt_create",
@@ -77,6 +85,8 @@
       "rubric_get",
       "rubric_list",
       "rubric_update",
+      "ruler_criteria",
+      "ruler_list",
       "run_draft",
       "run_get",
       "run_list",
@@ -84,7 +94,7 @@
       "tag_iteration_apply",
       "tag_iteration_suggest"
     ],
-    "note": "按 spec lex-mcp-surface「声明与实返回一致」：只登记实采可观察的形状；未采到的一律并入 undeclared（检查器只认 declared/undeclared 两栏），链路相关未采到的原因留在 blocked_detail 作旁注、不参与校验。MUST NOT 凭读代码或单侧预期填字段。采集方式：kubectl exec 进 law-bench-mcp pod，直连 127.0.0.1:8080/mcp 走 initialize → tools/call（绕开网关与计费闸）；每件给足入参，空集不算证据。一致性由 scripts/collect_live_surface.py（pod 内采集）+ scripts/check_declared_vs_live.py（逐键比对）守。 5.4 的两处新增字段（validation_check.provenance / law_references.stable_id）已落地并有单测，但现网元素数组恒空、形状不可观测，故不写入 declared_detail——遵守本清单自身纪律（不得凭代码或单侧预期填字段），在 blocked_detail 记录待采原因。",
+    "note": "按 spec lex-mcp-surface「声明与实返回一致」：只登记实采可观察的形状；未采到的一律并入 undeclared（检查器只认 declared/undeclared 两栏），链路相关未采到的原因留在 blocked_detail 作旁注、不参与校验。MUST NOT 凭读代码或单侧预期填字段。采集方式：kubectl exec 进 law-bench-mcp pod，直连 127.0.0.1:8080/mcp 走 initialize → tools/call（绕开网关与计费闸）；每件给足入参，空集不算证据。一致性由 scripts/collect_live_surface.py（pod 内采集）+ scripts/check_declared_vs_live.py（逐键比对）守。 5.4 的两处新增字段（validation_check.provenance / law_references.stable_id）已落地并有单测，但现网元素数组恒空、形状不可观测，故不写入 declared_detail——遵守本清单自身纪律（不得凭代码或单侧预期填字段），在 blocked_detail 记录待采原因。 2026-11-25（change mcp-surface-truth-up 1.1）：domain 组 10 工具补入 undeclared——它们尚未在现网 pod 实采（域面随 add-domain-first-workbench 在途），按本文件既定口径「未采到一律并入 undeclared」，此前因 level 非法早早 fail() 而从未走到这项检查。",
     "declared_detail": {
       "contract_type_catalog": {
         "envelope": "structuredContent",
@@ -624,20 +634,44 @@
   "tool_groups": [
     {
       "group": "domain",
-      "level": "platform",
+      "level": "internal",
       "tools": [
-        "domain_context",
-        "domain_list",
+        {
+          "name": "domain_context",
+          "level": "commercial"
+        },
+        {
+          "name": "domain_list",
+          "level": "commercial"
+        },
         "domain_proposal_confirm",
-        "domain_proposal_get",
-        "domain_proposals",
-        "domain_unit_checks",
+        {
+          "name": "domain_proposal_get",
+          "level": "commercial"
+        },
+        {
+          "name": "domain_proposals",
+          "level": "commercial"
+        },
+        {
+          "name": "domain_unit_checks",
+          "level": "commercial"
+        },
         "domain_unit_promote",
-        "domain_units",
-        "ruler_criteria",
-        "ruler_list"
+        {
+          "name": "domain_units",
+          "level": "commercial"
+        },
+        {
+          "name": "ruler_criteria",
+          "level": "commercial"
+        },
+        {
+          "name": "ruler_list",
+          "level": "commercial"
+        }
       ],
-      "notes": "知验台平台面（change domain-first-mcp）：域/单位/尺子，读面全只读；写面是闭集：确认提案（幂等，产出 silver）与升一格（到 silver 为止，gold 要人签）。域是必填参数，跨域隔离由查询保证而不是提示词。"
+      "notes": "知验台平台面（change domain-first-mcp）：域/单位/尺子，读面全只读；写面是闭集：确认提案（幂等，产出 silver）与升一格（到 silver 为止，gold 要人签）。域是必填参数，跨域隔离由查询保证而不是提示词。组级 level=internal（原为契约外的 `platform`，change mcp-surface-truth-up 1.1 改正）：八个读工具逐条标 commercial，两个写工具留在 internal。"
     },
     {
       "group": "assembly",
@@ -1167,11 +1201,11 @@
   "registry": {
     "entry_path": "/law-bench",
     "upstream": "http://cheap6.mesh.finddata.cn:30840/mcp",
-    "expected_tool_count": 54,
+    "expected_tool_count": 64,
     "observed_tool_count": 54,
-    "observed_note": "2026-11-10 现网 pod（镜像 sha-0d2f54d）内 tools/list 实枚举 54，与仓内 EXPECTED_TOOLS 一致；此前记录的 52 系 metrics 组未上线所致，现不缺件",
+    "observed_note": "2026-11-10 现网 pod（镜像 sha-0d2f54d）内 tools/list 实枚举 54，与仓内 EXPECTED_TOOLS 一致；此前记录的 52 系 metrics 组未上线所致，现不缺件 ｜ 2026-11-25（change mcp-surface-truth-up 1.1）：expected 由 54 → 64——domain 组 10 工具于 2026-11-24（6e957b9）加入本仓，而本字段一直是 11-10 的现网实采值、从未跟着仓内声明更新，故 selfcheck 的「运行时 = manifest」自洽校验一直陈旧。observed 仍记 54：现网部署镜像未含 domain 组，滚动后须重采。",
     "commercial_tool_count": 21,
     "listed_at": "2026-11-10T10:58:00Z",
-    "listed_note": "注册表条目已刷新为 num_tools=54 / tool_list 54 / surface 商业集 21，三方（清单=注册表=现网）逐名一致，由 scripts/check_surface_listed.py 断言（exit=0）"
+    "listed_note": "注册表条目已刷新为 num_tools=54 / tool_list 54 / surface 商业集 21，三方（清单=注册表=现网）逐名一致，由 scripts/check_surface_listed.py 断言（exit=0） ｜ 2026-11-25：manifest 现推导 commercial 29（+domain 八个读工具，写面两个仍 internal）；`commercial_tool_count: 21` 是在册条目的现值，须待 domain 组滚版上线后由 `export_surface_commercial.py --server law-bench` 重导回填，勿在没有实采前手改。"
   }
 }

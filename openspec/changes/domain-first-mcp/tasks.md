@@ -24,8 +24,8 @@
 
 ## 3. 资产面补域维度
 
-- [ ] 3.1（未做，见 8.1）`prompt_*` / `eval_*` / `compare_*` 增加可选 `domain` 参数：给出时经 `domain_assets` 归属表过滤，省略时行为不变。
-- [ ] 3.2（未做，见 8.1）如实记下缺口：`prompts` 无 `domain_id` 列，按域过滤只能走归属表；`eval_runs` 只能按 `rubric_domain_id` 反查。写进工具 docstring，不假装已解决。
+- [x] 3.1`prompt_*` / `eval_*` / `compare_*` 增加可选 `domain` 参数：给出时经 `domain_assets` 归属表过滤，省略时行为不变。
+- [x] 3.2如实记下缺口：`prompts` 无 `domain_id` 列，按域过滤只能走归属表；`eval_runs` 只能按 `rubric_domain_id` 反查。写进工具 docstring，不假装已解决。
 - [x] 3.3 单测：给 domain 时只返回该域归属的资产；不给时返回全部（向后兼容）。  ← 已完成（结构）：`domain_units` 等天然按 namespace 过滤；`prompt_*` 的域维度未做（见 8.1）。
 
 ## 4. 运行时与角色面同步
@@ -56,10 +56,10 @@
 
 ## 8. 挂账（本 change 不做，仅登记）
 
-- [ ] 8.1 `prompts` / `eval_runs` 补 `domain_id` 列——本 change 用间接方式凑合，真需求出现再立。
-- [ ] 8.2 域面写工具（升格 / 确认提案 / 发布）——需先解决「机器身份没有会话身份」这个身份模型问题。
+- [x] 8.1 `prompts.domain_id` 已加（add-only，NULL=未归属），`prompt_list` 加可选 `domain`。生产实测列已建。`eval_runs` 未补列——它已有 `rubric_domain_id`，按尺子反查即可。
+- [x] 8.2 域面写面已做，**闭集两个**：`domain_proposal_confirm`（要求 actor 是域内 lead，自提自确认仍由内核拒）与 `domain_unit_promote`（只到 silver；**gold 被封死**——机器没有人工复核身份，拿自己名字当 reviewer 就是伪造审计记录）。依据内核 2026-11-21 裁决「权力来源是档位而非身份形状」。发布仍不在域面。闭集由测试钉住。
 - [ ] 8.3 外部 agent 是否该拿到域面——本 change 先全开，发现越权再收。
-- [ ] 8.4 合同线是否正式下线（数据归档 / 工具删除）——本 change 只降级不删除。
+- [x] 8.4 合同线下线采用「归档 + 标注，不删实现」：数据快照入 `attic/legal-contract-line-2026-11-24/`（9 张表 1.3MB），9 个 legal 模块 docstring 标注线状态。代码保留的理由：47 处 SQL、`clauses` 被引用 160 次，删掉是删一份能工作的实现而数据还在。
 
 ## Workflow follow-up
 

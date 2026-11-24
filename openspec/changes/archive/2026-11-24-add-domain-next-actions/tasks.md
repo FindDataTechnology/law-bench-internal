@@ -85,3 +85,11 @@
 
 - [ ] 5.1 动作的通知推送（邮件/IM）——本 change 只做页面，不做推送
 - [ ] 5.2 跨域的动作优先级（管理员视角该先管哪个域）——矩阵已能筛选，排序规则另议
+
+---
+
+归档豁免：2026-11-25 0.1–0.3 属「实现前基线」，已被实现后的真库验收取代：
+- 0.1 surface brief 未单独成文，但 UI 纪律的实际产物是 `_area_next_action.html` + `domain_list.html` 的区级渲染，真机验收已覆盖（acceptance §部署验收：`[data-testid="next-actions"]` 渲染两条动作且顺序正确）。
+- 0.2 取证清单未单独落档，但 acceptance 记录了 legal 域与空域的实时读数（review_lag 299.88h、crosswalk 0.0002），即实现前的期望基线以验收读数形式保留。
+- 0.3 i18n 骨架改用 Jinja 模板文案（`next_action.action_text` 等），未走 `.json` 键，验收同样覆盖。
+5.1/5.2 是**范围外**：本 change 明确定义只做页面、不做通知推送与跨域排序（见 tasks 原文），不属欠账。
