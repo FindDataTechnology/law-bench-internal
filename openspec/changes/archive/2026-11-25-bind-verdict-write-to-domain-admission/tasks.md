@@ -48,8 +48,14 @@
 ## 6. 联调（与 paas companion change `bind-fleet-turn-to-bench-verdict`）
 
 - [x] 6.1 已对表：本仓**不解析** `turn_ref`，只把它当不透明字符串落到 `subject_key`（`paas/lib/bench-ops-client.js:476` 传 `turnRef ?? runner_ref`）。所以「派生公式」在知验台侧是**空判据**——没有两侧各写一份公式要对。同回合重放幂等由 `verdicts` 的只追加指纹保证（5.2 已测）。
-- [~] 6.2 **需真跑一轮舰队验证**，不能在知验台侧单独完成：paas 侧代码已就绪（`bench-ops-client.js:487` 读 `verdict_state`，缺省按 `landed`/`dropped` 两态判定），但「从 dropped 转 landed」的观测点在那边的运行日志里。留作跨仓联调项。
-- [~] 6.3 同上：端到端需要一轮真实舰队回合，属 paas 线动作。知验台侧的写面已可接受该请求（本文件 12 条测试覆盖），缺的是对端真发一次。
+- [~] 6.2 **取证结论（2026-11-25）**：链路全通，但**没有任何一轮舰队产出过 verdict**。
+  cell `1da519d4c1c0bf89` 的 `turn_claims` 2284 条中 `bench_run_id` 已写 798 条
+  （运行回写正常），而 `member_turn_events` 里含 verdict 的 **0 条**。
+  原因：verdict 由 agent 主动调 MCP 工具（`bench-ops-mcp` 的 `verdict` 参数）产生，
+  而当前的 agent persona/技能里没有要求它产出结论。所以「dropped → landed」不是
+  代码问题，是**没有数据触发**。要激活，需在某个岗位的技能里要求它判一次并回报。
+- [~] 6.3 同上。三跳已实证对得上（见 paas 侧 `bind-fleet-turn-to-bench-verdict` §1.2），
+  知验台写面 12 条测试覆盖，缺的只是「某个岗位真的判一次并回报」。
 
 ## Workflow follow-up
 
