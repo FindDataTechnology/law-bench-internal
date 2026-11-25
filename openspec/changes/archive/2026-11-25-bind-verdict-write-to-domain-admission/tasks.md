@@ -48,12 +48,20 @@
 ## 6. 联调（与 paas companion change `bind-fleet-turn-to-bench-verdict`）
 
 - [x] 6.1 已对表：本仓**不解析** `turn_ref`，只把它当不透明字符串落到 `subject_key`（`paas/lib/bench-ops-client.js:476` 传 `turnRef ?? runner_ref`）。所以「派生公式」在知验台侧是**空判据**——没有两侧各写一份公式要对。同回合重放幂等由 `verdicts` 的只追加指纹保证（5.2 已测）。
-- [~] 6.2 **取证结论（2026-11-25）**：链路全通，但**没有任何一轮舰队产出过 verdict**。
-  cell `1da519d4c1c0bf89` 的 `turn_claims` 2284 条中 `bench_run_id` 已写 798 条
-  （运行回写正常），而 `member_turn_events` 里含 verdict 的 **0 条**。
-  原因：verdict 由 agent 主动调 MCP 工具（`bench-ops-mcp` 的 `verdict` 参数）产生，
-  而当前的 agent persona/技能里没有要求它产出结论。所以「dropped → landed」不是
-  代码问题，是**没有数据触发**。要激活，需在某个岗位的技能里要求它判一次并回报。
+- [~] 6.2 **取证结论（2026-11-25，查到根）**：链路全通，但 `verdict` 从来没被产生过。
+  证据链：
+  1. cell `1da519d4c1c0bf89` 的 `turn_claims` 2284 条，`bench_run_id` 已写 798
+     —— 运行回写正常；
+  2. `member_turn_events` 里含 `verdict` 的 **0 条**；
+  3. 抽查回合 `detail`：**没有出现 `bench` 字样**，即 agent 从未调用过
+     `bench_run_report`。
+  为什么：运行台账那 963 条是 `server/fleet-runs.js` 的 writeback **直接写的**
+  （不经 MCP）；而 verdict 只存在于 `bench-ops` MCP 的 `bench_run_report` 工具参数里，
+  该工具**没有挂给任何舰队**（`fleet-packs/*/*/manifest.json` 零引用），
+  岗位技能里也没有要求 agent 判一次。
+  **所以要激活，需要两件事**：① 把 `bench-ops` MCP 挂进目标舰队的 `mcpServers`；
+  ② 在岗位 persona 里要求它每轮产出 verdict。两者都是内容改动，且 paas 工作树里
+  有别人的在途文件，故本 change 不做。
 - [~] 6.3 同上。三跳已实证对得上（见 paas 侧 `bind-fleet-turn-to-bench-verdict` §1.2），
   知验台写面 12 条测试覆盖，缺的只是「某个岗位真的判一次并回报」。
 
