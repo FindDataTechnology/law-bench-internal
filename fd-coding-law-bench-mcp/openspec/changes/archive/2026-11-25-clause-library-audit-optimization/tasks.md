@@ -1,5 +1,12 @@
 # Clause Library Audit & Optimization Tasks
 
+> **ARCHIVED 2026-11-25（过期作废，非完成）**：前提已全部不成立，且目标数据形状已换。
+> - **同类治理已由 `content-remediation`（2026-09-15，17/17 完成并归档）做掉**：地域泄露条款改写、body_hash 去重、签署壳/下划线伪影清理、tag_review 元数据键修复，均在那条 change 里逐条留痕。
+> - **表已换**：本 change 审计的 `clauses`(base/tagged/custom, 6433 条) 在今天生产库只剩 186 行、`core_clauses` 为 0；条款已迁入 `knowledge_units`（5387 条 `kind='clause'`）。
+> - **2026-11-25 实测其三项判据在现库上均不成立**：地域名残留 2 条（都是法条尾部「国家税务总局天津市税务局」这类源头署名，不是条款内容）；`tags.audit` 标记 0 条；`{{slot}}` 占位 0 条 —— 与「1035 条缺 slot」的原始测量是两套数据。
+> - tasks 是表格行（`| 1 | [ ] |`）不是 checkbox，openspec 一直把它算作 0 任务。
+> 若将来要对 `knowledge_units` 做同类审计，应新立 change 并重做测量，不要复活本文件。
+
 **Schema**: spec-driven | **Scope**: P0-P2 audit (~3378 ready clauses) + P3 dedupe + re-eval gate
 
 ## Structured Task List
