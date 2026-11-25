@@ -58,6 +58,8 @@ def verdict_problem(
     gate: Optional[str],
     outcome: Optional[str],
     baseline_run_id: Optional[int] = None,
+    ruling_domain_path: Optional[str] = None,
+    ruler_derived_from: Optional[int] = None,
     require_identity: bool = True,
 ) -> Optional[str]:
     """Return a human-readable refusal, or ``None`` when the verdict is well-formed.
@@ -98,6 +100,36 @@ def verdict_problem(
 
     if baseline_run_id is not None and baseline_run_id <= 0:
         return f"baseline_run_id 非法：{baseline_run_id}"
+
+    # 层级与血统是**整组**的：给一个就必须给全，否则出现「记了层级但不知道
+    # 依据哪把尺子的哪一版」或反之——两种半张记录都无法回溯。
+    #
+    # 为什么 `ruler_derived_from` 由调用方传而不是本端反查：`ruler_digest_of`
+    # 算的是**发布 manifest** 的 digest，不是单把 rubric 行；库里没有
+    # 「rubric 行 → digest」的正向映射，按 digest 反查要重建每把尺子的 manifest，
+    # 那是 O(n) 且依赖发布组装口径，不该放在写路径上（2026-11-25 取证）。
+    if ruling_domain_path is not None or ruler_derived_from is not None:
+        if _blank(ruling_domain_path):
+            return (
+                "层级字段不完整：给了 ruler_derived_from 就必须同时给 "
+                "ruling_domain_path（否则无法回答这两条结论是否可比）"
+            )
+        missing_ruler = [
+            name
+            for name, value in (
+                ("ruler_kind", ruler_kind),
+                ("ruler_key", ruler_key),
+                ("ruler_digest", ruler_digest),
+            )
+            if _blank(value)
+        ]
+        if missing_ruler:
+            return (
+                "层级字段不完整：ruling_domain_path / ruler_derived_from 必须与"
+                f"尺子三件套同组出现，缺少 {', '.join(missing_ruler)}"
+            )
+        if ruler_derived_from is not None and ruler_derived_from <= 0:
+            return f"ruler_derived_from 非法：{ruler_derived_from}"
     return None
 
 

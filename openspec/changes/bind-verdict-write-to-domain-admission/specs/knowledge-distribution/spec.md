@@ -25,6 +25,16 @@
 - **WHEN** 回写请求体里的提交方与令牌所属登记不一致
 - **THEN** 403，MUST NOT 采信请求体自称
 
+#### Scenario: 舰队登记携带稳定标识
+
+- **WHEN** 管理员为一支舰队登记并绑定域 legal
+- **THEN** 该登记的种类为 `fleet`、携带舰队标识与绑定域，且提案与运行回写可用该标识反查到这条登记
+
+#### Scenario: 同一舰队不得重复登记
+
+- **WHEN** 对已登记且未吊销的舰队再次登记
+- **THEN** 被拒并指向既有登记，不产生第二条有效凭据
+
 ### Requirement: 机器拉取面
 
 平台 SHALL 提供机器通道拉取端点（`GET /api/v1/distribution/{domain_key}/ontology`，头 `X-Consumer-Token`），支持指定版本或缺省最新，json/yaml 双格式（`format` 参数，缺省 json）；载荷 SHALL 含 domain、模板版本锚定、发布版本与 digest、实体与关系全量（含 tier/sensitivity 标记与关系结构化 from/to）；鉴权 SHALL 三态如实区分：无凭据 401、令牌未登记或已吊销 403（报明）、令牌有效但域不在其绑定范围 403（报明）；拉取面 SHALL NOT 依赖 Logto 交互会话。

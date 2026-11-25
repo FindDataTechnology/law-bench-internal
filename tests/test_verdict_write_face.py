@@ -223,3 +223,95 @@ def test_admit_principal_refuses_unknown_kind_and_fleet_insert(conn):
         workspaces.admit_principal(conn, domain_id=d["id"], kind="team", ref="x", role="expert", added_by="seed")
     with pytest.raises(ValueError):
         workspaces.admit_principal(conn, domain_id=d["id"], kind="fleet", ref="fleet_a", role=None, added_by="seed")
+
+
+def test_5_3_a_historical_verdict_reads_back_after_its_ruler_is_retired(conn):
+    """历史结论不因尺子后来停用而读不回来。
+
+    读面若对每条结论重新校验「尺子此刻是否可见」，那么停用一把尺子就会让用它
+    判过的所有结论一起消失——那不是治理，是把历史删掉。
+    """
+    from src.eval import store as eval_store
+
+    d, rubric, ruler = _world(conn)
+    token = _register(conn, "fleet_a", A_KEY)
+    client = _client(conn)
+
+    r = _post(client, token, _payload(ruler))
+    assert r.status_code == 200, r.text
+    run_id = r.json()["verdict"]["run_id"]
+
+    # 停用这把尺子（删掉 rubric 行）
+    conn.execute("DELETE FROM rubrics WHERE id = %s", (rubric["id"],))
+    conn.commit()
+
+    # 写面此时应拒绝新的结论（尺子不可见了）
+    r2 = _post(client, token, _payload(ruler, subject_key="clause-2"))
+    assert r2.status_code == 422, r2.text
+
+    # 但既有那条结论照旧读得回来
+    row = eval_store.get_run(run_id, db_path=conn)
+    assert row is not None, "尺子停用后历史结论读不回来了"
+    assert row["ruler_digest"] == ruler["digest"]
+
+
+def test_5_5_receipt_distinguishes_verdict_landed_from_run_only(conn):
+    """回执必须区分「结论落了」与「只落了运行」——对端据此决定重试与否。
+
+    把 route-mismatch 报成「对端不支持」会让运维去改错的地方。
+    """
+    d, rubric, ruler = _world(conn)
+    token = _register(conn, "fleet_a", A_KEY)
+    client = _client(conn)
+
+    # 只带运行：不带 verdict 段 —— 旧形状，零变化
+    only_run = client.post(
+        f"/api/v1/distribution/{A_KEY}/runs",
+        json={"runner_ref": "fleet:fleet_a/post-1#1", "role": "builder",
+              "outcome": "ok"},
+        headers={"X-Consumer-Token": token},
+    )
+    assert only_run.status_code == 200, only_run.text
+    assert "verdict" not in only_run.json(), (
+        "只带运行的旧形状不该凭空多出 verdict 段"
+    )
+
+    # 带 verdict：结论落
+    r = _post(client, token, _payload(ruler))
+    assert r.status_code == 200, r.text
+    assert r.json()["verdict_state"] == "landed"
+
+
+def test_5_7_template_layer_and_domain_fork_are_distinguishable(conn):
+    """按模板层标准判的结论与按域 fork 判的结论，在读数上必须可分。
+
+    不可分就无法回答「这两条结论能不能比」——而 baseline 可比性正是台账的
+    raison d'être。
+    """
+    from src.eval import store as eval_store
+
+    d, rubric, ruler = _world(conn)
+    token = _register(conn, "fleet_a", A_KEY)
+    client = _client(conn)
+
+    # 域 fork：从父域（此处即本域）派生一把，带 diff
+    fork = domain_rubrics.fork(
+        conn, source_rubric_id=rubric["id"], domain_id=d["id"],
+        fork_diff={"threshold": "本域把 c1 的阈值从 0.8 提到 0.9"},
+        name="quality_forked",
+    ) if hasattr(domain_rubrics, "fork") else None
+    if fork is None:
+        import pytest as _pytest
+        _pytest.skip("domain_rubrics.fork 不可用")
+
+    template_ruler = ruler
+    fork_ruler = bench_verdicts.rubric_ruler(fork["name"], db_path=conn)
+
+    r1 = _post(client, token, _payload(template_ruler, subject_key="c-tpl"))
+    r2 = _post(client, token, _payload(fork_ruler, subject_key="c-fork"))
+    assert r1.status_code == 200 and r2.status_code == 200, (r1.text, r2.text)
+
+    a = eval_store.get_run(r1.json()["verdict"]["run_id"], db_path=conn)
+    b = eval_store.get_run(r2.json()["verdict"]["run_id"], db_path=conn)
+    assert a["ruler_digest"] != b["ruler_digest"], "两把尺子的 digest 应当不同"
+    assert a["ruling_domain_path"] is not None and b["ruling_domain_path"] is not None

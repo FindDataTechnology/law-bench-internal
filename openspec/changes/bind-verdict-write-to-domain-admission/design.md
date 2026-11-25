@@ -115,4 +115,12 @@ admitPrincipal({domain, kind, ref, role})     listPrincipals(domain, role?) → 
 ## Open Questions
 
 - **尺子门的判定口径**：`effective_rubrics` 按被评**主体**所在域算，还是按写者所在域算？本 design 取前者（「这把尺子在这个域是否可见」），因为结论的归属域是主体域（`domain_agent_runs.domain_key`）。若实际需要「按写者域」，companion 联调时再定，不阻塞。
-- **`ruler_derived_from` 的写入方**：由客户端传还是由对端按 `ruler_digest` 反查？倾向对端反查（客户端不持有血统真源），但需要 `digest → rubric` 的索引，落地前确认 `ruler_digest_of` 是否可从库里反查。
+- ~~**`ruler_derived_from` 的写入方**~~ —— **已定（2026-11-25 取证，task 1.1）**：反查**不可行**。
+  `ruler_digest_of(payload)` → `distribution.canonical_digest(manifest)`，它算的是**发布
+  manifest**的 digest，不是单把 rubric 行的。库里没有「rubric 行 → digest」的正向映射，
+  按 digest 反查需要先对每把尺子重建 manifest 再逐个算——那是 O(n) 且依赖发布时的
+  组装口径，不该放在写路径上。
+  **因此 `ruler_derived_from` 由客户端传**（task 1.4 的分支），并在 `verdict_problem()`
+  里与尺子三件套做整组校验：给了 `ruler_derived_from` 就必须同时给
+  `ruling_domain_path` 与尺子三件套，且 `ruler_derived_from` 必须指向本域可见的 rubric 行。
+  伪造血统的成本高于留空，所以宁可不填也不猜。
