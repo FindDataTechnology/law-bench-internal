@@ -78,9 +78,29 @@ Rubrics SHALL be inheritable: a child domain SHALL see its parent domain's rubri
 
 Scoring and run statistics SHALL be attributed to the domain that owns the rubric used.
 
+A verdict SHALL additionally record **which layer the ruler it used belongs to**: the ruling domain's materialized path (`ruling_domain_path`) and, when the ruler is a fork, the parent rubric it derives from (`ruler_derived_from`, nullable).
+
+These two fields SHALL be part of the verdict identity group: present means the whole group is present; their absence SHALL read as "this verdict predates the layer concept or used a ruler with no domain layer", MUST NOT read as "the layer is unknown".
+
+Readers SHALL be able to tell a verdict judged by a platform template standard apart from one judged by a domain's own maintained standard, and MUST NOT have to infer that distinction from `ruler_digest` alone — two different layers can produce the same-looking digest, and a misattributed layer is harder to notice than a missing one.
+
+The layer fields SHALL be validated **only on write**. Re-reading an existing verdict MUST NOT re-validate its ruler's visibility: a historical verdict is a fact, and a standard changed or retired afterwards does not invalidate it.
+
 #### Scenario: split-out behaviour 7
+
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
+#### Scenario: Template and fork verdicts are distinguishable
+
+- **WHEN** two verdicts are produced, one judged by a platform template standard and one by a fork owned by the domain
+- **THEN** both carry `ruling_domain_path`, the forked one also carries `ruler_derived_from`, and a reader can tell them apart without opening the rubric
+
+#### Scenario: Historical verdicts survive a ruler change
+
+- **WHEN** a domain edits or retires the standard that a past verdict was judged by
+- **THEN** reading that past verdict still succeeds unchanged, and no visibility re-check is performed on read
+
 ### Requirement: Harbor Provenance and Idempotent Extraction
 
 The system SHALL extract harbor's rubrics from the installed harbor package's TOML rubric files when harbor is installed, recording their provenance (`source`, `source_path`, `context`) and the installed harbor version.
@@ -115,6 +135,7 @@ Re-running the extraction SHALL be idempotent: it SHALL NOT create duplicate rub
 #### Scenario: split-out behaviour 2
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: Extensibility for Local Rubrics
 The schema SHALL support locally-authored rubrics distinct from harbor reference rubrics, identified by `source = local`. Local rubrics SHALL coexist with harbor rubrics in the same tables without conflict.
 
@@ -157,6 +178,7 @@ The seeding script (`scripts/seed_contract_rubrics.py`) SHALL be idempotent and 
 #### Scenario: split-out behaviour 2
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: Compare Runs Grouping Table
 The system SHALL add a `compare_runs` table to the PostgreSQL database addressed by `database_url`, created idempotently by `src/eval/store.py::ensure_schema` (alongside `eval_runs` and `eval_criteria_results`). Columns: `id` primary key, `label`, `contract_type`, `rubric_name`, `task_desc`, `gen_mode`, `n_drafts`, `created_at`. One `compare_runs` row groups the `eval_runs` rows that belong to a single compare via the `eval_runs.compare_run_id` snapshot column.
 
@@ -251,6 +273,7 @@ The container SHALL run this heal on every startup before serving requests, so a
 #### Scenario: split-out behaviour 4
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: Practical Contract Type Rubrics
 
 The system SHALL support a second idempotently-seeded set of per-class Chinese contract rubrics covering practical (中国合同分类法 Part 2) contract types that are not already covered by the 民法典 typical named contract types.
@@ -299,6 +322,7 @@ The seeding script (`scripts/seed_contract_rubrics.py`) SHALL seed both the 民�
 #### Scenario: split-out behaviour 5
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: Postgres Connection and Schema Management
 
 The system SHALL obtain a PostgreSQL connection from the `database_url` environment variable (a libpq DSN, e.g. `postgresql://user:pass@host:5432/db`).
@@ -341,6 +365,7 @@ Insert paths SHALL obtain generated primary keys via `RETURNING id`.
 #### Scenario: split-out behaviour 3
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: Law-Refined Variant Contract Rubrics
 
 The system SHALL seed a second set of per-class Chinese contract rubrics - the **law-refined** variants - one per contract type key (the same 41 keys covered by the v1 rubrics: 19 民法典 types + 22 practical types).
@@ -381,6 +406,7 @@ Each SHALL be named `contract_<type>_v2`, stored with `source = local` and `cont
 #### Scenario: split-out behaviour 1
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: seed the v1 rubrics AND these … (#23)
 
 The seeding script (`scripts/seed_contract_rubrics.py`) SHALL seed the v1 rubrics AND these `contract_<type>_v2` rubrics in one idempotent pass, SHALL NOT modify any v1 `contract_<type>_v1` row (upsert matches by name; the names differ), and SHALL NOT modify or delete any row whose `source` is not `local`.
@@ -388,6 +414,7 @@ The seeding script (`scripts/seed_contract_rubrics.py`) SHALL seed the v1 rubric
 #### Scenario: split-out behaviour 2
 - **WHEN** this behaviour is exercised
 - **THEN** the requirement above holds
+
 ### Requirement: Layered Judgment Mechanism for Common Criteria
 The system SHALL replace binary judgment (PASS/FAIL) with layered judgment (PASS/HALF_PASS/FAIL) for common criteria. Layered judgment allows the system to distinguish between "fully compliant", "partially compliant", and "non-compliant" states.
 
