@@ -1197,5 +1197,29 @@
     "commercial_tool_count": 21,
     "listed_at": "2026-11-10T10:58:00Z",
     "listed_note": "注册表条目已刷新为 num_tools=54 / tool_list 54 / surface 商业集 21，三方（清单=注册表=现网）逐名一致，由 scripts/check_surface_listed.py 断言（exit=0） ｜ 2026-11-25：manifest 现推导 commercial 29（+domain 八个读工具，写面两个仍 internal）；`commercial_tool_count: 21` 是在册条目的现值，须待 domain 组滚版上线后由 `export_surface_commercial.py --server law-bench` 重导回填，勿在没有实采前手改。"
+  },
+  "rules": {
+    "commercial_exemptions": [
+      {
+        "tool": "clause_review",
+        "reason": "合同生成（contract_generate / contract_generate_batch / contract_generate_stored / contract_content）与条款评审（clause_review）是知验台的产品能力，产出物落库但都是客户要的交付物。"
+      },
+      {
+        "tool": "contract_content",
+        "reason": "合同生成（contract_generate / contract_generate_batch / contract_generate_stored / contract_content）与条款评审（clause_review）是知验台的产品能力，产出物落库但都是客户要的交付物。"
+      },
+      {
+        "tool": "contract_generate",
+        "reason": "合同生成（contract_generate / contract_generate_batch / contract_generate_stored / contract_content）与条款评审（clause_review）是知验台的产品能力，产出物落库但都是客户要的交付物。"
+      },
+      {
+        "tool": "contract_generate_batch",
+        "reason": "合同生成（contract_generate / contract_generate_batch / contract_generate_stored / contract_content）与条款评审（clause_review）是知验台的产品能力，产出物落库但都是客户要的交付物。"
+      },
+      {
+        "tool": "contract_generate_stored",
+        "reason": "合同生成（contract_generate / contract_generate_batch / contract_generate_stored / contract_content）与条款评审（clause_review）是知验台的产品能力，产出物落库但都是客户要的交付物。"
+      }
+    ]
   }
 }
