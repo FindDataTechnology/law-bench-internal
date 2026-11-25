@@ -88,11 +88,14 @@ _REGION_BIND_RE = re.compile(
     r"(?:现行(?:规定|法规)|的有关规定|地区(?:内|范围内)?|辖区内)"
 )
 # Local agency names: XX市工商局 / XX省住建厅 / XX市XX管理局 / XX市XX委员会.
+# `委` alone is the everyday abbreviation of 委员会 (住建委/发改委/卫健委) and
+# was the one form the list missed — a residual local agency cited this way
+# slipped through the post-rewrite quality metric.
 _REGION_AGENCY_RE = re.compile(
     r"(?:" + "|".join(_ALL_PLACE_NAMES) + r")"
     r"(?:省|市)?"
     r"(?:[一-鿿]{0,8}?)"
-    r"(?:局|厅|委员会|管理局|管理处|管理站|监督管理部门)"
+    r"(?:局|厅|委|委员会|管理局|管理处|管理站|监督管理部门)"
 )
 
 # Same trio as V4/V5 self-iteration so audit verdicts are apples-to-apples with
