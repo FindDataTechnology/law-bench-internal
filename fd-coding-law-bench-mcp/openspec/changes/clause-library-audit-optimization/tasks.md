@@ -2,25 +2,33 @@
 
 **Schema**: spec-driven | **Scope**: P0-P2 audit (~3378 ready clauses) + P3 dedupe + re-eval gate
 
+> **2026-11-26 复核**：任务 1–3 的**代码早已在真源**（`src/clauses/audit.py`、`scripts/audit_clauses.py`，
+> 由 `86d6446 feat: clause-library audit & optimization pipeline` 引入），此前只是没勾选。
+> 本轮实测补了两件事：① 复核发现 `region_lint` 的代理机关正则漏了「委」这个
+> 委员会缩写形式（住建委/发改委/卫健委），改写后仍点名地方机关的条款会被判「干净」——
+> 已修并补 16 条回归用例（此前这条 lint 零测试）。② 该 change 此前只存在于**发布面**，
+> 导致单向导出被拒；已逐字节搬回真源。
+> 任务 4–12 是**真实数据作业**（对生产 clause 库跑审计/去重/复评），需要可达的 Postgres
+> 与 LLM relay；当前 `cheap` 集群 API server 不可达（`chengsi` 整机失联），
+> 故停在这里，不是没做，是做不了。
+
 ## Structured Task List
 
-| # | Status | Subject |
-|---|--------|---------|
-| 1 | [ ] | Build `src/clauses/audit.py`: classify/rewrite/verify prompt templates + region-lint regex |
-| 2 | [ ] | Build `scripts/audit_clauses.py` driver (mirrors self_iterate.py structure: 3-model classify trio -> single rewrite -> verify -> clause_update) |
-| 3 | [ ] | Deterministic dedupe pass: 171 exact-dup tagged -> `rejected` via `clause_review` (keep lowest id) |
-| 4 | [ ] | Region lint baseline: log residual province/city names per type BEFORE audit (documents starting point) |
-| 5 | [ ] | Dry-run audit on employment base (4 clauses, highest blast radius) - validate rewrite rules end-to-end |
-| 6 | [ ] | P0 audit: 329 base-ready clauses across 43 types |
-| 7 | [ ] | P1 audit: 73 custom-ready clauses (check custom<->base shadowing post-rewrite) |
-| 8 | [ ] | P2 audit: 2976 tagged-ready clauses (largest batch; throttle to relay 12-concurrent) |
-| 9 | [ ] | Post-rewrite region lint: confirm residual province names -> 0 on rewritten clauses |
-| 10 | [ ] | Re-run `self_iterate` across all 43 types (3-judge serial, FAIL_CONF_THRESHOLD=0.6) |
-| 11 | [ ] | Re-eval gate: confirm all-pass >= 39/43 (no regression); log any regressed type |
-| 12 | [ ] | Stretch: investigate 4 stuck types (lease/land_transfer/film_production/service) post-audit |
-| 13 | [ ] | Update dashboard pipeline_runs with audit-batch rows (source=clause_audit) |
-| 14 | [ ] | Update memory: clause-library-audit outcome + residual issues |
-| 15 | [ ] | Archive OpenSpec change (validate passes) |
+- [x] 1 Build `src/clauses/audit.py`: classify/rewrite/verify prompt templates + region-lint regex
+- [x] 2 Build `scripts/audit_clauses.py` driver (mirrors self_iterate.py structure: 3-model classify trio -> single rewrite -> verify -> clause_update)
+- [x] 3 Deterministic dedupe pass: 171 exact-dup tagged -> `rejected` via `clause_review` (keep lowest id)
+- [ ] 4 Region lint baseline: log residual province/city names per type BEFORE audit (documents starting point)
+- [ ] 5 Dry-run audit on employment base (4 clauses, highest blast radius) - validate rewrite rules end-to-end
+- [ ] 6 P0 audit: 329 base-ready clauses across 43 types
+- [ ] 7 P1 audit: 73 custom-ready clauses (check custom<->base shadowing post-rewrite)
+- [ ] 8 P2 audit: 2976 tagged-ready clauses (largest batch; throttle to relay 12-concurrent)
+- [ ] 9 Post-rewrite region lint: confirm residual province names -> 0 on rewritten clauses
+- [ ] 10 Re-run `self_iterate` across all 43 types (3-judge serial, FAIL_CONF_THRESHOLD=0.6)
+- [ ] 11 Re-eval gate: confirm all-pass >= 39/43 (no regression); log any regressed type
+- [ ] 12 Stretch: investigate 4 stuck types (lease/land_transfer/film_production/service) post-audit
+- [ ] 13 Update dashboard pipeline_runs with audit-batch rows (source=clause_audit)
+- [ ] 14 Update memory: clause-library-audit outcome + residual issues
+- [ ] 15 Archive OpenSpec change (validate passes)
 
 ## Task Details
 
