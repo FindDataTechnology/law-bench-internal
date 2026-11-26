@@ -287,6 +287,20 @@ def test_split_does_not_treat_a_citation_as_a_header():
     assert [c["no"] for c in split["clauses"]] == [1]
 
 
+def test_split_joins_pdf_linebreaks_into_one_paragraph():
+    # Statutory Chinese is one paragraph per article; interior newlines are PDF
+    # wraps. The ideographic-space separator line between 第N条 and its text
+    # becomes one space (so the number does not run into the prose); every other
+    # newline is joined. No CJK character changes.
+    split = corpus_catalog.split_clauses(_chunks(
+        "第一条\n　\n民事主体从事民事活动\n，\n应当遵循诚信原则。\n　\n秉持诚实。",
+    ))
+    body = split["clauses"][0]["text"]
+    assert "\n" not in body
+    assert body.startswith("第一条 民事主体从事民事活动，应当遵循诚信原则。")
+    assert "秉持诚实。" in body
+
+
 # ── adoption ─────────────────────────────────────────────────────────────────
 
 

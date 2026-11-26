@@ -1,0 +1,109 @@
+{
+  "measured_at": "2026-11-26T15:53:10.332766+00:00",
+  "table": "knowledge_units",
+  "kind": "clause",
+  "totals": {
+    "rows": 5387,
+    "live": 4986,
+    "soft_deleted": 401,
+    "unique_live_body_hashes": 4986,
+    "live_dup_groups": 0,
+    "live_dup_member_rows": 0,
+    "deleted_twin_groups": 400
+  },
+  "namespace_distribution": {
+    "legal": 4986
+  },
+  "tier_distribution": {
+    "raw": 4985,
+    "silver": 1
+  },
+  "region_lint": {
+    "live_rows_with_hits": 6,
+    "class_counts": {
+      "legit_region": 4,
+      "attribution": 2
+    },
+    "rows": [
+      {
+        "id": 4468,
+        "external_key": "电信条例#第58条",
+        "matches": [
+          "台湾地区"
+        ],
+        "class": "legit_region",
+        "tail": "设施或者码叶;(三)伪造、变造电话卡及其他各种电信服务有价凭证;(四)以虚假、胃用的身份证件办理人网手续并使用移动电话。"
+      },
+      {
+        "id": 4474,
+        "external_key": "电信条例#第64条",
+        "matches": [
+          "台湾地区"
+        ],
+        "class": "legit_region",
+        "tail": "主管部门批准设立的国际通信出人口局进行。我国内地与香港特别行政区、澳门特别行政区和台湾地区之间的通信,参照前款规余办理。"
+      },
+      {
+        "id": 4489,
+        "external_key": "电信条例#第79条",
+        "matches": [
+          "台湾地区"
+        ],
+        "class": "legit_region",
+        "tail": "营电信业务和香港特别行政区、澳门特别行政区与台湾地区的组织或者个人在内地投资与经营电信业务的具体办法,由国务院另行制定。"
+      },
+      {
+        "id": 5232,
+        "external_key": "税收征收管理法实施细则#第113条",
+        "matches": [
+          "天津市税务局"
+        ],
+        "class": "attribution",
+        "tail": "2-12366 传真：022-24465601网站标识码：bm29020004 津公网安备12010502100107号"
+      },
+      {
+        "id": 5841,
+        "external_key": "飞行基本规则#第124条",
+        "matches": [
+          "新疆管理局"
+        ],
+        "class": "attribution",
+        "tail": "9046468号京公网安备11010102007643号政府网站识别码：bm70000001移动客户端国务院互联网+督查"
+      },
+      {
+        "id": 6087,
+        "external_key": "企业所得税法实施条例#第131条",
+        "matches": [
+          "台湾地区"
+        ],
+        "class": "legit_region",
+        "tail": "一百三十一条　在香港特别行政区、澳门特别行政区和台湾地区成立的企业，参照适用企业所得税法第二条第二款、第三款的有关规定。"
+      }
+    ]
+  },
+  "slots": {
+    "live_rows_with_slots": 0,
+    "rows": []
+  },
+  "body_census": {
+    "empty": [],
+    "short_lt_10": [
+      6582,
+      6583,
+      6584,
+      6585,
+      6586,
+      6613
+    ],
+    "long_gt_2000": [
+      5841
+    ]
+  },
+  "extraction_artifacts": {
+    "live_rows": 0,
+    "samples": []
+  },
+  "dedup": {
+    "live_groups": []
+  }
+}

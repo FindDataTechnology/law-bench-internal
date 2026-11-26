@@ -509,6 +509,34 @@ def _pg_chunks(lib: dict, src: dict, mapping: dict, *, doc_id: str, limit: int) 
 
 # ── clause splitting ─────────────────────────────────────────────────────────
 
+#: PDF extraction breakage carried by the law-library chunks: hard newlines
+#: wrapping one sentence across many narrow lines (``…活动\n，\n应当…``), often
+#: padded with ideographic spaces (``　``). Measured 2026-11-26: ~1.3k of 4986
+#: live clause bodies carry it. Chinese prose has no inter-word spaces, so the
+#: only legitimate break is an article/paragraph boundary — which is where an
+#: article body never starts (the article number is its own head line).
+
+
+def normalize_pdf_linebreaks(text: str) -> str:
+    """Join PDF-wrapped line breaks inside one article body.
+
+    Statutory Chinese runs as one paragraph per article, so every ``\\n`` inside
+    an already-split body is a PDF wrap artifact: join them all (dropping the
+    ideographic-space padding too). Falls back to input when empty.
+
+    shortcut: this flattens a genuine multi-row TABLE body (e.g. a 飞行信号
+    table) into a run-on line — layout is lost, but no CJK character is dropped,
+    so legal content is preserved. Upgrade to per-line table detection only if a
+    table-bearing corpus gets a live consumer that needs the layout.
+    """
+    if not text:
+        return text
+    # An ideographic-space-only line is the separator between the article
+    # number (第N条) and its text — keep it as one space so "第一条" does not run
+    # into "为了保护…". Every other interior newline is a PDF wrap: join it.
+    text = re.sub(r"\n[ \t　]*　[ \t　]*\n", " ", text)
+    return re.sub(r"[ \t　]*\n[ \t　]*", "", text)
+
 
 def split_clauses(chunks: list[dict], *, document_complete: bool = True) -> dict:
     """Cut an ordered document into articles, verbatim.
@@ -545,7 +573,7 @@ def split_clauses(chunks: list[dict], *, document_complete: bool = True) -> dict
             duplicates += 1
             continue
         seen.add(number)
-        body = joined[start:end].strip()
+        body = normalize_pdf_linebreaks(joined[start:end].strip())
         chunk_index = max(i for i, at in enumerate(starts) if at <= start)
         out.append({
             "no": number,
