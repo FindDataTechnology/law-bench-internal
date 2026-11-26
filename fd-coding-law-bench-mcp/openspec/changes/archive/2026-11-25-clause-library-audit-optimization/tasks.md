@@ -6,6 +6,8 @@
 > - **2026-11-25 实测其三项判据在现库上均不成立**：地域名残留 2 条（都是法条尾部「国家税务总局天津市税务局」这类源头署名，不是条款内容）；`tags.audit` 标记 0 条；`{{slot}}` 占位 0 条 —— 与「1035 条缺 slot」的原始测量是两套数据。
 > - tasks 是表格行（`| 1 | [ ] |`）不是 checkbox，openspec 一直把它算作 0 任务。
 > 若将来要对 `knowledge_units` 做同类审计，应新立 change 并重做测量，不要复活本文件。
+>
+> **2026-11-26 追记**：① `region_lint` 代理机关正则漏了「委」缩写（住建委/发改委/卫健委），已修并补 16 条回归用例（`da61ebf`，`tests/test_clause_region_lint.py` 16/16 绿）——该 lint 代码随 `86d6446` 入库，独立于本 change 存活。② 发布面残留的 active 副本（为让单向导出通过而逐字节搬回真源，`47c1457`）与本归档构成重复，已核对其 proposal/design/spec 与本归档逐字节一致后删除；其 tasks.md 上「任务 4–12 被集群失联挡住、待做」的复核注记**判断有误**——4–12 并非待做，而是随 8 月原始作业（`86d6446` 提交信息留痕）与 content-remediation 一并终结，本归档即正式记录。
 
 **Schema**: spec-driven | **Scope**: P0-P2 audit (~3378 ready clauses) + P3 dedupe + re-eval gate
 
