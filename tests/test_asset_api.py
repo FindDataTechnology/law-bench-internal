@@ -83,3 +83,32 @@ def test_domain_assets_need_a_bound_domain(app_client, seeded_db, monkeypatch):
     )
     assert r.status_code == 403
     assert "不在凭据绑定范围" in r.json()["detail"]
+
+def test_fleet_enrollment_is_domain_bound_and_one_time(app_client, seeded_db, monkeypatch):
+    monkeypatch.setenv("BENCH_ASSET_PORTABILITY", "1")
+    _register(seeded_db, name="deploy-assets", token="fda_ok", kind="deployment-assets", domains=("legal",))
+    headers = {"X-Consumer-Token": "fda_ok"}
+
+    r = app_client.post(
+        "/api/v1/assets/fleets/enroll",
+        json={"fleet_ref": "fleet_x", "domain": "other"},
+        headers=headers,
+    )
+    assert r.status_code == 403
+
+    r = app_client.post(
+        "/api/v1/assets/fleets/enroll",
+        json={"fleet_ref": "fleet_x", "domain": "legal"},
+        headers=headers,
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["token"].startswith("flt_")
+    assert body["fleet_ref"] == "fleet_x"
+
+    again = app_client.post(
+        "/api/v1/assets/fleets/enroll",
+        json={"fleet_ref": "fleet_x", "domain": "legal"},
+        headers=headers,
+    )
+    assert again.status_code == 409

@@ -107,3 +107,48 @@ def import_asset(
         )
     except bench_transfer.TransferError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
+
+# ── fleet enrollment (auto, domain-approved) ────────────────────────────────
+#
+# The domain an operator approved on the deployment credential is the one
+# decision a human makes; every fleet created under it is then enrolled without
+# a CLI. The returned credential is handed back ONCE and stored by the platform
+# as that fleet's bench credential (existing fleet_credentials machinery).
+
+@router.post("/api/v1/assets/fleets/enroll", name="asset_api_enroll_fleet")
+def enroll_fleet(payload: dict[str, Any], request: Request, db: DbConn = Depends(get_db)) -> dict:
+    import hashlib
+    import secrets
+
+    from ...bench import distribution
+
+    consumer = _require_asset_consumer(request, db)
+    fleet_ref = payload.get("fleet_ref")
+    domain = payload.get("domain")
+    if not isinstance(fleet_ref, str) or not fleet_ref.strip():
+        raise HTTPException(status_code=422, detail="fleet_ref is required")
+    if not isinstance(domain, str) or not domain.strip():
+        raise HTTPException(status_code=422, detail="domain is required")
+    if domain not in (consumer.get("domains") or []):
+        raise HTTPException(status_code=403, detail="该域不在凭据绑定范围")
+    fleet_ref = fleet_ref.strip()
+    token = "flt_" + secrets.token_urlsafe(32)
+    try:
+        row = distribution.register_consumer(
+            db,
+            name=fleet_ref,
+            domains=[domain],
+            token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest(),
+            created_by=f"deployment:{consumer.get('name')}",
+            kind="fleet",
+            fleet_ref=fleet_ref,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    db.commit()
+    return {
+        "token": token,
+        "fleet_ref": fleet_ref,
+        "domain": domain,
+        "name": row.get("name"),
+    }
