@@ -236,6 +236,31 @@ BEGIN
     END IF;
 END
 $lib$;
+
+-- ── portable asset envelopes (change add-bench-asset-portability) ────────────
+-- A fork records where it came from. `derived_from` is the local parent row;
+-- `upstream` carries {name, version, digest} of the source (which may live in
+-- another instance and therefore has no local id). Additive and nullable: every
+-- pre-existing template stays a non-fork with all three columns NULL.
+ALTER TABLE IF EXISTS ontology_templates ADD COLUMN IF NOT EXISTS derived_from BIGINT;
+ALTER TABLE IF EXISTS ontology_templates ADD COLUMN IF NOT EXISTS fork_diff JSONB;
+ALTER TABLE IF EXISTS ontology_templates ADD COLUMN IF NOT EXISTS upstream JSONB;
+
+-- Append-only transfer audit: only successful imports leave a row (a rejected
+-- envelope must not look like it landed). No UPDATE/DELETE path by design.
+CREATE TABLE IF NOT EXISTS asset_transfer_events (
+    id             BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    op             TEXT NOT NULL CHECK (op IN ('import')),
+    asset_kind     TEXT NOT NULL,
+    asset_name     TEXT NOT NULL,
+    asset_version  INTEGER NOT NULL,
+    digest         TEXT NOT NULL,
+    target_ref     TEXT,
+    actor          TEXT NOT NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS asset_transfer_events_digest_idx
+    ON asset_transfer_events (digest);
 """
 
 

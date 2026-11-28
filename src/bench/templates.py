@@ -46,8 +46,14 @@ UNLAYERED = "unlayered"
 AUTHORITY_KINDS = ("platform", "external")
 
 
-_TEMPLATE_COLS = "id, name, version, schema, created_by, created_at"
-_TEMPLATE_KEYS = ("id", "name", "version", "schema", "created_by", "created_at")
+_TEMPLATE_COLS = (
+    "id, name, version, schema, created_by, created_at, "
+    "derived_from, fork_diff, upstream"
+)
+_TEMPLATE_KEYS = (
+    "id", "name", "version", "schema", "created_by", "created_at",
+    "derived_from", "fork_diff", "upstream",
+)
 _LIST_KEYS = (
     "entity_types",
     "relationship_kinds",
@@ -90,6 +96,9 @@ def _row_to_dict(row: Any) -> dict:
         "schema": _decode_jsonb(values[3]),
         "created_by": values[4],
         "created_at": _iso(values[5]),
+        "derived_from": values[6],
+        "fork_diff": _decode_jsonb(values[7]),
+        "upstream": _decode_jsonb(values[8]),
     }
 
 
@@ -300,13 +309,67 @@ def validate_template_schema(schema: dict) -> list[str]:
     return problems
 
 
-def create_template(conn: Any, *, name: str, schema: dict, created_by: str) -> dict:
-    """Insert version 1 of a new template; duplicate names are refused."""
+def lineage_problem(
+    *,
+    derived_from: Optional[int] = None,
+    fork_diff: Optional[dict] = None,
+    upstream: Optional[dict] = None,
+) -> Optional[str]:
+    """Why a template's fork lineage is incomplete (``None`` = fine).
+
+    A fork is a recorded act: it must name its source (a local parent row or an
+    upstream ``{name, version, digest}``) AND say how it differs. A silent copy
+    is indistinguishable from the parent forever after.
+    """
+    has_source = derived_from is not None or upstream is not None
+    if not has_source:
+        if fork_diff:
+            return "fork_diff is recorded without a source (derived_from or upstream)"
+        return None
+    if not isinstance(fork_diff, dict) or not fork_diff:
+        return "a fork must record fork_diff (a non-empty object saying how it differs from its source)"
+    if upstream is not None:
+        if not isinstance(upstream, dict):
+            return "upstream must be an object of {name, version, digest}"
+        if not isinstance(upstream.get("name"), str) or not upstream["name"].strip():
+            return "upstream.name must be a non-empty string"
+        if not isinstance(upstream.get("digest"), str) or not upstream["digest"].strip():
+            return "upstream.digest must be a non-empty string"
+        version = upstream.get("version")
+        if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+            return "upstream.version must be a positive integer"
+    if derived_from is not None:
+        if isinstance(derived_from, bool) or not isinstance(derived_from, int):
+            return "derived_from must be a template id"
+    return None
+
+
+def create_template(
+    conn: Any,
+    *,
+    name: str,
+    schema: dict,
+    created_by: str,
+    derived_from: Optional[int] = None,
+    fork_diff: Optional[dict] = None,
+    upstream: Optional[dict] = None,
+) -> dict:
+    """Insert version 1 of a new template; duplicate names are refused.
+
+    ``derived_from`` / ``fork_diff`` / ``upstream`` record a fork. They are
+    optional (a non-fork template has none) but internally consistent, and the
+    check runs before any row is written.
+    """
     if not name:
         raise ValueError("name is required")
     problems = validate_template_schema(schema)
     if problems:
         raise ValueError("; ".join(problems))
+    lineage_error = lineage_problem(
+        derived_from=derived_from, fork_diff=fork_diff, upstream=upstream
+    )
+    if lineage_error:
+        raise ValueError(lineage_error)
     existing = conn.execute(
         "SELECT 1 FROM ontology_templates WHERE name = %s LIMIT 1", (name,)
     ).fetchone()
@@ -314,11 +377,20 @@ def create_template(conn: Any, *, name: str, schema: dict, created_by: str) -> d
         raise ValueError(f"template {name!r} already exists")
     cur = conn.execute(
         f"""
-        INSERT INTO ontology_templates (name, version, schema, created_by)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO ontology_templates
+            (name, version, schema, created_by, derived_from, fork_diff, upstream)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         RETURNING {_TEMPLATE_COLS}
         """,
-        (name, 1, json.dumps(schema), created_by),
+        (
+            name,
+            1,
+            json.dumps(schema),
+            created_by,
+            derived_from,
+            json.dumps(fork_diff) if fork_diff else None,
+            json.dumps(upstream) if upstream else None,
+        ),
     )
     row = cur.fetchone()
     conn.commit()
@@ -359,13 +431,24 @@ def update_template(conn: Any, *, name: str, schema: dict, created_by: str) -> d
         ).fetchone()
     )
     new_version = int(current_max or 0) + 1
+    # A version edit never drops lineage: a fork stays a fork across edits.
+    lineage = previous or {}
     cur = conn.execute(
         f"""
-        INSERT INTO ontology_templates (name, version, schema, created_by)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO ontology_templates
+            (name, version, schema, created_by, derived_from, fork_diff, upstream)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         RETURNING {_TEMPLATE_COLS}
         """,
-        (name, new_version, json.dumps(schema), created_by),
+        (
+            name,
+            new_version,
+            json.dumps(schema),
+            created_by,
+            lineage.get("derived_from"),
+            json.dumps(lineage["fork_diff"]) if lineage.get("fork_diff") else None,
+            json.dumps(lineage["upstream"]) if lineage.get("upstream") else None,
+        ),
     )
     row = cur.fetchone()
     conn.commit()
