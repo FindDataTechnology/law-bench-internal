@@ -90,7 +90,15 @@ class User:
 # Exempt routes do not declare a ``user`` parameter, so the anonymous sentinel
 # is never consumed.
 _EXEMPT_PATHS: frozenset[str] = frozenset({"/healthz"})
-_EXEMPT_PREFIXES: tuple[str, ...] = ("/auth/", "/admin/invite/", "/api/v1/distribution/")
+_EXEMPT_PREFIXES: tuple[str, ...] = (
+    "/auth/",
+    "/admin/invite/",
+    "/api/v1/distribution/",
+    # Machine asset transfer (change add-bench-asset-portability): consumers
+    # authenticate with their own X-Consumer-Token (kind='deployment-assets'),
+    # never a Logto session; the route performs its own three-state check.
+    "/api/v1/assets/",
+)
 
 
 def _is_exempt(path: str) -> bool:

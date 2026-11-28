@@ -52,6 +52,20 @@
 - **WHEN** 导入一份缺失上游某个实体类型的 fork 模板
 - **THEN** 拒绝并指名该实体类型，模板未被创建
 
+### Requirement: 机器资产面使用受限消费者而非管理身份
+
+资产导出/导入 SHALL 有一个机器通道，凭据为登记消费者（kind 为部署资产档），MUST NOT 要求 Logto 管理身份。该凭据 SHALL 只能调用资产面，MUST NOT 获得成员、发布、提案、确认或任何其它管理能力。域级资产（尺子/金集）SHALL 要求目标域在该凭据的绑定域内。
+
+#### Scenario: 通用机器凭据被拒
+
+- **WHEN** 一个 kind 为普通机器档的消费者请求导出资产
+- **THEN** 拒绝并说明需要部署资产档，不产生信封
+
+#### Scenario: 越域导出被拒
+
+- **WHEN** 部署资产凭据请求导出未绑定域的尺子集
+- **THEN** 拒绝并报明该域不在绑定范围
+
 ### Requirement: v1 可导入类别有明确边界
 
 本版本 SHALL 可导入 `ontology-template` 与 `ruler-set` 两类；其余三类（`vocabulary-release`、`gold-set`、`eval-suite`）SHALL 可导出，但其导入 SHALL 被拒绝并说明原因（需要信封无法命名的目标上下文），MUST NOT 静默跳过或猜测目标。

@@ -91,7 +91,7 @@ _CONSUMER_KEYS = (
 #: Registered consumer kinds. ``machine`` only pulls published artefacts;
 #: ``fleet`` additionally submits proposals and writes back runs, so its stable
 #: ``fleet_ref`` is the anchor that turns a ``source`` string into a fact.
-CONSUMER_KINDS: tuple[str, ...] = ("machine", "fleet")
+CONSUMER_KINDS: tuple[str, ...] = ("machine", "fleet", "deployment-assets")
 
 
 def _iso(val: Any) -> Any:
@@ -660,7 +660,7 @@ def register_consumer(
         if not (fleet_ref or "").strip():
             raise ValueError("kind='fleet' requires a non-empty fleet_ref")
     elif fleet_ref:
-        raise ValueError("kind='machine' must not carry a fleet_ref")
+        raise ValueError(f"kind={kind!r} must not carry a fleet_ref")
 
     bound = _normalize_domain_keys(domains)
     existing = conn.execute(

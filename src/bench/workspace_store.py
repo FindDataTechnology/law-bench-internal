@@ -429,7 +429,15 @@ ALTER TABLE authoring_tasks
 -- 唯一性只约束「未吊销」：吊销后允许同一舰队重新登记，历史行保留可查。
 ALTER TABLE distribution_consumers
     ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'machine'
-        CHECK (kind IN ('machine','fleet'));
+        CHECK (kind IN ('machine','fleet','deployment-assets'));
+-- 第三种 consumer：部署级资产管理（change add-bench-asset-portability）。
+-- 只能调 /api/v1/assets/*，不能进任何管理面。约束在旧库上已按两值建过，
+-- 这里幂等地换成三值闭集。
+ALTER TABLE IF EXISTS distribution_consumers
+    DROP CONSTRAINT IF EXISTS distribution_consumers_kind_check;
+ALTER TABLE IF EXISTS distribution_consumers
+    ADD CONSTRAINT distribution_consumers_kind_check
+        CHECK (kind IN ('machine','fleet','deployment-assets'));
 ALTER TABLE distribution_consumers
     ADD COLUMN IF NOT EXISTS fleet_ref TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS distribution_consumers_fleet_ref_uk
