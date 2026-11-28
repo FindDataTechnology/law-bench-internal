@@ -77,6 +77,12 @@ def test_valid_template_creates_v1_and_appears_in_list(db_conn):
         "schema",
         "created_by",
         "created_at",
+        # Portable-asset lineage (add-bench-asset-portability): a non-fork
+        # template carries the three keys with None values, so every reader
+        # sees one row shape whether or not the template was copied.
+        "derived_from",
+        "fork_diff",
+        "upstream",
     }
 
     # spec (合法模板可保存并展示): shows up in the template list, latest version
